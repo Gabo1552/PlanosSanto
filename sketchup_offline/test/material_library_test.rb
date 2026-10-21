@@ -10,7 +10,7 @@ require_relative '../material_library'
 module LibraryFixture
   class Material
     attr_reader :name, :entityID, :attributes, :color, :texture
-    attr_accessor :save_result
+    attr_accessor :save_result, :name
     def initialize(id, name, bytes='REAL-SKM-VISUAL')
       @entityID, @name, @bytes = id, name, bytes
       @attributes = {}; @color = OpenStruct.new(red: 15, green: 30, blue: 45); @texture = Object.new
@@ -30,6 +30,27 @@ module LibraryFixture
       material = Material.new(100+length, File.basename(path), File.binread(path)); self << material; material
     end
   end
+  class NameCollisionMaterials < Materials
+    attr_reader :loads
+    attr_accessor :source_name,:mutate_on_first_load,:reuse_regardless_of_name,:after_load
+    def initialize(materials,source_name)
+      super(materials);@source_name=source_name;@loads=[]
+    end
+    def load(path)
+      @loads << path
+      existing=reuse_regardless_of_name ? first : find { |material| material.name==source_name }
+      if existing
+        if mutate_on_first_load && loads.length==1
+          existing.set_attribute('native-loader','transient','changed')
+          existing.instance_variable_set(:@color,OpenStruct.new(red:200,green:10,blue:10))
+        end
+        return existing
+      end
+      material=Material.new(100+length,source_name,File.binread(path));self << material
+      after_load.call(self) if after_load
+      material
+    end
+  end
   class Model
     attr_reader :materials, :starts, :aborts
     attr_accessor :fail_commit
@@ -38,13 +59,13 @@ module LibraryFixture
     end
     def start_operation(*_args)
       @starts+=1
-      @snapshot=@materials.map { |m| [m,Marshal.load(Marshal.dump(m.attributes))] }; true
+      @snapshot=@materials.map { |m| [m,Marshal.load(Marshal.dump(m.attributes)),m.name,m.color,m.texture] }; true
     end
     def commit_operation; !@fail_commit; end
     def abort_operation
       @aborts+=1
       @materials.replace(@snapshot.map(&:first))
-      @snapshot.each { |m,attrs| m.attributes.replace(attrs) }; true
+      @snapshot.each { |m,attrs,name,color,texture| m.attributes.replace(attrs);m.name=name;m.instance_variable_set(:@color,color);m.instance_variable_set(:@texture,texture) }; true
     end
   end
 end
@@ -353,6 +374,147 @@ class MaterialLibraryTest < Minitest::Test
     File.binwrite(archive,original)
     installed=other.install(request.merge('revision'=>2))
     assert_equal 1,fresh.materials.length;assert_equal @sheet['id'],installed.dig('binding','catalogId')
+  end
+
+  def collision_loader
+    @two.name='Otro acabado'
+    loader=LibraryFixture::NameCollisionMaterials.new([@one,@two],@one.name)
+    @model.instance_variable_set(:@materials,loader)
+    loader
+  end
+  def collision_source
+    path=File.join(@directory,'original-visual.skm');File.binwrite(path,'VISUAL-SELECTED-BY-HASH-NOT-NAME');path
+  end
+  def test_skm_name_collision_imports_distinct_native_material_without_binding_or_changing_originals
+    loader=collision_loader;path=collision_source;before=@library.materials.map { |material| @library.material_state(material) }
+    original=File.binread(path);result=@library.install(request,path:path)
+    installed=@model.materials.find { |material| material.entityID.to_s==result['materialId'] }
+    assert result['collisionIsolated'];refute_includes [@one,@two],installed
+    assert_equal before,[@one,@two].map { |material| @library.material_state(material) }
+    assert_equal 'Duplicado',@one.name;assert_empty @one.attributes;assert_empty @two.attributes
+    assert_equal @sheet['id'],binding(installed)['catalogId'];refute_equal @one.name,installed.name;assert_includes installed.name,@sheet['name']
+    assert_equal [path,path],loader.loads;assert_equal 1,@model.aborts;assert_equal 2,@model.starts
+    row=@library.assets['records'].first
+    assert_equal Digest::SHA256.hexdigest(original),row['assetHash'];assert_equal original,File.binread(path)
+    again=@library.install(request)
+    assert_equal installed.entityID.to_s,again['materialId'];assert_equal 2,loader.loads.length
+    assert_equal 2,@model.starts
+  end
+  def test_collision_first_attempt_aborts_native_side_effects_before_safe_retry
+    loader=collision_loader;loader.mutate_on_first_load=true
+    before=@library.materials.map { |material| @library.material_state(material) }
+    @library.install(request,path:collision_source)
+    assert_equal before,[@one,@two].map { |material| @library.material_state(material) }
+    assert_equal 1,@model.aborts;assert_equal 2,@model.starts
+    refute @one.get_attribute('native-loader','transient')
+  end
+  def test_collision_guid_deduplication_aborts_once_more_without_binding_or_sidecar
+    loader=collision_loader;loader.reuse_regardless_of_name=true
+    before=@library.materials.map { |material| @library.material_state(material) }
+    error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_includes error.message,'copia independiente';assert_equal 2,loader.loads.length
+    assert_equal 2,@model.aborts;assert_equal 2,@model.materials.length
+    assert_equal before,@library.materials.map { |material| @library.material_state(material) }
+    assert_empty @library.assets['records'];refute File.exist?(File.join(@directory,'material-assets.json'))
+  end
+  def test_collision_loader_that_changes_an_unrelated_material_rolls_back_retry
+    loader=collision_loader;loader.after_load=lambda { |_materials| @two.set_attribute('unexpected','change',true) }
+    before=@library.materials.map { |material| @library.material_state(material) }
+    error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_includes error.message,'material previo'
+    assert_equal before,@library.materials.map { |material| @library.material_state(material) }
+    assert_equal 2,@model.materials.length;assert_empty @library.assets['records']
+  end
+  def test_collision_failed_commit_restores_original_names_and_external_index
+    collision_loader;@model.fail_commit=true
+    before=@library.materials.map { |material| @library.material_state(material) }
+    assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_equal before,@library.materials.map { |material| @library.material_state(material) }
+    assert_equal 2,@model.materials.length;assert_empty @library.assets['records']
+    refute File.exist?(File.join(@directory,'material-assets.json'))
+  end
+
+  def test_collision_preserves_native_attribute_dictionaries_with_block_only_enumeration
+    collision_loader
+    @one.set_attribute('qa-material','nested',[1,'text',true])
+    dictionary=Struct.new(:name,:data) do
+      def each_pair
+        raise 'Native dictionary requires a block' unless block_given?
+        data.each_pair { |key,value| yield key,value };self
+      end
+    end
+    @one.define_singleton_method(:attribute_dictionaries) do
+      attributes.group_by { |(group,_key),_value| group }.map do |name,rows|
+        dictionary.new(name,rows.to_h { |(_group,key),value| [key,value] })
+      end
+    end
+    before=@library.material_state(@one)
+    result=@library.install(request,path:collision_source)
+    assert result['collisionIsolated'];assert_equal before,@library.material_state(@one)
+    assert_nil binding;assert_equal [1,'text',true],@one.get_attribute('qa-material','nested')
+  end
+  def test_collision_checks_originals_again_after_binding_and_archiving_new_material
+    loader=collision_loader
+    loader.after_load=lambda do |collection|
+      imported=collection.last;original=collection.first;native_set=imported.method(:set_attribute)
+      imported.define_singleton_method(:set_attribute) do |*args|
+        native_set.call(*args);original.set_attribute('unexpected','shared-attribute',true)
+      end
+    end
+    before=@library.materials.map { |material| @library.material_state(material) }
+    error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_includes error.message,'material previo'
+    assert_equal before,@library.materials.map { |material| @library.material_state(material) }
+    assert_equal 2,@model.materials.length;assert_empty @library.assets['records']
+    refute File.exist?(File.join(@directory,'material-assets.json'))
+  end
+
+  def test_collision_never_retries_when_abort_returns_false_and_does_not_restore
+    loader=collision_loader;loader.mutate_on_first_load=true
+    @model.define_singleton_method(:abort_operation) { @aborts+=1;false }
+    error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_includes error.message,'no confirmó la cancelación'
+    assert_includes error.message,'no continúes pintando'
+    refute_includes error.message,'No se modificó'
+    assert_equal 1,loader.loads.length;assert_equal 1,@model.starts;assert_equal 1,@model.aborts
+    assert_nil binding;assert_empty @library.assets['records']
+    assert_equal 'changed',@one.get_attribute('native-loader','transient'),'fixture intentionally demonstrates unconfirmed rollback'
+  end
+  def test_collision_never_retries_when_abort_claims_success_but_original_state_did_not_restore
+    loader=collision_loader;loader.mutate_on_first_load=true
+    @model.define_singleton_method(:abort_operation) { @aborts+=1;true }
+    error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_includes error.message,'no restauró el estado verificable'
+    assert_includes error.message,'No se reintentó'
+    refute_includes error.message,'No se modificó'
+    assert_equal 1,loader.loads.length;assert_equal 1,@model.starts;assert_equal 1,@model.aborts
+    assert_nil binding;assert_empty @library.assets['records']
+  end
+  def test_collision_never_retries_when_abort_raises_or_returns_nil
+    [nil,:raise].each do |result|
+      loader=collision_loader;loader.mutate_on_first_load=false
+      @model.define_singleton_method(:abort_operation) do
+        @aborts+=1
+        raise IOError,'Native rollback error' if result==:raise
+        result
+      end
+      before=@model.starts
+      error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+      assert_includes error.message,'no confirmó la cancelación'
+      assert_equal 1,loader.loads.length;assert_equal before+1,@model.starts
+      assert_nil binding;assert_empty @library.assets['records']
+    end
+  end
+
+  def test_collision_second_abort_must_also_restore_the_temporary_name_before_claiming_safety
+    loader=collision_loader;loader.reuse_regardless_of_name=true
+    @model.define_singleton_method(:abort_operation) { @aborts+=1;true }
+    error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+    assert_includes error.message,'no restauró el estado verificable'
+    refute_includes error.message,'ni se modificó'
+    assert_equal 2,loader.loads.length;assert_equal 2,@model.starts
+    assert_nil binding;assert_empty @library.assets['records']
+    refute_equal 'Duplicado',@one.name,'fixture intentionally leaves the temporary native name after lying abort'
   end
 
 end

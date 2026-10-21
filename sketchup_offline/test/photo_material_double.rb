@@ -31,7 +31,6 @@ module PhotoFixture
       @attributes={};@thumbnail_calls=0;@color_writes=0
     end
     def name;display_name;end
-    def name=(value);self.display_name=value;end
     def get_attribute(dict,key,default=nil);@attributes.fetch([dict,key],default);end
     def set_attribute(dict,key,value);@attributes[[dict,key]]=value;end
     def texture=(value)
@@ -61,13 +60,8 @@ module PhotoFixture
       material.save_failure=next_save_failure;material.texture_failure=next_texture_failure;material.thumbnail_failure=next_thumbnail_failure
       self << material;material
     end
-    # Native SketchUp (0.8.8 V6): loading an SKM whose name already exists
-    # answers the existing material instead of a new one.
     def load(path)
-      data=JSON.parse(File.binread(path))
-      existing=find { |material| material.respond_to?(:name) && material.name==data['name'] }
-      return existing if existing
-      material=add(data['name'])
+      data=JSON.parse(File.binread(path));material=add(data['name'])
       data['attributes'].each { |keys,value| material.set_attribute(*keys,value) }
       material.color=Sketchup::Color.new(*data['color']) if data['color']
       return material unless data['texture']
@@ -77,11 +71,11 @@ module PhotoFixture
     end
   end
   def self.snapshot(materials)
-    materials.map { |material| [material,material.respond_to?(:attributes) ? Marshal.load(Marshal.dump(material.attributes)) : nil,material.texture,material.display_name] }
+    materials.map { |material| [material,material.respond_to?(:attributes) ? Marshal.load(Marshal.dump(material.attributes)) : nil,material.texture] }
   end
   def self.restore(materials,snapshot)
     materials.replace(snapshot.map(&:first))
-    snapshot.each { |material,attributes,texture,name| material.attributes.replace(attributes) if attributes;material[4]=texture;material[1]=name }
+    snapshot.each { |material,attributes,texture| material.attributes.replace(attributes) if attributes;material[4]=texture }
   end
   class Model
     attr_reader :materials,:operations,:undo_stack
@@ -130,18 +124,9 @@ module PhotoFixture
 end
 module Sketchup
   class ImageRep
-    # SketchUp 2026 answers nil after a successful decode (seen in V1 native
-    # validation); :true keeps the documented-looking variant covered too.
-    class << self;attr_accessor :fail_load,:fail_save,:fail_resize,:load_return,:empty_decode;end
+    class << self;attr_accessor :fail_load,:fail_save,:fail_resize;end
     attr_reader :width,:height
-    def bits_per_pixel;32;end
-    def data;@width && @height && !self.class.empty_decode ? "\0".b*(@width*@height*4) : ''.b;end
     def load_file(path)
-      decoded=decode(path)
-      return false unless decoded
-      self.class.load_return==:true ? true : nil
-    end
-    def decode(path)
       return false if self.class.fail_load
       bytes=File.binread(path)
       if bytes.start_with?("\x89PNG\r\n\x1a\n".b)

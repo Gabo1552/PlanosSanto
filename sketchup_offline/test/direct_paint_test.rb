@@ -266,4 +266,43 @@ class DirectPaintTest < Minitest::Test
     end
   end
 
+  def test_library_mutation_invalidates_both_dialogs_with_a_lightweight_revision
+    @controller.show;main=@controller.instance_variable_get(:@dialog)
+    @controller.quick_action('sheet');other=palette
+    main.scripts.clear;other.scripts.clear
+    @controller.stub(:dispatch_action,{'catalog'=>{'revision'=>2}}) { @controller.dispatch('catalog_save',{}) }
+    [main,other].each do |window|
+      assert_equal 1,window.scripts.length
+      assert_includes window.scripts.last,'planos-santo-material-library-changed'
+      assert_includes window.scripts.last,'revision'
+      refute_includes window.scripts.last,'items'
+    end
+    assert_equal 1,@controller.instance_variable_get(:@material_library_revision)
+    assert_empty @model.operations
+  end
+  def test_palette_reads_cancellation_and_existing_material_selection_do_not_broadcast
+    @controller.show;main=@controller.instance_variable_get(:@dialog)
+    @controller.quick_action('sheet');other=palette;main.scripts.clear;other.scripts.clear
+    @controller.stub(:dispatch_action,{'catalog'=>{'revision'=>1}}) { @controller.dispatch('smart_palette_load',{}) }
+    @controller.stub(:dispatch_action,{'cancelled'=>true}) { @controller.dispatch('catalog_import',{}) }
+    @controller.stub(:dispatch_action,{'prepared'=>{'installed'=>false}}) { @controller.dispatch('smart_quick_start',{}) }
+    assert_empty main.scripts;assert_empty other.scripts
+    @controller.stub(:dispatch_action,{'prepared'=>{'installed'=>true}}) { @controller.dispatch('smart_quick_start',{}) }
+    assert_equal 1,main.scripts.length;assert_equal 1,other.scripts.length
+  end
+  def test_failed_mutation_does_not_broadcast_and_a_closing_window_does_not_fail_a_committed_change
+    @controller.show;main=@controller.instance_variable_get(:@dialog)
+    @controller.quick_action('sheet');other=palette;main.scripts.clear;other.scripts.clear
+    @controller.stub(:dispatch_action,lambda { |_action,_data| raise PlanosSanto::ExportError,'No se guardó' }) do
+      assert_raises(PlanosSanto::ExportError) { @controller.dispatch('catalog_save',{}) }
+    end
+    assert_empty main.scripts;assert_empty other.scripts
+    main.define_singleton_method(:execute_script) { |_script| raise IOError,'Window closed' }
+    @controller.stub(:dispatch_action,{'assigned'=>true}) do
+      assert_equal({'assigned'=>true},@controller.dispatch('smart_assign_color',{}))
+    end
+    assert_equal 1,other.scripts.length
+    assert_empty @model.operations
+  end
+
 end

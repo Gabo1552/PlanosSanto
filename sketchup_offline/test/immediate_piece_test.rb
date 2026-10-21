@@ -128,7 +128,7 @@ class ImmediatePieceTest < Minitest::Test
                                        on_event:lambda { |event| events << event },guard:lambda { true })
     original=all_sides(@other);undo_count=@model.undo_states.length;preview_calls=0
     real_preview=@smart.method(:preview)
-    @smart.define_singleton_method(:preview) { |data,**options| preview_calls+=1;real_preview.call(data,**options) }
+    @smart.define_singleton_method(:preview) { |data| preview_calls+=1;real_preview.call(data) }
     @model.select_tool(tool);tool.activate
     @pieces.each_with_index do |piece,index|
       face=piece.definition.entities[2];picker.path=[@model.entities.first,piece,face];picker.leaf=face

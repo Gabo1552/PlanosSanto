@@ -115,15 +115,3 @@ test('Hito 1: Biblioteca → "Abrir paleta de pintura" con un material no instal
  expect(calls.filter(call=>['material_photo_install','skm_install','catalog_install'].includes(call.action))).toHaveLength(0);
  expect(await rpc(page,'__photo_paint')).toMatchObject({changed:true,targetHasPhoto:true});
 });
-
-test('0.8.9: un cambio de biblioteca hecho en otra ventana actualiza la paleta abierta sin reabrirla',async({page},info)=>{
- await boot(page,info.outputDir);await rpc(page,'__photo_new_model');await page.reload();
- const palette=await openQuickPalette(page);
- const library=palette.getByRole('region',{name:'Materiales disponibles para pintar'});
- await expect(library.getByRole('button',{name:/Placa QA sintética/})).toHaveCount(0);
- const loaded=await rpc(page,'smart_palette_load') as {catalog:{items:{id:string;name:string}[]}};
- const row=loaded.catalog.items.find(item=>item.name==='Placa QA sintética')!;
- await rpc(page,'smart_assign_color',{catalogId:row.id,rgb:[200,190,170],confirmed:true});
- await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-library-changed',{detail:{action:'smart_assign_color'}})));
- await expect(library.getByRole('button',{name:/Placa QA sintética/})).toBeVisible();
-});

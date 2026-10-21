@@ -1,0 +1,65 @@
+{
+  "version": "0.8.9",
+  "scope": "CORRECCIONES_HITO1_NO_HITO2",
+  "state": "CANDIDATA_PENDIENTE_VALIDACION_NATIVA",
+  "baseCommit": "af434dd23d7b1ca220f7e6e3efd920780c0ea99e",
+  "verificationPassed": true,
+  "rubyTests": 481,
+  "rubyAssertions": 3594,
+  "rubySuites": 35,
+  "typescriptTests": 140,
+  "offlineE2E": 113,
+  "webE2E": 16,
+  "buildPassed": true,
+  "typecheckPassed": true,
+  "lintErrors": 0,
+  "lintWarnings": 0,
+  "rbzSha256": "8b72f90dd19e342864beb4b2f53dbfe8d2455393535bba95b92b2c3306e7d231",
+  "rbzBytes": 1832966,
+  "rbzFiles": 55,
+  "payloadHashes": 54,
+  "rbzEntries": 58,
+  "nativeSketchupExecuted": false,
+  "productionApproved": false,
+  "hito2Started": false,
+  "privateAssetsIncludedInRelease": false,
+  "receivedNative088": {
+    "evidence": "Mensaje autorizado; no se recibieron binarios locales",
+    "reportedRealSketchup": "26.2.243 Windows / Ruby3.2.2 / OCL7.1.0",
+    "reportedMatrix": {
+      "PASS": 10,
+      "FAIL": 4,
+      "PENDIENTE": 5
+    },
+    "reportedComplementaryRegressionPass": 7,
+    "approved": false
+  },
+  "pendingNative": [
+    "RepetirV1/V2/V3/V7/V12/V15conJPGreal,PNG,UVnuevo,rotación/espejo yreapertura.",
+    "RepetirV6collisionSKMreal,nombres/PBR/colorize/observadores/Undo y originales intactos.",
+    "V19: cinco muestrasreadonly candidataydiezescrituraschanged=true separadasdeautomatización.",
+    "Dospaletas+selectorhumanolargoycatálogocompartido;nearEdge sigueobservaciónnoconfirmada.",
+    "V18/TXTcomercial/orientacióncontinúanpendientes;noHito2."
+  ],
+  "totalTests": 750,
+  "syntheticProfile": {
+    "pieces": 1560,
+    "occurrences": 1603,
+    "beforeMedianMs": 191.77104299888015,
+    "afterMedianMs": 57.3218300123699,
+    "beforeInventories": 3,
+    "afterInventories": 1,
+    "nativeTimingApproved": false
+  },
+  "cleanSourceReproduction": {
+    "sourceZip": "PlanosSanto-0.8.9-fuentes-pruebas.zip",
+    "rubyTests": 481,
+    "rubyAssertions": 3594,
+    "rubySuites": 35,
+    "exitCode": 0,
+    "rbzIdentical": true,
+    "rbzSha256": "8b72f90dd19e342864beb4b2f53dbfe8d2455393535bba95b92b2c3306e7d231",
+    "dependencies": "node_modules locales reutilizados",
+    "nativeSketchupExecuted": false
+  }
+}

@@ -112,9 +112,7 @@ module PlanosSanto
         raise ExportError,'El posicionamiento de textura cambió inesperadamente; se revirtió el lote.' unless actual.zip(expected).all? { |x,y| (x-y).abs<=1e-5 }
       end
     end
-    # light: only for apply_immediate, which validates and commits in the same
-    # call; a preview token that is applied later keeps the full signature.
-    def plan(data,light:false)
+    def plan(data)
       if data.is_a?(Hash) && (data['immediate']==true || data['immediatePiece']==true)
         raise ExportError,'Modo de pintura inmediata inválido.' unless %w[sheet edge remove_edge].include?(data['mode'])
         data=data.merge('immediate'=>true,'side'=>'both','scope'=>'unique')
@@ -123,7 +121,7 @@ module PlanosSanto
       raise ExportError,'Solicitud de pintura inteligente inválida.' unless data.is_a?(Hash) && %w[sheet edge remove_edge replace].include?(data['mode']) && %w[front back both].include?(data['side']) && %w[all unique].include?(data['scope'])
       targets=data['targets']
       raise ExportError,'Elegí entre 1 y 500 piezas con sus caras.' unless targets.is_a?(Array) && targets.length.between?(1,500)
-      snapshot=NameManager.new(@model).inventory(geometry:!light);operations={};proofs=[];warnings=[];paths=[];sources=[]
+      snapshot=NameManager.new(@model).inventory;operations={};proofs=[];warnings=[];paths=[];sources=[]
       targets.each do |target|
         raise ExportError,'Destino de pintado inválido.' unless target.is_a?(Hash) && target['pieceId'].is_a?(String) && target['faceIds'].is_a?(Array) && !target['faceIds'].empty? && target['faceIds'].length<=2000 && target['faceIds'].uniq==target['faceIds']
         node=snapshot[:index][target['pieceId']]
@@ -206,8 +204,8 @@ module PlanosSanto
        'sharedCount'=>prepared[:proofs].map { |p| p[:public]['sharedCount'] }.max || 0,
        'uniqueAvailable'=>!prepared[:proofs].empty? && prepared[:proofs].all? { |p| p[:public]['uniqueAvailable'] }}
     end
-    def preview(data,light:false)
-      @draft=nil;prepared=plan(data,light:light);token=SecureRandom.hex(24)
+    def preview(data)
+      @draft=nil;prepared=plan(data);token=SecureRandom.hex(24)
       @draft=prepared.merge(token:token)
       public_plan(prepared).merge('token'=>token)
     end
@@ -216,7 +214,7 @@ module PlanosSanto
     # inventory and material validation) could not observe any change (0.8.8).
     def apply_immediate(data)
       raise ExportError,'Solicitud de pintura inmediata inválida.' unless data.is_a?(Hash)
-      preview(data.merge('immediate'=>true),light:true)
+      preview(data.merge('immediate'=>true))
       draft=@draft;@draft=nil
       raise ExportError,'No se pudo preparar el pintado.' unless draft
       raise ExportError,'Hay otra aplicación de pintura en curso.' if @applying

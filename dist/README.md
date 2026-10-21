@@ -1,10 +1,8 @@
-# Entrega 0.8.9 — candidata Hito 1 con correcciones de la validación nativa 0.8.8, PENDIENTE DE VALIDACIÓN REAL
+# Entrega 0.8.9 — correcciones Hito 1, candidata sin aprobación nativa
 
-Instalar `PlanosSanto-0.8.9-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp. El `.sha256` verifica el instalador.
+Instalar `PlanosSanto-0.8.9-candidata.rbz` tras cerrar TODAS las ventanas de SketchUp. Comprobar `.sha256`. `PlanosSanto-0.8.9-Validacion-Local-Hito1-Correcciones.zip` contiene fuentes reproducibles, pruebas, perfil sintético y VALIDACION_LOCAL.md. El ZIP no se instala.
 
-Corrige V1/V15 (JPG válido rechazado), V6 (colisión de nombre del SKM), V19 (un solo recorrido por clic), la selección de canto cerca del borde y las dos paletas desincronizadas. Ver `docs/hito1-pintura-089/INFORME_CORRECCIONES_089.md`.
-
-`PlanosSanto-0.8.9-Validacion-Local-Hito1.zip` trae la guía (empezar por el bloque A: V1/V15), el verificador de solo lectura 0.8.9 y las correcciones priorizadas de origen. No se instala. No incluye modelos, fotos ni materiales privados. La 0.8.8 queda como referencia: **no aprobada**.
+0.8.8: resultado local NO APROBADO (10PASS/4FAIL/5PENDIENTE); esa evidencia no aprueba 0.8.9. Repetir fotos/UV/SKM/persistencia/Undo/rendimiento. No Hito2; sin modelos/materiales/fotos privados.
 
 ---
 

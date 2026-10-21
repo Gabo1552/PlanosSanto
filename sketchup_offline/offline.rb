@@ -195,25 +195,12 @@ module PlanosSanto
       window.add_action_callback('request') { |_context,raw| UI.start_timer(0,false) { handle(raw,source:window) } }
       window.set_can_close { true }
       window.set_on_closed do
-        next unless @palette_dialog.equal?(window)
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
         @photo_material=nil;@photo_preview_active=false
         stop_smart_tool(refresh:false)
       end
       window.show
       window.set_size(680,320) if window.respond_to?(:set_size)
-    end
-
-    # Actions that change the private library or install/bind a material. The
-    # OTHER open window (main editor or paint palette) reloads its library, so two
-    # windows never show different catalogs (0.8.8 native observation).
-    LIBRARY_ACTIONS=%w[catalog_save catalog_add catalog_import catalog_import_model catalog_bind catalog_install
-                       material_photo_create material_photo_install skm_commit skm_install smart_material_prepare smart_assign_color smart_quick_start].freeze
-    def library_changed(action,source)
-      return unless LIBRARY_ACTIONS.include?(action)
-      [@dialog,@palette_dialog].compact.uniq.reject { |window| window.equal?(source) }.each { |window| emit_to(window,'planos-santo-library-changed',{'action'=>action}) }
-    rescue StandardError => error
-      warn("Planos Santo: no se pudo avisar el cambio de biblioteca: #{error.class}")
     end
 
     def emit_to(window,event,data)
@@ -319,7 +306,6 @@ module PlanosSanto
       begin
         result = dispatch(msg['action'], data)
         reply(id, result: result)
-        library_changed(msg['action'],source)
         if msg['action']=='save' && result['closeAfterSave']==true && @dialog
           dialog=@dialog; session=@session
           UI.start_timer(0.15,false) { dialog.close if @dialog.equal?(dialog) && @session.equal?(session) && !@dirty && !@workshop_dirty }
@@ -373,7 +359,34 @@ module PlanosSanto
       skm_importer.status['rows'].filter_map { |row| [row['catalogId'],row['thumbnail']] if row['thumbnail'] }.to_h.merge(photo_material.thumbnails)
     end
 
+    # A lightweight invalidation for both HtmlDialogs. Receivers reread their
+    # own palette data after the successful operation; never scan the model here.
+    MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
+      catalog_bind catalog_install skm_commit skm_install material_photo_create
+      material_photo_install smart_assign_color smart_material_prepare smart_quick_start].freeze
     def dispatch(action, data)
+      result=dispatch_action(action,data)
+      if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
+        installed=%w[smart_material_prepare smart_quick_start].include?(action)
+        notify_material_library_changed(action) if !installed || result.dig('prepared','installed')==true
+      end
+      result
+    end
+
+    def notify_material_library_changed(action)
+      @material_library_revision=(@material_library_revision || 0)+1
+      payload={'revision'=>@material_library_revision,'action'=>action}
+      [@dialog,@palette_dialog].compact.uniq.each do |window|
+        begin
+          emit_to(window,'planos-santo-material-library-changed',payload)
+        rescue StandardError => error
+          # A closing window must not turn a committed mutation into a failure.
+          warn("Planos Santo: no se pudo avisar la actualización de biblioteca: #{error.class}")
+        end
+      end
+    end
+
+    def dispatch_action(action, data)
       stop_smart_tool(refresh:false) if @smart_state && @smart_state['active'] && @smart_state['mode']=='highlight' && %w[generate save pdf names_apply names_preview].include?(action)
       if @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight' && %w[material_photo_pick material_photo_create material_photo_install skm_preview skm_commit skm_install generate save pdf names_apply names_preview catalog_save catalog_add catalog_import catalog_import_model catalog_bind catalog_install order_save order_export paint_preview paint_apply].include?(action)
         raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.'
@@ -558,15 +571,6 @@ module PlanosSanto
         {'toolState'=>smart_state}
       when 'smart_palette_load'
         active!
-        # One paint palette at a time: opening Pintar in the main window closes the
-        # separate palette (its Tool stops with it), never the other way around
-        # silently. Both would otherwise paint from different catalog snapshots.
-        if @palette_dialog && @dialog && @request_dialog.equal?(@dialog)
-          # Detach first: a deferred on_closed must not stop the tool or drop the
-          # photo draft the main window may start right after this reply.
-          palette=@palette_dialog;@palette_dialog=nil;@palette_ready=false;@palette_intent=nil
-          stop_smart_tool(refresh:false);palette.close
-        end
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,

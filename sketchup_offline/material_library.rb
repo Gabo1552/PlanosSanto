@@ -220,13 +220,23 @@ module PlanosSanto
         started = false
         result
       rescue Exception => original
-        @model.abort_operation if started
+        rollback_confirmed=true
+        if started
+          begin
+            rollback_confirmed=@model.abort_operation==true
+          rescue StandardError
+            rollback_confirmed=false
+          end
+        end
         if published
           begin
             previous ? atomic_write(@path, previous) : File.delete(@path)
           rescue StandardError => restore_error
             warn("Planos Santo: no se pudo restaurar material-assets.json: #{restore_error.class}: #{restore_error.message}")
           end
+        end
+        unless rollback_confirmed
+          raise ExportError,'SketchUp no confirmó la cancelación de la operación. El estado del modelo no está asegurado: no continúes pintando ni guardes sobre el original; recuperá una copia de seguridad.'
         end
         raise original
       end
@@ -273,6 +283,101 @@ module PlanosSanto
       catalog
     end
 
+    # A native loader can return an unrelated material already in the model.
+    # Identity detects this; a matching name is NEVER a visual/binding proof.
+    class ExistingMaterialCollision < ExportError
+      attr_reader :material,:original_states
+      def initialize(material,original_states)
+        @material=material;@original_states=original_states
+        super('El cargador reutilizó un material existente.')
+      end
+    end
+
+    def material_state(material)
+      color=material.respond_to?(:color) && material.color
+      texture=material.respond_to?(:texture) && material.texture
+      attributes=if material.respond_to?(:attribute_dictionaries)
+        dictionaries=material.attribute_dictionaries
+        rows=[]
+        if dictionaries
+          dictionaries.each do |dictionary|
+            pairs=[];dictionary.each_pair { |key,value| pairs << [key,value] }
+            rows << [dictionary.name,pairs.sort_by { |key,_value| key.to_s }]
+          end
+        end
+        rows.sort_by(&:first)
+      elsif material.respond_to?(:attributes)
+        material.attributes
+      else
+        []
+      end
+      JSON.generate([material.name.to_s,
+        color && [color.red,color.green,color.blue,(color.alpha if color.respond_to?(:alpha))],
+        (material.alpha if material.respond_to?(:alpha)),
+        texture && %i[filename width height].map { |key| texture.public_send(key).to_s if texture.respond_to?(key) },attributes])
+    end
+
+    def independent_name(label,reserved=[])
+      names=materials.map { |material| material.name.to_s }+reserved
+      return label unless label.empty? || names.any? { |name| name.casecmp?(label) }
+      loop do
+        candidate="#{label.empty? ? 'Material' : label} · Planos Santo #{SecureRandom.hex(8)}"
+        return candidate unless names.include?(candidate)
+      end
+    end
+
+    def ensure_protected_states!(states)
+      return unless states
+      unless states.all? { |original,state| materials.include?(original) && material_state(original)==state }
+        raise ExportError,'La importación cambió un material previo; se revirtió la operación completa.'
+      end
+    end
+
+    def ensure_rollback_states!(states)
+      current=materials
+      restored=states && current.length==states.length && states.all? { |original,state| current.include?(original) && material_state(original)==state }
+      return if restored
+      raise ExportError,'SketchUp no restauró el estado verificable de los materiales. No se reintentó la importación: no continúes pintando ni guardes sobre el original; recuperá una copia de seguridad.'
+    end
+
+    # Must run inside #mutate. On a collision the FIRST operation has already
+    # been aborted (a load may have touched the returned object). Temporarily
+    # moving that object's name out of the way lets SketchUp import the original
+    # SKM without editing its XML, texture bytes, PBR data or attributes. The new
+    # material is renamed before restoring the old name. Every original's final
+    # state must match before metadata is assigned or the operation can commit.
+    def install_visual(item,index,path,repair,collision:nil)
+      before=materials
+      protected_states=before.map { |material| [material,material_state(material)] }
+      if collision
+        raise ExportError,'No se pudo importar una copia independiente del material. No se modificó el modelo.' unless before.include?(collision) && collision.respond_to?(:name=)
+        original_name=collision.name.to_s
+        reserved=before.map { |material| material.name.to_s }
+        temporary_name=independent_name('Planos Santo '+SecureRandom.hex(16),reserved)
+        collision.name=temporary_name
+        raise ExportError,'No se pudo aislar el nombre de importación. No se modificó el modelo.' unless collision.name.to_s==temporary_name
+      end
+      material=@model.materials.load(path)
+      raise ExportError,'SketchUp no pudo cargar el material .skm.' unless material
+      raise ExistingMaterialCollision.new(material,protected_states) if before.include?(material)
+      if collision
+        raise ExportError,'SketchUp no permite asignar un nombre a la copia importada. No se modificó el modelo.' unless material.respond_to?(:name=)
+        material.name=independent_name(item['name'].to_s,reserved)
+        collision.name=original_name
+        ensure_protected_states!(protected_states)
+      end
+      raise ExportError,'El SKM de diseño no coincide con la foto guardada.' if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item,material,directory:@directory,allow_stale_index:repair)
+      binding=MaterialResolver.binding_for(item)
+      material.set_attribute(MaterialResolver::DICT,MaterialResolver::KEY,JSON.generate(binding))
+      ocl=OclAttributes.write_missing(material,item)
+      changed=archive(material,item,index,repair)
+      raise ExportError,'No se pudo guardar el SKM de diseño actualizado; no se reparó el vínculo.' if repair && MaterialPolicy.photo?(item) && !changed
+      ensure_protected_states!(protected_states)
+      result={'materialId'=>material_id(material),'binding'=>binding,'opencutlist'=>ocl}
+      result['collisionIsolated']=true if collision
+      [result,changed]
+    end
+
     # with_status:false returns only the installed binding (no full library
     # re-listing after the operation committed; used by PaintMaterials).
     def install(data, path: nil, with_status: true)
@@ -297,49 +402,21 @@ module PlanosSanto
         end
         raise ExportError, 'Elegí un archivo .skm existente.' unless path.is_a?(String) && File.extname(path).downcase == '.skm' && File.file?(path) && !File.symlink?(path)
         raise ExportError, 'Esta versión no permite importar materiales .skm.' unless @model.materials.respond_to?(:load)
-        mutate(index) do
-          before = materials
-          material = @model.materials.load(path)
-          raise ExportError, 'SketchUp no pudo cargar el material .skm.' unless material
-          material = load_beside(path, material, item, before) if before.include?(material)
-          raise ExportError, 'El SKM de diseño no coincide con la foto guardada.' if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item,material,directory:@directory,allow_stale_index:repair)
-          binding = MaterialResolver.binding_for(item)
-          material.set_attribute(MaterialResolver::DICT, MaterialResolver::KEY, JSON.generate(binding))
-          ocl = OclAttributes.write_missing(material, item)
-          changed = archive(material, item, index, data['replaceVisual'] == true)
-          raise ExportError, 'No se pudo guardar el SKM de diseño actualizado; no se reparó el vínculo.' if repair && MaterialPolicy.photo?(item) && !changed
-          [{ 'materialId' => material_id(material), 'binding' => binding, 'opencutlist' => ocl }, changed]
+        begin
+          mutate(index) { install_visual(item,index,path,repair) }
+        rescue ExistingMaterialCollision => error
+          ensure_rollback_states!(error.original_states)
+          # Retry only once, from the rolled-back state. If the native loader
+          # still reuses any prior object (e.g. GUID deduplication), abort safely.
+          begin
+            mutate(index) { install_visual(item,index,path,repair,collision:error.material) }
+          rescue ExistingMaterialCollision => retry_error
+            ensure_rollback_states!(retry_error.original_states)
+            raise ExportError,'SketchUp no pudo crear una copia independiente de este SKM. No se vinculó ningún material existente ni se modificó el modelo.'
+          end
         end
       end
       with_status ? status.merge(result) : result
-    end
-
-    # SketchUp's Materials#load answers the model's existing material when one
-    # already has the SKM's name (0.8.8 native V6). That material is not ours: it
-    # is never bound or repainted by name. Its name is parked while the archived
-    # visual loads as a new material, which then takes a free name, and the
-    # original name is restored. Caller holds the operation, so abort/undo
-    # restores everything.
-    def load_beside(path, existing, item, before)
-      original = existing.name.to_s
-      unless existing.respond_to?(:name=)
-        raise ExportError, "Ya hay un material llamado «#{original}» en este modelo y esta versión de SketchUp no permite cargar otro con el mismo nombre."
-      end
-      existing.name = free_name("#{original} (Planos Santo temporal)", [original])
-      material = @model.materials.load(path)
-      if material.nil? || before.include?(material)
-        raise ExportError, "SketchUp no pudo cargar «#{item['name']}» junto al material existente «#{original}». No se modificó el modelo."
-      end
-      material.name = free_name(item['name'].to_s, [original])
-      existing.name = original
-      material
-    end
-
-    def free_name(base, reserved)
-      base = 'Material Planos Santo' if base.strip.empty?
-      taken = materials.map { |m| m.name.to_s } + reserved
-      return base unless taken.include?(base)
-      (2..).each { |n| candidate = "#{base} (#{n})"; return candidate unless taken.include?(candidate) }
     end
   end
 end

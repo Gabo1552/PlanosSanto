@@ -196,12 +196,11 @@ module PlanosSanto
       end
     end
 
-    # snapshot: the caller's inventory of this same synchronous call (SmartPaint
-    # plans several faces/sides per click and must not re-traverse the model).
-    def preview(data,snapshot:nil)
+    def preview(data, snapshot: nil)
       @draft=nil
       raise ExportError,'Solicitud de pintado inválida.' unless data.is_a?(Hash) && %w[front back both].include?(data['side']) && %w[sheet edge].include?(data['mode']) && %w[all unique].include?(data['scope'])
-      snapshot||=@manager.inventory;node=snapshot[:index][data['pieceId']]
+      snapshot ||= @manager.inventory
+      node=snapshot[:index][data['pieceId']]
       raise ExportError,'Elegí una pieza hoja válida.' unless node && node['role']=='piece'
       ids=data['faceIds'];all=faces(node)
       raise ExportError,'Elegí caras identificadas sin duplicados.' unless ids.is_a?(Array) && !ids.empty? && ids.length<=2000 && ids.uniq==ids && ids.all? { |id| id.is_a?(String) }
@@ -231,8 +230,8 @@ module PlanosSanto
        'material'=>{'catalogId'=>data['catalogId'],'uuid'=>binding['uuid'],'name'=>material.display_name.to_s}}
     end
     # Read-only plan for the atomic multi-target painter. No operation is opened.
-    def prepare_application(data,snapshot:nil)
-      public_result=preview(data,snapshot:snapshot)
+    def prepare_application(data, snapshot: nil)
+      public_result=preview(data, snapshot: snapshot)
       plan=@draft
       @draft=nil
       plan.merge(public:public_result)
