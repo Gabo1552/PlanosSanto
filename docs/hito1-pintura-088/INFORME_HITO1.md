@@ -40,6 +40,7 @@ El mensaje genérico "Este material no tiene una textura válida en el modelo" *
 | `offline.rb` | `smart_palette_load` incluye `paintStates`. `smart_quick_start` acepta solo `catalogId`, prepara o instala el material y arma la herramienta **en una sola solicitud**. Retomar desde la barra **nunca instala**: explica por qué no arrancó. Acciones nuevas: `smart_material_prepare` (paleta avanzada) y `smart_assign_color` |
 | `ui/SmartPaintPalette.tsx` | Usa los estados de Ruby. Muestra "Se instala al elegir", la sección "Necesitan atención" con "Asignar foto" y "Asignar color", y el texto "Instalando «X» en este modelo…". La paleta avanzada también instala al elegir |
 | `ui/StandalonePaintApp.tsx`, `ui/App.tsx`, `ui/PhotoMaterialPanel.tsx` | "Asignar foto" abre el panel de fotos sobre la ficha existente ("Asignar foto al material"), sin la confirmación de reemplazo innecesaria |
+| `lib/model.ts` | Agrega `0.8.8` a las versiones de exportador aceptadas por la UI (convención de cada versión) |
 | `bootstrap.rb`, `scripts/build-offline.mjs`, `scripts/package-offline-rbz.py` | Empaquetan los 2 módulos nuevos (55 archivos en el RBZ) |
 | `scripts/test-offline-ruby.mjs`, `playwright.offline.config.ts` | Suite reproducible en un entorno limpio: fuerza UTF-8, regenera el paquete histórico 0.3.0 desde `sketchup/` con su empaquetador, construye si falta, corre **todos** los archivos y resume |
 | `.claude/` | Instalación selectiva de ECC (ver `.claude/ECC_PROVENANCE.md`) |

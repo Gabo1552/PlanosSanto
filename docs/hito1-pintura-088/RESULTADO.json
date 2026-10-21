@@ -1,0 +1,23 @@
+{
+  "version": "0.8.8",
+  "state": "CANDIDATA_PENDIENTE_DE_VALIDACION_REAL",
+  "rbz": "dist/PlanosSanto-0.8.8-candidata.rbz",
+  "rbzSha256": "2a66f19d510a70a90d8bc074e92c0de2bd5dd7452c7861722267890fef805a20",
+  "rbzBytes": 1830222,
+  "rbzFiles": 55,
+  "payloadHashes": 54,
+  "reproducibleBuild": true,
+  "rubyTests": 455,
+  "rubyAssertions": 3344,
+  "rubySuites": 35,
+  "rubyFailures": 0,
+  "offlineE2E": 106,
+  "offlineE2EFailures": 0,
+  "typescriptTests": 140,
+  "lintErrors": 0,
+  "nativeSketchupExecuted": false,
+  "productionApproved": false,
+  "privateAssetsIncludedInRelease": false,
+  "eccCommit": "90606c8315ee09cafc303515c5f33024db6b9882",
+  "baseCommit": "2bf694f994cd223a57b83d49cce02501e3551849"
+}
