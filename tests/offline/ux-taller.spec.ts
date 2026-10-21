@@ -10,15 +10,15 @@ import {existsSync} from 'node:fs';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={version:1;id:string;result:unknown;error:string|null};
 type Item=Record<string,unknown>&{id:string};type Library={catalog:{revision:number;items:Item[]}};
-let child:ChildProcessWithoutNullStreams,pending:Map<string,(r:Reply)=>void>,errors:string[];
+let child:ChildProcessWithoutNullStreams,pending:Map<string,(r:Reply)=>void>,errors:string[],actions:string[];
 function raw(message:string):Promise<Reply>{return new Promise(done=>{pending.set(JSON.parse(message).id,done);child.stdin.write(message+'\n');});}
 async function send(action:string,data:unknown={}){const reply=await raw(JSON.stringify({version:1,id:randomUUID(),action,data}));expect(reply.error).toBeNull();return reply.result;}
 async function boot(page:Page,folder:string,mode='safe'){
- await mkdir(folder,{recursive:true});pending=new Map();errors=[];
+ await mkdir(folder,{recursive:true});pending=new Map();errors=[];actions=[];
  child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,mode],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  child.stderr.on('data',()=>{});
  createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),done=pending.get(reply.id);if(done){pending.delete(reply.id);done(reply);}});
- await page.exposeFunction('namesNativeRequest',raw);
+ await page.exposeFunction('namesNativeRequest',(message:string)=>{actions.push(JSON.parse(message).action);return raw(message);});
  await page.addInitScript({content:'window.sketchup={request:function(message){window.namesNativeRequest(message).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};'});
  page.on('pageerror',e=>errors.push(e.message));
  await page.route('https://planos-santo.test/**',async route=>{
@@ -123,7 +123,9 @@ test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prom
  await name.press('Enter');await expect(panel.getByText('Escribí un nombre para el material.',{exact:true})).toBeVisible();await expect(name).toHaveAttribute('aria-invalid','true');
  await name.fill('placa EXISTENTE');await name.press('Enter');await expect(panel.getByText('Ya existe un material con ese nombre en la biblioteca.',{exact:true})).toBeVisible();
  await name.press('Escape');await expect(panel).toBeVisible();await expect(name).toHaveCount(0);await expect(panel.getByRole('button',{name:'Nuevo material',exact:true})).toBeFocused();
- await panel.getByRole('button',{name:'Nuevo material',exact:true}).click();await name.fill('Melamina Nogal 18');await name.press('Enter');
+ await panel.getByRole('button',{name:'Nuevo material',exact:true}).click();await name.fill('Melamina Nogal 18');
+ // Dos Enter en el mismo tick: solo un catalog_add.
+ await name.evaluate(el=>{for(let i=0;i<2;i++)el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));});
  await expect(panel.getByRole('status')).toContainText('creado sin aprobar');await expect(list.getByRole('button')).toHaveCount(3);
  await expect(page.getByLabel('Nombre de material de biblioteca')).toHaveValue('Melamina Nogal 18');
  await expect(panel.getByRole('button',{name:'Guardar biblioteca',exact:true})).toHaveAttribute('aria-keyshortcuts','Control+S Meta+S');
@@ -131,8 +133,8 @@ test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prom
  await expect(panel.getByRole('button',{name:'Nuevo material',exact:true})).toBeDisabled();await expect(panel.getByText('Guardá la biblioteca (Ctrl+S)',{exact:false})).toBeVisible();
  await page.keyboard.press('Control+s');await expect(panel.getByRole('status')).toContainText('Biblioteca guardada');await expect(panel.getByText('Sin cambios pendientes',{exact:false})).toBeVisible();
  await page.keyboard.press('Control+s');await expect(panel.getByRole('status')).toContainText('No hay cambios para guardar');
- expect(prompted).toBe(false);
- const saved=await send('catalog_load') as Library;expect(saved.catalog.items.find(item=>item.name==='Melamina Nogal 18')?.sku).toBe('MN-18');
+ expect(prompted).toBe(false);expect(actions.filter(action=>action==='catalog_add')).toHaveLength(1);
+ const saved=await send('catalog_load') as Library;expect(saved.catalog.items.filter(item=>item.name==='Melamina Nogal 18')).toHaveLength(1);expect(saved.catalog.items.find(item=>item.name==='Melamina Nogal 18')?.sku).toBe('MN-18');
  await page.screenshot({path:'artifacts/ux-taller-biblioteca-SINTETICA.png',fullPage:false});
 });
 
@@ -178,5 +180,9 @@ test('revisión de materiales: conteos por filtro, vacío con salida, «/» y ve
  const filtered=await pieces.locator('option').count();expect(filtered).toBeGreaterThan(1);expect(filtered).toBeLessThanOrEqual(allPieces);
  await dialog.getByRole('button',{name:'Quitar filtro',exact:true}).click();await expect(pieces.locator('option')).toHaveCount(allPieces);
  await dialog.getByRole('button',{name:'Limpiar filtros',exact:true}).click();await expect(rows).toHaveCount(3);
+ // Los estilos del taller se acotan a .workshop-review: no alcanzan otros diálogos .material-review (p. ej. pintura).
+ await expect(dialog).toHaveClass(/workshop-review/);expect(await dialog.evaluate(el=>getComputedStyle(el).getPropertyValue('--ws-accent').trim())).toBe('#19483d');
+ const foreign=await page.evaluate(()=>{const host=document.createElement('section');host.className='material-review paint-panel';host.innerHTML='<kbd>P</kbd>';document.body.append(host);const result={accent:getComputedStyle(host).getPropertyValue('--ws-accent').trim(),kbdMargin:getComputedStyle(host.querySelector('kbd')!).marginLeft};host.remove();return result;});
+ expect(foreign).toEqual({accent:'',kbdMargin:'0px'});
  await page.screenshot({path:'artifacts/ux-taller-materiales-SINTETICA.png',fullPage:false});
 });

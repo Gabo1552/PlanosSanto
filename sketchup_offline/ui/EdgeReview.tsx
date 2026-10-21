@@ -12,6 +12,7 @@ export function edgeIssues(observation:Observation,row:Pick<OrderRow,'edgeBindin
  return observation.sides.flatMap<EdgeIssue>(side=>{const label=labels[side.side]||side.side;
   if(side.status==='unresolved')return [{side:side.side,kind:'unresolved',message:`${label}: lado sin resolver. Inspeccioná las caras o documentá una revisión manual.`}];
   if(side.status==='observed_no_edge')return [];
+  if(!side.materialIds.length)return [{side:side.side,kind:'unresolved',message:`${label}: hay canto pero no se identificó su material. Pintá el canto con un material del modelo y volvé a leer, o documentá una revisión manual.`}];
   const id=side.materialIds[0],name=names.get(id)||id,binding=row.edgeBindings.find(b=>b.observedId===id);
   if(!binding)return [{side:side.side,kind:'unbound',materialId:id,message:`${label}: vinculá ${name} con un canto de biblioteca.`}];
   if(![row.principalId,row.secondaryId].includes(binding.catalogId))return [{side:side.side,kind:'unassigned',materialId:id,message:`${label}: usá el canto vinculado a ${name} como principal (1) o secundario (2) del pedido.`}];
