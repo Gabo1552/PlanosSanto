@@ -251,8 +251,9 @@ module PlanosSanto
       begin
         operations=current[:operations]
         snapshot=current[:snapshot]
-        isolation=operations.any? { |o| draft[:data]['scope']=='unique' && @native.affected_paths(o[:node],snapshot).length>1 }
-        if !isolation && operations.all? { |o| unchanged?(o) }
+        # Every target face already has its material: isolating a shared piece
+        # would only add a definition and an empty Undo entry (audit F-PINT-A).
+        if operations.all? { |o| unchanged?(o) }
           return public_plan(current).merge('changed'=>false,'noChanges'=>true,'message'=>'Sin cambios: no se creó una operación Undo.')
         end
         raise ExportError,'No se pudo iniciar la operación de pintura inteligente.' unless @model.start_operation('Pintura inteligente Planos Santo',true)

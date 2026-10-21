@@ -343,6 +343,21 @@ class PaintReadyTest < Minitest::Test
     refute_same @pieces[0].definition,@pieces[1].definition
   end
 
+  # Auditoría OCL F-PINT-A: repasar una pieza compartida que YA tiene el material
+  # no debe aislarla (make_unique) ni dejar una entrada de Ctrl+Z vacía.
+  def test_repainting_shared_pieces_that_already_have_the_material_is_a_real_no_op
+    prepared=service.prepare(create_photo['catalogId'],'sheet');material=@model.materials.last
+    shared=@pieces[0].definition
+    shared.entities.first(2).each { |face| face.material=material;face.back_material=material }
+    assert_same shared,@pieces[1].definition
+    undo=@model.undo_states.length
+    result=smart.apply_immediate(options(prepared,0))
+    refute result['changed'];assert result['noChanges']
+    assert_same shared,@pieces[0].definition,'no se crea una definición nueva'
+    assert_same shared,@pieces[1].definition
+    assert_equal undo,@model.undo_states.length,'sin entrada de Ctrl+Z'
+  end
+
   def test_kind_mismatch_is_explained
     created=create_photo
     error=assert_raises(PlanosSanto::ExportError) { service.prepare(created['catalogId'],'edge') }

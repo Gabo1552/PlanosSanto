@@ -37,6 +37,7 @@ PlanosSantoValidacion0810.colisiones
 | A4 (V6) | Copia de M-S que tiene «Melamina petiribi18mm» → elegir Caju 18mm; repetir con el pincel activo | Caju se instala como material propio y pinta con su textura. El material previo queda intacto. Un Ctrl+Z deshace la instalación |
 | A5 (V19) | En M-L: `tiempo_clic('<catalogId>')` + 10 clics reales que cambien material | Medianas de `clic` y `vistaPrevia`. Objetivo orientativo: `clic` < 300 ms |
 | A6 | Modo canto: clic justo en el borde de una cara angosta; clic en una arista de esquina | El borde pinta esa cara de esa pieza; la esquina no pinta nada |
+| A6b | Dos puertas iguales ya pintadas con el mismo material → clic en una | Sin cambios, sin Ctrl+Z nuevo y sin definición nueva en Componentes |
 | A7 | Abrir Pintar desde la barra y después Pintar en la ventana principal; crear un material en una ventana | Queda una sola paleta y el material nuevo aparece sin reabrir |
 
 ## 2. Después
