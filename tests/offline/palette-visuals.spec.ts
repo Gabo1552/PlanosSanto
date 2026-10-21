@@ -12,7 +12,7 @@ const pixel='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzA
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,errors:string[],calls:{action:string;data:Record<string,unknown>}[],tool:State,settings:Record<string,unknown>;
 const items=[['sheet-a','Melamina Petiribi','sheet',true],['sheet-b','Melamina Blanca','sheet',false],['sheet-missing','Melamina pendiente visual','sheet',false],['edge-a','Canto Petiribi','edge',true]].map(([id,name,kind,favorite])=>({id,name,kind,favorite,sku:`SKU-${id}`,supplier:'Taller sintético',approved:true,thicknessMm:kind==='sheet'?18:1,widthMm:1830,lengthMm:2600,grain:false,compatibleIds:[],price:null,updatedAt:'2026-10-19',sourceHash:'',observed:{}}));
 let catalogItems=items.map(item=>({...item}));
-const materials=[{id:'1',name:'Textura Petiribi real',color:[150,110,65],hasTexture:true,binding:{uuid:'uuid-sheet-a',catalogId:'sheet-a',kind:'sheet'},issues:[]},{id:'2',name:'Blanco real',color:[240,240,240],hasTexture:false,binding:{uuid:'uuid-sheet-b',catalogId:'sheet-b',kind:'sheet'},issues:[]},{id:'3',name:'Canto real',color:[125,90,50],hasTexture:false,binding:{uuid:'uuid-edge-a',catalogId:'edge-a',kind:'edge'},issues:[]}];
+const materials:{id:string;name:string;color:number[];hasTexture:boolean;binding:{uuid:string;catalogId:string;kind:string};issues:string[]}[]=[{id:'1',name:'Textura Petiribi real',color:[150,110,65],hasTexture:true,binding:{uuid:'uuid-sheet-a',catalogId:'sheet-a',kind:'sheet'},issues:[]},{id:'2',name:'Blanco real',color:[240,240,240],hasTexture:false,binding:{uuid:'uuid-sheet-b',catalogId:'sheet-b',kind:'sheet'},issues:[]},{id:'3',name:'Canto real',color:[125,90,50],hasTexture:false,binding:{uuid:'uuid-edge-a',catalogId:'edge-a',kind:'edge'},issues:[]}];
 function native(message:string):Promise<Reply>{return new Promise((resolve,reject)=>{const msg=JSON.parse(message);pending.set(msg.id,{resolve,reject});child.stdin.write(message+'\n');});}
 async function boot(page:Page,folder:string){
  await mkdir(folder,{recursive:true});pending=new Map();errors=[];calls=[];tool={active:false,changed:false,queuedCount:0,message:'Lista para activar'};settings={};catalogItems=items.map(item=>({...item}));
@@ -71,14 +71,18 @@ test('recientes conserva hasta cinco selecciones únicas y filtra tipo/aprobaci�
  await palette.getByRole('button',{name:/Canto Petiribi/}).click();
  await expect(recent.locator('option')).toHaveText(['Volver a elegir un material…','Canto Petiribi']);
  await palette.getByRole('button',{name:'Placas',exact:true}).click();
- catalogItems=[...catalogItems,...[1,2,3].map(index=>({...catalogItems[0],id:`extra-${index}`,name:`Placa reciente ${index}`,favorite:false}))];
+ catalogItems=[...catalogItems,...[1,2,3,4].map(index=>({...catalogItems[0],id:`extra-${index}`,name:`Placa reciente ${index}`,favorite:false}))];
+ materials.push(...[1,2,3,4].map(index=>({id:`x${index}`,name:`Placa reciente ${index} real`,color:[200,200,200],hasTexture:false,binding:{uuid:`uuid-extra-${index}`,catalogId:`extra-${index}`,kind:'sheet'},issues:[]})));
  await palette.getByRole('button',{name:'Actualizar biblioteca',exact:true}).click();
- for(const name of ['Melamina pendiente visual','Placa reciente 1','Placa reciente 2','Placa reciente 3'])await palette.getByRole('button',{name:new RegExp(name)}).click();
+ // 0.8.8 (audit C1): an approved item without any visual is not offered as paintable.
+ await expect(palette.getByRole('button',{name:/Melamina pendiente visual/})).toHaveCount(0);
+ for(const name of ['Placa reciente 4','Placa reciente 1','Placa reciente 2','Placa reciente 3'])await palette.getByRole('button',{name:new RegExp(name)}).click();
  await expect(recent.locator('option')).toHaveCount(5); // Four visible sheet selections; the fifth session slot holds a canto.
  await palette.getByRole('button',{name:/Melamina Petiribi/}).click();
  await expect(recent.locator('option')).toHaveCount(6); // Five unique compatible selections, plus the placeholder.
  await palette.getByRole('button',{name:/Melamina Petiribi/}).click();await expect(recent.locator('option')).toHaveCount(6);
- catalogItems=catalogItems.map(item=>item.id==='sheet-a'?{...item,approved:false}:item);
+ // 0.8.8: approval is commercial (C3); a design issue on the bound material removes it.
+ materials[0]={...materials[0],issues:['La textura de este material no coincide con su foto.']};
  await palette.getByRole('button',{name:'Actualizar biblioteca',exact:true}).click();
  await expect(recent.locator('option[value="sheet-a"]')).toHaveCount(0);
  await expect(palette.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeDisabled();

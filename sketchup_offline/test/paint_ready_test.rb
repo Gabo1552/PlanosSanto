@@ -284,5 +284,21 @@ class PaintReadyTest < Minitest::Test
     assert_match(/es una placa/,error.message)
   end
 
+  # Acción "Asignar foto" sobre una ficha comercial sin visual: conserva SKU,
+  # proveedor, formato y aprobación (antes 'replace' los reiniciaba).
+  def test_assigning_a_photo_to_a_commercial_item_keeps_its_commercial_data
+    row=@catalog.new_item('Camellia','sheet').merge('sku'=>'CAM18','supplier'=>'Maderera QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>true,'approved'=>true)
+    @catalog.save([row],0)
+    path=File.join(@source,'camellia.jpg');File.binwrite(path,PhotoFixture.jpeg);picked=@first_photo.pick(path)
+    @first_photo.create(picked['token'],{'revision'=>picked['revision'],'name'=>'Camellia','kind'=>'sheet','thicknessMm'=>nil,'action'=>'replace','existingId'=>row['id'],'replaceConfirmed'=>true,'confirmed'=>true})
+    after=item('Camellia')
+    assert_equal row['id'],after['id']
+    %w[sku supplier thicknessMm widthMm lengthMm grain approved].each { |key| assert_equal row[key],after[key],key }
+    assert after.dig('observed','photo','designReady')
+    assert_equal 'installable',service.states[row['id']]['state']
+    prepared=service.prepare(row['id'],'sheet')
+    assert smart.apply_immediate(options(prepared))['changed']
+  end
+
   def write_png(name);path=File.join(@source,name);File.binwrite(path,PhotoFixture.png);path;end
 end
