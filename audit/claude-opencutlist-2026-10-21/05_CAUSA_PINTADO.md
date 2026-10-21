@@ -85,11 +85,13 @@ Es una **inferencia de código**: en modelos grandes, la latencia por clic crece
 
 Ver detalle con citas en `02_MAPA_CODIGO.md` §2. Resumen de las diferencias que importan:
 
-1. **La fuente de verdad es `model.materials`.** No existe un catálogo externo que deba "instalarse": la barra del viewport lista los materiales que ya están en el modelo (filtrados por tipo OCL guardado en el propio material). Lo que se ve es lo que se puede pintar, siempre.
-2. **Pinta la instancia** (`instance.material = material`) y no cara por cara, con una sola operación de Undo. Las caras sin material heredan el de la instancia.
-3. **La barra de materiales vive dentro del viewport** (Kuix), en la misma herramienta: elegir material no cambia de ventana ni desactiva el pincel.
-4. **La textura no es requisito**: un material de color liso se puede pintar igual.
-5. **La validación es local y barata**: por clic, solo se resuelve la ruta de la pieza bajo el cursor. No hay recorrido global del modelo ni hashes de archivos.
+1. **La fuente de verdad es `model.materials`.** No hay catálogo externo ni paso de instalación o vínculo. `_populate_material_defs` (`tool/smart_paint_tool.rb:1095-1121`) recorre `model.materials` y filtra por el tipo OCL guardado en el propio material (`ladb_opencutlist/type`). **Lo que se ve es lo que se puede pintar, siempre.**
+2. **Pintar pieza = pintar la instancia** (`instance.material = @active_material`, `smart_paint_tool.rb:1269-1291`), con una operación de Undo por clic. **No toca caras.** Cantos y caras (`face.material=`) se pintan sobre la **definición** y avisan si está compartida (`:856-861`); OCL **no** hace `make_unique`.
+3. **La barra de materiales está dentro del viewport** (Kuix, `setup_entities`, `:121-351`). Elegir material no cambia de ventana ni desactiva el pincel. ←/→ cambian de material y Alt activa el cuentagotas temporal (`:726-740`).
+4. **La textura no es requisito**: los botones usan solo `material.color` (`:1123-1224`).
+5. **La herramienta es `MaterialsObserver`**: si se crea un material con "+", vuelve a la herramienta **ya seleccionado** (`:792-796`).
+6. **Costo por movimiento del cursor**: corre un `CutlistGenerateWorker` acotado a **una entidad** cuando cambia la ruta bajo el cursor (`helper/part_helper.rb:15-36`). No recorre el modelo entero ni lee archivos.
+7. Limitación importante: **para OCL, una pieza es la `ComponentInstance` más profunda** (`helper/part_helper.rb:7-13`). **Los grupos sueltos no son piezas.** Planos Santo, en cambio, trata grupos y componentes como piezas, lo que encaja con cómo se modela en el taller.
 
 ## 5. Reproducción propuesta (sobre COPIAS de modelos)
 
