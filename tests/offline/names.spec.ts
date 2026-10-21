@@ -71,7 +71,7 @@ test('configuración integrada detecta cambios externos y muestra texto sin ejec
  await expect(page.locator('.selected-piece-summary')).toContainText('<img src=x onerror=evil()>');expect(await page.locator('.parts-config img').count()).toBe(0);
  await send('__names_external');await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/cambi[oó]/);
  expect((await snapshot()).operations).toHaveLength(0);
- page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Volver a analizar',exact:true}).click();
+ await page.getByRole('button',{name:'Volver a analizar',exact:true}).click();await page.getByRole('alertdialog',{name:'Descartar cambios y volver a analizar'}).getByRole('button',{name:'Descartar y analizar',exact:true}).click();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre del grupo',{exact:true})).toHaveValue('Alacena externa');
 });
 

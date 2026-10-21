@@ -1,5 +1,23 @@
 import {describe,expect,it} from 'vitest';
-import {isQuickIntent} from '../sketchup_offline/ui/quickActions';
+import {isQuickIntent,shortcutFor} from '../sketchup_offline/ui/quickActions';
+describe('Atajos globales del shell',()=>{
+ const base={key:'',ctrlKey:false,shiftKey:false,altKey:false,defaultPrevented:false};
+ it('Ctrl+S guarda, Ctrl+Shift+E exporta y Alt+1…5 cambian de módulo',()=>{
+  expect(shortcutFor({...base,key:'s',ctrlKey:true})).toBe('save');expect(shortcutFor({...base,key:'S',metaKey:true})).toBe('save');
+  expect(shortcutFor({...base,key:'E',ctrlKey:true,shiftKey:true})).toBe('export');
+  expect(['1','2','3','4','5'].map(n=>shortcutFor({...base,key:n,code:`Digit${n}`,altKey:true}))).toEqual(['home','materials','furniture','order','guides']);
+  expect(shortcutFor({...base,key:'¡',code:'Digit1',altKey:true})).toBe('home');
+ });
+ it('no confunde combinaciones parecidas',()=>{
+  for(const event of [{key:'s'},{key:'s',ctrlKey:true,shiftKey:true},{key:'s',ctrlKey:true,altKey:true},{key:'e',ctrlKey:true},{key:'6',code:'Digit6',altKey:true},{key:'1',code:'Digit1',altKey:true,ctrlKey:true},{key:'1',code:'Digit1'}])expect(shortcutFor({...base,...event})).toBeUndefined();
+ });
+ it('respeta eventos ya atendidos, repeticiones, textareas, selects, listas y diálogos abiertos',()=>{
+  const save={...base,key:'s',ctrlKey:true};
+  expect(shortcutFor({...save,defaultPrevented:true})).toBeUndefined();expect(shortcutFor({...save,repeat:true})).toBeUndefined();expect(shortcutFor(save,true)).toBeUndefined();
+  for(const target of [{tagName:'TEXTAREA'},{tagName:'select'},{tagName:'DIV',isContentEditable:true},{tagName:'DIV',getAttribute:(name:string)=>name==='role'?'listbox':null}])expect(shortcutFor({...save,target})).toBeUndefined();
+  expect(shortcutFor({...save,target:{tagName:'INPUT',getAttribute:()=>null}})).toBe('save');
+ });
+});
 describe('Native quick command event contract',()=>{
  it('accepts seven genuine navigation intents without granting paint permissions',()=>{
   for(const action of ['sheet','edge','remove_edge','sample','furniture','order','guides']){
