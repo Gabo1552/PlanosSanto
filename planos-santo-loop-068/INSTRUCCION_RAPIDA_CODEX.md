@@ -1,0 +1,7 @@
+# Mensaje para pegar en Codex
+
+Continuá el desarrollo de Planos Santo en `/workspace/PlanosSanto` sobre el código existente, usando el paquete `planos-santo-loop-068` adjunto. Descomprimilo en la raíz **sin sobrescribir archivos existentes**. Primero leé `planos-santo-loop-068/README.md`, `BASELINE_068.md`, `PROMPT_CODEX.md`, `TAREAS.md`, `CONTRATO_MADERERA.md` y `VALIDACION_SKETCHUP.md`. El .rbz 0.6.8 es baseline intacta; los nueve SKP son privados.
+
+Trabajá por ciclos sobre P0–P5, con cambios reales de código y pruebas. No rehagas módulos que ya existen ni inventes resultados de SketchUp. Priorizá clasificación de piezas originalmente sin nombre, posición por mueble y frente de referencia, lectura de cantos por cara, correspondencia de los cuatro lados 2D, y exportación de TXT con nueve columnas exactas por lote compatible para la maderera. La propuesta de nombres debe ser editable y tener un único paso de confirmación. Preservá PDF A3, anotaciones y Undo.
+
+Después de cada ciclo actualizá `planos-santo-loop-068/PROGRESO.md` con qué implementaste, pruebas ejecutadas y pendientes. Si necesitás la PC Windows con SketchUp 2026 o una importación de prueba al proveedor, frená y entregá instrucciones de verificación; no declares finalización sin esa evidencia. Si tenés Codex CLI disponible, podés usar `bash planos-santo-loop-068/codex-loop.sh 6`; si no, avanzá directamente desde esta conversación de Codex.

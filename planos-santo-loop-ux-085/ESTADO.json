@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "base_version": "0.8.5",
+  "last_cycle": 6,
+  "state": "CANDIDATA_PARA_VALIDAR",
+  "summary": "Flujos rápidos implementados y pruebas nube aprobadas; SketchUp real/visorPDF pendientes.",
+  "rbzSha256": "7391c2b2e09204046b255e16b3431aa2dcb2fcf497041e37eac262a9e0cef258",
+  "pending_manual_tests": true,
+  "nativeSketchupExecuted": false,
+  "productionApproved": false
+}

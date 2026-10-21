@@ -1,0 +1,60 @@
+node_modules/
+.next/
+data/*
+!data/.gitkeep
+test-results/
+playwright-report/
+artifacts/*
+!artifacts/PlanosSanto-0.5.3.rbz
+*.tsbuildinfo
+.env*
+!.env.example
+fixtures/private/
+.sketchup-pairing/
+sketchup/build/
+sketchup_offline/build/
+
+# Corpus y reportes locales del arranque OpenCutList (privados).
+planos-santo-arranque/referencias_privadas/
+planos-santo-arranque/runs/
+planos-santo-arranque/backups/
+
+# Loop 0.6.6: corpus y baseline privados.
+planos-santo-ocl-066/referencias_privadas/
+planos-santo-ocl-066/baseline/
+planos-santo-ocl-066/runs/
+planos-santo-ocl-066/backups/
+
+# Loop 0.6.8: baseline/modelos privados y evidencia local.
+planos-santo-loop-068/referencias/
+planos-santo-loop-068/state/
+planos-santo-loop-068/manual/validacion_usuario.json
+
+# Pintado 0.7.3: baseline de referencia y estado de ejecución privados.
+planos-santo-loop-pintado-073/referencias/
+planos-santo-loop-pintado-073/state/
+
+# UX loop: private SKM/textures/reference captures never published.
+planos-santo-loop-ux-082/referencias_privadas/
+planos-santo-loop-ux-082/runs/
+planos-santo-loop-ux-082/evidencia_local/
+planos-santo-loop-ux-082/inventario_materiales.json
+planos-santo-loop-ux-082/inventario_materiales.csv
+
+# Photo experience loop: private references and local evidence.
+planos-santo-loop-experiencia-084/referencias_privadas/
+planos-santo-loop-experiencia-084/runs/
+planos-santo-loop-experiencia-084/ux/
+
+# Fast-flow loop references remain private.
+planos-santo-loop-ux-085/referencias_privadas/
+planos-santo-loop-ux-085/runs/
+planos-santo-loop-ux-085/ux/
+
+# User-supplied reference packages and design prototypes.
+planos-santo-loop-toolbar-082/referencia/
+planos-santo-loop-ux-082/WIREFRAME_REFERENCIA.html
+
+# SketchUp customer models and material libraries remain private everywhere.
+*.skp
+*.skm

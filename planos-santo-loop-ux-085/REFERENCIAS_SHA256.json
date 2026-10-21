@@ -1,0 +1,18 @@
+{
+  "PlanosSanto-0.8.5-candidata.rbz": {
+    "sha256": "2ab072647d7b042b6a5ee39af91d93ce3eb8787931f3f44924ba166b052fd997",
+    "bytes": 1712222
+  },
+  "opencutlist-barra-referencia.png": {
+    "sha256": "b25dce0647c3b2c82142b0432a80fff5447a8e18c7b71ba38ca8a05044ab377e",
+    "bytes": 33401
+  },
+  "opencutlist-pintado-referencia.png": {
+    "sha256": "6adeaf13199a780a63950d9e6f4dd0773830139d7454f10675f82c7f9ed4dc02",
+    "bytes": 367010
+  },
+  "opencutlist-materiales-referencia.png": {
+    "sha256": "2edfd916b3b939d248bf674dcc41038a12376b5f08b71a427edd7dd0893a6cd0",
+    "bytes": 68838
+  }
+}

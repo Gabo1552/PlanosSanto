@@ -1,0 +1,33 @@
+import { test,expect } from '@playwright/test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
+import type { Project } from '../../lib/model';
+const origin='http://127.0.0.1:3000';
+const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
+test('el operador autoriza una entrega y el transporte Ruby entrega al servidor una sola vez',async({page,request})=>{
+  await page.goto('/');await page.getByText('Otras formas de importar',{exact:true}).click();await page.getByRole('button',{name:'Vincular extensión',exact:true}).click();
+  await page.getByLabel('Clave de vinculación del taller',{exact:true}).fill(process.env.PLANOS_BRIDGE_KEY!);
+  await page.getByRole('button',{name:'Generar código temporal',exact:true}).click();
+  const code=page.getByLabel('Código temporal',{exact:true});await expect(code).toBeVisible();
+  const token=(await code.innerText()).trim();expect(token).toMatch(/^[a-f0-9]{64}$/);
+  await expect(page.getByLabel('Clave de vinculación del taller',{exact:true})).toHaveValue('');
+  const {stdout}=await promisify(execFile)(ruby,['sketchup/test/send_fixture.rb'],{env:{...process.env,SANTO_TEST_ORIGIN:origin,SANTO_TEST_TOKEN:token},timeout:20_000});
+  const result=JSON.parse(stdout);
+  const stored=await(await request.get(`/api/projects/${result.project.id}`)).json() as Project;
+  expect(stored.source).toBe('sketchup-ruby');expect(stored.furniture).toHaveLength(2);
+  expect(stored.furniture[0].pieces[0].metadata?.instancePath).toEqual(['1','11']);
+  const replay=await request.post('/api/sketchup/receive',{headers:{authorization:`Bearer ${token}`},data:stored.importedDocument});expect(replay.status()).toBe(401);
+  await page.getByRole('button',{name:'Actualizar proyectos recibidos',exact:true}).click();
+  await page.getByLabel('Proyectos guardados').selectOption(stored.id);
+  await expect(page.getByText('SKETCHUP · EXTENSIÓN RUBY',{exact:true})).toBeVisible();
+});
+test('rechaza entregas sin autorización y consume el código incluso si el modelo no es válido',async({request})=>{
+  const unauthorized=await request.post('/api/sketchup/receive',{data:{}});expect(unauthorized.status()).toBe(401);
+  const noOrigin=await request.post('/api/sketchup/pair',{headers:{'x-planos-bridge-key':process.env.PLANOS_BRIDGE_KEY!}});expect(noOrigin.status()).toBe(403);
+  const wrongKey=await request.post('/api/sketchup/pair',{headers:{origin,'x-planos-bridge-key':'incorrect'}});expect(wrongKey.status()).toBe(401);
+  const created=await request.post('/api/sketchup/pair',{headers:{origin,'x-planos-bridge-key':process.env.PLANOS_BRIDGE_KEY!}});expect(created.status()).toBe(201);
+  const {token}=await created.json();
+  const bad=await request.post('/api/sketchup/receive',{headers:{authorization:`Bearer ${token}`},data:{}});expect(bad.status()).toBe(422);
+  const retry=await request.post('/api/sketchup/receive',{headers:{authorization:`Bearer ${token}`},data:{}});expect(retry.status()).toBe(401);
+});

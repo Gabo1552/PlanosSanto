@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Planos Santo</title><style>
+*{box-sizing:border-box}body{font:14px Arial,sans-serif;color:#24372f;background:#f5f5ef;margin:24px}h1{font:30px Georgia,serif;margin:0 0 12px}h2{font-size:17px}p{line-height:1.5}.actions{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}button{cursor:pointer;padding:11px 16px;border:1px solid #cad4c5;border-radius:5px;background:#fff;color:#23483b}button.primary{background:#1d4a40;color:white}button:disabled{opacity:.5;cursor:not-allowed}input[type=text],input[type=password],input[type=url]{width:100%;padding:9px;border:1px solid #ccd4c7;border-radius:4px;margin:7px 0 12px}label{cursor:pointer}.panel{background:white;border:1px solid #dce1d4;border-radius:6px;padding:18px;margin:16px 0}.node{margin-left:18px;padding:7px 0;border-left:1px solid #dce1d4;padding-left:10px}.node>label{font-weight:bold}.meta{color:#6c7764;font-size:12px;line-height:1.6;overflow-wrap:anywhere}.warning{color:#855717}.error{color:#9a3023}.banner{padding:14px;background:#fff3d6;border:1px solid #e5d2a5;border-radius:5px}.selected{color:#1d5d44}#message{white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer}.fine{font-size:12px;color:#6c7764}#send-panel{background:#edf2e8}.node input{margin-right:8px}
+</style></head><body>
+<h1>Planos Santo</h1><p>Del modelo al taller. Revisá los muebles y sus piezas antes de exportar.</p>
+<div class="banner">Versión de prueba 0.3.0 · Pendiente de validar dentro de SketchUp 2026 con un modelo real. El exportador lee el modelo activo sin modificar su geometría.</div>
+<div class="actions"><button id="scan">1. Analizar modelo activo</button><button id="export" class="primary" disabled>2. Guardar ZIP para la web</button></div>
+<div class="panel"><h2>Muebles y jerarquía</h2><p class="fine">Elegí los padres que representan muebles. Se incluyen todos sus descendientes, incluso ocultos, con advertencias. Podés elegir un padre o sus hijos, pero no ambos. Personas/paredes no se excluyen por nombre: revisá la selección.</p><div id="summary">Abrí el .skp con Archivo → Abrir y analizá el modelo.</div><div id="tree"></div></div>
+<div id="message" class="panel" role="status">Esperando análisis.</div>
+<details class="panel" id="send-panel"><summary>Opcional: enviar directamente a la web</summary><h2>3. Enviar a Planos Santo</h2><p>El camino más simple es guardar el ZIP y subirlo a la web. El envío directo es opcional.</p>
+<label><input id="confirmed" type="checkbox" disabled>Verifiqué la exportación local y sus medidas en SketchUp y la web.</label>
+<p><label for="url">Dirección de la aplicación web (HTTPS)</label><input id="url" type="url" placeholder="https://tu-aplicacion.example" autocomplete="off"></p>
+<label for="token">Código temporal generado en la web</label><input id="token" type="password" autocomplete="off" spellcheck="false">
+<p class="fine">También admite HTTP solo para localhost/127.0.0.1 en esta misma PC. El código autoriza una sola carga, vence a los cinco minutos y no se guarda en el modelo ni en el JSON.</p>
+<button id="send" class="primary" disabled>Enviar a Planos Santo</button>
+</details>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);let selected=new Set(),local=false,pending=false,roots=[];
+function selectedIds(){return [...selected].sort();}
+function invalidate(){local=false;$('confirmed').checked=false;$('confirmed').disabled=true;sync();}
+function sync(){$('export').disabled=!selected.size||pending;$('send').disabled=!local||!$('confirmed').checked||pending;}
+function text(tag,value,cls){const e=document.createElement(tag);e.textContent=value;if(cls)e.className=cls;return e;}
+function count(n){return (n.mesh?1:0)+n.children.reduce((a,c)=>a+count(c),0);}
+function renderNode(n){
+ const box=document.createElement('details');box.className='node';box.open=n.metadata.instancePath.length<2;
+ const heading=document.createElement('summary'),label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.dataset.id=n.id;
+ check.onchange=()=>{if(check.checked){for(const id of selected){if(id.startsWith(n.id+'/')||n.id.startsWith(id+'/'))selected.delete(id);}selected.add(n.id);}else selected.delete(n.id);document.querySelectorAll('[data-id]').forEach(el=>el.checked=selected.has(el.dataset.id));invalidate();};
+ label.append(check,document.createTextNode(n.name+' · '+count(n)+' piezas con geometría'));heading.append(label);box.append(heading);
+ const m=n.metadata;box.append(text('div','ID '+n.id+' · '+n.kind+' · Tag: '+m.tag+(m.material?' · Material: '+m.material.name:''),'meta'));
+ if(m.dimensionsMm)box.append(text('div',m.dimensionsMm.map(v=>v.toLocaleString('es-AR',{maximumFractionDigits:2})).join(' × ')+' mm · '+(m.rectangular?'Sólido rectangular':'Caja local: revisar forma'),'meta'));
+ for(const warning of m.warnings)box.append(text('div',warning,'warning'));
+ for(const error of m.errors||[])box.append(text('div',error,'error'));
+ n.children.forEach(c=>box.append(renderNode(c)));return box;
+}
+$('scan').onclick=()=>{pending=true;sync();$('message').textContent='Analizando…';window.sketchup.scan();};
+$('export').onclick=()=>{pending=true;sync();window.sketchup.export_local(JSON.stringify(selectedIds()));};
+$('confirmed').onchange=sync;
+$('send').onclick=()=>{pending=true;sync();window.sketchup.send_web(JSON.stringify({url:$('url').value.trim(),token:$('token').value.trim(),ids:selectedIds(),confirmed:$('confirmed').checked}));};
+window.receive=({type,data})=>{
+ if(type!=='sending')pending=false;
+ if(type==='tree'){roots=data.roots;selected.clear();invalidate();$('tree').replaceChildren(...roots.map(renderNode));$('summary').textContent=data.modelName+' · '+roots.length+' grupos/componentes padres';$('message').textContent=['Análisis listo. Revisá y seleccioná los muebles.',...data.warnings].join('\n');}
+ if(type==='exported'){local=true;$('confirmed').disabled=false;$('message').textContent='Exportación local guardada:\n'+data.path+'\n'+data.report.furniture.length+' muebles · '+data.report.pieces+' piezas\nHash del contenido: '+data.report.sha256+'\nSubí el ZIP a la web sin descomprimirlo. Las medidas y el informe están incluidos. Si elegiste .json, se guardaron como archivos separados.';}
+ if(type==='error'){$('message').textContent=data;$('message').className='panel error';}
+ else $('message').className='panel';
+ if(type==='sending')$('message').textContent=data;
+ if(type==='cancelled')$('message').textContent='Operación cancelada. No se enviaron datos.';
+ if(type==='sent'){$('token').value='';$('message').textContent='Proyecto recibido por la web. ID: '+data.project.id+'\nAbrí Proyectos guardados → '+data.project.name+'. No se modificó el .skp.';}
+ sync();
+};
+</script></body></html>

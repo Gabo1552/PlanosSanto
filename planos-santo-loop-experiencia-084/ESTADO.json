@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "last_cycle": 6,
+  "state": "CANDIDATA_PARA_VALIDAR",
+  "summary": "Fotos→material/miniatura/SKM y pintura rápida implementados sobre0.8.4; pruebas nube PASS; validación SketchUp2026 pendiente.",
+  "rbzSha256": "2ab072647d7b042b6a5ee39af91d93ce3eb8787931f3f44924ba166b052fd997",
+  "nativeSketchupExecuted": false,
+  "productionApproved": false
+}
