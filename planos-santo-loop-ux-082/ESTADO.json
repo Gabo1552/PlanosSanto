@@ -1,0 +1,8 @@
+{
+  "state": "CANDIDATA_PARA_VALIDAR",
+  "last_cycle": 6,
+  "summary": "Rediseño0.8.4 integrado sobre0.8.3; biblioteca/importador35SKM, paleta, iconos y navegación probados en nube.",
+  "tests": "353Ruby/2495aserciones,139TS,16web,67offline; verify exit0;CRC/manifiestoPASS.",
+  "pending": "Validación real SketchUp2026 y comercial. No producción.",
+  "rbzSha256": "68f3417ff77eae10f5f78c374de1c1729c48040b32bfc391aa722787d889935b"
+}

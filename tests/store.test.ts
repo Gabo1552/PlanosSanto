@@ -1,0 +1,20 @@
+import { afterAll,beforeAll,expect,it } from 'vitest';
+import { mkdtemp,rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createDemo } from '../lib/demo';
+import { toEdit } from '../lib/model';
+import { editProject,getProject,listProjects,saveProject } from '../lib/store';
+let dir:string;const previous=process.env.PROJECT_DATA_DIR;
+beforeAll(async()=>{dir=await mkdtemp(path.join(tmpdir(),'santo-store-test-'));process.env.PROJECT_DATA_DIR=dir;});
+afterAll(async()=>{await rm(dir,{force:true,recursive:true});if(previous)process.env.PROJECT_DATA_DIR=previous;else delete process.env.PROJECT_DATA_DIR;});
+it('guarda/reabre y evita que dos clientes sobrescriban cambios silenciosamente',async()=>{
+  const p=await saveProject(createDemo());
+  const edit=toEdit(p);edit.furniture[0].pieces[0].name='Nombre persistente';
+  const results=await Promise.allSettled([editProject(p.id,edit),editProject(p.id,edit)]);
+  expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+  expect(results.filter(r=>r.status==='rejected')).toHaveLength(1);
+  expect((await getProject(p.id)).furniture[0].pieces[0].name).toBe('Nombre persistente');
+  expect((await listProjects()).some(s=>s.id===p.id)).toBe(true);
+  await expect(getProject('../etc/passwd')).rejects.toThrow();
+});

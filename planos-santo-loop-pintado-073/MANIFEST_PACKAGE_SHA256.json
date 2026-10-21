@@ -1,0 +1,32 @@
+{
+  "package": "Planos Santo - Loop pintado autónomo 0.7.3",
+  "baseline_sha256": "883366c79b65468fd1c64b2ca334715df0f382f2f6b1478ce02f88047b84557b",
+  "test_count": 22,
+  "source": "RBZ proporcionado por el usuario; documentos y scripts para desarrollo",
+  "files": {
+    ".gitignore": "aba1563677e9f6893997f94449ef2a5a21e8d9322191769155da9e5de14cbe3e",
+    "ARQUITECTURA_073.md": "b651f1cd9fed27827d014194217a4129ddfb0d624bd4966d81f487da3c3047d0",
+    "CONTRATO_MADERERA.md": "8a78c320639dd25b23105177e005757615eb63dd98b53b5a74d450f1791f6aeb",
+    "CONTRATO_MATERIALES_CANTOS.md": "6b04354e81a1dd5f3d372d9c346c4b4a562dab9636a7c7527dfe5bbe0e4650e9",
+    "CRITERIOS_DE_ACEPTACION.md": "2d1fe7436cad5b3e27d54d1a746fd833d608522785f1974e5086027b423b9c76",
+    "INSTRUCCION_CLOUD.md": "184ef398b0e6413189df7ea7ae686f92a4bb0d6912363766b1b4bb86de8e10ec",
+    "PROGRESO.md": "d4d41002abd77e5496077f13c9980cb1a38ab32d037d555b38be64d0c6ce8c23",
+    "PROMPT_CODEX.md": "b7f3616d0517f6d01dccbb386748f057b1c48a6cc88b5a785209172494ca403c",
+    "README.md": "129913b9f447770a323dc4a9ddd6f1560eac0f799a0a1715d50fb5e0630a867b",
+    "SCHEMA_RESPONSE.json": "af987c57f6df518e3e4b5758cad9a79fea35ba3b19e1903ccbc57d585ca368d2",
+    "SEGURIDAD.md": "92b61bfd1998a61ad1112926d75b304a198736803f17944ed5a88a5b6e6456e7",
+    "TAREAS.md": "647758b2f42cc01dcb5605443ab64c96c123df9e0ffadeeb49e2542734f5ae84",
+    "VALIDACION_LOCAL_POSTERIOR.md": "18a50ff9841334a9d3885c379355dbf782e32ad59572a0678c9ceaa9727bbe98",
+    "codex-loop.ps1": "fa95108911edf70b12435283ee8cb69f4e4379ecf4e2c98a5f5d21afbbcb3f16",
+    "codex-loop.sh": "0d16fb780f89f88a824539ed2413cf33e65dc16e0524735c09ffc00deb4e3c0e",
+    "fixtures/ejemplo_maderera_sintetico.txt": "028c26700d0f3d6fca3adf9762dde01d8ecf0eb2541205ac430eecdcdccdf9c8",
+    "referencias/PlanosSanto-0.7.3.rbz": "883366c79b65468fd1c64b2ca334715df0f382f2f6b1478ce02f88047b84557b",
+    "reports/.keep": "9f61d30c8ca562262331a1f7a8d51ffa596c5c625ed504c38756abcebb875199",
+    "scripts/run_loop.py": "c7db7fef5d7e2a4847ae7b5a7296c339c64d45cefbf328c8b5a9e61d2ca465ce",
+    "scripts/validar_txt.py": "8870513d6b69674d75546f039f997eaeb79626476c124cc32edcb9986b6729eb",
+    "scripts/verify_rbz.py": "1c328c1b369103bbe7a6dbe9c54bfca9e2ccc91104594bd7a105cee97b75dc57",
+    "tests/test_loop.py": "9d99739038ee2b3d54fd64f74c8842acfd41bb7c555ffcb3b9b41d7b0bca6098",
+    "tests/test_package.py": "6711eb54565b8f0e60c3a30a387b592b81f4a31f5d2be2cee3e3ed11e4df3631",
+    "tests/test_txt.py": "c2d1394c59575b90e96bcaed0b0d2a71a8c20757385f06f47781b00f74f87ae1"
+  }
+}

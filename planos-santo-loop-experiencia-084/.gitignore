@@ -1,0 +1,12 @@
+referencias_privadas/
+runs/
+*.skp
+*.skm
+*.rbz
+OpenCutList.zip
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.zip
+__pycache__/

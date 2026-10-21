@@ -1,0 +1,113 @@
+{
+  "description": "Planos Santo Loop UX 0.8.5; integridad del paquete, NO pruebas SketchUp",
+  "files": {
+    ".gitignore": {
+      "sha256": "a59ca0a0ae6889bfb207493d61e610659345c1488948f2cfe2bca530b9edbefa",
+      "bytes": 40
+    },
+    "ACEPTACION_Y_PRUEBAS.md": {
+      "sha256": "53c4b7cd8379f51dc15a5a4f9c0dacf36345c021133efedbc90776f93f1db2c5",
+      "bytes": 3087
+    },
+    "AUDITORIA_085.md": {
+      "sha256": "dbc5af45e55ed983ab80f0b2eb5083efb3809b9023388cb4fcfa8519bce43f12",
+      "bytes": 3117
+    },
+    "BACKLOG.md": {
+      "sha256": "fa20e0b66fd7db043e531a7b4c2146b3f5d797248bd27eacdda592cafc15f7b4",
+      "bytes": 1557
+    },
+    "BARRA_E_ICONOS.md": {
+      "sha256": "7cbe8fd872c834a7898e92b0c93733bdb11dbc257a20add3eb27b6c70f6a6b93",
+      "bytes": 1887
+    },
+    "CONTRATO_PINTURA_RAPIDA.md": {
+      "sha256": "4d1eddf7b32cbff0e9fd86cbe1acbb0447c37faaccf5d18229d2713093a7a7e8",
+      "bytes": 3809
+    },
+    "ESTADO.json": {
+      "sha256": "20b46c4dcdd4bc456bd424f4f21f5ecf698e34bf716845ac3e7a3eafe6c6484d",
+      "bytes": 151
+    },
+    "INSTRUCCION_CLOUD.md": {
+      "sha256": "5c99f5deb4b9817cbbfce2b5c8415ad21989b090c3bf00d9a31b61c08c281d0a",
+      "bytes": 1304
+    },
+    "INSTRUCCION_RAPIDA_CODEX.md": {
+      "sha256": "b8df46bd3cb3241f6311363bd6b316bae76c247982abaf3768b547036963fd2f",
+      "bytes": 1513
+    },
+    "PROGRESO.md": {
+      "sha256": "0667100fb096078cc0fa079c08d04ef40531bb6032bbf0d46c615638b5f91617",
+      "bytes": 577
+    },
+    "PROMPT_CODEX.md": {
+      "sha256": "6fb675d4caae37c02ca6da66cad5b2296ebb598bf5c4d555d674ac320346f051",
+      "bytes": 4267
+    },
+    "README.md": {
+      "sha256": "efe64574f13551be943bf1367c7b72f1f3df8a6281592c1f605271b9b71c9a8c",
+      "bytes": 2523
+    },
+    "REFERENCIAS_SHA256.json": {
+      "sha256": "c84289789ae92076aba5752162c90726645bca3ac13f35edbd72a8892ae8893a",
+      "bytes": 596
+    },
+    "SEGURIDAD.md": {
+      "sha256": "e3f2bbef2ffc941e3d2f74650787494a5e896cab9b2b6337de2ed4e873e0514e",
+      "bytes": 1159
+    },
+    "UX_NOMBRES.md": {
+      "sha256": "6d23060a793d8cc2f9469a172407af35efa04f2452232a2bc7d3046c6eecef9e",
+      "bytes": 2012
+    },
+    "UX_PLANOS_A4.md": {
+      "sha256": "3fae9d38814bbc671c65ee920711e81670cb37893a2a17330fd839f0210c989e",
+      "bytes": 2089
+    },
+    "VALIDACION_DOT_LOCAL.md": {
+      "sha256": "c90d0b3eaa9e31eb8cca33a89a82f4de3bd03bf486ca65229da23daeb3f9b1ff",
+      "bytes": 1915
+    },
+    "codex-loop.ps1": {
+      "sha256": "a598150099137b55e3ec5b8bca28348f2b09156408901bbf593b3973a078d6ee",
+      "bytes": 2374
+    },
+    "codex-loop.sh": {
+      "sha256": "fa9c590760ca64fb5414aa7c2c630629ef501ba9d35be31d240bad9f6c32dd90",
+      "bytes": 2571
+    },
+    "referencias_privadas/PlanosSanto-0.8.5-candidata.rbz": {
+      "sha256": "2ab072647d7b042b6a5ee39af91d93ce3eb8787931f3f44924ba166b052fd997",
+      "bytes": 1712222
+    },
+    "referencias_privadas/opencutlist-barra-referencia.png": {
+      "sha256": "b25dce0647c3b2c82142b0432a80fff5447a8e18c7b71ba38ca8a05044ab377e",
+      "bytes": 33401
+    },
+    "referencias_privadas/opencutlist-materiales-referencia.png": {
+      "sha256": "2edfd916b3b939d248bf674dcc41038a12376b5f08b71a427edd7dd0893a6cd0",
+      "bytes": 68838
+    },
+    "referencias_privadas/opencutlist-pintado-referencia.png": {
+      "sha256": "6adeaf13199a780a63950d9e6f4dd0773830139d7454f10675f82c7f9ed4dc02",
+      "bytes": 367010
+    },
+    "scripts/auditar_base.py": {
+      "sha256": "30c027faac4d364e487f054f5eaf27dbf6324f0e313185b14010308d5c7996e0",
+      "bytes": 2750
+    },
+    "scripts/test_ejecutor.py": {
+      "sha256": "f795b1d9db01d1da34d2f1f9cd5dd734134f3d87259a4fe539031c20e429433d",
+      "bytes": 1633
+    },
+    "scripts/validar_candidata.py": {
+      "sha256": "6a2d4b477547fe2a5805732303945298a75e1f6ff5453995101bd529f417e3be",
+      "bytes": 2143
+    },
+    "ux/PROTOTIPO_FLUJOS.html": {
+      "sha256": "7ed2c9903ec62a6bde691efe2969f70e051a7c3550eeab752df925a3671ebbe4",
+      "bytes": 7633
+    }
+  }
+}
