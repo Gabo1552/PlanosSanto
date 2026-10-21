@@ -8,11 +8,12 @@ import {existsSync} from 'node:fs';
 // Hito 1 (0.8.8): real browser bundle + real Ruby controller/services with
 // synthetic SketchUp API doubles (photo_bridge_driver.rb). NOT SketchUp.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
-const evidence=resolve('docs/hito1-pintura-088/capturas');
+// Screenshots go to the test output unless HITO1_CAPTURE=1 (evidence refresh on purpose).
+const captureFolder=resolve('docs/hito1-pintura-088/capturas');let evidence='';
 type Reply={version:1;id:string;result:unknown;error:string|null};
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,errors:string[],calls:{action:string;data:Record<string,unknown>}[];
 async function boot(page:Page,folder:string){
- await mkdir(folder,{recursive:true});await mkdir(evidence,{recursive:true});pending=new Map();errors=[];calls=[];
+ evidence=process.env.HITO1_CAPTURE==='1'?captureFolder:folder;await mkdir(folder,{recursive:true});await mkdir(evidence,{recursive:true});pending=new Map();errors=[];calls=[];
  const installation=resolve('sketchup_offline/build');
  child=spawn(ruby,['sketchup_offline/test/photo_bridge_driver.rb',folder],{stdio:'pipe',env:{...process.env,PLANOS_TEST_INSTALL_DIR:installation,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),entry=pending.get(reply.id);if(entry){pending.delete(reply.id);entry.resolve(reply);}});
@@ -46,7 +47,7 @@ async function openQuickPalette(page:Page){
  await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
  return page.locator('.immediate-palette');
 }
-test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors||[]).toEqual([]);});
+test.afterEach(async({page})=>{const seen=[...(errors||[])];await page.close();child?.stdin.end();child?.kill();expect(seen).toEqual([]);});
 
 test('Hito 1: elegir una melamina guardada en otro modelo la instala y deja el pincel listo',async({page},info)=>{
  await boot(page,info.outputDir);await savePhotoWithoutPainting(page);
@@ -59,7 +60,7 @@ test('Hito 1: elegir una melamina guardada en otro modelo la instala y deja el p
  await expect(palette.getByText('● Pintando',{exact:true})).toBeVisible();
  await expect.poll(()=>calls.filter(call=>call.action==='smart_quick_start').length).toBe(1);
  expect(calls.filter(call=>['material_photo_install','skm_install','catalog_install','catalog_bind'].includes(call.action))).toHaveLength(0);
- await expect(page.getByText(/textura válida/)).toHaveCount(0);
+ await expect(page.getByText(/textura válida/)).toHaveCount(0);await expect(palette.getByRole('alert')).toHaveCount(0);
  expect((await rpc(page,'__photo_snapshot')).photoItems).toMatchObject([{name:'Foto QA ámbar',hasTexture:true}]);
  await page.screenshot({path:resolve(evidence,'hito1-pincel-activo-SINTETICA.png')});
  expect(await rpc(page,'__photo_paint')).toMatchObject({changed:true,targetHasPhoto:true});
@@ -72,13 +73,15 @@ test('Hito 1: ficha comercial sin visual muestra la causa real y "Asignar color"
  const attention=palette.getByRole('region',{name:'Materiales que necesitan atención'});
  await expect(attention).toContainText('Placa QA sintética');
  await expect(attention).toContainText('no tiene imagen, textura ni color');
- await expect(palette.getByRole('button',{name:/Placa QA sintética/})).toHaveCount(0);
+ const library=palette.getByRole('region',{name:'Materiales disponibles para pintar'});
+ await expect(library.getByRole('button',{name:/Placa QA sintética/})).toHaveCount(0);
  await page.setViewportSize({width:680,height:420});await page.screenshot({path:resolve(evidence,'hito1-necesita-visual-SINTETICA.png')});
- await attention.getByLabel('Color para Placa QA sintética').fill('#d8cfbf');
- await attention.getByRole('button',{name:'Asignar color',exact:true}).click();
+ const row=attention.getByRole('listitem').filter({hasText:'Placa QA sintética'});
+ await row.getByLabel('Color para Placa QA sintética').fill('#d8cfbf');
+ await row.getByRole('button',{name:'Asignar color a Placa QA sintética',exact:true}).click();
  await expect.poll(()=>calls.filter(call=>call.action==='smart_assign_color').length).toBe(1);
  expect(calls.find(call=>call.action==='smart_assign_color')!.data).toMatchObject({rgb:[216,207,191],confirmed:true});
- const tile=palette.getByRole('button',{name:/Placa QA sintética/});await expect(tile).toBeVisible();
+ const tile=library.getByRole('button',{name:/Placa QA sintética/});await expect(tile).toBeVisible();
  await tile.click();await expect(palette.getByText('● Pintando',{exact:true})).toBeVisible();
  expect(await rpc(page,'__photo_paint')).toMatchObject({changed:true});
 });
@@ -87,7 +90,7 @@ test('Hito 1: "Asignar foto" sobre una ficha comercial conserva SKU y aprobació
  await boot(page,info.outputDir);await rpc(page,'__photo_new_model');await page.reload();
  const palette=await openQuickPalette(page);
  const attention=palette.getByRole('region',{name:'Materiales que necesitan atención'});
- await attention.getByRole('button',{name:'Asignar foto',exact:true}).first().click();
+ await attention.getByRole('listitem').filter({hasText:'Placa QA sintética'}).getByRole('button',{name:'Asignar foto a Placa QA sintética',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Asignar foto al material',exact:true});await expect(dialog).toBeVisible();
  await expect(dialog.getByLabel('Confirmar reemplazo de textura')).toHaveCount(0);
  await dialog.getByRole('button',{name:'Elegir foto (JPG/PNG)',exact:true}).click();
@@ -98,5 +101,17 @@ test('Hito 1: "Asignar foto" sobre una ficha comercial conserva SKU y aprobació
  const created=calls.find(call=>call.action==='material_photo_create')!.data;
  expect(created).toMatchObject({action:'replace',replaceConfirmed:true,confirmed:true});
  expect((await rpc(page,'__photo_snapshot')).photoItems).toMatchObject([{name:'Placa QA sintética',approved:true,hasTexture:true}]);
+ expect(await rpc(page,'__photo_paint')).toMatchObject({changed:true,targetHasPhoto:true});
+});
+
+test('Hito 1: Biblioteca → "Abrir paleta de pintura" con un material no instalado lo instala y arma el pincel',async({page},info)=>{
+ await boot(page,info.outputDir);await savePhotoWithoutPainting(page);
+ await rpc(page,'__photo_new_model');await page.reload();
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
+ const card=page.getByRole('article',{name:'Material Foto QA ámbar',exact:true});await card.getByRole('button').first().click();
+ const open=page.getByRole('button',{name:'Abrir paleta de pintura',exact:true});await expect(open).toBeEnabled();await open.click();
+ await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
+ await expect(page.getByText('● Pintando',{exact:true})).toBeVisible();
+ expect(calls.filter(call=>['material_photo_install','skm_install','catalog_install'].includes(call.action))).toHaveLength(0);
  expect(await rpc(page,'__photo_paint')).toMatchObject({changed:true,targetHasPhoto:true});
 });

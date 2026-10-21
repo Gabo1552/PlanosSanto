@@ -37,13 +37,25 @@ module PlanosSanto
     def self.directory(catalog)
       catalog.directory if catalog.respond_to?(:directory)
     end
+    ASSET_NAME=/\A[0-9a-f]{64}\.(?:png|jpg|jpeg|skm)\z/
+    HASH_CACHE_LIMIT=4096
+    # Content hashes are memoized per (path, size, mtime): listing the palette
+    # many times re-reads nothing unless a file changes (0.8.8 review). A same-size
+    # rewrite with a forged mtime is outside the threat model (local library owner).
+    def self.digest(path)
+      stat=File.stat(path);key=[path,stat.size,stat.mtime.to_r]
+      @hash_cache ||= {}
+      return @hash_cache[key] if @hash_cache.key?(key)
+      @hash_cache.clear if @hash_cache.length>=HASH_CACHE_LIMIT
+      @hash_cache[key]=Digest::SHA256.file(path).hexdigest
+    end
     def self.file_matches?(directory,folder,name,expected)
       return false unless directory.is_a?(String) && !directory.empty? && expected.is_a?(String) && HASH.match?(expected)
-      return false unless name.is_a?(String) && /\A[0-9a-f]{64}\.(?:png|jpg|jpeg|skm)\z/.match?(name) && name.split('.').first==expected
+      return false unless name.is_a?(String) && ASSET_NAME.match?(name) && name.split('.').first==expected
       base=File.join(directory,folder)
       return false if File.symlink?(directory) || File.symlink?(base)
       path=File.join(base,name)
-      File.file?(path) && !File.symlink?(path) && File.size(path)>0 && Digest::SHA256.file(path).hexdigest==expected
+      File.file?(path) && !File.symlink?(path) && File.size(path)>0 && digest(path)==expected
     rescue SystemCallError,IOError
       false
     end
@@ -84,7 +96,13 @@ module PlanosSanto
       index=JSON.parse(File.binread(index_path))
       return nil unless index.is_a?(Hash) && index['schema']==1 && index['records'].is_a?(Array)
       rows=index['records'].select { |row| row.is_a?(Hash) && row['catalogId']==item['id'] }
-      rows.length==1 ? rows.first : nil
+      return nil unless rows.length==1
+      row=rows.first
+      # Same row contract as MaterialLibrary#assets, so a row accepted here can be installed.
+      valid=row.keys.sort==%w[assetHash assetName catalogFingerprint catalogId sourceName] &&
+        HASH.match?(row['assetHash'].to_s) && HASH.match?(row['catalogFingerprint'].to_s) &&
+        row['assetName']=="#{row['assetHash']}.skm" && row['sourceName'].is_a?(String) && row['sourceName'].length<=512
+      valid ? row : nil
     rescue JSON::ParserError,TypeError,ArgumentError,SystemCallError,IOError
       nil
     end
@@ -94,10 +112,11 @@ module PlanosSanto
       return {'status'=>'none','path'=>nil} unless item.is_a?(Hash) && %w[sheet edge].include?(item['kind'])
       candidates=[]
       record=visual_record(item,directory)
-      candidates << ['material-assets',record['assetName'],record['assetHash']] if record && record['assetName'].is_a?(String) && record['assetHash'].is_a?(String)
+      # A photo installs its own content-addressed SKM first; the index row is a fallback.
       if photo?(item) && photo(item)['skmHash'].is_a?(String)
         candidates << ['material-assets',"#{photo(item)['skmHash']}.skm",photo(item)['skmHash']]
       end
+      candidates << ['material-assets',record['assetName'],record['assetHash']] if record
       if skm_import?(item) && item['observed']['skm'].is_a?(Hash) && item['observed']['skm']['sha256'].is_a?(String)
         # Same provenance rules as skm_source_ready? (safe source name, no symlink).
         return {'status'=>'none','path'=>nil} if record.nil? && !skm_provenance_valid?(item)
@@ -110,14 +129,14 @@ module PlanosSanto
         [['photo-assets',p['imageAsset'],p['sourceHash']],['photo-assets',p['thumbnailAsset'],p['thumbnailAsset'].to_s.split('.').first],
          ['material-assets',"#{p['skmHash']}.skm",p['skmHash']]].each do |folder,name,hash|
           next if file_matches?(directory,folder,name,hash)
-          path=directory.is_a?(String) && name.is_a?(String) ? File.join(directory,folder,name) : nil
+          path=directory.is_a?(String) && name.is_a?(String) && ASSET_NAME.match?(name) ? File.join(directory,folder,name) : nil
           return {'status'=>path && File.file?(path) ? 'corrupt' : 'missing','path'=>nil}
         end
       end
       seen_corrupt=false
       candidates.uniq.each do |folder,name,hash|
         return {'status'=>'ok','path'=>File.join(directory,folder,name)} if file_matches?(directory,folder,name,hash)
-        path=directory.is_a?(String) && name.is_a?(String) ? File.join(directory,folder,name) : nil
+        path=directory.is_a?(String) && name.is_a?(String) && ASSET_NAME.match?(name) ? File.join(directory,folder,name) : nil
         seen_corrupt||=path && File.file?(path)
       end
       {'status'=>seen_corrupt ? 'corrupt' : 'missing','path'=>nil}

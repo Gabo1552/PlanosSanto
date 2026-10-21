@@ -30,6 +30,13 @@ module PlanosSanto
       end
     end
 
+    # State of a single item (toolbar resume needs only one).
+    def state(catalog_id)
+      catalog = @catalog.read
+      item = catalog['items'].find { |row| row['id'] == catalog_id && %w[sheet edge].include?(row['kind']) }
+      item && state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids)
+    end
+
     # Returns {'catalogId','materialUuid','materialId','installed','message'}.
     def prepare(catalog_id, mode)
       kind = mode == 'edge' ? 'edge' : 'sheet'
@@ -45,6 +52,12 @@ module PlanosSanto
       state = state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids)
       case state['state']
       when 'ready'
+        # Integrity at selection time (0.8.8 security review): if the library still
+        # holds this photo's files they must be intact; if they are absent (model
+        # opened on another PC) the installed material and its proof are enough.
+        if MaterialPolicy.photo?(item) && MaterialPolicy.design_asset(item, directory: @directory)['status'] == 'corrupt'
+          raise ExportError, "El archivo de textura de «#{item['name']}» en la biblioteca fue alterado o está dañado (no coincide su huella). Restaurá la copia de seguridad antes de pintar."
+        end
         { 'catalogId' => item['id'], 'materialUuid' => state['materialUuid'], 'materialId' => state['materialId'],
           'installed' => false, 'message' => "Material activo: #{item['name']}." }
       when 'installable'
@@ -114,6 +127,10 @@ module PlanosSanto
         return { 'state' => 'binding_conflict', 'action' => 'library',
                  'message' => "Problema de vinculación de «#{name}»: #{issues.uniq.join(' ')}" }
       end
+      if MaterialPolicy.photo?(item) && !MaterialPolicy.metadata_valid?(item)
+        return { 'state' => 'asset_corrupt', 'action' => 'library',
+                 'message' => "La ficha de foto de «#{name}» tiene datos de imagen inválidos. Volvé a cargar la foto desde la biblioteca." }
+      end
       asset = MaterialPolicy.design_asset(item, directory: @directory)
       case asset['status']
       when 'ok'
@@ -132,7 +149,7 @@ module PlanosSanto
 
     def install(item, catalog)
       result = begin
-        @library.install({ 'catalogId' => item['id'], 'revision' => catalog['revision'], 'confirmed' => true })
+        @library.install({ 'catalogId' => item['id'], 'revision' => catalog['revision'], 'confirmed' => true }, with_status: false)
       rescue ExportError
         raise
       rescue StandardError => error

@@ -219,12 +219,16 @@ module PlanosSanto
         raise ExportError, 'No se pudo confirmar la operación.' if @model.commit_operation == false
         started = false
         result
-      rescue Exception
+      rescue Exception => original
         @model.abort_operation if started
         if published
-          previous ? atomic_write(@path, previous) : File.delete(@path)
+          begin
+            previous ? atomic_write(@path, previous) : File.delete(@path)
+          rescue StandardError => restore_error
+            warn("Planos Santo: no se pudo restaurar material-assets.json: #{restore_error.class}: #{restore_error.message}")
+          end
         end
-        raise
+        raise original
       end
     end
 
@@ -269,7 +273,9 @@ module PlanosSanto
       catalog
     end
 
-    def install(data, path: nil)
+    # with_status:false returns only the installed binding (no full library
+    # re-listing after the operation committed; used by PaintMaterials).
+    def install(data, path: nil, with_status: true)
       result = locked(data) do |catalog, index|
         repair=data['replaceVisual']==true
         # An explicit .skm chosen by the operator IS the visual: any sheet/edge item.
@@ -305,7 +311,7 @@ module PlanosSanto
           [{ 'materialId' => material_id(material), 'binding' => binding, 'opencutlist' => ocl }, changed]
         end
       end
-      status.merge(result)
+      with_status ? status.merge(result) : result
     end
   end
 end

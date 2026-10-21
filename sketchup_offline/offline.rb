@@ -235,19 +235,21 @@ module PlanosSanto
       if mode=='remove_edge' && data['catalogId'].to_s.empty? && !data['materialUuid'].to_s.empty?
         raise ExportError,'Elegí la placa de restauración completa o usá la detección de la pieza.'
       end
+      # Validate tool options BEFORE any install, so a refused start never leaves
+      # an installed material behind (0.8.8 review).
+      options=validate_smart_options(options)
       prepared=nil
       if mode!='remove_edge' || !data['catalogId'].to_s.empty?
         raise ExportError,'Elegí un material de la paleta.' if data['catalogId'].to_s.empty?
         service=paint_materials
         unless install
-          state=service.states[data['catalogId']]
+          state=service.state(data['catalogId'])
           raise ExportError,'Elegí un material de la paleta.' unless state
           raise ExportError,state['message'] unless state['state']=='ready'
         end
         prepared=service.prepare(data['catalogId'],mode=='remove_edge' ? 'sheet' : mode)
         options.merge!('catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid'])
       end
-      options=validate_smart_options(options)
       result=if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         # Validate the new material BEFORE changing the active Tool. Normal
         # material changes neither deselect the Tool nor require reactivation.

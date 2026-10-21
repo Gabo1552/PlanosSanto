@@ -81,11 +81,36 @@ Estas pruebas de 0.8.7 **codificaban el defecto** de la auditoría. Se reescribi
 | # | Pendiente | Impacto | Hito |
 |---|---|---|---|
 | L1 | **Sin validación en SketchUp real.** Todo se probó con dobles de la API | La candidata no es para producción | Validación local (`VALIDACION_SKETCHUP_088.md`) |
-| L2 | Cada clic todavía recorre el modelo (≈ 3 inventarios, antes ≈ 7) para proteger instancias compartidas | Posible demora en modelos muy grandes; medir con V19 | Hito 2 (P0-2: plan por clic local) |
+| L2 | Cada clic todavía recorre el modelo (2–3 inventarios, antes ≈ 7) y relee `catalog.json` 2–3 veces, para proteger instancias compartidas. Ya no hashea archivos | Posible demora en modelos muy grandes; medir con V19 | Hito 2 (P0-2: plan por clic local) |
 | L3 | Pintar pieza sigue pintando las **caras amplias** (no el material de la instancia, como OCL) | Coherente con 0.8.7; el cambio de semántica requiere decisión y pruebas con OCL | Hito 3 (P1-2) |
 | L4 | La paleta sigue siendo una ventana HtmlDialog (no hay barra dentro del viewport) | Ventana chica y no modal | Hito 3 (P1-1) |
 | L5 | La opción "aplicar a todas las piezas iguales" para cantos todavía no existe (decisión 3: más adelante) | Hoy siempre "solo esta" | Hito 3 |
 | L6 | Tras editar datos comerciales, Maderera puede pedir **re-vincular** la ficha antes de exportar el pedido (vínculo comercial desactualizado) | No afecta pintar | Hito 4 (maderera en bloque) |
-| L7 | El cálculo de estados hashea los activos de la biblioteca al abrir la paleta (no por clic) | Bibliotecas de cientos de SKM podrían tardar al abrir | Hito 2 (caché por mtime/tamaño, P2-4) |
+| L7 | La primera apertura de la paleta en la sesión hashea los activos de la biblioteca. Las siguientes usan un caché por ruta, tamaño y fecha, y solo rehashean lo que cambió | Bibliotecas muy grandes pueden tardar en la **primera** apertura | Hito 2 (caché persistente y tope de tamaño) |
 | L8 | Retomar desde la barra no instala: si el último material no está en el modelo, hay que elegirlo en la paleta | Decisión conservadora (instalar solo con elección explícita) | — |
 | L9 | Los atributos OCL se escriben al crear o instalar; si después se editan espesor o formato en el catálogo, no se resincronizan | OCL puede mostrar el espesor viejo | Hito 2 o 4 |
+
+## 6. Revisión con agentes ECC (ruby-reviewer, typescript-reviewer, security-reviewer)
+
+Los tres revisaron el diff completo de la rama y las correcciones se validaron con la suite. **Ninguno encontró problemas críticos.**
+
+| Origen | Hallazgo | Resolución |
+|---|---|---|
+| TS · Alto | La paleta avanzada reaplicaba un estado viejo de la herramienta después de instalar | La preparación ya no toca el estado del pincel; solo actualiza estados y visuales (`applyPaintData`) |
+| TS · Alto | La autoactivación desde la biblioteca, el botón "Pintar" y el botón "Abrir paleta de pintura" seguían exigiendo un material ya instalado | Se usa `selectedPaintable` (instalado **o** instalable); la autoactivación instala; la biblioteca habilita el botón si el visual está disponible. Prueba nueva de UI: Biblioteca → paleta |
+| TS · Medio | Datos viejos de la paleta después de esperas asíncronas; "Asignar color" con un *snapshot* desactualizado | `loadedRef` + `applyPaintData` centralizado |
+| TS · Medio | "Necesitan atención" no aparecía en la paleta avanzada; tras "Asignar foto" sin pintar no se volvía a la paleta | Ambos corregidos |
+| TS · Bajo | Botones con el mismo nombre accesible; alerta engañosa | `aria-label` con el nombre de la ficha; la alerta aparece solo en estados no pintables |
+| TS · Pruebas | Capturas escritas en el repo en cada corrida; selectores dependientes del orden; una aserción que nunca podía fallar | Capturas solo con `HITO1_CAPTURE=1`; selectores por fila y región; aserción de que no hay alertas |
+| Ruby · Medio | La paleta hasheaba la biblioteca varias veces; el botón de la barra calculaba todas las fichas | Caché de hashes por (ruta, tamaño, fecha); `PaintMaterials#state` para una sola ficha |
+| Ruby · Medio | Una foto con metadatos inválidos podía mostrarse como "instalable" y después fallar | Estado `asset_corrupt` con un mensaje específico; `visual_record` usa el mismo contrato estricto que la biblioteca |
+| Ruby · Bajo | Si fallaba la activación del pincel, quedaba instalado el material; el *rollback* podía perder la excepción original; la instalación re-listaba la biblioteca después del commit | Las opciones se validan antes de instalar; la restauración del índice está protegida; `install(with_status:false)` |
+| Seguridad · Medio | La integridad al pintar descansa en atributos del modelo | Se verifica la biblioteca también **al seleccionar** una foto instalada: si está alterada, se rechaza; si falta (otra PC), se permite. **Riesgo residual aceptado:** un material con vínculo y prueba falsificados a mano (pegados desde otro SKP) se considera esa ficha. La comprobación de archivos por clic de 0.8.7 tampoco lo evitaba, porque no comparaba la imagen embebida |
+| Seguridad · Bajo | En fotos, la fila del índice tenía prioridad sobre el SKM original | Se instala primero el SKM de la foto (`skmHash`) |
+| Seguridad · Bajo | Ventana entre la verificación del hash y la carga del SKM (TOCTOU) | **Aceptado:** requiere acceso de escritura a `%LOCALAPPDATA%` del mismo usuario. En fotos, la prueba se vuelve a verificar después de cargar |
+| Seguridad · Info | Cualquier placa o canto puede recibir un visual por acción explícita del operador ("Asignar foto" o "Asignar color", o asociar desde la biblioteca) | Es el comportamiento buscado; siempre requiere una acción y una confirmación |
+
+La revisión de seguridad confirmó además:
+- **Rutas:** todas pasan por `file_matches?` (nombre = hash, sin enlaces simbólicos, contenido re-hasheado). Una biblioteca adulterada no puede cargar archivos de fuera.
+- **Interfaz:** sin XSS.
+- **Carpeta `.claude/`:** sin hooks, sin `settings.json`, sin MCP y sin ejecutables.

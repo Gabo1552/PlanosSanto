@@ -300,5 +300,39 @@ class PaintReadyTest < Minitest::Test
     assert smart.apply_immediate(options(prepared))['changed']
   end
 
+  # Revisión 0.8.8 (seguridad): integridad también al SELECCIONAR un material ya instalado.
+  def test_selecting_an_installed_photo_refuses_a_tampered_library_but_allows_an_absent_one
+    created=create_photo;service.prepare(created['catalogId'],'sheet')
+    image=File.join(@directory,'photo-assets',item['observed']['photo']['imageAsset']);bytes=File.binread(image)
+    File.binwrite(image,bytes+'x')
+    error=assert_raises(PlanosSanto::ExportError) { service.prepare(created['catalogId'],'sheet') }
+    assert_match(/alterado o está dañado/,error.message)
+    File.delete(image)
+    assert_equal false,service.prepare(created['catalogId'],'sheet')['installed'],'sin archivos (otra PC) el material instalado sigue sirviendo'
+  end
+
+  # Revisión 0.8.8 (Ruby): una foto con metadatos inválidos no se ofrece como instalable.
+  def test_photo_item_with_invalid_metadata_is_not_shown_as_installable
+    created=create_photo
+    # Written directly: the catalog store itself refuses to save this record.
+    data=@catalog.read;row=data['items'].first;row['observed']['photo']['widthPx']=0
+    File.binwrite(File.join(@directory,'catalog.json'),JSON.generate(data))
+    state=service.states[created['catalogId']]
+    assert_equal 'asset_corrupt',state['state'];assert_match(/datos de imagen inválidos/,state['message'])
+  end
+
+  # Revisión 0.8.8 (rendimiento): reabrir la paleta no vuelve a hashear archivos sin cambios.
+  def test_reopening_the_palette_does_not_rehash_unchanged_library_files
+    created=create_photo;service.states
+    hashed=0;original=Digest::SHA256.method(:file)
+    Digest::SHA256.singleton_class.send(:define_method,:file) { |*args| hashed+=1;original.call(*args) }
+    begin
+      3.times { assert_equal 'installable',service.states[created['catalogId']]['state'] }
+    ensure
+      Digest::SHA256.singleton_class.send(:define_method,:file) { |*args| original.call(*args) }
+    end
+    assert_equal 0,hashed
+  end
+
   def write_png(name);path=File.join(@source,name);File.binwrite(path,PhotoFixture.png);path;end
 end

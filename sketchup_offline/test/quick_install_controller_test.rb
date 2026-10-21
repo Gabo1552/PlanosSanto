@@ -85,6 +85,14 @@ class QuickInstallControllerTest < Minitest::Test
     refute again['prepared']['installed'];assert_equal 1,@model.materials.length
   end
 
+  def test_refused_tool_options_never_leave_an_installed_material_behind
+    @controller.quick_action('sheet')
+    assert_raises(PlanosSanto::ExportError) do
+      with_tool { @controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>@created['catalogId'],'scope'=>'all'}) }
+    end
+    assert_empty @model.materials
+  end
+
   def test_toolbar_resume_never_installs_without_an_explicit_choice
     @controller.remember_smart_settings('catalogId'=>@created['catalogId'],'mode'=>'sheet')
     intent=with_tool { @controller.quick_action('sheet') }

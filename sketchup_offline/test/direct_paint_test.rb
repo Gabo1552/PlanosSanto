@@ -61,6 +61,8 @@ class DirectPaintTest < Minitest::Test
       row=choices.find { |choice| choice['catalogId']=='known' }
       row ? {'known'=>{'state'=>'ready','materialUuid'=>row['materialUuid']}} : {'known'=>{'state'=>'installable','message'=>'«Conocido» todavía no está en este modelo; se instala automáticamente al elegirlo.'}}
     end
+    paint=@paint
+    @paint.define_singleton_method(:state) { |catalog_id| paint.states[catalog_id] }
     @paint.define_singleton_method(:prepare) do |catalog_id,_mode|
       row=choices.find { |choice| choice['catalogId']==catalog_id }
       raise PlanosSanto::ExportError,'La ficha del material ya no existe en la biblioteca.' unless row
