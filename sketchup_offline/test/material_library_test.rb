@@ -189,13 +189,17 @@ class MaterialLibraryTest < Minitest::Test
     assert_equal 1,Dir[File.join(@directory,'backups','material-assets-*.json')].length
   end
 
-  def test_revision_confirmation_and_unapproved_items_block_before_mutation
+  # 0.8.8: commercial approval is not a design requirement; an unapproved item
+  # may receive a visual (that is how a commercial-only item becomes paintable).
+  def test_revision_and_confirmation_block_before_mutation_but_approval_is_not_required_for_design
     assert_raises(PlanosSanto::ExportError) { @library.bind(request.merge('confirmed'=>false)) }
     assert_raises(PlanosSanto::ExportError) { @library.bind(request.merge('revision'=>0)) }
     assert_raises(PlanosSanto::ExportError) { @library.bind(request.merge('assetRevision'=>99)) }
-    catalog=@catalog.read;catalog['items'][0]['approved']=false;@catalog.save(catalog['items'],1)
-    assert_raises(PlanosSanto::ExportError) { @library.bind(request.merge('revision'=>2)) }
     assert_equal 0,@model.starts
+    catalog=@catalog.read;catalog['items'][0]['approved']=false;@catalog.save(catalog['items'],1)
+    @library.bind(request.merge('revision'=>2))
+    assert_equal @sheet['id'],binding['catalogId'];assert_equal 1,@model.starts
+    refute @library.status['materials'][0]['supplierReady']
   end
 
   def test_corrupt_metadata_index_and_stale_commercial_fields_require_review
@@ -204,10 +208,13 @@ class MaterialLibraryTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { @library.bind(request) }
     @library.bind(request.merge('replaceBinding'=>true))
     catalog=@catalog.read;catalog['items'][0]['sku']='CHANGED';@catalog.save(catalog['items'],1)
-    assert @library.status['materials'][0]['issues'].any?
-    assert_raises(PlanosSanto::ExportError) { @library.bind(request.merge('revision'=>2)) }
-    @library.bind(request.merge('revision'=>2,'replaceBinding'=>true))
+    # 0.8.8: a commercial edit is reported for the supplier, never as a design issue.
     assert_empty @library.status['materials'][0]['issues']
+    assert @library.status['materials'][0]['commercialIssues'].any?
+    uuid=binding['uuid']
+    @library.bind(request.merge('revision'=>2))
+    assert_equal uuid,binding['uuid'],'re-vincular la misma ficha conserva el UUID'
+    assert_empty @library.status['materials'][0]['issues'];assert_empty @library.status['materials'][0]['commercialIssues']
     File.binwrite(File.join(@directory,'material-assets.json'),'{broken')
     assert_raises(PlanosSanto::ExportError) { @library.status }
     assert_equal '{broken',File.binread(File.join(@directory,'material-assets.json'))
@@ -328,18 +335,24 @@ class MaterialLibraryTest < Minitest::Test
     assert_equal '21',@library.install(request(@edge))['materialId']
   end
 
-  def test_unapproved_or_stale_visual_record_cannot_be_installed_in_another_project
+  # 0.8.8 (audit C2+C3): the archived visual is content-addressed, so a commercial
+  # edit keeps it installable in another project; a tampered archive still blocks.
+  def test_commercial_edit_keeps_visual_installable_in_another_project_but_tampered_archive_blocks
     @library.bind(request)
     catalog=@catalog.read
     catalog['items'][0]['sku']='SKU-CHANGED'
     @catalog.save(catalog['items'],1)
     fresh=LibraryFixture::Model.new
     other=PlanosSanto::MaterialLibrary.new(fresh,catalog:@catalog,directory:@directory)
+    assert other.status['visuals'][0]['available']
+    record=other.assets['records'][0];archive=File.join(@directory,'material-assets',record['assetName'])
+    original=File.binread(archive);File.binwrite(archive,'tampered')
     refute other.status['visuals'][0]['available']
     assert_raises(PlanosSanto::ExportError) { other.install(request.merge('revision'=>2)) }
-    assert_empty fresh.materials
-    assert_equal 0,fresh.starts
-    assert_equal 1,other.assets['revision']
+    assert_empty fresh.materials;assert_equal 0,fresh.starts
+    File.binwrite(archive,original)
+    installed=other.install(request.merge('revision'=>2))
+    assert_equal 1,fresh.materials.length;assert_equal @sheet['id'],installed.dig('binding','catalogId')
   end
 
 end

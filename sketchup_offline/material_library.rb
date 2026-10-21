@@ -2,6 +2,7 @@
 require_relative 'catalog_store'
 require_relative 'material_resolver'
 require_relative 'material_policy'
+require_relative 'ocl_attributes'
 
 module PlanosSanto
   # Visual archives are private local SKM files, separate from the commercial
@@ -43,9 +44,15 @@ module PlanosSanto
       material.entityID.to_s
     end
 
-    def current_item(catalog, id, allow_source: false)
+    # install: needs a verified visual in the library. bind: an existing model
+    # material IS the visual, so any sheet/edge item may be associated (photo
+    # items still require their proof, checked by the caller).
+    def current_item(catalog, id, allow_source: false, for_bind: false)
       item = catalog['items'].find { |row| row['id'] == id }
-      raise ExportError, 'Elegí una placa o canto listo para diseño del catálogo.' unless item && (MaterialPolicy.paintable?(item,directory:@directory) || allow_source && MaterialPolicy.photo_source_ready?(item,directory:@directory)) && %w[sheet edge].include?(item['kind'])
+      raise ExportError, 'La ficha ya no existe en la biblioteca.' unless item
+      raise ExportError, "«#{item['name']}» no está clasificada como placa ni canto. Clasificala en la biblioteca." unless %w[sheet edge].include?(item['kind'])
+      return item if for_bind
+      raise ExportError, 'Elegí una placa o canto listo para diseño del catálogo.' unless MaterialPolicy.paintable?(item,directory:@directory) || allow_source && MaterialPolicy.photo_source_ready?(item,directory:@directory)
       item
     end
 
@@ -53,6 +60,8 @@ module PlanosSanto
       MaterialResolver.observe_binding(material)
     end
 
+    # Design issues only: these block painting. Commercial differences are
+    # reported separately by #commercial_issues and never block painting.
     def binding_issues(material, catalog, duplicates)
       observation = observed(material)
       return [observation['error']] if observation['status'] == 'invalid'
@@ -60,18 +69,33 @@ module PlanosSanto
       return [] unless binding
       issues = []
       item = catalog['items'].find { |row| row['id'] == binding['catalogId'] }
-      issues << 'SKU ausente, pendiente o modificado: revisar vínculo.' unless item && MaterialPolicy.paintable?(item,directory:@directory) && item['kind'] == binding['kind'] && MaterialResolver.item_fingerprint(item) == binding['catalogFingerprint']
-      issues << 'La textura de diseño no coincide con su foto y archivo guardados.' if item && MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item,material,directory:@directory)
+      if !item
+        issues << 'Vínculo con una ficha que ya no existe en la biblioteca.'
+      elsif item['kind'] != binding['kind']
+        issues << "La ficha cambió de tipo (#{binding['kind']} → #{item['kind']}): volvé a vincular el material."
+      elsif MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item,material,directory:@directory,require_source:false)
+        issues << 'La textura de este material no coincide con su foto (imagen o escala cambiadas en SketchUp).'
+      end
       issues << 'UUID duplicado: volver a vincular explícitamente.' if duplicates.include?(binding['uuid'])
       issues
+    end
+
+    def commercial_issues(material, catalog)
+      binding = observed(material)['binding']
+      return [] unless binding
+      item = catalog['items'].find { |row| row['id'] == binding['catalogId'] }
+      return [] unless item && item['kind'] == binding['kind']
+      return [] if MaterialResolver.item_fingerprint(item) == binding['catalogFingerprint']
+      ['Datos comerciales modificados desde la vinculación: revisá la ficha antes de pedir a la maderera.']
     end
 
     def duplicate_uuids
       materials.filter_map { |m| observed(m)['binding']&.fetch('uuid') }.tally.select { |_id, count| count > 1 }.keys
     end
 
+    # The archived visual is content-addressed; commercial edits never stale it.
     def usable_record(record, item)
-      return false unless record && record['catalogFingerprint'] == MaterialResolver.item_fingerprint(item)
+      return false unless record && item && record['catalogId'] == item['id']
       path = File.join(@directory, 'material-assets', record['assetName'])
       File.file?(path) && !File.symlink?(path) && Digest::SHA256.file(path).hexdigest == record['assetHash']
     end
@@ -86,14 +110,14 @@ module PlanosSanto
           { 'id' => material_id(material), 'nativeId' => material_id(material), 'name' => material.name.to_s,
             'color' => color && color.respond_to?(:red) ? [color.red, color.green, color.blue] : nil,
             'hasTexture' => material.respond_to?(:texture) && !material.texture.nil?,
-            'designReady' => catalog['items'].any? { |item| item['id']==observed(material).dig('binding','catalogId') && MaterialPolicy.paintable?(item,directory:@directory) },
+            'designReady' => !observed(material)['binding'].nil? && binding_issues(material, catalog, duplicates).empty?,
             'supplierReady' => catalog['items'].any? { |item| item['id']==observed(material).dig('binding','catalogId') && item['approved']==true },
-            'binding' => observed(material)['binding'], 'issues' => binding_issues(material, catalog, duplicates) }
+            'binding' => observed(material)['binding'], 'issues' => binding_issues(material, catalog, duplicates),
+            'commercialIssues' => commercial_issues(material, catalog) }
         end,
         'visuals' => catalog['items'].select { |item| %w[sheet edge].include?(item['kind']) }.map do |item|
           record = index['records'].find { |r| r['catalogId'] == item['id'] }
-          source_ready = MaterialPolicy.skm_source_ready?(item,directory:@directory)
-          available = MaterialPolicy.paintable?(item,directory:@directory) && (usable_record(record, item) || source_ready)
+          available = MaterialPolicy.paintable?(item,directory:@directory)
           { 'catalogId' => item['id'], 'available' => available, 'assetHash' => record && record['assetHash'],
             'assetName' => record && record['assetName'], 'status' => available ? 'available' : 'needs_review',
             'designReady' => MaterialPolicy.paintable?(item,directory:@directory), 'supplierReady' => item['approved']==true, 'warnings' => MaterialPolicy.warnings(item) }
@@ -195,25 +219,30 @@ module PlanosSanto
         raise ExportError, 'No se pudo confirmar la operación.' if @model.commit_operation == false
         started = false
         result
-      rescue Exception
+      rescue Exception => original
         @model.abort_operation if started
         if published
-          previous ? atomic_write(@path, previous) : File.delete(@path)
+          begin
+            previous ? atomic_write(@path, previous) : File.delete(@path)
+          rescue StandardError => restore_error
+            warn("Planos Santo: no se pudo restaurar material-assets.json: #{restore_error.class}: #{restore_error.message}")
+          end
         end
-        raise
+        raise original
       end
     end
 
     def bind(data)
       result = locked(data) do |catalog, index|
         repair=data['replaceBinding']==true && data['replaceVisual']==true
-        item = current_item(catalog, data['catalogId'],allow_source:repair)
+        item = current_item(catalog, data['catalogId'],allow_source:repair,for_bind:true)
         material = materials.find { |m| material_id(m) == data['materialId'].to_s }
         raise ExportError, 'El material elegido ya no existe en el modelo.' unless material
         raise ExportError, 'Para vincular esta foto, cargá su material visual guardado.' if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item,material,directory:@directory,allow_stale_index:repair)
         observation = observed(material)
         old = observation['binding']
-        conflict = observation['status'] == 'invalid' || (old && (old['catalogId'] != item['id'] || old['catalogFingerprint'] != MaterialResolver.item_fingerprint(item) || duplicate_uuids.include?(old['uuid'])))
+        # Re-binding the same item only refreshes its commercial fingerprint.
+        conflict = observation['status'] == 'invalid' || (old && (old['catalogId'] != item['id'] || old['kind'] != item['kind'] || duplicate_uuids.include?(old['uuid'])))
         raise ExportError, 'El material tiene un vínculo diferente o inválido; confirmá reemplazarlo.' if conflict && data['replaceBinding'] != true
         mutate(index) do
           binding = MaterialResolver.binding_for(item, old && !conflict ? old['uuid'] : SecureRandom.uuid)
@@ -244,25 +273,26 @@ module PlanosSanto
       catalog
     end
 
-    def install(data, path: nil)
+    # with_status:false returns only the installed binding (no full library
+    # re-listing after the operation committed; used by PaintMaterials).
+    def install(data, path: nil, with_status: true)
       result = locked(data) do |catalog, index|
         repair=data['replaceVisual']==true
-        item = current_item(catalog, data['catalogId'],allow_source:repair)
+        # An explicit .skm chosen by the operator IS the visual: any sheet/edge item.
+        item = current_item(catalog, data['catalogId'],allow_source:repair,for_bind:!path.nil?)
         existing = materials.select { |m| observed(m).dig('binding', 'catalogId') == item['id'] }
         unless existing.empty?
           valid = existing.select { |m| binding_issues(m, catalog, duplicate_uuids).empty? }
           raise ExportError, 'Hay vínculos existentes en conflicto; revisalos antes de importar.' if valid.length != 1 || existing.length != 1
           next { 'materialId' => material_id(valid.first), 'binding' => observed(valid.first)['binding'] }
         end
-        record = index['records'].find { |row| row['catalogId'] == item['id'] }
         if path.nil?
-          if MaterialPolicy.skm_source_ready?(item,directory:@directory) && !usable_record(record, item)
-            path=File.join(@directory,'skm-import-assets',"#{item['observed']['skm']['sha256']}.skm")
-          elsif repair && MaterialPolicy.photo?(item) && MaterialPolicy.photo_source_ready?(item,directory:@directory)
-            path=File.join(@directory,'material-assets',"#{item['observed']['photo']['skmHash']}.skm")
-          else
-            raise ExportError, 'No hay un activo visual verificado. Vinculá un material real o elegí un .skm.' unless usable_record(record, item)
-            path = File.join(@directory, 'material-assets', record['assetName'])
+          asset = MaterialPolicy.design_asset(item,directory:@directory)
+          case asset['status']
+          when 'ok' then path = asset['path']
+          when 'corrupt' then raise ExportError, "El archivo de textura de «#{item['name']}» fue alterado o está dañado (no coincide su huella). Restaurá la copia de seguridad de la biblioteca o volvé a cargar la foto."
+          when 'missing' then raise ExportError, "Falta el archivo de textura de «#{item['name']}» en la biblioteca local. Restaurá la copia de seguridad o volvé a cargar la foto."
+          else raise ExportError, "«#{item['name']}» no tiene imagen, textura ni color. Asignale una foto o un color para poder pintar."
           end
         end
         raise ExportError, 'Elegí un archivo .skm existente.' unless path.is_a?(String) && File.extname(path).downcase == '.skm' && File.file?(path) && !File.symlink?(path)
@@ -275,12 +305,13 @@ module PlanosSanto
           raise ExportError, 'SketchUp devolvió un material existente: vinculalo explícitamente.' if before.include?(material)
           binding = MaterialResolver.binding_for(item)
           material.set_attribute(MaterialResolver::DICT, MaterialResolver::KEY, JSON.generate(binding))
+          ocl = OclAttributes.write_missing(material, item)
           changed = archive(material, item, index, data['replaceVisual'] == true)
           raise ExportError, 'No se pudo guardar el SKM de diseño actualizado; no se reparó el vínculo.' if repair && MaterialPolicy.photo?(item) && !changed
-          [{ 'materialId' => material_id(material), 'binding' => binding }, changed]
+          [{ 'materialId' => material_id(material), 'binding' => binding, 'opencutlist' => ocl }, changed]
         end
       end
-      status.merge(result)
+      with_status ? status.merge(result) : result
     end
   end
 end

@@ -74,18 +74,22 @@ module PlanosSanto
     def ensure_unlocked!(nodes)
       raise ExportError,'La pieza o un contenedor está bloqueado.' if nodes.any? { |n| (n['_parents']+[n['_entity']]).any? { |e| @manager.locked?(e) || !@manager.valid?(e) } }
     end
+    # Design-only check, run on every click: no library file is hashed here and
+    # commercial fields (SKU, supplier, price, format, approval) are ignored.
+    # Files were verified when the material was installed or bound.
     def material_for(data)
       catalog=@catalog.read
       item=catalog['items'].find { |i| i['id']==data['catalogId'] }
-      raise ExportError,'Elegí un material aprobado o listo para diseño con foto verificada, del tipo correcto.' unless item && MaterialPolicy.paintable?(item,directory:MaterialPolicy.directory(@catalog)) && item['kind']==data['mode']
+      raise ExportError,'La ficha del material ya no existe en la biblioteca. Elegí otro material.' unless item
+      raise ExportError,"«#{item['name']}» es #{item['kind']=='edge' ? 'un canto' : 'una placa'}; elegí el modo de pintura correspondiente." unless item['kind']==data['mode']
       matches=@model.materials.to_a.select do |m|
         observation=MaterialResolver.observe_binding(m)
         observation['status']=='valid' && observation['binding']['uuid']==data['materialUuid']
       end
-      raise ExportError,'La vinculación nativa no existe o está duplicada. Revisá la biblioteca.' unless matches.length==1
+      raise ExportError,"«#{item['name']}» no está instalado en este modelo o su vínculo está duplicado. Elegilo de nuevo en la paleta para instalarlo." unless matches.length==1
       material=matches.first;binding=MaterialResolver.read_binding(material)
-      raise ExportError,'La foto, la textura o sus archivos ya no coinciden; revisá el material de diseño.' unless MaterialPolicy.native_valid?(item,material,directory:MaterialPolicy.directory(@catalog))
-      raise ExportError,'La biblioteca cambió; volvé a vincular y revisar el material.' unless binding['catalogId']==item['id'] && binding['kind']==item['kind'] && binding['catalogFingerprint']==MaterialResolver.item_fingerprint(item)
+      raise ExportError,'Problema de vinculación: el material del modelo pertenece a otra ficha. Elegilo de nuevo en la paleta.' unless binding['catalogId']==item['id'] && binding['kind']==item['kind']
+      raise ExportError,"La textura de «#{item['name']}» en este modelo no coincide con su foto (imagen o escala cambiadas en SketchUp). Reparala desde la biblioteca." unless MaterialPolicy.native_valid?(item,material,directory:MaterialPolicy.directory(@catalog),require_source:false)
       [material,Digest::SHA256.hexdigest(JSON.generate(catalog)),binding]
     end
     def material_signature(material)

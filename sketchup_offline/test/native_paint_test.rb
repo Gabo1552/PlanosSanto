@@ -98,10 +98,13 @@ class NativePaintTest < Minitest::Test
     p=@paint.preview(request);assert_includes p['affectedPaths'],'3/11';assert_includes p['affectedPaths'],'3/13/12'
     assert_raises(PlanosSanto::ExportError) { @paint.preview(request(scope:'unique')) }
   end
-  def test_binding_requires_approved_catalog_and_single_uuid
-    @item['approved']=false;assert_raises(PlanosSanto::ExportError) { @paint.preview(request) }
-    @item['approved']=true;@item['sku']='Changed';assert_raises(PlanosSanto::ExportError) { @paint.preview(request) }
-    @item['sku']='BL18';@model.materials << @material;assert_raises(PlanosSanto::ExportError) { @paint.preview(request) }
+  # 0.8.8 (audit C3): approval and SKU are commercial and never block painting;
+  # an item kind change or a duplicated native UUID still does.
+  def test_binding_requires_matching_kind_and_single_uuid_but_not_commercial_data
+    @item['approved']=false;assert @paint.preview(request)['token']
+    @item['approved']=true;@item['sku']='Changed';assert @paint.preview(request)['token']
+    @item['kind']='edge';assert_raises(PlanosSanto::ExportError) { @paint.preview(request) }
+    @item['kind']='sheet';@item['sku']='BL18';@model.materials << @material;assert_raises(PlanosSanto::ExportError) { @paint.preview(request) }
   end
   def test_native_face_selection_requires_unambiguous_edit_path
     @model.selection=[@faces[2]]

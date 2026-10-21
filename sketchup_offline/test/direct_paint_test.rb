@@ -55,12 +55,27 @@ class DirectPaintTest < Minitest::Test
     @choices=[{'catalogId'=>'known','materialUuid'=>'current-native'}]
     choices=@choices
     @service=Object.new;@service.define_singleton_method(:material_choices) { |_data| choices }
+    # 0.8.8: the controller resolves palette choices through PaintMaterials.
+    @paint=Object.new
+    @paint.define_singleton_method(:states) do
+      row=choices.find { |choice| choice['catalogId']=='known' }
+      row ? {'known'=>{'state'=>'ready','materialUuid'=>row['materialUuid']}} : {'known'=>{'state'=>'installable','message'=>'«Conocido» todavía no está en este modelo; se instala automáticamente al elegirlo.'}}
+    end
+    paint=@paint
+    @paint.define_singleton_method(:state) { |catalog_id| paint.states[catalog_id] }
+    @paint.define_singleton_method(:prepare) do |catalog_id,_mode|
+      row=choices.find { |choice| choice['catalogId']==catalog_id }
+      raise PlanosSanto::ExportError,'La ficha del material ya no existe en la biblioteca.' unless row
+      {'catalogId'=>catalog_id,'materialUuid'=>row['materialUuid'],'installed'=>false,'message'=>'Material activo.'}
+    end
   end
   def teardown;ENV['PLANOS_SANTO_DATA_DIR']=@old;FileUtils.remove_entry(@dir);end
   def palette;@controller.instance_variable_get(:@palette_dialog);end
   def with_tool
-    PlanosSanto::SmartPaint.stub(:new,@service) do
-      PlanosSanto::SmartPaintTool.stub(:new,lambda { |_model,**args| DirectPaintToolDouble.new(**args) }) { yield }
+    PlanosSanto::PaintMaterials.stub(:new,@paint) do
+      PlanosSanto::SmartPaint.stub(:new,@service) do
+        PlanosSanto::SmartPaintTool.stub(:new,lambda { |_model,**args| DirectPaintToolDouble.new(**args) }) { yield }
+      end
     end
   end
   def remember;@controller.remember_smart_settings('catalogId'=>'known','scope'=>'all','side'=>'both','axes'=>[1,2],'batch'=>true,'edgeCount'=>4,'paintScope'=>'piece');end
@@ -93,22 +108,22 @@ class DirectPaintTest < Minitest::Test
     assert_nil @controller.instance_variable_get(:@session).document
     assert_empty @model.operations
   end
-  def test_stale_or_ambiguous_native_binding_does_not_auto_start
+  # 0.8.8: a toolbar resume never installs; it explains why it did not start.
+  def test_remembered_material_not_installed_in_this_model_does_not_auto_start_or_install
     remember;@choices.clear
     with_tool { @controller.quick_action('sheet') }
     assert_empty @selected
-    @choices.replace([{'catalogId'=>'known','materialUuid'=>'one'},{'catalogId'=>'known','materialUuid'=>'two'}])
-    with_tool { @controller.quick_action('sheet') }
-    assert_empty @selected
-    assert_match(/Elegí un material vigente/,@controller.dispatch('palette_ready',{})['intent']['message'])
+    assert_match(/se instala automáticamente al elegirlo/,@controller.dispatch('palette_ready',{})['intent']['message'])
+    assert_empty @model.operations
   end
   def test_explicit_quick_choice_is_unique_and_changed_uuid_or_shared_scope_is_rejected
     @controller.quick_action('sheet')
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>'known','scope'=>'all'}) }
     with_tool do
-      assert_raises(PlanosSanto::ExportError) { @controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>'known','materialUuid'=>'old'}) }
-      result=@controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>'known','materialUuid'=>'current-native'})
-      assert result['toolState']['active']
+      # 0.8.8: a stale UUID from the palette self-heals to the current bound material.
+      result=@controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>'known','materialUuid'=>'old'})
+      assert result['toolState']['active'];assert_equal 'current-native',result['toolState']['options']['materialUuid']
+      assert_raises(PlanosSanto::ExportError) { @controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>'unknown'}) }
     end
     refute @controller.smart_settings.key?('materialUuid')
     refute @controller.smart_settings.key?('allowShared')
@@ -224,8 +239,8 @@ class DirectPaintTest < Minitest::Test
   end
   def test_explicit_remove_edge_restoration_resolves_a_sheet_not_an_edge
     @controller.quick_action('sheet')
-    seen=[];choices=@choices
-    @service.define_singleton_method(:material_choices) { |data| seen << data['mode'];choices }
+    seen=[];original=@paint.method(:prepare)
+    @paint.define_singleton_method(:prepare) { |catalog_id,mode| seen << mode;original.call(catalog_id,mode) }
     with_tool { @controller.dispatch('smart_quick_start',{'mode'=>'remove_edge','catalogId'=>'known'}) }
     assert_equal ['sheet'],seen
     assert_equal 'current-native',@selected.last.options['materialUuid']
