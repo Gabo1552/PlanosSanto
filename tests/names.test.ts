@@ -32,6 +32,8 @@ describe('Diferencia entre nombre actual y nuevo',()=>{
     expect(nameChangeKind('OB1 M01 Lateral','OB2 M01 Lateral')).toBe('prefix');
     expect(nameChangeKind('OB1 M01 Lateral','OB1 M01 Base')).toBe('base');
     expect(nameChangeKind('Lateral','Central')).toBe('base');
+    expect(nameChangeKind('Lateral','M1 Lateral')).toBe('prefix');
+    expect(nameChangeKind('M1 Lateral','Lateral')).toBe('prefix');
     expect(nameChangeKind('','OB1 M01 Base')).toBe('base');
     expect(nameChangeKind('Base  ','Base')).toBe('same');
   });

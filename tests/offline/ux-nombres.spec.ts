@@ -67,7 +67,10 @@ test('sugerencias: foco útil, motivos pendientes, Enter avanza, Esc deshace la 
  await expect(confirm).toHaveAttribute('aria-describedby','naming-pending');await expect(confirm).toBeDisabled();
  await page.keyboard.press('Space');await expect(reasons).not.toContainText('Confirmá frente');
  const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true}),p02=dialog.getByLabel('Nombre sugerido P02',{exact:true});
- await p01.click();await p01.fill('Estante por teclado');await p01.press('Enter');await expect(p02).toBeFocused();await expect(dialog).toContainText('1 de 2 propuestas seleccionadas');
+ // Enter only moves between rows: walking through them never accepts a proposal, not even on the last row.
+ await p01.click();await p01.press('Enter');await expect(p02).toBeFocused();await p02.press('Enter');await expect(p02).toBeFocused();await p02.press('Shift+Enter');await expect(p01).toBeFocused();await expect(dialog).toContainText('0 de 2 propuestas seleccionadas');
+ await expect(dialog.getByRole('checkbox',{name:'Aceptar sugerencia P01',exact:true})).not.toBeChecked();await expect(dialog.getByRole('checkbox',{name:'Aceptar sugerencia P02',exact:true})).not.toBeChecked();
+ await p01.fill('Estante por teclado');await p01.press('Enter');await expect(p02).toBeFocused();await expect(dialog).toContainText('1 de 2 propuestas seleccionadas');
  await p02.fill('Borrador descartado');await p02.press('Escape');await expect(dialog).toBeVisible();await expect(p02).not.toHaveValue('Borrador descartado');await expect(dialog).toContainText('1 de 2 propuestas seleccionadas');
  await p02.press('Shift+Enter');await expect(p01).toBeFocused();await expect(p01).toHaveValue('Estante por teclado');
  await p02.fill('');await expect(reasons).toContainText('Completá o desmarcá 1 propuesta vacía.');await p02.fill('Piso por teclado');await expect(reasons).toHaveCount(0);
@@ -80,6 +83,11 @@ test('sugerencias: filtros por confianza, maestro de la tabla y Desmarcar todas 
  const master=dialog.getByRole('checkbox',{name:'Aplicar todas las propuestas visibles',exact:true});await master.check();await expect(dialog).toContainText('2 de 2 propuestas seleccionadas');
  for(const name of [/^Geométricas \(\d+\)$/,/^Revisar \(\d+\)$/,/^Sin clasificar \(\d+\)$/]){const button=group.getByRole('button',{name});await button.click();await expect(button).toHaveAttribute('aria-pressed','true');const rows=await dialog.locator('[data-suggestion-row]').count(),shown=Number((await button.textContent())!.match(/\((\d+)\)/)![1]);expect(rows).toBe(shown);}
  await expect(dialog).toContainText('2 de 2 propuestas seleccionadas');await all.click();
+ // An empty proposal hidden by a filter can still be reached from the pending reason.
+ const p02=dialog.getByLabel('Nombre sugerido P02',{exact:true});await p02.fill('');
+ for(const name of [/^Geométricas \(\d+\)$/,/^Revisar \(\d+\)$/,/^Sin clasificar \(\d+\)$/]){await group.getByRole('button',{name}).click();if(!await p02.count())break;}
+ await expect(p02).toHaveCount(0);const reasons=dialog.getByRole('list',{name:'Falta para confirmar'});await expect(reasons).toContainText('Completá o desmarcá 1 propuesta vacía.');
+ await reasons.getByRole('button',{name:'Ir a la propuesta vacía',exact:true}).click();await expect(all).toHaveAttribute('aria-pressed','true');await expect(p02).toBeFocused();
  await dialog.getByRole('button',{name:'Desmarcar todas',exact:true}).click();await expect(dialog).toContainText('0 de 2 propuestas seleccionadas');await expect(master).not.toBeChecked();
  await dialog.getByRole('button',{name:'Cerrar sugerencias',exact:true}).click();await expect(dialog).toHaveCount(0);expect(count('save')).toBe(0);
 });
