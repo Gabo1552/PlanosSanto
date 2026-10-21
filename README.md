@@ -1,14 +1,14 @@
 # Planos Santo
 
-**Candidata actual 0.8.7 — pintura inmediata:** [descargar RBZ](dist/PlanosSanto-0.8.7-candidata.rbz), [SHA256](dist/PlanosSanto-0.8.7-candidata.rbz.sha256), [paquete de validación](dist/PlanosSanto-0.8.7-Validacion-Local-Pintura-Inmediata.zip), [guía breve](docs/hotfix-pintura-087/GUIA_ENCARGADO.md) e [instrucciones para SketchUp 2026](docs/hotfix-pintura-087/VALIDACION_LOCAL_POSTERIOR.md).
+**Candidata actual 0.8.9 — correcciones Hito 1:** [RBZ](dist/PlanosSanto-0.8.9-candidata.rbz), [SHA256](dist/PlanosSanto-0.8.9-candidata.rbz.sha256), [paquete para Dot/Codex local](dist/PlanosSanto-0.8.9-Validacion-Local-Hito1-Correcciones.zip), [validación local](docs/hito1-correcciones-089/VALIDACION_LOCAL.md) y [evidencia real recibida de 0.8.8](docs/hito1-correcciones-089/EVIDENCIA_LOCAL_088.md).
 
-Pintura de piezas con un clic, cantos conservados y paleta compacta sin formularios normales. Conserva guías A4, nombres, materiales, anotaciones y pedidos TXT. **706 pruebas automatizadas verificadas por fases; validación nativa pendiente.** No se declara aprobada para producción. No se publican modelos ni bibliotecas privadas.
+Corrige ImageRep nil de fotos, colisión SKM sin vincular materiales por nombre, sincronización de paletas e inventarios duplicados. Pruebas automatizadas aprobadas; **candidata aún no validada en SketchUp**. La 0.8.8 no fue aprobada (10 PASS/4 FAIL/5 pendientes). No iniciar Hito 2. Se conservan A4, notas, nombres, materiales/cantos y TXT. No se publican archivos privados.
 
 Para desarrollo: `npm ci`, `npm run verify`; Node 24, Ruby 3.2+, Python 3, Chromium y Poppler. `npm run dev` inicia la web. El archivo `artifacts/PlanosSanto-0.5.3.rbz` es un fixture de prueba de actualización, no el instalador actual.
 
 ## Información histórica de los flujos anteriores
 
-Las secciones siguientes conservan el historial del exportador web y versiones anteriores; para el uso actual, seguir los enlaces de la candidata 0.8.7 de arriba.
+Las secciones siguientes conservan el historial del exportador web y versiones anteriores; para el uso actual, seguir los enlaces de la candidata 0.8.9 de arriba.
 
 Plan: [migración a SketchUp](PLAN_DESARROLLO_EXTENSION.md). Estado operativo: [tareas de la extensión](sketchup_offline/TASKS.md). La aceptación exige probar el RBZ con un modelo real, cinco medidas, guardar/cerrar/reabrir y PDF impreso.
 

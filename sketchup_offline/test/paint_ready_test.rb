@@ -335,4 +335,48 @@ class PaintReadyTest < Minitest::Test
   end
 
   def write_png(name);path=File.join(@source,name);File.binwrite(path,PhotoFixture.png);path;end
+  def test_skm_collision_with_unbound_native_visual_is_installed_independently_and_paints
+    image=File.join(@source,'selected-skm-texture.png');File.binwrite(image,PhotoFixture.png(4,3))
+    source=PhotoFixture::Material.new(9000,'Melamina QA 18mm');source.texture=[image,2,3]
+    original_skm=File.join(@source,'original.skm');source.save_as(original_skm)
+    bytes=File.binread(original_skm);sha=Digest::SHA256.hexdigest(bytes)
+    folder=File.join(@directory,'skm-import-assets');FileUtils.mkdir_p(folder);path=File.join(folder,"#{sha}.skm");File.binwrite(path,bytes)
+    row=@catalog.new_item('Caju QA 18mm','sheet',{'source'=>'skm-import','skm'=>{'sha256'=>sha,'sourceName'=>'Melamina QA 18mm.skm','originalName'=>'Melamina QA 18mm','suggestions'=>{}}})
+    @catalog.save([row],0)
+    existing=@model.materials.add('Melamina QA 18mm');existing.color=Sketchup::Color.new(7,8,9)
+    existing.define_singleton_method(:name=) { |value| self.display_name=value }
+    @faces.first(2).each { |face| face.material=existing;face.back_material=existing }
+    loader=@model.materials.method(:load);loads=[]
+    @model.materials.define_singleton_method(:load) do |file|
+      loads << file;document=JSON.parse(File.binread(file))
+      prior=find { |material| material.name==document['name'] }
+      next prior if prior
+      material=loader.call(file)
+      material.define_singleton_method(:name=) { |value| self.display_name=value }
+      material
+    end
+    names_aware=Module.new do
+      define_method(:start_operation) do |*args|
+        @collision_names=materials.map { |material| [material,material.name] };super(*args)
+      end
+      define_method(:abort_operation) do
+        result=super();@collision_names.each { |material,name| material.display_name=name };result
+      end
+    end
+    @model.singleton_class.prepend(names_aware)
+    before=PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory).material_state(existing)
+    assert_equal 'installable',service.state(row['id'])['state']
+    prepared=service.prepare(row['id'],'sheet');assert prepared['installed']
+    installed=@model.materials.last;refute_same existing,installed
+    assert_equal before,PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory).material_state(existing)
+    assert_empty existing.attributes;assert_equal 'Melamina QA 18mm',existing.name
+    assert_equal 'ready',service.state(row['id'])['state']
+    assert_equal prepared['materialUuid'],service.state(row['id'])['materialUuid']
+    assert_equal [path,path],loads;assert_equal bytes,File.binread(path)
+    assert_equal PhotoFixture.png(4,3),File.binread(installed.texture.filename)
+    assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],installed)
+    assert_equal before,PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory).material_state(existing)
+    @model.undo;assert_same existing,@pieces[0].definition.entities[0].material
+  end
+
 end

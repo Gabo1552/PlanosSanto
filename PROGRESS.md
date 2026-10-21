@@ -447,3 +447,7 @@ Paleta independiente, barra única5accesos, nombres contextuales con lote y A4pr
 ## 20/10/2026 — hotfix P0 0.8.7
 
 Pintura inmediata con paleta horizontal, placa completa, cantos preservados, aislamiento seguro y hover local. 706pruebas por fases PASS. Candidata/entrega en docs/hotfix-pintura-087; validación real SketchUp2026 pendiente. Sin nuevas funcionalidades fuera del P0.
+
+## 2026-10-21 — correcciones de Hito 1 (0.8.9)
+
+Baseaf434dd, corregidos fotosnil/SKMcollision/paletas/inventariosrepetidos. 750 pruebas automatizadas aprobadas. Ver docs/hito1-correcciones-089. 0.8.8 NO aprobada local;0.8.9 candidata pendiente, no Hito2.

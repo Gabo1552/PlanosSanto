@@ -359,7 +359,34 @@ module PlanosSanto
       skm_importer.status['rows'].filter_map { |row| [row['catalogId'],row['thumbnail']] if row['thumbnail'] }.to_h.merge(photo_material.thumbnails)
     end
 
+    # A lightweight invalidation for both HtmlDialogs. Receivers reread their
+    # own palette data after the successful operation; never scan the model here.
+    MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
+      catalog_bind catalog_install skm_commit skm_install material_photo_create
+      material_photo_install smart_assign_color smart_material_prepare smart_quick_start].freeze
     def dispatch(action, data)
+      result=dispatch_action(action,data)
+      if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
+        installed=%w[smart_material_prepare smart_quick_start].include?(action)
+        notify_material_library_changed(action) if !installed || result.dig('prepared','installed')==true
+      end
+      result
+    end
+
+    def notify_material_library_changed(action)
+      @material_library_revision=(@material_library_revision || 0)+1
+      payload={'revision'=>@material_library_revision,'action'=>action}
+      [@dialog,@palette_dialog].compact.uniq.each do |window|
+        begin
+          emit_to(window,'planos-santo-material-library-changed',payload)
+        rescue StandardError => error
+          # A closing window must not turn a committed mutation into a failure.
+          warn("Planos Santo: no se pudo avisar la actualización de biblioteca: #{error.class}")
+        end
+      end
+    end
+
+    def dispatch_action(action, data)
       stop_smart_tool(refresh:false) if @smart_state && @smart_state['active'] && @smart_state['mode']=='highlight' && %w[generate save pdf names_apply names_preview].include?(action)
       if @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight' && %w[material_photo_pick material_photo_create material_photo_install skm_preview skm_commit skm_install generate save pdf names_apply names_preview catalog_save catalog_add catalog_import catalog_import_model catalog_bind catalog_install order_save order_export paint_preview paint_apply].include?(action)
         raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.'

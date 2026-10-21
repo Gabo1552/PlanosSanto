@@ -46,6 +46,36 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
  const [loaded,setLoaded]=useState<Loaded>(),[settings,setSettings]=useState<Settings>(quickMode?{...defaults,...immediateDefaults}:defaults),[tool,setTool]=useState<ToolState>({active:false}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[allowShared,setAllowShared]=useState(false),[query,setQuery]=useState(''),[favorites,setFavorites]=useState(false),[compact,setCompact]=useState(initialCompact),[restorePlate,setRestorePlate]=useState(false),[sampleMode,setSampleMode]=useState(false),[sampledMaterialUuid,setSampledMaterialUuid]=useState(''),[recentIds,setRecentIds]=useState<string[]>([]),[installing,setInstalling]=useState(''),[colors,setColors]=useState<Record<string,string>>({});
  // Latest palette data for callbacks that run after awaits (avoids stale closures).
  const loadedRef=useRef<Loaded|undefined>(undefined);useEffect(()=>{loadedRef.current=loaded;},[loaded]);
+ const [libraryRevision,setLibraryRevision]=useState(0),appliedLibraryRevision=useRef(0),libraryRefreshError=useRef<string|undefined>(undefined);
+ const hasLoaded=!!loaded;
+ useEffect(()=>{
+  const changed=()=>setLibraryRevision(value=>value+1);
+  window.addEventListener('planos-santo-material-library-changed',changed);
+  return()=>window.removeEventListener('planos-santo-material-library-changed',changed);
+ },[]);
+ useEffect(()=>{
+  // Defer while this dialog is editing/installing; a remote change must not
+  // replace its selection, UUID, colour/photo drafts, search or active Tool.
+  if(!hasLoaded||busy||libraryRevision<=appliedLibraryRevision.current)return;
+  let cancelled=false;const epoch=contextEpoch.current;let retryDelay=80;
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const refresh=()=>{void request<Loaded>('smart_palette_load').then(result=>{
+   if(cancelled||epoch!==contextEpoch.current)return;
+   loadedRef.current=result;setLoaded(result);appliedLibraryRevision.current=libraryRevision;
+   const previousError=libraryRefreshError.current;if(previousError){setError(current=>current===previousError?'':current);libraryRefreshError.current=undefined;}
+  }).catch(value=>{
+   if(cancelled||epoch!==contextEpoch.current)return;
+   const message=value instanceof Error?value.message:String(value);
+   // The OTHER HtmlDialog can hold the native controller busy (e.g. a picker).
+   // Keep this invalidation pending, without polling hover or retrying failures
+   // such as a corrupt catalog. Cleanup cancels timers and obsolete responses.
+   if(message==='Esperá a que termine la operación actual.'){
+    timer=setTimeout(refresh,retryDelay);retryDelay=Math.min(retryDelay*2,2000);
+   }else{libraryRefreshError.current=message;setError(message);}
+  });};
+  timer=setTimeout(refresh,40);
+  return()=>{cancelled=true;clearTimeout(timer);};
+ },[libraryRevision,busy,hasLoaded]);
  const applyPaintData=useCallback((states?:Record<string,PaintState>,visuals?:{materials:NativeMaterial[]})=>{
   const previous=loadedRef.current;if(!states||!previous)return;
   const next={...previous,paintStates:states,...(visuals?{visuals}:{})};loadedRef.current=next;setLoaded(next);
@@ -73,7 +103,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
    if(options.materialUuid){const material=loaded?.visuals.materials.find(material=>material.binding?.uuid===options.materialUuid&&material.binding?.catalogId===options.catalogId&&!material.issues?.length);setSampledMaterialUuid(material?options.materialUuid:'');}
   }
   if(state.contextChanged){contextEpoch.current+=1;loadedRef.current=undefined;setLoaded(undefined);setError(state.error||'Cambió el modelo activo. Volvé a analizar.');setAllowShared(false);return;}
-  if(state.contextRestored){const epoch=++contextEpoch.current;setAllowShared(false);setError('');void request<Loaded>('smart_palette_load').then(result=>{if(contextEpoch.current===epoch){setLoaded(result);setTool(result.toolState);setNotice('Modelo original recuperado. Revisá el material y autorizá nuevamente el alcance antes de pintar.');}}).catch(error=>{if(contextEpoch.current===epoch)setError(error instanceof Error?error.message:String(error));});return;}
+  if(state.contextRestored){const epoch=++contextEpoch.current;setAllowShared(false);setError('');void request<Loaded>('smart_palette_load').then(result=>{if(contextEpoch.current===epoch){loadedRef.current=result;setLoaded(result);setTool(result.toolState);setNotice('Modelo original recuperado. Revisá el material y autorizá nuevamente el alcance antes de pintar.');}}).catch(error=>{if(contextEpoch.current===epoch)setError(error instanceof Error?error.message:String(error));});return;}
   if(state.mode!=='sample'||!state.sample){lastSample.current=null;return;}
   if(state.sampleSequence===lastSample.current)return;lastSample.current=state.sampleSequence??null;
   const sample=state.sample;
@@ -84,12 +114,12 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
    setSettings(previous=>({...previous,mode:sample.kind==='edge'?'edge':'sheet',catalogId:item.id,sourceMaterialUuid:''}));setSampledMaterialUuid(sample.materialUuid||'');rememberRecent(item.id);setRestorePlate(false);setQuery('');setFavorites(false);
    setNotice(`Material tomado: ${item.name}. No se pintó ninguna cara. Elegí Placas o Cantos y revisá el alcance antes de activar.`);
   }else{setSampledMaterialUuid('');setSettings(previous=>({...previous,catalogId:'',sourceMaterialUuid:''}));const message=sample.issues?.join(' ')||'Material sin asociación aprobada. Revisalo en la biblioteca antes de pintar.';if(quickMode)setError(message);else setNotice(message);}
- },[rememberRecent]);
+ },[rememberRecent,quickMode]);
  const run=useCallback(async(operation:()=>Promise<void>)=>{setBusy(true);setError('');setNotice('');try{await operation();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}},[]);
  const accept=useCallback(async(result:Result)=>{applyPaintData(result.paintStates,result.visuals);if(result.prepared?.installed)setNotice(result.prepared.message);acceptState(result.toolState);if(result.toolState.contextChanged)return;if(result.scan)onApplied(result.scan,result.refreshWarning);else if(result.scanRequired){try{onApplied(await request('scan'),result.refreshWarning);}catch(e){onApplied(undefined,`El modelo cambió. Volvé a analizar antes de exportar. ${e instanceof Error?e.message:String(e)}`);}}else if(result.refreshWarning)onApplied(undefined,result.refreshWarning);},[onApplied,acceptState,applyPaintData]);
  async function stop(){const result=await request<Result>('smart_tool_stop');await accept(result);return result;}
  useEffect(()=>{if(!initialCompact||quickIntent)return;let mounted=true;void request('smart_palette_compact',{compact:true}).then(()=>{if(mounted)setCompact(true);}).catch(error=>{if(mounted)setError(error instanceof Error?error.message:String(error));});return()=>{mounted=false;};},[initialCompact,quickIntent]);
- useEffect(()=>{let mounted=true;void request<Loaded>('smart_palette_load').then(result=>{if(mounted){setLoaded(result);
+ useEffect(()=>{let mounted=true;void request<Loaded>('smart_palette_load').then(result=>{if(mounted){loadedRef.current=result;setLoaded(result);
     const chosen=initialChoice.current?result.catalog.items.find(item=>item.id===initialChoice.current&&usableForPainting(item,result)):undefined;
     setSettings({...defaults,...result.settings,...(result.toolState.active?result.toolState.options:{}),...(initialQuickMode.current?immediateDefaults:{}),...(chosen?{mode:chosen.kind as 'sheet'|'edge',catalogId:chosen.id,sourceMaterialUuid:'',...(initialAutoStart.current?(initialQuickMode.current?{...immediateDefaults,edgeCount:1 as const}:{scope:'unique' as const,side:'front' as const,batch:false,paintScope:'face' as const,edgeCount:1 as const}):{})}:initialChoice.current?{mode:'sheet' as const,catalogId:'',sourceMaterialUuid:''}:{})});
     setRestorePlate(!chosen&&result.settings?.mode==='remove_edge'&&!!result.settings.catalogId);setTool(result.toolState);setAllowShared(false);if(result.toolState.active){autoStartDone.current=true;setSampleMode(result.toolState.mode==='sample');const uuid=result.toolState.options?.materialUuid;if(uuid)setSampledMaterialUuid(uuid);}
@@ -116,7 +146,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
    }else await accept(await request<Result>('smart_tool_status'));
    setNotice(quickIntent.action==='sample'&&!quickMode&&settings.side==='both'&&!quickIntent.toggleOff?'Elegí Frente o Dorso en Cara del cuentagotas. No se tomó ningún material.':quickIntent.message|| (quickIntent.toggleOff?'Herramienta detenida; se cancelaron las caras en espera.':(quickMode?'Elegí un material y pintá las piezas del modelo.':'Paleta rápida: revisá material, cara y alcance antes de activar.')));
   });
- },[loaded,quickIntent,run,accept,settings,sampledMaterialUuid,rememberRecent]);
+ },[loaded,quickIntent,run,accept,settings,sampledMaterialUuid,rememberRecent,quickMode]);
  async function change(patch:Partial<Settings>){
   autoStartDone.current=true;const wasActive=tool.active,queued=tool.queuedCount||0;
   if(!quickMode&&(tool.active||tool.changed))await stop();

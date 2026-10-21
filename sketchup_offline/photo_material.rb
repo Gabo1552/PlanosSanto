@@ -11,6 +11,7 @@ module PlanosSanto
     MAX_BYTES=12*1024*1024
     MAX_PIXELS=16_000_000
     MAX_DIMENSION=16_384
+    MAX_DECODED_BYTES=MAX_PIXELS*4+MAX_DIMENSION*3
     MAX_THUMBNAIL=512*1024
     THUMBNAIL_BUDGET=8*1024*1024
     PHOTO_KEY='photo_v1'
@@ -48,11 +49,25 @@ module PlanosSanto
     end
     def load_image(path,expected:nil)
       raise ExportError,'Esta instalación no permite decodificar imágenes con ImageRep. Revisá SketchUp2026.' unless defined?(Sketchup::ImageRep)
+      # Windows SketchUp 2026 can return nil after a successful load_file.
+      # Start with a new representation so a failed decode cannot reuse pixels
+      # or dimensions from a previous image. Never treat nil alone as success.
       rep=Sketchup::ImageRep.new
-      reject_image! unless rep.load_file(path)==true
+      result=rep.load_file(path)
+      reject_image! unless result==true || result.nil?
       width=rep.width;height=rep.height
       reject_image! unless width.is_a?(Integer) && height.is_a?(Integer) && width>0 && height>0 && width<=MAX_DIMENSION && height<=MAX_DIMENSION && width*height<=MAX_PIXELS
       reject_image! if expected && [width,height]!=[expected['widthPx'],expected['heightPx']]
+      if result.nil?
+        reject_image! unless expected && rep.respond_to?(:bits_per_pixel) && rep.respond_to?(:row_padding) && rep.respond_to?(:data)
+        bits=rep.bits_per_pixel;padding=rep.row_padding
+        reject_image! unless [24,32].include?(bits) && bits.is_a?(Integer) && padding.is_a?(Integer) && padding.between?(0,3)
+        stride=width*(bits/8)+padding
+        decoded_size=height*stride
+        reject_image! if stride>MAX_DIMENSION*4+3 || decoded_size>MAX_DECODED_BYTES
+        pixels=rep.data
+        reject_image! unless pixels.is_a?(String) && pixels.bytesize==decoded_size
+      end
       rep
     rescue ExportError
       raise
@@ -91,6 +106,8 @@ module PlanosSanto
       size=File.size(path);reject_image! if size>MAX_BYTES || size.zero?
       bytes=File.binread(path,MAX_BYTES+1);reject_image! if bytes.bytesize!=size || bytes.bytesize>MAX_BYTES
       info=image_info(bytes)
+      extension=File.extname(path).downcase
+      reject_image! unless info['format']==(extension=='.png' ? 'png' : 'jpg')
       preview=temporary(bytes,'.'+info['format']) { |copy| image_preview(load_image(copy,expected:info)) }
       verify_guard!
       hash=Digest::SHA256.hexdigest(bytes)

@@ -229,4 +229,116 @@ class PhotoMaterialTest < Minitest::Test
     assert_empty @model.materials;assert_nil catalog_bytes;assert_nil index_bytes;assert_empty immutable_assets
   end
 
+  # Decoder-contract doubles: these do NOT execute the Windows image decoder.
+  # In particular the 1200x1200 case uses declared dimensions to reproduce the
+  # observed native return contract, not the user's absent private JPG bytes.
+  def with_decoder_contract(result: nil, proof: true, width: nil, height: nil, bits: 24, padding: nil, data: :complete, error: nil)
+    original=Sketchup::ImageRep.method(:new);instances=[]
+    factory=lambda do
+      rep=original.call;instances << rep
+      decode=rep.method(:load_file)
+      rep.define_singleton_method(:load_file) do |path|
+        decoded=decode.call(path)
+        raise error if error
+        decoded==false ? false : result
+      end
+      rep.define_singleton_method(:width) { width } unless width.nil?
+      rep.define_singleton_method(:height) { height } unless height.nil?
+      if proof
+        rep.define_singleton_method(:bits_per_pixel) { bits }
+        rep.define_singleton_method(:row_padding) { padding.nil? ? (4-(self.width*(bits.to_i/8))%4)%4 : padding }
+        rep.define_singleton_method(:data) do
+          data==:complete ? ("\x00".b*((self.width*(bits.to_i/8)+(padding.nil? ? (4-(self.width*(bits.to_i/8))%4)%4 : padding))*self.height)) : data.respond_to?(:call) ? data.call : data
+        end
+      end
+      rep
+    end
+    Sketchup::ImageRep.stub(:new,factory) { yield instances }
+  end
+  def test_nil_load_result_requires_decoded_pixels_and_matching_headers_for_jpg_and_png
+    with_decoder_contract do |instances|
+      jpg=pick('Original.jpg',PhotoFixture.jpeg)
+      png=pick('Original.png',PhotoFixture.png)
+      assert_equal [2,2],[jpg['widthPx'],jpg['heightPx']]
+      assert_equal [2,2],[png['widthPx'],png['heightPx']]
+      assert_equal 2,instances.length
+      refute_same instances[0],instances[1]
+      assert_empty @model.materials;assert_empty @model.operations
+    end
+  end
+  def test_nil_load_result_with_reported_1200_square_dimensions_creates_real_material_binding
+    bytes=PhotoFixture.jpeg(1200,1200)
+    with_decoder_contract do
+      selected=pick('Contrato 1200.jpg',bytes)
+      assert_equal [1200,1200],[selected['widthPx'],selected['heightPx']]
+      created=create(selected)
+      assert_equal Digest::SHA256.hexdigest(bytes),created['catalog']['items'].first.dig('observed','photo','sourceHash')
+      assert_equal bytes,File.binread(@model.materials.first.texture.filename)
+      assert created['designReady'];assert @model.materials.first.texture
+    end
+  end
+  def test_nil_decode_supports_creating_and_replacing_a_photo_without_mutating_previous_visual
+    with_decoder_contract do
+      initial=create(pick('Inicial.jpg',PhotoFixture.jpeg))
+      previous=@model.materials.first;old_texture=previous.texture;old_attributes=Marshal.dump(previous.attributes)
+      replacement=create(pick('Reemplazo.png',PhotoFixture.png(3,3)),{'action'=>'replace','existingId'=>initial['catalogId'],'replaceConfirmed'=>true})
+      assert replacement['replaced'];assert_equal initial['catalogId'],replacement['catalogId']
+      assert_equal 2,@model.materials.length
+      assert_same old_texture,previous.texture;assert_equal old_attributes,Marshal.dump(previous.attributes)
+      assert_equal PhotoFixture.png(3,3),File.binread(@model.materials.last.texture.filename)
+    end
+  end
+  def test_nil_without_pixel_proof_never_accepts_dimensions_alone
+    [{proof:false},{data:nil},{data:''},{data:'truncated'},{bits:0},{bits:7},{bits:24.0},{bits:136},{padding:-1},{padding:4}].each do |options|
+      with_decoder_contract(**options) { assert_raises(PlanosSanto::ExportError) { pick } }
+    end
+    assert_empty @model.materials;assert_empty @model.operations;assert_nil catalog_bytes
+  end
+  def test_false_unknown_or_raising_decoder_never_uses_dimensions_or_pixel_buffers
+    [false,'true',1].each do |value|
+      with_decoder_contract(result:value) { assert_raises(PlanosSanto::ExportError) { pick } }
+    end
+    with_decoder_contract(error:RuntimeError.new('native decode failed')) { assert_raises(PlanosSanto::ExportError) { pick } }
+    assert_empty @model.materials;assert_empty @model.operations
+  end
+  def test_nil_decoder_rejects_zero_invalid_mismatching_or_excessive_dimensions
+    [{width:0},{height:0},{width:2.0},{width:3},{height:3},{width:20_000},{width:5000,height:5000}].each do |options|
+      with_decoder_contract(**options) { assert_raises(PlanosSanto::ExportError) { pick } }
+    end
+    assert_empty @model.materials;assert_empty @model.operations
+  end
+  def test_nil_decoder_accepts_native_rgb_padding_and_rgba_alpha_buffers
+    with_decoder_contract(bits:24) do
+      selected=pick('RGB con padding.png',PhotoFixture.png(1,2))
+      assert_equal [1,2],[selected['widthPx'],selected['heightPx']]
+      assert create(selected)['created']
+    end
+    with_decoder_contract(bits:32) do
+      selected=pick('RGBA con alpha.png',PhotoFixture.png(3,2))
+      assert_equal [3,2],[selected['widthPx'],selected['heightPx']]
+      assert create(selected)['created']
+    end
+    assert_equal 2,@model.materials.length
+  end
+  def test_invalid_decoder_layout_is_rejected_before_requesting_large_pixel_buffer
+    no_read=lambda { flunk('No se debe copiar un buffer de un formato inválido') }
+    [{bits:128},{bits:8},{padding:10_000},{width:20_000}].each do |options|
+      with_decoder_contract(**options,data:no_read) { assert_raises(PlanosSanto::ExportError) { pick } }
+    end
+    assert_equal 16_000_000*4+16_384*3,PlanosSanto::PhotoMaterial::MAX_DECODED_BYTES
+    assert_empty @model.operations
+  end
+  def test_nil_decoder_does_not_bypass_corrupt_content_false_extensions_or_limits
+    with_decoder_contract do
+      [PhotoFixture.png.byteslice(0,33),PhotoFixture.jpeg.byteslice(0,100),'not a picture'].each do |bytes|
+        assert_raises(PlanosSanto::ExportError) { pick('Corrupta.png',bytes) }
+      end
+      assert_raises(PlanosSanto::ExportError) { pick('Falsa.jpg',PhotoFixture.png) }
+      assert_raises(PlanosSanto::ExportError) { pick('Falsa.png',PhotoFixture.jpeg) }
+      assert_raises(PlanosSanto::ExportError) { pick('Grande.jpg',PhotoFixture.jpeg(5000,5000)) }
+      assert_raises(PlanosSanto::ExportError) { pick('Larga.jpg',PhotoFixture.jpeg(20_000,1)) }
+    end
+    assert_empty @model.materials;assert_empty @model.operations;assert_nil catalog_bytes
+  end
+
 end

@@ -1,77 +1,77 @@
 {
   "state": "ready_for_sketchup",
-  "phase": "087_immediate_paint_hotfix",
+  "phase": "089_hito1_native_validation_fixes",
   "integration_state": "Pintura inmediata implementada y probada con API doubles; render/gestos/guardado nativos pendientes.",
   "verification": {
-    "version": "0.8.7",
-    "state": "CANDIDATA_PARA_VALIDAR",
-    "verifyExitCode": 0,
-    "verifyMode": "Fases equivalentes a npm run verify; primera invocación detenida por servidor anterior en puerto3000, servidor detenido y fases web/Rubyoffline/UIoffline/empaquetado completadas después.",
-    "singleInvocationCompleted": false,
-    "verifyLogs": [
-      "artifacts/verify-immediate-087-inicial.log",
-      "artifacts/verify-immediate-087.log",
-      "artifacts/immediate-087-build-final.log",
-      "artifacts/immediate-087-final-ui-regresion.log"
-    ],
-    "rubyTests": 448,
-    "rubyAssertions": 3226,
-    "rubySuites": 36,
+    "version": "0.8.9",
+    "scope": "CORRECCIONES_HITO1_NO_HITO2",
+    "state": "CANDIDATA_PENDIENTE_VALIDACION_NATIVA",
+    "baseCommit": "af434dd23d7b1ca220f7e6e3efd920780c0ea99e",
+    "verificationPassed": true,
+    "rubyTests": 481,
+    "rubyAssertions": 3594,
+    "rubySuites": 35,
     "typescriptTests": 140,
+    "offlineE2E": 113,
     "webE2E": 16,
-    "offlineE2E": 102,
-    "rbzSha256": "6503d53cb8bafdd7dd5d6955b6afa22381ee9472ee0e5530bb9719bea7f24ad0",
-    "rbzBytes": 1819799,
-    "rbzFiles": 53,
-    "payloadHashes": 52,
-    "rbzEntries": 56,
+    "buildPassed": true,
+    "typecheckPassed": true,
+    "lintErrors": 0,
+    "lintWarnings": 0,
+    "rbzSha256": "8b72f90dd19e342864beb4b2f53dbfe8d2455393535bba95b92b2c3306e7d231",
+    "rbzBytes": 1832966,
+    "rbzFiles": 55,
+    "payloadHashes": 54,
+    "rbzEntries": 58,
     "nativeSketchupExecuted": false,
     "productionApproved": false,
+    "hito2Started": false,
     "privateAssetsIncludedInRelease": false,
-    "immediateEngineTests": 13,
-    "immediateEngineAssertions": 157,
-    "immediatePaletteBrowserTests": 7,
-    "hoverIntegrationMoves": 150,
-    "hoverServicePreviewCalls": 0,
-    "consecutiveRealServiceClicks": 5,
-    "oneNativeUndoOperationPerChangedClick": true,
-    "sameToolOnMaterialChange": true,
-    "normalPaintingForms": false,
-    "pending": [
-      "SketchUp2026: instalación, paleta modeless, clics reales sin edición y apariencia de foto JPG/textura SKM.",
-      "Cinco componentes reales, cambio de material, cantos, aislamiento de definiciones compartidas y Ctrl+Z/Redo.",
-      "Guardado/cierre/reapertura de SKP, escala/veta/textura y perfil sin OCL; rendimiento de modelos grandes.",
-      "Regresión nativa A4/BM17/nombres/anotaciones/TXT y aprobación comercial del taller."
+    "receivedNative088": {
+      "evidence": "Mensaje autorizado; no se recibieron binarios locales",
+      "reportedRealSketchup": "26.2.243 Windows / Ruby3.2.2 / OCL7.1.0",
+      "reportedMatrix": {
+        "PASS": 10,
+        "FAIL": 4,
+        "PENDIENTE": 5
+      },
+      "reportedComplementaryRegressionPass": 7,
+      "approved": false
+    },
+    "pendingNative": [
+      "RepetirV1/V2/V3/V7/V12/V15conJPGreal,PNG,UVnuevo,rotación/espejo yreapertura.",
+      "RepetirV6collisionSKMreal,nombres/PBR/colorize/observadores/Undo y originales intactos.",
+      "V19: cinco muestrasreadonly candidataydiezescrituraschanged=true separadasdeautomatización.",
+      "Dospaletas+selectorhumanolargoycatálogocompartido;nearEdge sigueobservaciónnoconfirmada.",
+      "V18/TXTcomercial/orientacióncontinúanpendientes;noHito2."
     ],
-    "limitations": [
-      "Automatización usa Tool y motores reales con dobles de API, no render SketchUp.",
-      "Automático seguro limitado a placas rectangulares con espesor identificable; ancestro compartido inseguro/UV proyectadas o distorsionadas bloquean sin aplicar.",
-      "Pintar pieza conserva acabados estrechos completos y cantos reconocidos.",
-      "La edición avanzada anterior permanece separada; no forma parte del recorrido inmediato de la barra."
-    ],
-    "totalTests": 706,
+    "totalTests": 750,
+    "syntheticProfile": {
+      "pieces": 1560,
+      "occurrences": 1603,
+      "beforeMedianMs": 191.77104299888015,
+      "afterMedianMs": 57.3218300123699,
+      "beforeInventories": 3,
+      "afterInventories": 1,
+      "nativeTimingApproved": false
+    },
     "cleanSourceReproduction": {
-      "sourceZip": "PlanosSanto-0.8.7-fuentes-pruebas.zip",
-      "directory": "/tmp/planos-santo-087-repro",
-      "dependencies": "node_modules locales reutilizados",
-      "rubyTests": 434,
-      "rubyAssertions": 3156,
-      "rubySuites": 33,
+      "sourceZip": "PlanosSanto-0.8.9-fuentes-pruebas.zip",
+      "rubyTests": 481,
+      "rubyAssertions": 3594,
+      "rubySuites": 35,
       "exitCode": 0,
       "rbzIdentical": true,
-      "rbzSha256": "6503d53cb8bafdd7dd5d6955b6afa22381ee9472ee0e5530bb9719bea7f24ad0",
+      "rbzSha256": "8b72f90dd19e342864beb4b2f53dbfe8d2455393535bba95b92b2c3306e7d231",
+      "dependencies": "node_modules locales reutilizados",
       "nativeSketchupExecuted": false
     }
   },
   "release": {
-    "version": "0.8.7",
-    "file": "artifacts/PlanosSanto-0.8.7.rbz",
-    "sha256": "6503d53cb8bafdd7dd5d6955b6afa22381ee9472ee0e5530bb9719bea7f24ad0",
-    "bytes": 1819799,
-    "entries": 56,
-    "zipCRC": "PASS",
-    "manifestHashes": "PASS",
-    "privateAssetsIncluded": false
+    "version": "0.8.9",
+    "file": "dist/PlanosSanto-0.8.9-candidata.rbz",
+    "sha256": "8b72f90dd19e342864beb4b2f53dbfe8d2455393535bba95b92b2c3306e7d231",
+    "bytes": 1832966
   },
   "needsSketchupValidation": true,
   "receivedEvidence": {
@@ -104,16 +104,13 @@
     "textGlyphsMissing": false,
     "fix": "Protect ticks/measurement endpoints in both directions; retry more placements; validate manual offsets."
   },
-  "nextAction": "Instalar tras cerrar SketchUp, sin parches; ejecutar docs/hotfix-pintura-087/VALIDACION_LOCAL_POSTERIOR.md con Dot/Codexlocal.",
+  "nextAction": "Dot/Codex local debe repetir VALIDACION_LOCAL.md; NO Hito2.",
   "limitations": [
-    "SketchUp2026: instalación, paleta modeless, clics reales sin edición y apariencia de foto JPG/textura SKM.",
-    "Cinco componentes reales, cambio de material, cantos, aislamiento de definiciones compartidas y Ctrl+Z/Redo.",
-    "Guardado/cierre/reapertura de SKP, escala/veta/textura y perfil sin OCL; rendimiento de modelos grandes.",
-    "Regresión nativa A4/BM17/nombres/anotaciones/TXT y aprobación comercial del taller.",
-    "Automatización usa Tool y motores reales con dobles de API, no render SketchUp.",
-    "Automático seguro limitado a placas rectangulares con espesor identificable; ancestro compartido inseguro/UV proyectadas o distorsionadas bloquean sin aplicar.",
-    "Pintar pieza conserva acabados estrechos completos y cantos reconocidos.",
-    "La edición avanzada anterior permanece separada; no forma parte del recorrido inmediato de la barra."
+    "RepetirV1/V2/V3/V7/V12/V15conJPGreal,PNG,UVnuevo,rotación/espejo yreapertura.",
+    "RepetirV6collisionSKMreal,nombres/PBR/colorize/observadores/Undo y originales intactos.",
+    "V19: cinco muestrasreadonly candidataydiezescrituraschanged=true separadasdeautomatización.",
+    "Dospaletas+selectorhumanolargoycatálogocompartido;nearEdge sigueobservaciónnoconfirmada.",
+    "V18/TXTcomercial/orientacióncontinúanpendientes;noHito2."
   ],
   "previous073Evidence": {
     "verification": {

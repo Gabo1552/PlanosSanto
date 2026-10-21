@@ -283,4 +283,29 @@ class SmartPaintTest < Minitest::Test
     assert_same @sheet,@faces[2].material
   end
 
+  def inventory_calls
+    count=0
+    trace=TracePoint.new(:call) { |point| count+=1 if point.defined_class==PlanosSanto::NameManager && point.method_id==:inventory }
+    trace.enable { yield }
+    count
+  ensure
+    trace&.disable
+  end
+  def test_one_fresh_inventory_per_plan_is_shared_by_both_sides_without_persisting_a_cache
+    request=options(side:'both')
+    assert_equal 1,inventory_calls { @smart.preview(request) }
+    @smart.cancel
+    @model.entities.first.name='Otro nombre fuera del pintado'
+    assert_equal 1,inventory_calls { @smart.preview(request) }
+    assert_empty @model.operations
+  end
+  def test_separate_preview_and_apply_still_revalidate_changes_after_the_ui_yields
+    draft=@smart.preview(options(side:'both'))
+    @model.entities.first.transformation=Geom::Transformation.scale(2,1,1)
+    error=nil
+    assert_equal 1,inventory_calls { error=assert_raises(PlanosSanto::ExportError) { @smart.apply('token'=>draft['token'],'confirmed'=>true) } }
+    assert_match(/cambi/,error.message)
+    assert_empty @model.operations
+  end
+
 end

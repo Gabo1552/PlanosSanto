@@ -179,7 +179,7 @@ module PlanosSanto
           end
           request={'pieceId'=>node['id'],'faceIds'=>eligible.map { |f| @native.face_id(f) },'side'=>side,'scope'=>data['scope'],
                    'mode'=>mode,'axes'=>request_data['axes'],'catalogId'=>binding['catalogId'],'materialUuid'=>binding['uuid']}
-          prepared=@native.prepare_application(request);proofs << prepared
+          prepared=@native.prepare_application(request,snapshot:snapshot);proofs << prepared
           paths.concat(prepared[:affected])
           warnings.concat(prepared[:public]['warnings']) unless data['immediate']==true
           eligible.each do |face|
