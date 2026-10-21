@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {PDFDocument,PDFRawStream,decodePDFRawStream} from 'pdf-lib';
-import {createOfflinePdf,pdfFaceColor} from '../sketchup_offline/ui/pdf';
+import {A4FitError,createOfflinePdf,pdfFaceColor,previewFileName} from '../sketchup_offline/ui/pdf';
 import {createDemo,box} from '../lib/demo';
 import {createA4Demo} from '../lib/a4Demo';
 import {editSchema} from '../lib/model';
@@ -64,5 +64,24 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
  it('no acepta proyectos vacíos ni nombres sin completar',async()=>{
   const project=sample();project.furniture=[];await expect(createOfflinePdf(project,regular,mono)).rejects.toThrow(/Seleccioná/);
   const blank=sample();blank.furniture[0].pieces[0].name='';await expect(createOfflinePdf(blank,regular,mono)).rejects.toThrow(/nombres vacíos/);
+ });
+ it('tipifica cada bloqueo con mueble, motivo y una acción concreta sin cambiar el mensaje',async()=>{
+  const failure=async(project:Project)=>{try{await createOfflinePdf(project,regular,mono);}catch(error){return error;}throw new Error('Se esperaba un bloqueo');};
+  const notes=sample('exterior');notes.furniture[0].presentation!.guide!.observations='Texto extenso de armado '.repeat(120);
+  const legend=await failure(notes);expect(legend).toBeInstanceOf(A4FitError);
+  expect(legend).toMatchObject({kind:'legend',furniture:notes.furniture[0].name,action:'Acortá observaciones o notas.'});
+  expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toMatch(new RegExp(`^${notes.furniture[0].name}: Las notas.*hoja adicional requiere aprobación\\.$`));
+  const blank=sample();blank.furniture[0].pieces[0].name='';expect(await failure(blank)).toMatchObject({kind:'names'});
+  const table=sample('exterior'),template=table.furniture[0].pieces[0];table.furniture[0].pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
+  expect(await failure(table)).toMatchObject({kind:'table',action:'Agrupá piezas iguales o acortá sus nombres.'});
+  const glyph=sample();glyph.furniture[0].presentation!.guide!.observations='Usar tornillo 🪚 largo';
+  const g=await failure(glyph);expect(g).toMatchObject({kind:'glyph',character:'🪚',furniture:glyph.furniture[0].name,action:'Reemplazá el carácter «🪚».'});expect((g as Error).message).toBe('El PDF no puede representar el carácter «🪚». Cambiá ese carácter antes de exportar.');
+ });
+ it('propone un nombre de descarga por obra, mueble y fecha, sin caracteres inválidos',()=>{
+  const date=new Date(2026,9,21);
+  expect(previewFileName({name:'Obra Pérez / Cocina',furniture:[{name:'Bajo mesada: 1,20 m'}]} as Project,date)).toBe('Obra-Pérez-Cocina-Bajo-mesada-1,20-m-A4-2026-10-21.pdf');
+  expect(previewFileName({name:'Casa*Sur',furniture:[{name:'A'},{name:'B'}]} as Project,date)).toBe('Casa-Sur-A4-2026-10-21.pdf');
+  expect(previewFileName({name:' ?<> ',furniture:[]} as unknown as Project,date)).toBe('PlanosSanto-A4-2026-10-21.pdf');
+  const long=previewFileName({name:'x'.repeat(200),furniture:[]} as unknown as Project,date);expect(long.replace(/-A4-2026-10-21\.pdf$/,'')).toHaveLength(80);expect(long).not.toMatch(/[/\\:*?"<>|]/);
  });
 });

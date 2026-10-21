@@ -123,12 +123,12 @@ if(!baseline){
   const preview=page.getByRole('region',{name:'Vista previa del PDF A4',exact:true});await expect(preview).toBeVisible();
   const frame=preview.locator('iframe[title="PDF A4 generado"]');await expect(frame).toBeVisible();
   expect(calls.filter(call=>call.action==='generate')).toHaveLength(1);
-  await page.getByRole('button',{name:'1 vista',exact:true}).click();
-  await expect(page.getByRole('button',{name:'1 vista',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('radio',{name:'Exterior',exact:true}).click();
+  await expect(page.getByRole('radio',{name:'Exterior',exact:true})).toHaveAttribute('aria-checked','true');
   await expect(frame).toBeVisible();
   const one=await frame.getAttribute('src');
-  await page.getByRole('button',{name:'2 vistas',exact:true}).click();
-  await expect(page.getByRole('button',{name:'2 vistas',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();
+  await expect(page.getByRole('radio',{name:'Exterior + interior',exact:true})).toHaveAttribute('aria-checked','true');
   await expect(frame).toBeVisible();await expect(frame).not.toHaveAttribute('src',one!);
   const [download]=await Promise.all([page.waitForEvent('download'),preview.getByRole('link',{name:'Descargar vista previa',exact:true}).click()]);
   const downloaded=await download.path();expect(downloaded).not.toBeNull();const bytes=await readFile(downloaded!);
