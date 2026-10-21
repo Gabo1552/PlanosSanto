@@ -5,6 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {build} from 'esbuild';
 
 // UX of the A4 editor and sheet preview, with the real Ruby controller and synthetic API doubles.
 // These checks never open SketchUp or a customer's SKP.
@@ -57,14 +58,14 @@ test('UX A4: buscar piezas, diferencia frente a lo aplicado y atajos Esc / Ctrl+
  await search.fill('zzz');await expect(page.getByText('Ninguna pieza coincide con «zzz».',{exact:true})).toBeVisible();
  await search.press('Escape');await expect(search).toHaveValue('');await expect(page.locator('.guide-physical-pieces [data-piece-path]')).toHaveCount(2);
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();
- await expect(status).toContainText('Sin aplicar · +1 oculta');await expect(apply).toBeEnabled();
+ await expect(status).toContainText('Sin aplicar: 1 nueva oculta');await expect(apply).toBeEnabled();
  await expect(page.locator('[data-piece-path="1/13/12"]')).toContainText('nueva oculta');
  await expect(page.getByRole('button',{name:'Cancelar previsualización (descarta 1 cambio)',exact:true})).toBeVisible();
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).check();await expect(status).toContainText('Sin cambios respecto de lo aplicado');await expect(apply).toBeDisabled();
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await search.focus();await page.keyboard.press('Control+Enter');
  await expect(page.getByTestId('a4-view-stage')).toHaveCount(0);await expect(page.getByRole('button',{name:'Mostrar pieza oculta 1/13/12',exact:true})).toBeVisible();
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).check();
- await expect(status).toContainText('1 restaurada');await expect(page.locator('[data-piece-path="1/13/12"]')).toContainText('se restaura');
+ await expect(status).toContainText('Sin aplicar: 1 se restaura');await expect(page.locator('[data-piece-path="1/13/12"]')).toContainText('se restaura');
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).focus();await page.keyboard.press('Escape');
  await expect(page.getByTestId('a4-view-stage')).toHaveCount(0);await expect(page.getByRole('button',{name:'Mostrar pieza oculta 1/13/12',exact:true})).toBeVisible();
 });
@@ -92,4 +93,40 @@ test('UX A4: el bloqueo dice mueble, causa y acción; la hoja anterior queda vis
  await alert.getByRole('button',{name:'Reintentar',exact:true}).click();await expect(alert.locator('strong')).toHaveText(/^No entra en la hoja: /);
  await observations.fill('Revisar escuadra antes del montaje.');await expect(alert).toHaveCount(0);await expect(link).toBeVisible();await expect(frame).not.toHaveAttribute('data-stale');
  await expect(preview.getByRole('group',{name:'Hojas'})).toHaveCount(0);
+});
+
+// The preview with several sheets is exercised in a synthetic harness bundled with the same esbuild options as the app.
+async function harness(page:Page,folder:string){
+ const outfile=resolve(folder,'harness/harness.js');
+ await build({absWorkingDir:process.cwd(),entryPoints:['tests/offline/fixtures/a4-preview-harness.tsx'],outfile,bundle:true,platform:'browser',format:'iife',target:'chrome109',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64'},logLevel:'silent'});
+ errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.route('https://a4-harness.test/**',async route=>{const name=new URL(route.request().url()).pathname.slice(1);
+  if(name==='index.html')return route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="harness.css"><script src="harness.js" defer></script></head><body><div id="root"></div></body></html>'});
+  if(!['harness.js','harness.css'].includes(name))throw Error('Unexpected resource');
+  await route.fulfill({body:await readFile(resolve(folder,'harness',name)),contentType:name.endsWith('.js')?'text/javascript':'text/css'});});
+ await page.context().setOffline(true);await page.goto('https://a4-harness.test/index.html');
+ const preview=page.getByRole('region',{name:'Vista previa del PDF A4',exact:true});
+ return {preview,frame:preview.locator('iframe[title="PDF A4 generado"]'),sheet:preview.getByRole('combobox',{name:'Hoja visible',exact:true})};
+}
+
+test('UX A4: editar el proyecto no cambia la hoja navegada; solo el mueble activo la mueve',async({page},info)=>{
+ const {preview,frame,sheet}=await harness(page,info.outputDir);
+ await expect(sheet).toHaveValue('0');await expect(frame).toHaveAttribute('src',/#page=1&/);
+ await page.getByRole('button',{name:'Activar segundo mueble',exact:true}).click();await expect(sheet).toHaveValue('1');await expect(frame).toHaveAttribute('src',/#page=2&/);
+ await preview.getByRole('button',{name:'Anterior',exact:true}).click();await expect(sheet).toHaveValue('0');const first=await frame.getAttribute('src');
+ await page.getByRole('button',{name:'Editar proyecto',exact:true}).click();
+ // While the edit is composed the old sheet stays, and the unavailable actions are real disabled buttons.
+ await expect(preview.getByRole('button',{name:'Abrir PDF',exact:true})).toBeDisabled();await expect(preview.getByRole('button',{name:'Descargar vista previa',exact:true})).toBeDisabled();
+ await expect(frame).not.toHaveAttribute('src',first!);await expect(frame).not.toHaveAttribute('data-stale');
+ await expect(sheet).toHaveValue('0');await expect(frame).toHaveAttribute('src',/#page=1&/);await expect(preview.getByRole('link',{name:'Abrir PDF',exact:true})).toBeVisible();
+});
+
+test('UX A4: la hoja de otro proyecto no se muestra como versión anterior y su URL se libera',async({page},info)=>{
+ const {preview,frame}=await harness(page,info.outputDir);
+ await expect(preview.getByRole('link',{name:'Abrir PDF',exact:true})).toBeVisible();
+ const old=(await frame.getAttribute('src'))!.split('#')[0];
+ await page.getByRole('button',{name:'Otro proyecto',exact:true}).click();
+ await expect(frame).toHaveCount(0);await expect(preview.getByRole('status').filter({hasText:'Componiendo la hoja'})).toBeVisible();
+ expect(await page.evaluate(url=>fetch(url).then(()=>true,()=>false),old)).toBe(false);
+ await expect(frame).toHaveCount(1);await expect(frame).not.toHaveAttribute('src',new RegExp(`^${old}`));
 });

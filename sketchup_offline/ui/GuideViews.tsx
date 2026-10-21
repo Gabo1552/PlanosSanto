@@ -22,7 +22,9 @@ export default function GuideViews({furniture:f,view,selectedId,draftHidden,disa
   onDraft:(ids:string[])=>void;onApply:()=>void;onCancel:()=>void;onHideMode?:()=>void;hideMode?:boolean;
 }){
   const guide=ensureGuide(f).presentation!.guide!,hidden=draftHidden??guide.hiddenPieceIds,editing=draftHidden!==null;
-  const [query,setQuery]=useState(''),list=useRef<HTMLDivElement>(null),radios=useRef<(HTMLButtonElement|null)[]>([]);
+  const [query,setQuery]=useState(''),[wasEditing,setWasEditing]=useState(editing),list=useRef<HTMLDivElement>(null),radios=useRef<(HTMLButtonElement|null)[]>([]);
+  // The parent can close the edit (apply, cancel, another furniture): the next edit starts unfiltered.
+  if(wasEditing!==editing){setWasEditing(editing);if(!editing)setQuery('');}
   const diff=visibilityDiff(guide.hiddenPieceIds,hidden),needle=query.trim().toLocaleLowerCase('es');
   const matches=needle?f.pieces.filter(p=>[p.code,p.name,p.id].some(v=>v?.toLocaleLowerCase('es').includes(needle))):f.pieces;
   function update(change:Partial<typeof guide>){onChange({...f,presentation:{...f.presentation,guide:{...guide,...change}}});}
@@ -42,7 +44,7 @@ export default function GuideViews({furniture:f,view,selectedId,draftHidden,disa
   }
   // Selecting a piece in the viewer brings its row into view inside the scrolling list.
   useEffect(()=>{if(!editing||!selectedId||!list.current)return;const row=[...list.current.querySelectorAll<HTMLElement>('[data-piece-path]')].find(node=>node.dataset.piecePath===selectedId);row?.scrollIntoView?.({block:'nearest'});},[editing,selectedId]);
-  const pending=diff.count?['Sin aplicar',diff.added.length&&`+${plural(diff.added.length,'oculta','ocultas')}`,diff.removed.length&&plural(diff.removed.length,'restaurada','restauradas')].filter(Boolean).join(' · '):'Sin cambios respecto de lo aplicado';
+  const pending=diff.count?`Sin aplicar: ${[diff.added.length&&plural(diff.added.length,'nueva oculta','nuevas ocultas'),diff.removed.length&&plural(diff.removed.length,'se restaura','se restauran')].filter(Boolean).join(' · ')}`:'Sin cambios respecto de lo aplicado';
   return <section data-testid="a4-view-editor" className="guide-views" aria-label="Configuración de vistas A4" onKeyDown={keys} aria-keyshortcuts={editing?'Escape Control+Enter':undefined}>
     <div className="section-heading"><h2>Vistas de la guía A4</h2><HelpPopover title="Exterior e interior"><p>Exterior muestra el mueble armado. Interior permite quitar piezas solo de esta representación para ver las uniones. No cambia la visibilidad ni la geometría de SketchUp.</p><p>El listado y las cantidades siempre conservan todas las piezas. Dos instancias iguales se pueden ocultar por separado.</p></HelpPopover></div>
     <div className="guide-view-count" role="radiogroup" aria-label="Vistas en el PDF" aria-disabled={disabled||editing||undefined}>{MODES.map((option,index)=>{const checked=guide.mode===option.value;return <button key={option.value} ref={node=>{radios.current[index]=node;}} type="button" role="radio" aria-checked={checked} tabIndex={checked?0:-1} disabled={disabled||editing} onKeyDown={event=>modeKeys(event,index)} onClick={()=>mode(option.value)}>{option.label}</button>;})}</div>
