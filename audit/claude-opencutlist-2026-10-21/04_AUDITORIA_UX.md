@@ -19,10 +19,10 @@
 
 **PS, desde foto (modelo actual)**
 1. Barra → **Pintar** → se abre la paleta (`quick_toolbar.rb:171`, `offline.rb:183-202`) — 1 clic, 1 ventana.
-2. **+ Material** → la paleta crece a 680×760 (`palette.js` `onCreateMaterial`, `offline.rb:578-584`) — 1 clic.
+2. **+ Material** → la paleta crece a 680×760 (`ui/StandalonePaintApp.tsx` `onCreateMaterial`, `offline.rb:578-584`) — 1 clic.
 3. Elegir foto → diálogo del sistema (`offline.rb:451`) — 2 clics, 1 ventana.
 4. Completar nombre, placa o canto, espesor y escala opcional → **Crear** (`photo_material.rb:142-156`) — 2–3 clics más tipeo.
-5. Volver a la paleta con el material listo para usar (`palette.js` `s(g,b)` → `autoStart` si `designReady`).
+5. Volver a la paleta con el material listo para usar (`ui/StandalonePaintApp.tsx`: `onCreated` → `autoStart` si `designReady`).
 
 **Total ≈ 6–8 clics, 2–3 ventanas.** Valor positivo: miniatura real y SKM archivado por hash.
 

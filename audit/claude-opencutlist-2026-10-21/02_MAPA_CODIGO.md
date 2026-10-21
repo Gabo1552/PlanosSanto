@@ -1,9 +1,9 @@
 # 02 — Mapa de código: Planos Santo 0.8.7 vs OpenCutList 7.1.0
 
 **Referencias**
-- **PS**: rutas relativas a `planos_santo/` dentro del RBZ 0.8.7 (SHA-256 `6503d53c…`).
+- **PS**: rutas Ruby relativas a `sketchup_offline/` en `main@2bf694f` (idénticas al RBZ 0.8.7, SHA-256 `6503d53c…`); UI en `sketchup_offline/ui/*.tsx`.
 - **OCL**: rutas relativas a `src/ladb_opencutlist/ruby/` en el commit [`1ef3e14c`](https://github.com/lairdubois/lairdubois-opencutlist-sketchup-extension/tree/1ef3e14c896171eed8cd77ede440c7f5563e943e).
-- Las referencias a `palette.js`/`app.js` usan línea y columna del bundle minificado, porque no hay fuente disponible.
+- Las referencias de UI apuntan al fuente TSX (el bundle se reproduce bit a bit con `scripts/build-offline.mjs`).
 
 **Clasificación usada:** salvo que se indique otra cosa, todo es `VERIFICADO_EN_CODIGO`, es decir, existe la implementación (no prueba que funcione). Las inferencias se marcan **[inferido]**.
 
@@ -14,9 +14,9 @@
 | | Planos Santo 0.8.7 | OpenCutList 7.1.0 |
 |---|---|---|
 | Ruby propio | 25 archivos, ≈ 4.900 líneas | 168 archivos, 47.247 líneas (+ 9.686 en libs propias) |
-| UI | React minificado (4,3 MB) **sin fuente** | jQuery + Twig + LESS: 20.608 líneas JS propias, 141 plantillas |
+| UI | React + TSX (`sketchup_offline/ui/`), bundle con esbuild (4,3 MB minificado) | jQuery + Twig + LESS: 20.608 líneas JS propias, 141 plantillas |
 | Nativo | No | C++ vía Fiddle: Packy (optimizador), Clippy (polígonos), Imagy (imágenes). DLL para Windows y dylib para macOS |
-| Pruebas | Ninguna distribuida | 4 archivos TestUp (835 líneas): utilidades de geometría, fórmulas y dimensiones. **Sin pruebas** de cutlist, packing, herramientas ni UI |
+| Pruebas | Ruby: 32 archivos Minitest con dobles (422 runs / 3.053 aserciones, 1 falla ambiental); UI: 17 specs Playwright con puente simulado. **Nada corre en SketchUp real** | 4 archivos TestUp (835 líneas): utilidades de geometría, fórmulas y dimensiones. **Sin pruebas** de cutlist, packing, herramientas ni UI |
 | Plataforma | SketchUp 2026 Windows (declarado) | SketchUp 2017+, Windows x64 y macOS |
 | Licencia | Propia + terceros MIT (`THIRD_PARTY_LICENSES.txt`) | **GPLv3** (`LICENSE`); rchardet LGPL; Clipper2 BSL; stb dominio público |
 
@@ -78,8 +78,8 @@
 | | PS | OCL |
 |---|---|---|
 | Comienzo | Barra → `quick_action('sheet')` (`offline.rb:84-127`) → abre o reutiliza la paleta → si hay `catalogId` recordado, `quick_paint_start` (`:210-245`) | Barra o menú → `select_tool(SmartPaintTool.new)` (`plugin.rb:~835-897`), o desde la pestaña Materiales con un material (`materials_smart_paint_worker.rb:29-43`) |
-| Lista de materiales | Mosaicos de **fichas del catálogo** filtradas por `ia()` (`palette.js:9` col. 55677/66629) | **Botones de `model.materials`** filtrados por tipo según la acción (`smart_paint_tool.rb:549-580, 1095-1121`) |
-| Elegir material | Clic en mosaico → `gt()` exige un material nativo vinculado y sin issues; si no hay, **error** (`palette.js:9` col. 65562) → `smart_quick_start` → `quick_paint_start` → `SmartPaint#material_choices` (Ruby repite el filtro) | Clic en botón del HUD → `set_current_material` (`:1187-1191`). No hay validación porque no hace falta |
+| Lista de materiales | Mosaicos de **fichas del catálogo** filtradas por `usableForPainting` (`ui/SmartPaintPalette.tsx:22,125`) | **Botones de `model.materials`** filtrados por tipo según la acción (`smart_paint_tool.rb:549-580, 1095-1121`) |
+| Elegir material | Clic en mosaico → `change()` exige un material nativo vinculado y sin issues; si no hay, **error** (`ui/SmartPaintPalette.tsx:111-114`) → `smart_quick_start` → `quick_paint_start` → `SmartPaint#material_choices` (Ruby repite el filtro) | Clic en botón del HUD → `set_current_material` (`:1187-1191`). No hay validación porque no hace falta |
 | Textura obligatoria | Para fotos sí: `native_valid?` exige `material.texture` y prueba de foto (`material_policy.rb:87-101`) | No. El botón usa `material.color` (`:1123-1224`) |
 | Cambiar material sin salir | Flechas ←/→ en el Tool (`smart_paint_tool.rb:511-523`), solo entre materiales ya válidos, o desde la paleta (`update_options`, `:311-313`) | Clic en otro botón del HUD, ←/→, o cuentagotas temporal con Alt |
 | Persistencia del material | Preferencia global `catalogId`/`materialUuid` (`offline.rb:718-725`), que en otro modelo no coincide | `@@action_materials` en memoria por acción (`smart_paint_tool.rb:73, 491-497`) |

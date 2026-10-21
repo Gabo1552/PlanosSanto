@@ -10,7 +10,7 @@
 | H4 | Para OCL, una **pieza es una ComponentInstance**; los grupos no son piezas. PS trata grupos y componentes como piezas | `helper/part_helper.rb:7-13`; `cutlist_generate_worker.rb:926-979` |
 | H5 | Lo que hace directo el pintado de OCL son **decisiones de diseño**, no código difícil: `model.materials` como fuente, HUD en el viewport, asignación directa | `05_CAUSA_PINTADO.md` §4 |
 | H6 | PS tiene funciones que OCL no tiene: nombres por mueble, guía A4 y TXT de maderera por lotes | `02_MAPA_CODIGO.md` §6-8 |
-| H7 | PS no tiene el código fuente de la UI en el repositorio | `01_ESTADO_ACTUAL.md` |
+| H7 | PS tiene fuente completo en `main`, build reproducible bit a bit y 422 pruebas Ruby con dobles; ninguna en SketchUp real | `01_ESTADO_ACTUAL.md` |
 
 ### Lo esencial de GPLv3 para esta decisión
 
@@ -33,7 +33,7 @@
     4. validación cacheada, sin recorridos globales por clic.
   - Mantener nombres, guía y maderera.
   - Delegar la optimización y los costos con desperdicio a **OCL original instalado** (ya existe `OclGateway`), y en lo posible escribir `ladb_opencutlist/type` en los materiales PS para que OCL los reconozca. **Decisión a confirmar:** hoy PS se prohíbe escribir atributos de OCL.
-- **Esfuerzo:** M (≈ 3–5 semanas para el pincel nuevo + hotfix, con el fuente disponible).
+- **Esfuerzo:** M (≈ 3–5 semanas para el pincel nuevo + hotfix).
 - **Deuda:** baja. Código propio y acotado (HUD estimado en 400–700 líneas **[inferido]**).
 - **Regresiones:** controladas: se cambia un módulo (pintado) con pruebas en copias.
 - **Licencia:** **sin obligaciones GPL**. Hay que documentar el *clean-room*: no tener abierto ni pegar código OCL, y escribir desde la especificación de comportamiento de este informe.

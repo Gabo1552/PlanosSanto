@@ -8,7 +8,7 @@ El pincel no llega a activarse.
 
 ## 1. Veredicto
 
-**Causa raíz confirmada en el código (VERIFICADO_EN_CODIGO), pendiente de reproducir en SketchUp (NO VERIFICADO).**
+**Causa raíz confirmada en el código fuente (VERIFICADO_EN_CODIGO). Causas C1 y C3 reproducidas con los dobles de prueba del proyecto (PROBADO_AUTOMATICAMENTE, `repro_causas_test.rb`). Falta reproducir en SketchUp 2026 (NO VERIFICADO).**
 
 La paleta muestra **fichas del catálogo local** (`catalog.json` en `%LOCALAPPDATA%\PlanosSanto`), pero para pintar exige un **material nativo de SketchUp, instalado en el modelo abierto, vinculado por UUID y sin "issues"**. Ningún paso del flujo de pintado instala o repara ese material: lo tiene que hacer el usuario a mano, en otra pantalla (biblioteca) y con otra confirmación. Cuando el material nativo falta o su vínculo quedó "desactualizado", la paleta lanza el error **desde JavaScript, sin consultar a Ruby**, y con un texto que habla de "textura" aunque el problema real es "no instalado / vínculo inválido en este modelo".
 
@@ -17,27 +17,27 @@ La hipótesis de `02_AUDITORIA_PRELIMINAR.md` era correcta en lo esencial, con u
 ## 2. Traza exacta (UI → JS → Ruby)
 
 ### 2.1 Qué muestra la paleta
-`ui/palette.js:9` (col. 66629; bundle minificado), lista de mosaicos:
-```js
-catalog.items.filter(v => ia(v, f?.visuals.materials) && v.kind === ze && …)
+`sketchup_offline/ui/SmartPaintPalette.tsx:125`, lista de mosaicos:
+```ts
+loaded?.catalog.items.filter(item => usableForPainting(item, loaded?.visuals.materials) && item.kind===kind && …)
 ```
-`ui/palette.js:9` (col. 55677), condición `ia(t,a)` para mostrar un mosaico:
-```js
-(t.kind==="sheet"||t.kind==="edge") &&
-  ( t.approved                                  // ficha comercial aprobada
- || ry(t)                                       // foto con designReady (dato del catálogo)
- || a?.some(e => e.designReady && e.binding?.catalogId===t.id && !e.issues?.length) )
+`SmartPaintPalette.tsx:22`, condición para mostrar un mosaico:
+```ts
+function usableForPainting(item, materials){ return (item.kind==='sheet'||item.kind==='edge') &&
+  ( item.approved                 // ficha comercial aprobada
+ || designReady(item)             // foto con designReady (dato del catálogo, :18)
+ || materials?.some(m => m.designReady===true && m.binding?.catalogId===item.id && m.binding.kind===item.kind && !m.issues?.length) ); }
 ```
+En el bundle distribuido equivale a `ia()`/`ry()` en `ui/palette.js:9`.
 **Las dos primeras ramas no miran el modelo.** Una ficha aprobada para la maderera, o una foto creada en **otro** modelo, se muestra en la paleta de cualquier SKP aunque ese SKP no tenga el material.
 
 ### 2.2 Qué exige el clic sobre un mosaico
-`ui/palette.js:9` (col. ≈64000–65700), función `gt(v)` al elegir material en modo rápido (`o`):
-```js
-Hc = f?.visuals.materials.find(Dt => Dt.binding?.catalogId===Et?.id && Dt.binding?.kind===ot
-                                    && !Dt.issues?.length && …)
-if (… || _.mode!=="remove_edge" && !Hc?.binding || …) {
-   …
-   if (o) throw … new Error("Este material no tiene una textura válida en el modelo. No se cambió la pintura activa.")
+`SmartPaintPalette.tsx:99-114`, función `change(patch)` al elegir material en modo rápido (`quickMode`):
+```ts
+const visual = loaded?.visuals.materials.find(material => material.binding?.catalogId===item?.id
+                 && material.binding?.kind===nextKind && !material.issues?.length && …);      // :111
+if (… || (next.mode!=='remove_edge' && !visual?.binding) || …) {                              // :113
+   if (quickMode) { …; throw new Error('Este material no tiene una textura válida en el modelo. No se cambió la pintura activa.'); } // :114
 }
 ```
 `visuals.materials` es el listado de `Sketchup::Material` **del modelo activo**, que arma `MaterialLibrary#status` (`material_library.rb:79-101`). Si no hay ninguno con `binding.catalogId` igual a la ficha y con `issues` vacío, se dispara el error. **Ruby no interviene.**
@@ -52,9 +52,9 @@ if (… || _.mode!=="remove_edge" && !Hc?.binding || …) {
 
 | # | Causa | Evidencia | Explica la captura |
 |---|---|---|---|
-| C1 | **Ficha aprobada sin material instalado en este modelo.** `ia()` la muestra por `t.approved` | `palette.js:9` col. 55677; `catalog_store.rb:250-256` | **"Camellia"** (sin miniatura → no es foto). Alta probabilidad |
-| C2 | **Foto creada en otro modelo.** `PhotoMaterial#create` agrega el material solo al modelo activo (`photo_material.rb:219`) y guarda la ficha en el catálogo global. En otro SKP la ficha aparece (`ry(t)` = designReady), pero el material no existe | `photo_material.rb:213-238`; `palette.js` `ry()` | **"Caju 18mm"** (miniatura de foto). Alta probabilidad |
-| C3 | **Editar datos comerciales invalida el vínculo.** `item_fingerprint` incluye `kind, sku, supplier, thicknessMm, widthMm, lengthMm, grain, compatibleIds` y la escala de la foto. Si se completa SKU, proveedor o formato para la maderera, el `catalogFingerprint` guardado en el material deja de coincidir → `issues` → no se puede pintar hasta "re-vincular" | `material_resolver.rb:125-135`; `material_library.rb:63`; `native_paint.rb:355` | Posible. Contradice la política propia: "pintar ≠ aprobación comercial" (`material_policy.rb:7-8`) |
+| C1 | **Ficha aprobada sin material instalado en este modelo.** `usableForPainting` la muestra por `item.approved` | `SmartPaintPalette.tsx:22`; `catalog_store.rb:250-256`. **Reproducido** (`repro_causas_test.rb#test_C1`) | **"Camellia"** (sin miniatura → no es foto). Alta probabilidad |
+| C2 | **Foto creada en otro modelo.** `PhotoMaterial#create` agrega el material solo al modelo activo (`photo_material.rb:219`) y guarda la ficha en el catálogo global. En otro SKP la ficha aparece (`designReady(item)`), pero el material no existe | `photo_material.rb:213-238`; `SmartPaintPalette.tsx:18,22` | **"Caju 18mm"** (miniatura de foto). Alta probabilidad |
+| C3 | **Editar datos comerciales invalida el vínculo.** `item_fingerprint` incluye `kind, sku, supplier, thicknessMm, widthMm, lengthMm, grain, compatibleIds` y la escala de la foto. Si se completa SKU, proveedor o formato para la maderera, el `catalogFingerprint` guardado en el material deja de coincidir → `issues` → no se puede pintar hasta "re-vincular" | `material_resolver.rb:125-135`; `material_library.rb:63`; `native_paint.rb:355`. **Reproducido**: issue `"SKU ausente, pendiente o modificado: revisar vínculo."` (`repro_causas_test.rb#test_C3`) | Posible. Contradice la política propia: "pintar ≠ aprobación comercial" (`material_policy.rb:7-8`) |
 | C4 | **Archivos de la biblioteca local alterados o ausentes** (foto, miniatura, SKM o `material-assets.json`): cualquier cambio de hash vuelve la ficha no `paintable?` o el material no `native_valid?` | `material_policy.rb:33-42, 57-80, 87-101` | Posible si se copió la biblioteca entre PCs o se restauró un backup |
 | C5 | **Escala de textura editada en SketchUp.** Con escala verificada, `native_valid?` exige ancho y alto de textura a ±0,1 mm del valor guardado. Cambiar el tamaño en el editor de materiales invalida el material | `material_policy.rb:97-98` | Posible |
 
@@ -107,7 +107,7 @@ Para cada caso, registrar la versión de SketchUp, la consola Ruby y el JSON de 
 
 ## 6. Solución propuesta (NO aplicada)
 
-### 6.1 Hotfix aislado (P0-1, tamaño S, 1 a 2 días con el fuente disponible)
+### 6.1 Hotfix aislado (P0-1, tamaño S, 1 a 2 días)
 Objetivo: **"lo que se ve en la paleta, se puede pintar"**, sin eliminar controles.
 
 1. **Instalación automática y segura antes del gesto.** Al elegir un mosaico sin material válido en el modelo:
@@ -115,7 +115,8 @@ Objetivo: **"lo que se ve en la paleta, se puede pintar"**, sin eliminar control
    - si no hay activo (ficha comercial sin visual), **no mostrarla en la paleta de pintura**, o mostrarla deshabilitada con la acción "Asignar imagen…".
 2. **Separar diseño de comercio en el vínculo.** Calcular un `designFingerprint` (solo el origen visual: hash de foto o SKM y escala) para autorizar la pintura, y dejar `catalogFingerprint` (sku, proveedor, formato) solo para maderera. Completar datos comerciales no debe bloquear la pintura.
 3. **Mensajes veraces.** Reemplazar el texto genérico por la causa concreta: "no instalado en este modelo → instalando…", "vínculo de otra versión de la ficha → re-vinculando…", "archivo de la biblioteca alterado → revisar".
-4. **Filtro de la paleta coherente con la condición de pintura.** `ia()` debe usar la misma regla que `gt()`: instalado y válido, **o** instalable automáticamente.
+4. **Filtro de la paleta coherente con la condición de pintura.** `usableForPainting` (`SmartPaintPalette.tsx:22`) debe usar la misma regla que `change()` (`:111-114`): instalado y válido, **o** instalable automáticamente.
+5. **Prueba de regresión que falta:** agregar a `tests/offline/immediate-palette.spec.ts` (y a una prueba Ruby) el caso "ficha aprobada o de foto **sin** material en `visuals.materials`", que hoy no existe en los dobles.
 
 Se conserva: el UUID único, la verificación de hashes al **instalar** (no en cada clic), Undo, la protección de instancias compartidas y la regla "nunca convertir un canto en placa".
 
