@@ -83,9 +83,11 @@ class SmartEdgesTest < Minitest::Test
     @faces[3].material=nil
     assert_raises(PlanosSanto::ExportError) { @smart.preview(options(mode:'remove_edge',count:4)) }
   end
+  # 0.8.8: commercial approval does not gate design choices; a kind change does.
   def test_catalog_choices_are_only_native_bound_valid_materials_of_current_kind
     choices=@smart.material_choices('mode'=>'edge');assert_equal [@edge_item['id']],choices.map { |row| row['catalogId'] }
-    @edge_item['approved']=false;assert_empty @smart.material_choices('mode'=>'edge');assert_empty @model.operations
+    @edge_item['approved']=false;assert_equal [@edge_item['id']],@smart.material_choices('mode'=>'edge').map { |row| row['catalogId'] }
+    @edge_item['kind']='sheet';assert_empty @smart.material_choices('mode'=>'edge');assert_empty @model.operations
   end
   def test_nonuniform_scale_that_reverses_physical_thickness_blocks_expansion
     @piece.transformation=Geom::Transformation.scale(1,1,100)

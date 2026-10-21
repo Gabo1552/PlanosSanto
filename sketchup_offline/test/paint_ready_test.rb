@@ -1,0 +1,288 @@
+# frozen_string_literal: true
+# Hito 1 (0.8.8): "the material the palette shows is the material that paints".
+# API doubles only: synthetic boards, generated QA images and SKM documents.
+# Nothing here claims execution inside SketchUp; see VALIDACION_SKETCHUP_088.md.
+require 'minitest/autorun'
+require 'tmpdir'
+require 'fileutils'
+require_relative 'names_double'
+require_relative 'photo_material_double'
+require_relative '../../sketchup/planos_santo/exporter'
+require_relative '../smart_paint'
+require_relative '../smart_paint_tool'
+require_relative '../photo_material'
+require_relative '../paint_materials'
+require_relative '../supplier_order'
+
+module PaintReadyFaceDouble
+  def texture_positioned?(_front);false;end
+  def texture_projected?(_front);false;end
+end
+class PaintReadyModelDouble < NamingModelDouble
+  attr_accessor :materials
+  def state
+    super.merge(definitions:all_instances.map { |entity| [entity,entity.definition,entity.transformation] },
+                faces:all_instances.flat_map { |entity| entity.definition.entities.grep(Sketchup::Face) }.uniq.map { |face| [face,face.material,face.back_material] })
+  end
+  def restore(snapshot)
+    super
+    snapshot[:definitions].each { |entity,definition,transformation| entity.definition=definition;entity.transformation=transformation }
+    snapshot[:faces].each { |face,front,back| face.material=front;face.back_material=back }
+  end
+end
+
+class PaintReadyTest < Minitest::Test
+  class Picker
+    attr_accessor :path,:leaf
+    def do_pick(_x,_y);end
+    def count;path ? 1 : 0;end
+    def path_at(_index);path;end
+    def leaf_at(_index);leaf;end
+  end
+  class View
+    attr_accessor :drawing_color
+    def initialize(picker);@picker=picker;end
+    def pick_helper;@picker;end
+    def invalidate;end
+    def draw(_mode,_points);end
+  end
+
+  def setup
+    @directory=Dir.mktmpdir;@source=Dir.mktmpdir
+    @catalog=PlanosSanto::CatalogStore.new(directory:@directory)
+    # Model A: where the photo material was originally created.
+    @first=PhotoFixture::Model.new
+    @first_photo=PlanosSanto::PhotoMaterial.new(@first,catalog:@catalog,directory:@directory,guard:lambda { true })
+    # Model B: a second, unrelated SKP that has never seen the material.
+    @model=board_model
+    @narrow=Sketchup::Material.new(8100,'Canto existente',Sketchup::Color.new(2,3,4),1,nil)
+    @faces.drop(2).each { |face| face.material=@narrow;face.back_material=@narrow }
+  end
+  def teardown;FileUtils.remove_entry(@directory);FileUtils.remove_entry(@source);end
+
+  def board_model
+    board=Fixture.board_definition;@faces=board.entities
+    @faces.each_with_index { |face,index| face.extend(PaintReadyFaceDouble);face.define_singleton_method(:persistent_id) { 100+index } }
+    @pieces=(11..15).map { |id| Sketchup::ComponentInstance.new(id,"Pieza #{id}",board) }
+    @pieces.each { |piece| enable_unique(piece) }
+    root=Sketchup::Group.new(1,'M01',Sketchup::Definition.new('M01','root-only',@pieces))
+    model=PaintReadyModelDouble.new(Sketchup::Model.new([root],'paint-ready-qa','Paint ready QA',''))
+    model.materials=[];PhotoFixture.decorate(model)
+  end
+  def enable_unique(entity)
+    entity.define_singleton_method(:make_unique) do
+      copies=definition.entities.each_with_index.map do |face,index|
+        copy=Sketchup::Face.new(face.mesh.points.map(&:to_a),face.normal.to_a);copy.extend(PaintReadyFaceDouble)
+        copy.material=face.material;copy.back_material=face.back_material
+        id=persistent_id*1000+index;copy.define_singleton_method(:persistent_id) { id };copy
+      end
+      self.definition=Sketchup::Definition.new(definition.name,"isolated-#{persistent_id}",copies);self
+    end
+  end
+  def create_photo(service=@first_photo,name='Caju 18mm.jpg',bytes=PhotoFixture.jpeg,extra={})
+    path=File.join(@source,name);File.binwrite(path,bytes);picked=service.pick(path)
+    service.create(picked['token'],{'revision'=>picked['revision'],'name'=>picked['name'],'kind'=>'sheet','thicknessMm'=>18,'action'=>'new','confirmed'=>true}.merge(extra))
+  end
+  def service(model=@model);PlanosSanto::PaintMaterials.new(model,catalog:@catalog,directory:@directory);end
+  def smart(model=@model);PlanosSanto::SmartPaint.new(model,catalog:@catalog);end
+  def options(prepared,index=0)
+    piece=@pieces[index];face=piece.definition.entities[2]
+    {'mode'=>'sheet','immediatePiece'=>true,'targets'=>[{'pieceId'=>"1/#{piece.persistent_id}",'faceIds'=>[face.persistent_id.to_s]}],
+     'catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid']}
+  end
+  def sides(piece);piece.definition.entities.map { |face| [face.material,face.back_material] };end
+  def assert_board(piece,material)
+    assert_equal [[material,material],[material,material]],sides(piece).first(2)
+    assert_equal Array.new(4) { [@narrow,@narrow] },sides(piece).drop(2),'los cantos existentes deben conservarse'
+  end
+  def item(name=nil)
+    items=@catalog.read['items'];name ? items.find { |row| row['name']==name } : items.first
+  end
+  def update_item(id)
+    data=@catalog.read;row=data['items'].find { |candidate| candidate['id']==id };yield row;@catalog.save(data['items'],data['revision'])
+  end
+
+  # Prueba obligatoria 1-6 + C2: foto creada en el modelo A, instalada sola en el modelo B.
+  def test_photo_from_another_model_is_installed_automatically_when_chosen_and_paints_immediately
+    created=create_photo
+    material_a=@first.materials.last
+    refute_nil material_a.texture,'la foto debe quedar como textura real del material'
+    assert_equal PhotoFixture.jpeg,File.binread(material_a.texture.filename)
+    states=service.states
+    assert_equal 'installable',states[created['catalogId']]['state']
+    assert_empty @model.materials
+    prepared=service.prepare(created['catalogId'],'sheet')
+    assert prepared['installed'];assert_equal created['catalogId'],prepared['catalogId']
+    installed=@model.materials.last
+    assert_equal PhotoFixture.jpeg,File.binread(installed.texture.filename)
+    assert_equal 'ready',service.states[created['catalogId']]['state']
+    assert_equal 1,@model.operations.count { |operation| operation.first==:start }
+    again=service.prepare(created['catalogId'],'sheet')
+    refute again['installed'];assert_equal prepared['materialUuid'],again['materialUuid']
+    assert_equal 1,@model.materials.length,'elegir de nuevo no duplica el material'
+    result=smart.apply_immediate(options(prepared))
+    assert result['changed'];assert_board(@pieces[0],installed)
+  end
+
+  # C1: ficha comercial aprobada sin imagen ni color.
+  def test_commercial_item_without_visual_reports_a_specific_actionable_state_instead_of_texture_error
+    row=@catalog.new_item('Camellia','sheet').merge('sku'=>'CAM18','supplier'=>'Maderera QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'approved'=>true)
+    @catalog.save([row],0)
+    state=service.states[row['id']]
+    assert_equal 'needs_visual',state['state'];assert_equal 'assign_visual',state['action']
+    error=assert_raises(PlanosSanto::ExportError) { service.prepare(row['id'],'sheet') }
+    assert_match(/no tiene imagen, textura ni color/,error.message)
+    refute_match(/textura válida/,error.message)
+    assert_empty @model.operations
+  end
+
+  # C3 + prueba obligatoria 9: SKU, proveedor, formato y aprobación no bloquean pintar.
+  def test_commercial_changes_never_block_painting_but_are_reported_for_the_supplier
+    created=create_photo;prepared=service.prepare(created['catalogId'],'sheet')
+    update_item(created['catalogId']) do |row|
+      row.merge!('sku'=>'CAJ-18-NUEVO','supplier'=>'Otro proveedor','widthMm'=>1830,'lengthMm'=>2750,'grain'=>true,'approved'=>true)
+    end
+    assert_equal 'ready',service.states[created['catalogId']]['state']
+    material,=PlanosSanto::NativePaint.new(@model,catalog:@catalog).material_for('catalogId'=>created['catalogId'],'materialUuid'=>prepared['materialUuid'],'mode'=>'sheet')
+    assert_same @model.materials.last,material
+    library=PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory).status
+    row=library['materials'].find { |native| native.dig('binding','catalogId')==created['catalogId'] }
+    assert_empty row['issues'];refute_empty row['commercialIssues']
+    5.times { |index| assert smart.apply_immediate(options(prepared,index))['changed'];assert_board(@pieces[index],material) }
+  end
+
+  # C4: archivo del activo faltante o alterado: mensajes distintos, sin pintar a ciegas.
+  def test_missing_and_tampered_library_files_are_distinguished
+    created=create_photo;photo=item['observed']['photo']
+    skm=File.join(@directory,'material-assets',"#{photo['skmHash']}.skm");bytes=File.binread(skm)
+    File.binwrite(skm,'alterado')
+    state=service.states[created['catalogId']]
+    assert_equal 'asset_corrupt',state['state'];assert_match(/alterado o está dañado/,state['message'])
+    error=assert_raises(PlanosSanto::ExportError) { service.prepare(created['catalogId'],'sheet') };assert_match(/alterado o está dañado/,error.message)
+    File.delete(skm)
+    state=service.states[created['catalogId']]
+    assert_equal 'asset_missing',state['state'];assert_match(/Falta el archivo/,state['message'])
+    File.binwrite(skm,bytes)
+    assert_equal 'installable',service.states[created['catalogId']]['state']
+  end
+
+  # Integridad al instalar, no en cada clic: un material ya instalado sigue pintando
+  # aunque se mueva la biblioteca local (por ejemplo, el SKP abierto en otra PC).
+  def test_installed_material_keeps_painting_without_rehashing_library_files_on_each_click
+    created=create_photo;prepared=service.prepare(created['catalogId'],'sheet')
+    hashed=0;original=Digest::SHA256.method(:file)
+    Digest::SHA256.singleton_class.send(:define_method,:file) { |*args| hashed+=1;original.call(*args) }
+    begin
+      3.times { |index| assert smart.apply_immediate(options(prepared,index))['changed'] }
+    ensure
+      Digest::SHA256.singleton_class.send(:define_method,:file) { |*args| original.call(*args) }
+    end
+    assert_equal 0,hashed,'el clic no debe recalcular hashes de archivos de la biblioteca'
+    FileUtils.rm_rf(File.join(@directory,'photo-assets'))
+    assert smart.apply_immediate(options(prepared,3))['changed']
+  end
+
+  # C5: escala verificada modificada en el editor de SketchUp.
+  def test_scale_edited_in_sketchup_is_reported_as_texture_mismatch
+    created=create_photo(@first_photo,'Escala.jpg',PhotoFixture.jpeg,'textureWidthMm'=>2750,'textureHeightMm'=>1830)
+    service.prepare(created['catalogId'],'sheet')
+    @model.materials.last.texture.width=10.0
+    state=service.states[created['catalogId']]
+    assert_equal 'texture_mismatch',state['state'];assert_match(/escala|tamaño/,state['message'])
+  end
+
+  # Prueba obligatoria 13: SKM importado (clasificado como placa, sin aprobación comercial).
+  def test_imported_skm_is_installed_on_selection_and_paints
+    native=PhotoFixture::Material.new(1,'Roble SKM');native.texture=[write_png('skm-texture.png'),1,1]
+    path=File.join(@source,'origen.skm');native.save_as(path);bytes=File.binread(path);sha=Digest::SHA256.hexdigest(bytes)
+    FileUtils.mkdir_p(File.join(@directory,'skm-import-assets'));File.binwrite(File.join(@directory,'skm-import-assets',"#{sha}.skm"),bytes)
+    row=@catalog.new_item('Roble SKM','sheet',{'source'=>'skm-import','skm'=>{'sha256'=>sha,'sourceName'=>'origen.skm','originalName'=>'Roble SKM','suggestions'=>{}}})
+    @catalog.save([row],0)
+    assert_equal 'installable',service.states[row['id']]['state']
+    prepared=service.prepare(row['id'],'sheet')
+    assert prepared['installed']
+    assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],@model.materials.last)
+  end
+
+  # Material de color sólido, sin fotografía.
+  def test_solid_colour_can_be_assigned_to_a_commercial_item_and_reused_in_another_model
+    row=@catalog.new_item('Blanco liso','sheet').merge('sku'=>'BL18','supplier'=>'QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'approved'=>true)
+    @catalog.save([row],0)
+    service(@first).assign_color(row['id'],[240,240,236])
+    colour=@first.materials.last
+    assert_nil colour.texture;assert_equal [240,240,236],[colour.color.red,colour.color.green,colour.color.blue]
+    assert item('Blanco liso')['approved'],'asignar un color no toca los datos comerciales'
+    assert_equal 'BL18',item('Blanco liso')['sku']
+    assert_equal 'installable',service.states[row['id']]['state']
+    prepared=service.prepare(row['id'],'sheet')
+    installed=@model.materials.last
+    assert_nil installed.texture;assert_equal 240,installed.color.red
+    assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],installed)
+  end
+
+  # Decisión 2: atributos OCL en materiales que crea Planos Santo.
+  def test_created_and_installed_materials_carry_compatible_opencutlist_attributes
+    created=create_photo
+    material_a=@first.materials.last
+    assert_equal 2,material_a.get_attribute('ladb_opencutlist','type')
+    assert_equal '18mm',material_a.get_attribute('ladb_opencutlist','std_thicknesses')
+    assert_nil material_a.get_attribute('ladb_opencutlist','thickness'),'en placas OCL usa std_thicknesses, no thickness'
+    service.prepare(created['catalogId'],'sheet')
+    assert_equal 2,@model.materials.last.get_attribute('ladb_opencutlist','type')
+    edge=@catalog.new_item('Canto Caju 22','edge').merge('thicknessMm'=>0.45,'widthMm'=>22)
+    data=@catalog.read;@catalog.save(data['items']+[edge],data['revision'])
+    service(@first).assign_color(edge['id'],[150,110,70])
+    canto=@first.materials.last
+    assert_equal 4,canto.get_attribute('ladb_opencutlist','type')
+    assert_equal '0.45mm',canto.get_attribute('ladb_opencutlist','thickness')
+    assert_equal '22mm',canto.get_attribute('ladb_opencutlist','std_widths')
+    assert_nil canto.get_attribute('ladb_opencutlist','std_thicknesses')
+  end
+  def test_existing_opencutlist_attributes_are_never_overwritten
+    material=PhotoFixture::Material.new(77,'Ya tipado por OCL');material.set_attribute('ladb_opencutlist','type',1)
+    material.set_attribute('ladb_opencutlist','std_thicknesses','19mm')
+    result=PlanosSanto::OclAttributes.write_missing(material,@catalog.new_item('X','sheet').merge('thicknessMm'=>18))
+    assert_equal 1,material.get_attribute('ladb_opencutlist','type');assert_equal '19mm',material.get_attribute('ladb_opencutlist','std_thicknesses')
+    assert_equal 'conflict',result['status']
+  end
+
+  # Prueba obligatoria 7, 8 y 12 con la herramienta real: cinco piezas, cambio de material, Undo, Escape.
+  def test_tool_paints_five_pieces_changes_material_without_restarting_and_undo_restores_one_click
+    first=service.prepare(create_photo['catalogId'],'sheet')
+    second=service.prepare(create_photo(@first_photo,'Segunda.png',PhotoFixture.png(3,3))['catalogId'],'sheet')
+    material_one,material_two=@model.materials.last(2)
+    events=[];picker=Picker.new;view=View.new(picker)
+    @model.define_singleton_method(:select_tool) { |tool| @qa_tool=tool }
+    @model.define_singleton_method(:selected_tool) { @qa_tool }
+    tool=PlanosSanto::SmartPaintTool.new(@model,service:smart,options:options(first).reject { |key,_| key=='targets' },on_event:lambda { |event| events << event },guard:lambda { true })
+    @model.select_tool(tool);tool.activate
+    undo=@model.undo_states.length
+    @pieces.each_with_index do |piece,index|
+      face=piece.definition.entities[2];picker.path=[@model.entities.first,piece,face];picker.leaf=face
+      tool.onLButtonDown(0,10,10,view)
+      assert_nil events.last['error'];assert_board(piece,material_one);assert_equal undo+index+1,@model.undo_states.length
+    end
+    tool.update_options(options(second).reject { |key,_| key=='targets' });assert tool.status['active']
+    face=@pieces.first.definition.entities[2];picker.path=[@model.entities.first,@pieces.first,face];picker.leaf=face
+    tool.onLButtonDown(0,10,10,view);assert_board(@pieces.first,material_two)
+    @model.undo;assert_board(@pieces.first,material_one);assert_board(@pieces.last,material_one)
+    tool.onKeyDown(27,0,0,view);refute tool.status['active']
+  end
+
+  # Prueba obligatoria 10: compartidos. Modo rápido = sólo la pieza elegida.
+  def test_shared_definition_only_changes_the_clicked_piece
+    prepared=service.prepare(create_photo['catalogId'],'sheet')
+    before=sides(@pieces[1])
+    smart.apply_immediate(options(prepared,0))
+    assert_board(@pieces[0],@model.materials.last);assert_equal before,sides(@pieces[1])
+    refute_same @pieces[0].definition,@pieces[1].definition
+  end
+
+  def test_kind_mismatch_is_explained
+    created=create_photo
+    error=assert_raises(PlanosSanto::ExportError) { service.prepare(created['catalogId'],'edge') }
+    assert_match(/es una placa/,error.message)
+  end
+
+  def write_png(name);path=File.join(@source,name);File.binwrite(path,PhotoFixture.png);path;end
+end

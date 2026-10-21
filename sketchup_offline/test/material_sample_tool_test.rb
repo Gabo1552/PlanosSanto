@@ -115,16 +115,18 @@ class MaterialSampleToolTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { build('both') }
   end
 
-  def test_unapproved_or_changed_catalog_item_cannot_be_selected_even_after_valid_hover
+  # 0.8.8: approval/SKU changes keep the sample selectable; a kind change does not.
+  def test_commercial_changes_keep_sample_selectable_but_kind_change_blocks_after_valid_hover
     @tool.activate;hover
-    @sheet['approved']=false
+    @sheet['approved']=false;@sheet['sku']='Changed-SKU'
     before=snapshot;click
+    assert @events.last['sample']['selectable']
+    assert_equal before,snapshot
+    @sheet['kind']='edge';before=snapshot;click
     refute @events.last['sample']['selectable']
     assert_equal 'invalid_binding',@events.last['sample']['status']
     refute @events.last['sample'].key?('catalogId')
     assert_equal before,snapshot
-    @sheet['approved']=true;@sheet['sku']='Changed-SKU';click
-    refute @events.last['sample']['selectable']
   end
 
   def test_duplicate_uuid_is_reported_without_guessing_an_equivalent_material

@@ -2,6 +2,7 @@
 require 'base64'
 require 'tempfile'
 require_relative 'material_library'
+require_relative 'ocl_attributes'
 
 module PlanosSanto
   # Creates a real native textured material from a Ruby-picked local image.
@@ -213,8 +214,13 @@ module PlanosSanto
           metadata={'schema'=>1,'designReady'=>true,'sourceHash'=>@pending['sourceHash'],'imageAsset'=>image_asset,
                     'thumbnailAsset'=>('0'*64)+'.png','skmHash'=>'0'*64,'textureScale'=>scale,'widthPx'=>@pending['widthPx'],'heightPx'=>@pending['heightPx']}
           item=@catalog.new_item(data['name'],data['kind'],{'source'=>'photo','photo'=>metadata})
-          item['id']=old['id'] if data['action']=='replace'
-          item['thicknessMm']=data['thicknessMm']
+          if data['action']=='replace'
+            # Replacing the visual never resets commercial data (0.8.8): SKU,
+            # supplier, format, grain, edges, price and approval are preserved.
+            item['id']=old['id']
+            %w[sku supplier thicknessMm widthMm lengthMm grain compatibleIds price favorite approved].each { |key| item[key]=old[key] }
+          end
+          item['thicknessMm']=data['thicknessMm'] unless data['thicknessMm'].nil?
           previous_materials=@model.materials.to_a
           material=@model.materials.add(data['name'])
           raise ExportError,'SketchUp no pudo crear un material nuevo; el material existente no se modificó.' unless material && !previous_materials.include?(material) && material.respond_to?(:texture=)
@@ -225,6 +231,7 @@ module PlanosSanto
           binding=MaterialResolver.binding_for(item)
           material.set_attribute(MaterialResolver::DICT,MaterialResolver::KEY,JSON.generate(binding))
           material.set_attribute(MaterialResolver::DICT,PHOTO_KEY,JSON.generate('schema'=>1,'sourceHash'=>@pending['sourceHash']))
+          OclAttributes.write_missing(material,item)
           raise ExportError,'SketchUp no pudo guardar el SKM reutilizable.' unless @library.archive(material,item,index,true)
           record=index['records'].find { |row| row['catalogId']==item['id'] }
           raise ExportError,'Falta el archivo SKM reutilizable.' unless record && @library.usable_record(record,item)

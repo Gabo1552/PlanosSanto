@@ -195,7 +195,7 @@ module PlanosSanto
       operations.each_value { |operation| operation[:textureMapping]=texture_mapping(operation) }
       # Empty replacement remains a validated no-op, never an empty Undo entry.
       {data:JSON.parse(JSON.generate(data)),signature:snapshot[:signature],catalog:Digest::SHA256.hexdigest(JSON.generate(@catalog.read)),
-       operations:operations.values,proofs:proofs,paths:paths.uniq.sort,warnings:warnings.uniq,sources:sources}
+       operations:operations.values,proofs:proofs,paths:paths.uniq.sort,warnings:warnings.uniq,sources:sources,snapshot:snapshot}
     end
     def public_plan(prepared)
       {'affectedPaths'=>prepared[:paths],'faceCount'=>prepared[:operations].map { |o| [o[:node]['id'],@native.face_id(o[:face])] }.uniq.length,
@@ -209,12 +209,21 @@ module PlanosSanto
       @draft=prepared.merge(token:token)
       public_plan(prepared).merge('token'=>token)
     end
-    # One safe native gesture. The preview/token remains an internal consistency
-    # check, not an extra user confirmation or a second painting engine.
+    # One safe native gesture. Planning and commit run in the same synchronous
+    # call, so the plan is committed directly: re-planning (a second full
+    # inventory and material validation) could not observe any change (0.8.8).
     def apply_immediate(data)
       raise ExportError,'Solicitud de pintura inmediata inválida.' unless data.is_a?(Hash)
-      prepared=preview(data.merge('immediate'=>true))
-      apply('token'=>prepared.fetch('token'),'confirmed'=>true)
+      preview(data.merge('immediate'=>true))
+      draft=@draft;@draft=nil
+      raise ExportError,'No se pudo preparar el pintado.' unless draft
+      raise ExportError,'Hay otra aplicación de pintura en curso.' if @applying
+      @applying=true
+      begin
+        commit(draft,draft)
+      ensure
+        @applying=false
+      end
     end
     def unchanged?(operation)
       current=operation[:side]=='front' ? operation[:face].material : operation[:face].back_material
@@ -224,13 +233,22 @@ module PlanosSanto
       draft=@draft;@draft=nil
       raise ExportError,'Confirmá una vista previa vigente de pintura inteligente.' unless draft && data.is_a?(Hash) && data['token']==draft[:token] && data['confirmed']==true
       raise ExportError,'Hay otra aplicación de pintura en curso.' if @applying
-      @applying=true;started=false
+      @applying=true
       begin
         current=plan(draft[:data])
         raise ExportError,'El modelo, la biblioteca o los materiales cambiaron; volvé a previsualizar.' unless current[:signature]==draft[:signature] && current[:catalog]==draft[:catalog] && current[:sources]==draft[:sources] && current[:paths]==draft[:paths] && current[:operations].map { |o| o[:textureMapping] }==draft[:operations].map { |o| o[:textureMapping] }
         raise ExportError,'El material de destino cambió; volvé a previsualizar.' unless current[:proofs].map { |p| [p[:catalog],p[:binding],p[:appearance]] }==draft[:proofs].map { |p| [p[:catalog],p[:binding],p[:appearance]] }
+        commit(current,draft)
+      ensure
+        @applying=false
+      end
+    end
+    # Opens exactly one native operation for a validated plan.
+    def commit(current,draft)
+      started=false
+      begin
         operations=current[:operations]
-        snapshot=NameManager.new(@model).inventory
+        snapshot=current[:snapshot]
         isolation=operations.any? { |o| draft[:data]['scope']=='unique' && @native.affected_paths(o[:node],snapshot).length>1 }
         if !isolation && operations.all? { |o| unchanged?(o) }
           return public_plan(current).merge('changed'=>false,'noChanges'=>true,'message'=>'Sin cambios: no se creó una operación Undo.')
@@ -259,8 +277,6 @@ module PlanosSanto
       rescue StandardError
         @model.abort_operation if started
         raise
-      ensure
-        @applying=false
       end
     end
   end

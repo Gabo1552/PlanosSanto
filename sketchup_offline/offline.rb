@@ -18,6 +18,7 @@ require_relative 'quick_toolbar'
 require_relative 'skm_import'
 require_relative 'piece_highlight_tool'
 require_relative 'photo_material'
+require_relative 'paint_materials'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -102,7 +103,8 @@ module PlanosSanto
           else
             remembered=smart_settings
             begin
-              quick_paint_start(remembered.except('scope',*(action=='remove_edge' ? ['catalogId'] : [])).merge('mode'=>action)) if action=='remove_edge' || remembered['catalogId']
+              # Toolbar resume never installs: only an explicit palette choice does.
+              quick_paint_start(remembered.except('scope',*(action=='remove_edge' ? ['catalogId'] : [])).merge('mode'=>action),install:false) if action=='remove_edge' || remembered['catalogId']
             rescue ExportError => error
               intent['message']=error.message
             end
@@ -205,14 +207,25 @@ module PlanosSanto
       window&.execute_script("window.dispatchEvent(new CustomEvent('#{event}',{detail:JSON.parse(#{JSON.generate(JSON.generate(data))})}))")
     end
 
+    def paint_materials
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      PaintMaterials.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory)
+    end
+
+    def paint_palette_state
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      {'paintStates'=>paint_materials.states,'visuals'=>MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory).status}
+    end
+
     # A quick gesture never reuses permission for shared instances, nor a native
-    # UUID stored in another model. Resolve the current, uniquely bound material.
-    def quick_paint_start(data)
+    # UUID stored in another model. Choosing a catalog material is the explicit
+    # intent to paint: PaintMaterials#prepare installs its verified visual in this
+    # model when missing (0.8.8), then the current bound material is used.
+    def quick_paint_start(data,install:true)
       active!;clean_for_paint!
       raise ExportError,'El pintado rápido usa una instancia. Revisá el alcance avanzado para afectar otras.' if data['scope'] && data['scope']!='unique'
       mode=data.fetch('mode','sheet')
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge remove_edge].include?(mode)
-      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
       # Daily painting is one safe occurrence, both physical sides of the board,
       # no deferred batch and no inherited face/XY/shared settings from old UI.
       # The service infers the local cutting axes from each clicked piece.
@@ -222,18 +235,20 @@ module PlanosSanto
       if mode=='remove_edge' && data['catalogId'].to_s.empty? && !data['materialUuid'].to_s.empty?
         raise ExportError,'Elegí la placa de restauración completa o usá la detección de la pieza.'
       end
+      prepared=nil
       if mode!='remove_edge' || !data['catalogId'].to_s.empty?
-        service=SmartPaint.new(@model,catalog:CatalogStore.new(directory:directory))
-        choices=service.material_choices('mode'=>mode=='remove_edge' ? 'sheet' : mode).select { |row| row['catalogId']==data['catalogId'] }
-        raise ExportError,'Elegí un material vigente de la paleta; no se cargó ni modificó el modelo.' unless choices.length==1
-        choice=choices.first
-        if data['materialUuid'] && data['materialUuid']!=choice['materialUuid']
-          raise ExportError,'Cambió la vinculación del material. Elegilo nuevamente en la paleta.'
+        raise ExportError,'Elegí un material de la paleta.' if data['catalogId'].to_s.empty?
+        service=paint_materials
+        unless install
+          state=service.states[data['catalogId']]
+          raise ExportError,'Elegí un material de la paleta.' unless state
+          raise ExportError,state['message'] unless state['state']=='ready'
         end
-        options.merge!(choice.slice('catalogId','materialUuid'))
+        prepared=service.prepare(data['catalogId'],mode=='remove_edge' ? 'sheet' : mode)
+        options.merge!('catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid'])
       end
       options=validate_smart_options(options)
-      if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
+      result=if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         # Validate the new material BEFORE changing the active Tool. Normal
         # material changes neither deselect the Tool nor require reactivation.
         @smart_tool.update_options(options)
@@ -242,6 +257,9 @@ module PlanosSanto
       else
         dispatch('smart_tool_start',{'options'=>options})
       end
+      return result unless prepared
+      result=result.merge('prepared'=>prepared.slice('catalogId','materialUuid','installed','message'))
+      prepared['installed'] ? result.merge(paint_palette_state) : result
     end
 
     def reply(id, result: nil, error: nil)
@@ -527,7 +545,19 @@ module PlanosSanto
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
+         'paintStates'=>paint_materials.states,
          'settings'=>smart_settings,'toolState'=>smart_state,'thumbnails'=>material_thumbnails}
+      when 'smart_material_prepare'
+        # Advanced palette: install/verify the chosen material without starting a Tool.
+        active!;clean_for_paint!
+        raise ExportError,'Modo de material inválido.' unless %w[sheet edge].include?(data['mode'])
+        prepared=paint_materials.prepare(data.fetch('catalogId'),data['mode'])
+        {'prepared'=>prepared.slice('catalogId','materialUuid','installed','message')}.merge(paint_palette_state)
+      when 'smart_assign_color'
+        active!;clean_for_paint!
+        raise ExportError,'Confirmá el color elegido.' unless data['confirmed']==true
+        assigned=paint_materials.assign_color(data.fetch('catalogId'),data.fetch('rgb'))
+        {'assigned'=>assigned}.merge(paint_palette_state)
       when 'smart_tool_start'
         active!
         clean_for_paint!

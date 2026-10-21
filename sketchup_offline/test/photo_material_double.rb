@@ -46,8 +46,10 @@ module PhotoFixture
     end
     def save_as(path)
       return false if save_failure
-      document={'name'=>name,'attributes'=>@attributes.to_a,'texture'=>Base64.strict_encode64(File.binread(texture.filename)),
-                'width'=>texture.width,'height'=>texture.height}
+      # Solid-colour materials (no texture) are valid SketchUp materials too.
+      document={'name'=>name,'attributes'=>@attributes.to_a,'color'=>color && [color.red,color.green,color.blue],
+                'texture'=>texture && Base64.strict_encode64(File.binread(texture.filename)),
+                'width'=>texture&.width,'height'=>texture&.height}
       File.binwrite(path,JSON.generate(document));true
     end
   end
@@ -61,7 +63,9 @@ module PhotoFixture
     def load(path)
       data=JSON.parse(File.binread(path));material=add(data['name'])
       data['attributes'].each { |keys,value| material.set_attribute(*keys,value) }
-      directory=File.dirname(path);image=File.join(directory,'.fixture-embedded-image.png')
+      material.color=Sketchup::Color.new(*data['color']) if data['color']
+      return material unless data['texture']
+      directory=File.dirname(path);image=File.join(directory,".fixture-embedded-image-#{material.entityID}.png")
       File.binwrite(image,Base64.strict_decode64(data['texture']))
       material.texture=[image,data['width'],data['height']];material
     end

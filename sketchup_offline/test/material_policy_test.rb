@@ -84,10 +84,16 @@ class MaterialPolicyTest < Minitest::Test
     assert PlanosSanto::MaterialPolicy.native_valid?(@item,@material,directory:@directory)
     File.binwrite(File.join(@directory,'material-assets',"#{@skm_hash}.skm"),'changed original');refute paintable
   end
-  def test_legacy_approved_items_keep_permission_and_unapproved_nonphoto_items_do_not_gain_it
+  # 0.8.8 (audit C1): approval is commercial; it no longer makes an item without
+  # any visual look paintable. A verified archived visual does, approved or not.
+  def test_commercial_approval_alone_is_not_a_visual_and_an_archived_visual_is_enough
     legacy=@catalog.new_item('Placa comercial','sheet');legacy['approved']=true
-    assert PlanosSanto::MaterialPolicy.paintable?(legacy)
-    legacy['approved']=false;refute PlanosSanto::MaterialPolicy.paintable?(legacy)
+    refute PlanosSanto::MaterialPolicy.paintable?(legacy,directory:@directory)
+    assert_equal 'none',PlanosSanto::MaterialPolicy.design_asset(legacy,directory:@directory)['status']
+    record={'catalogId'=>legacy['id'],'catalogFingerprint'=>'0'*64,'assetName'=>"#{@skm_hash}.skm",'assetHash'=>@skm_hash,'sourceName'=>'Color'}
+    File.binwrite(File.join(@directory,'material-assets.json'),JSON.generate('schema'=>1,'revision'=>1,'records'=>[record]))
+    assert PlanosSanto::MaterialPolicy.paintable?(legacy,directory:@directory)
+    legacy['approved']=false;assert PlanosSanto::MaterialPolicy.paintable?(legacy,directory:@directory)
     legacy['observed']={'photo'=>{'designReady'=>true}};refute PlanosSanto::MaterialPolicy.paintable?(legacy,directory:@directory)
   end
   def test_imported_skm_design_requires_classification_and_verified_original_not_commercial_fields
@@ -142,24 +148,24 @@ class MaterialPolicyTest < Minitest::Test
     assert_match(/cambi|foto|biblioteca|diseño/,error.message)
     assert_empty @model.operations
   end
-  def test_commercial_review_stales_design_binding_until_explicit_repair_then_supplier_gate_is_available
+  # 0.8.8 (audit C3): a commercial review (SKU, supplier, format, approval) keeps
+  # the design binding paintable; re-binding only refreshes the supplier data.
+  def test_commercial_review_keeps_painting_and_rebinding_refreshes_supplier_fingerprint
     reviewed=@catalog.read['items'].first.merge('approved'=>true,'sku'=>'QA-P18','supplier'=>'Taller QA','thicknessMm'=>18,'widthMm'=>1800,'lengthMm'=>2600,'grain'=>false)
     @catalog.save([reviewed],1)
-    refute PlanosSanto::MaterialPolicy.design_ready?(reviewed,directory:@directory)
-    assert PlanosSanto::MaterialPolicy.photo_source_ready?(reviewed,directory:@directory)
+    assert PlanosSanto::MaterialPolicy.design_ready?(reviewed,directory:@directory)
     paint=PlanosSanto::NativePaint.new(@model,catalog:@catalog)
     request={'catalogId'=>reviewed['id'],'materialUuid'=>@binding['uuid'],'mode'=>'sheet'}
-    assert_raises(PlanosSanto::ExportError) { paint.material_for(request) }
+    assert_same @material,paint.material_for(request).first
     library=PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory)
+    status=library.status['materials'].first
+    assert_empty status['issues'];refute_empty status['commercialIssues']
     bind={'catalogId'=>reviewed['id'],'materialId'=>@material.entityID.to_s,'revision'=>2,'assetRevision'=>1,'confirmed'=>true}
-    assert_raises(PlanosSanto::ExportError) { library.bind(bind) }
-    assert_raises(PlanosSanto::ExportError) { library.bind(bind.merge('replaceBinding'=>true)) }
-    assert_empty @model.operations
-    result=library.bind(bind.merge('replaceBinding'=>true,'replaceVisual'=>true))
-    assert_empty result['materials'].first['issues']
-    assert PlanosSanto::MaterialPolicy.design_ready?(reviewed,directory:@directory)
+    result=library.bind(bind)
+    assert_empty result['materials'].first['issues'];assert_empty result['materials'].first['commercialIssues']
     fresh=PlanosSanto::MaterialResolver.read_binding(@material)
-    assert_same @material,paint.material_for(request.merge('materialUuid'=>fresh['uuid'])).first
+    assert_equal @binding['uuid'],fresh['uuid'];assert_equal PlanosSanto::MaterialResolver.item_fingerprint(reviewed),fresh['catalogFingerprint']
+    assert_same @material,paint.material_for(request).first
     order=PlanosSanto::SupplierOrder.new({'furniture'=>[]},'test',@catalog.read)
     assert_equal reviewed,order.material(reviewed['id'],'sheet')
     assert_equal 1,@model.operations.count { |operation| operation.first==:start }
@@ -173,7 +179,7 @@ class MaterialPolicyTest < Minitest::Test
       library.bind('catalogId'=>reviewed['id'],'materialId'=>@material.entityID.to_s,'revision'=>2,'assetRevision'=>1,'confirmed'=>true,'replaceBinding'=>true,'replaceVisual'=>true)
     end
     assert_empty @model.operations
-    refute PlanosSanto::MaterialPolicy.design_ready?(reviewed,directory:@directory)
+    refute PlanosSanto::MaterialPolicy.native_valid?(reviewed,@material,directory:@directory)
   end
 
 end

@@ -4,8 +4,11 @@ require 'digest'
 require_relative 'material_resolver'
 
 module PlanosSanto
-  # Paint permission and supplier approval are independent. Photo provenance or
-  # a classified, immutable SKM import permits design work, never supplier use.
+  # Paint permission and supplier approval are independent. Design readiness
+  # depends only on visual data (photo, SKM, archived visual, colour); commercial
+  # fields (SKU, supplier, price, format, approval) never block painting.
+  # File integrity is verified when a material is installed or bound, not on
+  # every click (Hito 1, 0.8.8).
   module MaterialPolicy
     PHOTO_KEY='photo_v1'
     HASH=/\A[0-9a-f]{64}\z/
@@ -18,11 +21,15 @@ module PlanosSanto
     def self.skm_import?(item)
       item.is_a?(Hash) && item['observed'].is_a?(Hash) && item['observed']['source']=='skm-import'
     end
+    def self.skm_provenance_valid?(item)
+      proof=item['observed']['skm']
+      proof.is_a?(Hash) && HASH.match?(proof['sha256'].to_s) && proof['sourceName'].is_a?(String) &&
+        !proof['sourceName'].empty? && !proof['sourceName'].match?(/[\\\/\x00-\x1f\x7f]/)
+    end
     def self.skm_source_ready?(item,directory: nil)
       return false unless skm_import?(item) && %w[sheet edge].include?(item['kind'])
       proof=item['observed']['skm']
-      return false unless proof.is_a?(Hash) && HASH.match?(proof['sha256'].to_s) && proof['sourceName'].is_a?(String) &&
-                          !proof['sourceName'].empty? && !proof['sourceName'].match?(/[\\\/\x00-\x1f\x7f]/)
+      return false unless skm_provenance_valid?(item)
       file_matches?(directory,'skm-import-assets',"#{proof['sha256']}.skm",proof['sha256'])
     rescue TypeError,ArgumentError,SystemCallError,IOError
       false
@@ -64,29 +71,75 @@ module PlanosSanto
     rescue TypeError,ArgumentError,SystemCallError,IOError
       false
     end
+    # Photo design readiness: original image, thumbnail and reusable SKM, all
+    # content-addressed. The commercial fingerprint is deliberately NOT involved.
     def self.design_ready?(item,directory: nil)
-      return false unless photo_source_ready?(item,directory:directory)
-      index_path=File.join(directory,'material-assets.json')
-      return false unless File.file?(index_path) && !File.symlink?(index_path) && File.size(index_path)<=8*1024*1024
-      index=JSON.parse(File.binread(index_path))
-      return false unless index.is_a?(Hash) && index['schema']==1 && index['records'].is_a?(Array)
-      rows=index['records'].select { |row| row.is_a?(Hash) && row['catalogId']==item['id'] }
-      return false unless rows.length==1
-      record=rows.first
-      record['catalogFingerprint']==MaterialResolver.item_fingerprint(item) &&
-        file_matches?(directory,'material-assets',record['assetName'],record['assetHash'])
-    rescue JSON::ParserError,TypeError,ArgumentError,SystemCallError,IOError
-      false
+      photo_source_ready?(item,directory:directory)
     end
+    # Index record (catalogId -> archived visual SKM). Returns nil when absent.
+    def self.visual_record(item,directory)
+      return nil unless directory.is_a?(String) && item.is_a?(Hash)
+      index_path=File.join(directory,'material-assets.json')
+      return nil unless File.file?(index_path) && !File.symlink?(index_path) && File.size(index_path)<=8*1024*1024
+      index=JSON.parse(File.binread(index_path))
+      return nil unless index.is_a?(Hash) && index['schema']==1 && index['records'].is_a?(Array)
+      rows=index['records'].select { |row| row.is_a?(Hash) && row['catalogId']==item['id'] }
+      rows.length==1 ? rows.first : nil
+    rescue JSON::ParserError,TypeError,ArgumentError,SystemCallError,IOError
+      nil
+    end
+    # Where the verified visual to install comes from, and its integrity:
+    # {'status'=>'ok'|'missing'|'corrupt'|'none','path'=>String|nil}.
+    def self.design_asset(item,directory: nil)
+      return {'status'=>'none','path'=>nil} unless item.is_a?(Hash) && %w[sheet edge].include?(item['kind'])
+      candidates=[]
+      record=visual_record(item,directory)
+      candidates << ['material-assets',record['assetName'],record['assetHash']] if record && record['assetName'].is_a?(String) && record['assetHash'].is_a?(String)
+      if photo?(item) && photo(item)['skmHash'].is_a?(String)
+        candidates << ['material-assets',"#{photo(item)['skmHash']}.skm",photo(item)['skmHash']]
+      end
+      if skm_import?(item) && item['observed']['skm'].is_a?(Hash) && item['observed']['skm']['sha256'].is_a?(String)
+        # Same provenance rules as skm_source_ready? (safe source name, no symlink).
+        return {'status'=>'none','path'=>nil} if record.nil? && !skm_provenance_valid?(item)
+        candidates << ['skm-import-assets',"#{item['observed']['skm']['sha256']}.skm",item['observed']['skm']['sha256']] if skm_provenance_valid?(item)
+      end
+      return {'status'=>'none','path'=>nil} if candidates.empty?
+      if photo?(item)
+        # The original photo and its thumbnail prove the visual; check them first.
+        p=photo(item)
+        [['photo-assets',p['imageAsset'],p['sourceHash']],['photo-assets',p['thumbnailAsset'],p['thumbnailAsset'].to_s.split('.').first],
+         ['material-assets',"#{p['skmHash']}.skm",p['skmHash']]].each do |folder,name,hash|
+          next if file_matches?(directory,folder,name,hash)
+          path=directory.is_a?(String) && name.is_a?(String) ? File.join(directory,folder,name) : nil
+          return {'status'=>path && File.file?(path) ? 'corrupt' : 'missing','path'=>nil}
+        end
+      end
+      seen_corrupt=false
+      candidates.uniq.each do |folder,name,hash|
+        return {'status'=>'ok','path'=>File.join(directory,folder,name)} if file_matches?(directory,folder,name,hash)
+        path=directory.is_a?(String) && name.is_a?(String) ? File.join(directory,folder,name) : nil
+        seen_corrupt||=path && File.file?(path)
+      end
+      {'status'=>seen_corrupt ? 'corrupt' : 'missing','path'=>nil}
+    rescue TypeError,ArgumentError,SystemCallError,IOError
+      {'status'=>'missing','path'=>nil}
+    end
+    # A catalog item is paintable when a verified visual can be installed.
+    # Commercial approval alone no longer grants it (it showed unpaintable
+    # tiles, audit cause C1); a bound material already in the model is judged
+    # by native_valid? instead.
     def self.paintable?(item,directory: nil)
       return false unless item.is_a?(Hash) && %w[sheet edge].include?(item['kind'])
-      return design_ready?(item,directory:directory) if photo?(item)
-      return skm_source_ready?(item,directory:directory) if skm_import?(item)
-      item['approved']==true
+      return false if photo?(item) && !metadata_valid?(item)
+      design_asset(item,directory:directory)['status']=='ok'
     end
-    def self.native_valid?(item,material,directory: nil,allow_stale_index: false)
-      return paintable?(item,directory:directory) unless photo?(item)
-      source_ready=allow_stale_index ? photo_source_ready?(item,directory:directory) : design_ready?(item,directory:directory)
+    # Bound native material check. require_source=true (install/bind) also
+    # verifies the library files; false (painting) trusts the installed
+    # material plus its embedded photo proof, so a click never hashes files.
+    # allow_stale_index is accepted for callers of 0.8.7 and no longer changes the result.
+    def self.native_valid?(item,material,directory: nil,allow_stale_index: false,require_source: true)
+      return true unless photo?(item)
+      source_ready=!require_source || photo_source_ready?(item,directory:directory)
       return false unless source_ready && material.respond_to?(:texture) && material.texture && material.respond_to?(:get_attribute)
       raw=material.get_attribute(MaterialResolver::DICT,PHOTO_KEY,nil)
       return false unless raw.is_a?(String) && raw.bytesize<=1024
