@@ -400,7 +400,7 @@ test('pedido: revisa cada pieza, guarda borrador y genera lotes TXT reales con t
  await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();
  await expect(page.getByLabel('Orientación y cara verificadas')).toBeChecked();
  await page.getByRole('button',{name:'Revisar pedido y costo neto',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('Pedido coherente');
- await expect(page.getByText('3 consumos con precio pendiente.',{exact:false})).toBeVisible();
+ await expect(page.locator('.workshop-figures dd').nth(2)).toHaveText('3');await expect(page.locator('.workshop-estimate-table tbody tr')).toHaveCount(3);
  await page.getByRole('button',{name:'Exportar TXT de prueba…',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('TXT y manifest guardados');
  const folders=(await readdir(info.outputDir)).filter(name=>name.startsWith('PlanosSanto-pedido-'));expect(folders).toHaveLength(1);
  const manifest=JSON.parse(await readFile(resolve(info.outputDir,folders[0],'manifest.json'),'utf8'));expect(manifest.production_ready).toBe(false);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(manifest.columns).toHaveLength(9);
