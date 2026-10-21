@@ -51,7 +51,7 @@ test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frent
 });
 
 test('cancelar propuestas no escribe nombres ni frente; Escape conserva el modelo y devuelve el foco',async({page},info)=>{
- await boot(page,info.outputDir);const before=await snapshot(),dialog=await openProposals(page);await dialog.getByLabel('Frente y vertical confirmados',{exact:true}).check();await dialog.getByLabel('Nombre sugerido P01',{exact:true}).fill('Propuesta cancelada');await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true})).toBeFocused();expect(await snapshot()).toEqual(before);expect(saves).toBe(0);
+ await boot(page,info.outputDir);const before=await snapshot(),dialog=await openProposals(page);await dialog.getByLabel('Frente y vertical confirmados',{exact:true}).check();await dialog.getByLabel('Nombre sugerido P01',{exact:true}).fill('Propuesta cancelada');await page.keyboard.press('Escape');await expect(dialog).toBeVisible();await expect(dialog.getByLabel('Nombre sugerido P01',{exact:true})).not.toHaveValue('Propuesta cancelada');await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true})).toBeFocused();expect(await snapshot()).toEqual(before);expect(saves).toBe(0);
 });
 
 test('una ocurrencia compartida incompatible bloquea la confirmación completa sin cambios parciales',async({page},info)=>{
