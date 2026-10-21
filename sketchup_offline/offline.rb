@@ -195,6 +195,7 @@ module PlanosSanto
       window.add_action_callback('request') { |_context,raw| UI.start_timer(0,false) { handle(raw,source:window) } }
       window.set_can_close { true }
       window.set_on_closed do
+        next unless @palette_dialog.equal?(window)
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
         @photo_material=nil;@photo_preview_active=false
         stop_smart_tool(refresh:false)
@@ -571,6 +572,13 @@ module PlanosSanto
         {'toolState'=>smart_state}
       when 'smart_palette_load'
         active!
+        # One paint palette at a time: opening Pintar in the main window closes the
+        # separate palette and its Tool. Detach first: a deferred on_closed must
+        # not stop the tool or drop the photo draft the main window starts next.
+        if @palette_dialog && @dialog && @request_dialog.equal?(@dialog)
+          palette=@palette_dialog;@palette_dialog=nil;@palette_ready=false;@palette_intent=nil
+          stop_smart_tool(refresh:false);palette.close
+        end
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
