@@ -18,10 +18,12 @@ class PhotoMaterialTest < Minitest::Test
     @allowed=true
     @service=PlanosSanto::PhotoMaterial.new(@model,catalog:@catalog,directory:@directory,guard:lambda { @allowed })
     Sketchup::ImageRep.fail_load=false;Sketchup::ImageRep.fail_save=false;Sketchup::ImageRep.fail_resize=false
+    Sketchup::ImageRep.load_return=nil;Sketchup::ImageRep.empty_decode=false
   end
   def teardown
     FileUtils.remove_entry(@directory);FileUtils.remove_entry(@source)
     Sketchup::ImageRep.fail_load=false;Sketchup::ImageRep.fail_save=false;Sketchup::ImageRep.fail_resize=false
+    Sketchup::ImageRep.load_return=nil;Sketchup::ImageRep.empty_decode=false
   end
   def file(name='Foto propia.png',bytes=PhotoFixture.png)
     path=File.join(@source,name);File.binwrite(path,bytes);path
@@ -158,6 +160,31 @@ class PhotoMaterialTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { pick };Sketchup::ImageRep.fail_load=false
     path=file;File.open(path,'wb') { |stream| stream.truncate(PlanosSanto::PhotoMaterial::MAX_BYTES+1) }
     assert_raises(PlanosSanto::ExportError) { @service.pick(path) }
+    assert_empty @model.operations;assert_nil catalog_bytes
+  end
+  # V1/V15 (0.8.8 native): SketchUp 2026 decoded a valid 1200x1200 JPG but
+  # load_file returned nil, and the old `==true` contract rejected it.
+  def test_native_nil_return_after_decoding_a_valid_jpg_is_accepted_and_paints
+    [nil,:true].each do |answer|
+      Sketchup::ImageRep.load_return=answer
+      result=pick("Foto 1200 #{answer.inspect}.jpg",PhotoFixture.jpeg(1200,1200))
+      assert_equal [1200,1200],[result['widthPx'],result['heightPx']]
+      assert result['preview'].start_with?('data:image/png;base64,')
+    end
+    created=create(pick('Foto válida.jpg',PhotoFixture.jpeg(1200,1200)))
+    assert @model.materials.first.texture;assert created['catalog']['items'].first.dig('observed','photo','designReady')
+  end
+  def test_decoder_without_pixels_false_extension_and_limits_are_still_rejected
+    Sketchup::ImageRep.empty_decode=true
+    assert_raises(PlanosSanto::ExportError) { pick('vacía.jpg',PhotoFixture.jpeg) };Sketchup::ImageRep.empty_decode=false
+    assert_raises(PlanosSanto::ExportError) { pick('texto.jpg','no es una imagen') }
+    assert_raises(PlanosSanto::ExportError) { pick('foto.gif',PhotoFixture.png) }
+    assert_raises(PlanosSanto::ExportError) { pick('cortada.jpg',PhotoFixture.jpeg.byteslice(0,40)) }
+    [[4001,4000],[16_385,1],[1,16_385]].each do |width,height|
+      assert_raises(PlanosSanto::ExportError) { pick('grande.jpg',PhotoFixture.jpeg(width,height)) }
+    end
+    assert pick('límite.jpg',PhotoFixture.jpeg(4000,4000))
+    assert pick('límite lado.png',PhotoFixture.png(16_384,1))
     assert_empty @model.operations;assert_nil catalog_bytes
   end
   def test_symlink_and_non_local_paths_never_reach_material_creation

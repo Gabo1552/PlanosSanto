@@ -1,0 +1,16 @@
+{
+  "CORRECCIONES_PRIORIZADAS_088.txt": "8c42f9f85b5bf46225513f26633e34dfda35f5132637f6c2ca64c4c01f8061a0",
+  "final-audit.json": "9d37a879ebe5c886827fd2dbd13f4587a716556745931cfc3f0c5f83aa6170ed",
+  "final-native-integrity.json": "859d35e008004ec3542b1383d0992dd01c31d5956077f34742422a7a735487e4",
+  "INFORME_VALIDACION_088.txt": "e0624dc66ce67a35f46366ac67050a06a57eb0ce443ac32cd7873d8987695a8f",
+  "LEEME.txt": "67fc010d3be11e67399e76aeb5acb7eab04b0a3c618b06f6a8e7a67c2d8a31e0",
+  "regresion-nativa-result.json": "66c66fbf03756dd50dda0e95c8a82b982ddb31502acd7804fe862d6be11897d0",
+  "RESULTADOS_19.json": "170d99195f7b1f324cbca9a1ac58d5f30414bca70eac68885837e903621f96b3",
+  "V1-native-photo-diagnostic.json": "2beaf9aa03d57b0824e0eb37663dd87e6afa65738f7530f8a24091d1e7a16fff",
+  "V16-restart-restored.json": "4f080272a0dd86d4427b210f38aa7f62de5693ca35956296a9051d2c3b6e5e4b",
+  "V16-restarted-integrity.json": "859d35e008004ec3542b1383d0992dd01c31d5956077f34742422a7a735487e4",
+  "V16-restored.json": "4f080272a0dd86d4427b210f38aa7f62de5693ca35956296a9051d2c3b6e5e4b",
+  "V18-txt-guard.json": "259585b4b7c023d6db3eea1f31252dea5d0ea70c7f62ae0374e14b3ccdb9a786",
+  "V19-tiempo-clic.json": "e448024f183be5cc1d319b867171db2aa31bf397ef307ab181e1e2455b122910",
+  "V19-windows-clicks.json": "17eac359d4e9597dfd0a7ff903022abbf3c6bf39d811ae4552690f34cef3d085"
+}

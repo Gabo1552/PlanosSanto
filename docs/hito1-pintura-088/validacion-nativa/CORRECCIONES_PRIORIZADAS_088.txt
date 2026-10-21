@@ -1,0 +1,44 @@
+PLANOS SANTO 0.8.8 — CORRECCIONES PRIORIZADAS / HITO 1
+Validación nativa: SketchUp 2026 26.2.243, Ruby 3.2.2, Windows.
+Fuente revisada: main af434dd23d7b1ca220f7e6e3efd920780c0ea99e.
+No hay parches de producto locales. No se inicia Hito 2.
+
+P1 — JPG válido rechazado al crear y asignar foto (V1 y V15, reproducido).
+Pasos: copia de mueble -> Pintar -> +Material -> Elegir foto -> JPG de1200x1200 y166694 bytes. Repetir desde ficha sin visual con SKU -> Asignar foto.
+Actual: error genérico de imagen inválida; sin vista previa ni Guardar y pintar.
+Esperado: vista previa y un clic posterior con textura real.
+Prueba nativa: ImageRep.load_file devuelve nil (NilClass), pero width=height=1200. El encabezado del mismo archivo es JPG1200x1200. SHA256:4af47551e59440084b6eeb19f9a23a2ea96632e47ade4a44ba823372d8bfd0ab.
+Causa confirmada en el trayecto reproducido: sketchup_offline/photo_material.rb:51 exige rep.load_file(path)==true y rechaza antes de comprobar dimensiones. SketchUp decodificó el JPG sin ese retorno booleano.
+Plan acotado: ajustar contrato de decodificación nativa; validar dimensiones/imagen decodificada y errores reales, manteniendo límites, validación de encabezados y archivos corruptos. No aceptar ciegamente nil.
+Regresión requerida: JPG y PNG válidos en SketchUp2026, imagen corrupta, extensión falsa, límites12MiB/16MP/16384; repetir V1/V2/V3/V7/V12/V15 con una foto nueva, persistencia de textura y escala/UV.
+Evidencia: V1-native-photo-diagnostic.json (traza completa), V1-valid-jpg-rejected.jpg, V15-assign-photo-rejected.jpg. El JPG de24MP inicialmente usado se rechazó correctamente; no es el caso fallido válido.
+Referencia API: https://ruby.sketchup.com/Sketchup/ImageRep.html#load_file-instance_method
+
+P1 — Material de biblioteca mostrado como instalable que falla por colisión de nombre (V6, reproducido dos veces).
+Pasos: en copia M-S con material nativo Melamina petiribi18mm, elegir Caju18mm en Pintar; repetir con Camellia activa después de cinco pintadas.
+Actual: SketchUp devolvió un material existente: vinculalo explícitamente. Caju no se activa ni pinta; el material previo permanece activo.
+Dato causal: el SKM archivado de Caju tiene sourceName Melamina petiribi18mm, ya presente en el modelo sin ese vínculo de catálogo. materials.load devuelve el material existente.
+Archivos: sketchup_offline/material_library.rb:302-305, paint_materials.rb:41-66 y150-153; revisar también estado instalable en state_for.
+Plan acotado: resolver importación con colisión y mantener identidad/prueba visual. No vincular automáticamente por nombre ni aceptar una textura diferente por coincidencia nominal. Si requiere revisión explícita, mostrar ese estado antes de prometer instalación inmediata.
+Regresión requerida: mismo nombre/visual idéntico, mismo nombre/visual diferente, otro nombre, mismo material entre procesos y cambio de melamina con pincel activo.
+Evidencia: existing-skm-install-error.jpg, V6-material-switch-error.jpg. SKM Plywood nuevo sí se importó, instaló al elegir y pintó; el problema no afecta a todos los SKM.
+
+P2 — Plan de pintura por encima del objetivo orientativo en proyecto grande (V19).
+Modelo copiado:1560 piezas con caras propias,1603 contenedores. Selección: componente raíz de6 caras; verificador oficial de solo lectura, cinco repeticiones.
+Planes:593.6,540.0,544.9,544.0,549.9ms. Mediana544.9ms; objetivo orientativo<300ms.
+Diez clics Windows reales sin formularios: cuatro pintaron cuatro componentes, seis repitieron material ya aplicado. Hasta obtener captura:876–951ms; primeros cuatro cambios894–925ms. Son cotas con automatización/captura, NO duración aislada de pintura/redibujo. No inferir latencia del motor de inputMs~100ms.
+Causa probable, sin perfil nativo por método todavía: SmartPaint.plan inventaría el modelo con NameManager.inventory y valida catálogo/materiales. apply_immediate ya evita un segundo plan en0.8.8; el único plan completo todavía cuesta~545ms aquí.
+Archivos: sketchup_offline/smart_paint.rb:124,197,207-230; names.rb (inventario); smart_paint_tool.rb:189-204.
+Plan: perfilar un plan y el clic nativo completo; reducir trabajo global conservando detección de cambios, aislamiento de instancias y validación de material. Repetir en10 piezas nuevas con escritura, separar no-op, hover y redibujo. No optimizar quitando controles de integridad.
+
+P2 — Investigar precisión de selección de canto y dos paletas simultáneas (observaciones, causa no cerrada).
+Un clic inicial cercano al borde inferior no cambió nada. Sondeo nativo en puntos próximos devuelve Edge antes de Face; smart_paint_tool.rb:59 toma únicamente leaf_at(0). No se probó ese punto exacto en todas las cámaras: no declarar confirmada una falla geométrica por este sondeo.
+Un clic posterior sobre la cara estrecha claramente visible sí cambió exactamente esa cara y pasó V9. Añadir regresión cara estrecha/arista/oclusiones y considerar selección de cara aplicable entre candidatos, sin pintar otra pieza por accidente.
+Al entrar a Pintar desde ventana principal, quedó abierta también la paleta nativa previa; la previa no reflejó el material recién creado/importado hasta cerrarla/reabrirla. No hubo pérdida de geometría. Revisar estado compartido y ciclo de diálogo para no dejar dos paletas con catálogos diferentes.
+Archivos a investigar: offline.rb (show_palette/palette_manage), ui/SmartPaintPalette.tsx, ui/StandalonePaintApp.tsx y actualización de biblioteca.
+Evidencia local: V14-manual-needs-visual.jpg muestra ambas paletas; V9-native-picking.json, V9-edge-click.jpg y V9-isolated-edge-painted.jpg.
+
+Pendientes que no son fallas confirmadas:
+- Creación/persistencia de foto nueva bloqueadas por P1.
+- Pintura de instancias espejadas y rotadas de un modelo real no aprobada por esta corrida; la regresión sintética nativa de anidación/repetición/rotación sí pasó.
+- TXT BM17 no exportado: propuesta sin orientación y revisiones de producción completas. Bloqueo correcto,9 columnas correctas. Preparar fixture de pedido validado o revisión humana real; no fabricar aprobaciones comerciales.

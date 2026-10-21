@@ -49,10 +49,18 @@ module PlanosSanto
     def load_image(path,expected:nil)
       raise ExportError,'Esta instalación no permite decodificar imágenes con ImageRep. Revisá SketchUp2026.' unless defined?(Sketchup::ImageRep)
       rep=Sketchup::ImageRep.new
-      reject_image! unless rep.load_file(path)==true
+      # SketchUp 2026 returns nil (not true) after decoding a valid file, so the
+      # return value is not proof: only an explicit false is. The decoded pixel
+      # buffer is: dimensions within limits, equal to the header, and data sized
+      # for every pixel (a corrupt file decodes to nothing or raises).
+      reject_image! if rep.load_file(path)==false
       width=rep.width;height=rep.height
       reject_image! unless width.is_a?(Integer) && height.is_a?(Integer) && width>0 && height>0 && width<=MAX_DIMENSION && height<=MAX_DIMENSION && width*height<=MAX_PIXELS
       reject_image! if expected && [width,height]!=[expected['widthPx'],expected['heightPx']]
+      # ImageRep#data (documented: the binary pixel data) instead of #size, whose
+      # unit is not verified natively yet. Grey (8 bpp) JPGs are valid too.
+      bits=rep.bits_per_pixel;data=rep.data
+      reject_image! unless [8,24,32].include?(bits) && data.is_a?(String) && data.bytesize>=width*height*bits/8
       rep
     rescue ExportError
       raise

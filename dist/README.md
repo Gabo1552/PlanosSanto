@@ -1,3 +1,13 @@
+# Entrega 0.8.9 — candidata Hito 1 con correcciones de la validación nativa 0.8.8, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.9-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp. El `.sha256` verifica el instalador.
+
+Corrige V1/V15 (JPG válido rechazado), V6 (colisión de nombre del SKM), V19 (un solo recorrido por clic), la selección de canto cerca del borde y las dos paletas desincronizadas. Ver `docs/hito1-pintura-089/INFORME_CORRECCIONES_089.md`.
+
+`PlanosSanto-0.8.9-Validacion-Local-Hito1.zip` trae la guía (empezar por el bloque A: V1/V15), el verificador de solo lectura 0.8.9 y las correcciones priorizadas de origen. No se instala. No incluye modelos, fotos ni materiales privados. La 0.8.8 queda como referencia: **no aprobada**.
+
+---
+
 # Entrega 0.8.8 — candidata Hito 1 (Pintura Inteligente), PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.8-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp. El archivo `.sha256` permite verificar el instalador.

@@ -301,8 +301,8 @@ module PlanosSanto
           before = materials
           material = @model.materials.load(path)
           raise ExportError, 'SketchUp no pudo cargar el material .skm.' unless material
+          material = load_beside(path, material, item, before) if before.include?(material)
           raise ExportError, 'El SKM de diseño no coincide con la foto guardada.' if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item,material,directory:@directory,allow_stale_index:repair)
-          raise ExportError, 'SketchUp devolvió un material existente: vinculalo explícitamente.' if before.include?(material)
           binding = MaterialResolver.binding_for(item)
           material.set_attribute(MaterialResolver::DICT, MaterialResolver::KEY, JSON.generate(binding))
           ocl = OclAttributes.write_missing(material, item)
@@ -312,6 +312,34 @@ module PlanosSanto
         end
       end
       with_status ? status.merge(result) : result
+    end
+
+    # SketchUp's Materials#load answers the model's existing material when one
+    # already has the SKM's name (0.8.8 native V6). That material is not ours: it
+    # is never bound or repainted by name. Its name is parked while the archived
+    # visual loads as a new material, which then takes a free name, and the
+    # original name is restored. Caller holds the operation, so abort/undo
+    # restores everything.
+    def load_beside(path, existing, item, before)
+      original = existing.name.to_s
+      unless existing.respond_to?(:name=)
+        raise ExportError, "Ya hay un material llamado «#{original}» en este modelo y esta versión de SketchUp no permite cargar otro con el mismo nombre."
+      end
+      existing.name = free_name("#{original} (Planos Santo temporal)", [original])
+      material = @model.materials.load(path)
+      if material.nil? || before.include?(material)
+        raise ExportError, "SketchUp no pudo cargar «#{item['name']}» junto al material existente «#{original}». No se modificó el modelo."
+      end
+      material.name = free_name(item['name'].to_s, [original])
+      existing.name = original
+      material
+    end
+
+    def free_name(base, reserved)
+      base = 'Material Planos Santo' if base.strip.empty?
+      taken = materials.map { |m| m.name.to_s } + reserved
+      return base unless taken.include?(base)
+      (2..).each { |n| candidate = "#{base} (#{n})"; return candidate unless taken.include?(candidate) }
     end
   end
 end

@@ -1,0 +1,15 @@
+{
+  "blocked": true,
+  "reason": "Elegí ejes U/V distintos y la cara frontal de la vista 2D.",
+  "columns": [
+    "cant",
+    "base",
+    "altura",
+    "detalle",
+    "rota",
+    "canto_arr",
+    "canto_aba",
+    "canto_izq",
+    "canto_der"
+  ]
+}

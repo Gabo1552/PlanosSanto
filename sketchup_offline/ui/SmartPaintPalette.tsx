@@ -96,6 +96,9 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
     if(initialChoice.current&&!chosen)setNotice('El material elegido no está listo para diseño ni aprobado para compra. Revisalo en la biblioteca antes de pintar.');}}).catch(e=>{if(mounted)setError(e instanceof Error?e.message:String(e));});return()=>{mounted=false;};},[]);
  useEffect(()=>{if(!tool.active||busy)return;let running=false,mounted=true;const timer=setInterval(()=>{if(running)return;running=true;void request<Result>('smart_tool_status').then(async result=>{if(mounted)await accept(result);}).catch(e=>{if(mounted)setError(e instanceof Error?e.message:String(e));}).finally(()=>{running=false;});},1000);return()=>{mounted=false;clearInterval(timer);};},[tool.active,busy,accept]);
  useEffect(()=>{function update(event:Event){const state=(event as CustomEvent<ToolState>).detail;if(state&&typeof state.active==='boolean')acceptState(state);}window.addEventListener('planos-santo-smart-paint',update);return()=>window.removeEventListener('planos-santo-smart-paint',update);},[acceptState]);
+ // Another window changed the library (new photo, SKM, colour, install): reload
+ // catalog and states without touching the active tool or the current choice.
+ useEffect(()=>{let mounted=true;function reload(){void request<Loaded>('smart_palette_load').then(result=>{if(mounted&&loadedRef.current){loadedRef.current=result;setLoaded(result);}}).catch(e=>{if(mounted)setError(e instanceof Error?e.message:String(e));});}window.addEventListener('planos-santo-library-changed',reload);return()=>{mounted=false;window.removeEventListener('planos-santo-library-changed',reload);};},[]);
  useEffect(()=>{if(!loaded||!quickIntent||appliedQuick.current>=quickIntent.sequence)return;appliedQuick.current=quickIntent.sequence;
   void run(async()=>{
    setAllowShared(false);setQuery('');setFavorites(false);

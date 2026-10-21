@@ -195,12 +195,25 @@ module PlanosSanto
       window.add_action_callback('request') { |_context,raw| UI.start_timer(0,false) { handle(raw,source:window) } }
       window.set_can_close { true }
       window.set_on_closed do
+        next unless @palette_dialog.equal?(window)
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
         @photo_material=nil;@photo_preview_active=false
         stop_smart_tool(refresh:false)
       end
       window.show
       window.set_size(680,320) if window.respond_to?(:set_size)
+    end
+
+    # Actions that change the private library or install/bind a material. The
+    # OTHER open window (main editor or paint palette) reloads its library, so two
+    # windows never show different catalogs (0.8.8 native observation).
+    LIBRARY_ACTIONS=%w[catalog_save catalog_add catalog_import catalog_import_model catalog_bind catalog_install
+                       material_photo_create material_photo_install skm_commit skm_install smart_material_prepare smart_assign_color smart_quick_start].freeze
+    def library_changed(action,source)
+      return unless LIBRARY_ACTIONS.include?(action)
+      [@dialog,@palette_dialog].compact.uniq.reject { |window| window.equal?(source) }.each { |window| emit_to(window,'planos-santo-library-changed',{'action'=>action}) }
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo avisar el cambio de biblioteca: #{error.class}")
     end
 
     def emit_to(window,event,data)
@@ -306,6 +319,7 @@ module PlanosSanto
       begin
         result = dispatch(msg['action'], data)
         reply(id, result: result)
+        library_changed(msg['action'],source)
         if msg['action']=='save' && result['closeAfterSave']==true && @dialog
           dialog=@dialog; session=@session
           UI.start_timer(0.15,false) { dialog.close if @dialog.equal?(dialog) && @session.equal?(session) && !@dirty && !@workshop_dirty }
@@ -544,6 +558,15 @@ module PlanosSanto
         {'toolState'=>smart_state}
       when 'smart_palette_load'
         active!
+        # One paint palette at a time: opening Pintar in the main window closes the
+        # separate palette (its Tool stops with it), never the other way around
+        # silently. Both would otherwise paint from different catalog snapshots.
+        if @palette_dialog && @dialog && @request_dialog.equal?(@dialog)
+          # Detach first: a deferred on_closed must not stop the tool or drop the
+          # photo draft the main window may start right after this reply.
+          palette=@palette_dialog;@palette_dialog=nil;@palette_ready=false;@palette_intent=nil
+          stop_smart_tool(refresh:false);palette.close
+        end
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,

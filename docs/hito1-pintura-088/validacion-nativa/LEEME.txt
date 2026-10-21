@@ -1,0 +1,1 @@
+Informe nativo0.8.8, sin aprobación. No hay parches de producto. No contiene modelos, texturas, fotos, capturas ni geometría cruda. PDF y capturas completas quedan en evidencia local. Las rutas privadas de informe son referencias locales; la nube no debe asumir que puede leerlas. La matriz incluye5 pendientes; no tratarlos como PASS.

@@ -204,6 +204,140 @@ class PaintReadyTest < Minitest::Test
     assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],@model.materials.last)
   end
 
+  # 0.8.8 nativo V6: el SKM archivado trae un nombre que YA existe en el modelo
+  # (material propio del taller, sin vínculo). SketchUp devuelve ese material en
+  # Materials#load. Nunca se vincula ni se modifica: el visual entra como material
+  # nuevo, con nombre libre, y el existente queda intacto (nombre, color, textura).
+  def unbound(name,bytes)
+    material=PhotoFixture::Material.new(5000+@model.materials.length,name)
+    material.texture=[write_png("existente-#{@model.materials.length}.png",bytes),1,1];@model.materials << material;material
+  end
+  def test_same_name_and_identical_visual_installs_its_own_material_without_touching_the_existing_one
+    created=create_photo
+    existing=unbound('Caju 18mm',PhotoFixture.jpeg);texture=existing.texture;color=existing.color
+    assert_equal 'installable',service.states[created['catalogId']]['state']
+    prepared=service.prepare(created['catalogId'],'sheet')
+    installed=@model.materials.last
+    refute_same existing,installed;assert prepared['installed']
+    assert_equal 'Caju 18mm',existing.name;assert_same texture,existing.texture;assert_equal color,existing.color
+    assert_empty existing.attributes,'el material del taller no recibe vínculo ni atributos OCL'
+    assert_equal 'Caju 18mm (2)',installed.name
+    assert_equal prepared['materialUuid'],PlanosSanto::MaterialResolver.read_binding(installed)['uuid']
+    assert_equal 'ready',service.states[created['catalogId']]['state']
+    assert_equal 1,@model.operations.count { |operation| operation.first==:start },'una sola operación: un solo Deshacer'
+    assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],installed)
+    @model.undo;@model.undo
+    assert_equal [existing],@model.materials;assert_equal 'Caju 18mm',existing.name;assert_empty existing.attributes
+  end
+  def test_same_source_name_with_a_different_visual_never_reuses_the_existing_texture
+    native=PhotoFixture::Material.new(1,'Melamina petiribi 18mm');native.texture=[write_png('caju-real.png'),1,1]
+    path=File.join(@source,'caju.skm');native.save_as(path);bytes=File.binread(path);sha=Digest::SHA256.hexdigest(bytes)
+    FileUtils.mkdir_p(File.join(@directory,'skm-import-assets'));File.binwrite(File.join(@directory,'skm-import-assets',"#{sha}.skm"),bytes)
+    row=@catalog.new_item('Caju 18mm','sheet',{'source'=>'skm-import','skm'=>{'sha256'=>sha,'sourceName'=>'caju.skm','originalName'=>'Melamina petiribi 18mm','suggestions'=>{}}})
+    @catalog.save([row],0)
+    petiribi=unbound('Melamina petiribi 18mm',PhotoFixture.png(3,3));petiribi_texture=petiribi.texture
+    prepared=service.prepare(row['id'],'sheet')
+    installed=@model.materials.last
+    refute_same petiribi,installed;assert_equal 'Caju 18mm',installed.name
+    assert_equal File.binread(native.texture.filename),File.binread(installed.texture.filename),'pinta con la textura de la ficha, no con la del homónimo'
+    assert_equal 'Melamina petiribi 18mm',petiribi.name;assert_same petiribi_texture,petiribi.texture;assert_empty petiribi.attributes
+    assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],installed)
+  end
+  def test_different_name_and_material_already_bound_from_another_process_install_normally_or_reuse
+    created=create_photo
+    other=unbound('Otro nombre',PhotoFixture.png(3,3))
+    first=service.prepare(created['catalogId'],'sheet');installed=@model.materials.last
+    assert_equal 'Caju 18mm',installed.name;assert_empty other.attributes
+    # Otro proceso / otra ventana: el modelo ya tiene el material vinculado.
+    again=PlanosSanto::PaintMaterials.new(@model,catalog:PlanosSanto::CatalogStore.new(directory:@directory),directory:@directory).prepare(created['catalogId'],'sheet')
+    refute again['installed'];assert_equal first['materialUuid'],again['materialUuid'];assert_equal 2,@model.materials.length
+  end
+  def test_switching_to_a_colliding_material_with_the_tool_active_paints_with_the_new_one
+    first=service.prepare(create_photo(@first_photo,'Camellia.png',PhotoFixture.png(3,3))['catalogId'],'sheet')
+    caju=create_photo;existing=unbound('Caju 18mm',PhotoFixture.png(4,4))
+    events=[];picker=Picker.new;view=View.new(picker)
+    tool=PlanosSanto::SmartPaintTool.new(@model,service:smart,options:options(first).reject { |key,_| key=='targets' },on_event:lambda { |event| events << event },guard:lambda { true })
+    tool.activate
+    second=service.prepare(caju['catalogId'],'sheet');installed=@model.materials.last
+    tool.update_options(options(second).reject { |key,_| key=='targets' });assert tool.status['active']
+    face=@pieces[1].definition.entities[2];picker.path=[@model.entities.first,@pieces[1],face];picker.leaf=face
+    tool.onLButtonDown(0,10,10,view)
+    assert_nil events.last['error'];assert_board(@pieces[1],installed);refute_same existing,installed
+  end
+  def test_if_sketchup_still_answers_the_existing_material_nothing_is_bound_and_its_name_is_restored
+    created=create_photo;existing=unbound('Caju 18mm',PhotoFixture.png(3,3))
+    materials=@model.materials;materials.define_singleton_method(:load) { |_path| existing }
+    error=assert_raises(PlanosSanto::ExportError) { service.prepare(created['catalogId'],'sheet') }
+    assert_match(/junto al material existente «Caju 18mm»/,error.message);assert_match(/No se modificó el modelo/,error.message)
+    assert_equal 'Caju 18mm',existing.name;assert_empty existing.attributes;assert_equal [existing],@model.materials
+    assert_equal 'installable',service.states[created['catalogId']]['state']
+  end
+
+  # 0.8.8 nativo V19: un clic inmediato recorría el modelo 3 veces con huella de
+  # mallas + SHA-256 de todo el modelo (plan + frente + dorso). Ahora: un único
+  # recorrido sin huella geométrica; vista previa/confirmar conservan la firma.
+  module InventoryCounter
+    class << self;attr_accessor :calls;end
+    def inventory(geometry: true);(InventoryCounter.calls||=[]) << geometry;super;end
+  end
+  PlanosSanto::NameManager.prepend(InventoryCounter)
+  def test_immediate_click_traverses_the_model_once_without_geometry_fingerprint
+    prepared=service.prepare(create_photo['catalogId'],'sheet')
+    InventoryCounter.calls=[]
+    assert smart.apply_immediate(options(prepared))['changed']
+    assert_equal [false],InventoryCounter.calls,'un solo recorrido liviano por clic'
+    assert_board(@pieces[0],@model.materials.last)
+    InventoryCounter.calls=[]
+    painter=smart;token=painter.preview(options(prepared,1).reject { |key,_| key=='immediatePiece' }.merge('immediate'=>true))['token']
+    assert_equal [true],InventoryCounter.calls,'la vista previa con token conserva la firma completa'
+    @pieces[1].definition.entities[0].material=@narrow
+    assert_raises(PlanosSanto::ExportError) { painter.apply('token'=>token,'confirmed'=>true) }
+  end
+
+  # 0.8.8 nativo V9 (observación): cerca del borde, PickHelper devuelve primero
+  # la ARISTA; el clic no hacía nada. Ahora se usa una cara de esa misma arista.
+  class EdgeLeaf
+    attr_reader :faces
+    def initialize(faces);@faces=faces;end
+  end
+  class RankedPicker
+    attr_accessor :hits
+    def do_pick(_x,_y);end
+    def count;hits.length;end
+    def path_at(index);hits[index][0];end
+    def leaf_at(index);hits[index][1];end
+  end
+  def edge_tool(mode)
+    Sketchup.const_set(:Edge,EdgeLeaf) unless defined?(Sketchup::Edge)
+    @faces.each_with_index { |face,index| area=[384.0,384.0,18.0,18.0,12.0,12.0][index];face.define_singleton_method(:area) { area } }
+    picker=RankedPicker.new;view=View.new(picker)
+    tool=PlanosSanto::SmartPaintTool.new(@model,service:smart,options:{'mode'=>mode,'immediate'=>true,'immediatePiece'=>mode=='sheet'},on_event:lambda { |_event| },guard:lambda { true })
+    [tool,picker,view]
+  end
+  def test_click_on_a_board_border_edge_selects_the_narrow_face_of_the_same_piece
+    tool,picker,view=edge_tool('edge')
+    piece=@pieces[0];board,narrow=@faces[0],@faces[2]
+    border=Sketchup::Edge.new([board,narrow])
+    other=@pieces[1]
+    picker.hits=[[[@model.entities.first,piece,border],border],[[@model.entities.first,other,@faces[1]],@faces[1]],[[@model.entities.first,piece,board],board]]
+    target=tool.send(:hit,view,0,0)
+    assert_equal "1/#{piece.persistent_id}",target['pieceId'],'nunca la pieza vecina de atrás'
+    assert_equal [narrow.persistent_id.to_s],target['faceIds'],'en modo canto, la cara estrecha de esa arista'
+    sheet,sheet_picker,sheet_view=edge_tool('sheet');sheet_picker.hits=picker.hits
+    assert_equal "1/#{piece.persistent_id}",sheet.send(:hit,sheet_view,0,0)['pieceId']
+  end
+  def test_ambiguous_corner_edge_in_edge_mode_paints_nothing
+    tool,picker,view=edge_tool('edge')
+    corner=Sketchup::Edge.new([@faces[2],@faces[3]])
+    picker.hits=[[[@model.entities.first,@pieces[0],corner],corner]]
+    assert_nil tool.send(:hit,view,0,0)
+    open_border=Sketchup::Edge.new([@faces[0]])
+    picker.hits=[[[@model.entities.first,@pieces[0],open_border],open_border]]
+    assert_nil tool.send(:hit,view,0,0),'una arista de borde con una sola cara ancha no se trata como canto'
+    picker.hits=[[[@model.entities.first,@pieces[0],@faces[2]],@faces[2]]]
+    assert_equal [@faces[2].persistent_id.to_s],tool.send(:hit,view,0,0)['faceIds'],'un clic sobre la cara sigue igual'
+  end
+
   # Material de color sólido, sin fotografía.
   def test_solid_colour_can_be_assigned_to_a_commercial_item_and_reused_in_another_model
     row=@catalog.new_item('Blanco liso','sheet').merge('sku'=>'BL18','supplier'=>'QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'approved'=>true)
@@ -334,5 +468,5 @@ class PaintReadyTest < Minitest::Test
     assert_equal 0,hashed
   end
 
-  def write_png(name);path=File.join(@source,name);File.binwrite(path,PhotoFixture.png);path;end
+  def write_png(name,bytes=PhotoFixture.png);path=File.join(@source,name);File.binwrite(path,bytes);path;end
 end
