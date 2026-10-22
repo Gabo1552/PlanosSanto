@@ -1,0 +1,36 @@
+{
+  "cursores": [
+    {
+      "archivo": "paint-blocked.png",
+      "png": true,
+      "ancho": 32,
+      "alto": 32
+    },
+    {
+      "archivo": "paint-edge.png",
+      "png": true,
+      "ancho": 32,
+      "alto": 32
+    },
+    {
+      "archivo": "paint-piece.png",
+      "png": true,
+      "ancho": 32,
+      "alto": 32
+    },
+    {
+      "archivo": "paint-remove.png",
+      "png": true,
+      "ancho": 32,
+      "alto": 32
+    },
+    {
+      "archivo": "paint-sample.png",
+      "png": true,
+      "ancho": 32,
+      "alto": 32
+    }
+  ],
+  "apiCursores": true,
+  "ok": false
+}

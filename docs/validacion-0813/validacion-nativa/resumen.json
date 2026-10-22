@@ -1,0 +1,100 @@
+{
+  "integridad": {
+    "version": "0.8.13",
+    "versionManifiesto": "0.8.13",
+    "versionEsperada": "0.8.13",
+    "versionOk": true,
+    "sketchupVersion": "26.2.243",
+    "rubyVersion": "3.2.2",
+    "installedFiles": 64,
+    "mismatches": [
+
+    ],
+    "extras": [
+
+    ],
+    "faltantes": [
+
+    ],
+    "toolbar": [
+      "edge",
+      "furniture",
+      "guides",
+      "main",
+      "materials",
+      "order",
+      "remove_edge",
+      "sample",
+      "sheet"
+    ],
+    "passed": true,
+    "productionApproved": false
+  },
+  "modelWatch": {
+    "registrado": false,
+    "sesionAnalizada": false,
+    "ok": true,
+    "nota": "Sin análisis abierto: es correcto que no haya ModelWatch."
+  },
+  "cursores": {
+    "cursores": [
+      {
+        "archivo": "paint-blocked.png",
+        "png": true,
+        "ancho": 32,
+        "alto": 32
+      },
+      {
+        "archivo": "paint-edge.png",
+        "png": true,
+        "ancho": 32,
+        "alto": 32
+      },
+      {
+        "archivo": "paint-piece.png",
+        "png": true,
+        "ancho": 32,
+        "alto": 32
+      },
+      {
+        "archivo": "paint-remove.png",
+        "png": true,
+        "ancho": 32,
+        "alto": 32
+      },
+      {
+        "archivo": "paint-sample.png",
+        "png": true,
+        "ancho": 32,
+        "alto": 32
+      }
+    ],
+    "apiCursores": true,
+    "ok": false
+  },
+  "perfilMaderera": {
+    "disponible": true,
+    "clases": [
+      "MaderaProfile",
+      "MaderaProfileStore"
+    ],
+    "archivos": [
+
+    ],
+    "nota": "Revisar a mano que el perfil esté aprobado."
+  },
+  "tiemposPincel": {
+    "registros": 0,
+    "nota": "Todavía no hay clics registrados en esta biblioteca."
+  },
+  "ajustesPincel": {
+    "recientes": {
+    },
+    "maximoPorModo": true,
+    "teclaCuentagotas": "alt (por defecto)",
+    "cantosPorClic": 1,
+    "ultimos": [
+
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "imageRep": {
+    "loadReturn": "nil",
+    "width": 1024,
+    "height": 512,
+    "bitsPerPixel": 24,
+    "rowPadding": 0,
+    "size": 1572864,
+    "dataBytes": 1572864
+  },
+  "producto": {
+    "aceptada": false,
+    "error": "Elegí una imagen JPG o PNG válida de hasta12MiB,16megapíxeles y16.384píxeles por lado."
+  }
+}

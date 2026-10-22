@@ -1,0 +1,11 @@
+{
+  "disponible": true,
+  "clases": [
+    "MaderaProfile",
+    "MaderaProfileStore"
+  ],
+  "archivos": [
+
+  ],
+  "nota": "Revisar a mano que el perfil esté aprobado."
+}
