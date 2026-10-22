@@ -227,11 +227,20 @@ module PlanosSanto
       raise ExportError,'El pintado rápido usa una instancia. Revisá el alcance avanzado para afectar otras.' if data['scope'] && data['scope']!='unique'
       mode=data.fetch('mode','sheet')
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge remove_edge].include?(mode)
+      # Hito 2 (PINTURA-01): 1, 2 opposite or 4 edges per click, exact Integer;
+      # absent -> remembered -> 1. Sheet always paints the two broad faces.
+      if data.key?('edgeCount')
+        raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' unless data['edgeCount'].is_a?(Integer) && [1,2,4].include?(data['edgeCount'])
+        count=data['edgeCount']
+      else
+        count=smart_settings['edgeCount'] || 1
+      end
+      count=1 if mode=='sheet'
       # Daily painting is one safe occurrence, both physical sides of the board,
       # no deferred batch and no inherited face/XY/shared settings from old UI.
       # The service infers the local cutting axes from each clicked piece.
       options={'mode'=>mode,'side'=>'both','scope'=>'unique','axes'=>[0,1],
-        'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>1,'batch'=>false,
+        'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>count,'batch'=>false,
         'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>false}
       if mode=='remove_edge' && data['catalogId'].to_s.empty? && !data['materialUuid'].to_s.empty?
         raise ExportError,'Elegí la placa de restauración completa o usá la detección de la pieza.'
@@ -612,7 +621,8 @@ module PlanosSanto
         @smart_state={'active'=>false,'mode'=>options['mode'],'changed'=>false,'queuedCount'=>0,'message'=>''}
         generation=@tool_generation || 0
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
-          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) })
+          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
+          remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) })
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -784,14 +794,23 @@ module PlanosSanto
         return {} unless envelope.is_a?(Hash) && envelope.keys.sort==%w[schema settings] && envelope['schema']==2
         parsed=envelope['settings']
       end
-      parsed.is_a?(Hash) ? parsed.slice(*SMART_SETTING_KEYS) : {}
+      return {} unless parsed.is_a?(Hash)
+      settings=parsed.slice(*SMART_SETTING_KEYS)
+      settings.delete('edgeCount') if settings.key?('edgeCount') && !(settings['edgeCount'].is_a?(Integer) && [1,2,4].include?(settings['edgeCount']))
+      settings
     rescue JSON::ParserError, ArgumentError, SyntaxError
       {}
     end
 
     def remember_smart_settings(options)
       return unless Sketchup.respond_to?(:write_default)
-      bytes=JSON.generate('schema'=>2,'settings'=>options.slice(*SMART_SETTING_KEYS))
+      settings=options.slice(*SMART_SETTING_KEYS)
+      if options['immediate']==true || options['immediatePiece']==true
+        previous=smart_settings
+        # Sheet forces one edge per click; it must not forget the edge preference.
+        settings['edgeCount']=previous['edgeCount'] || 1 if options['mode']=='sheet'
+      end
+      bytes=JSON.generate('schema'=>2,'settings'=>settings)
       raise ExportError,'Preferencias de paleta demasiado grandes.' if bytes.bytesize>4096
       Sketchup.write_default('PlanosSanto',SMART_SETTINGS_KEY,SMART_SETTINGS_PREFIX+Base64.strict_encode64(bytes))
     rescue StandardError, SyntaxError => error
@@ -806,7 +825,7 @@ module PlanosSanto
       if options['immediate']==true || options['immediatePiece']==true
         raise ExportError,'No se puede pintar esta instancia con seguridad.' unless options['scope']=='unique' && options['side']=='both' && options['batch']!=true && options['allowShared']!=true
       end
-      raise ExportError,'Elegí1,2opuestos o4cantos.' if options.key?('edgeCount') && ![1,2,4].include?(options['edgeCount'])
+      raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' if options.key?('edgeCount') && !(options['edgeCount'].is_a?(Integer) && [1,2,4].include?(options['edgeCount']))
       raise ExportError,'Elegí pieza o cara.' if options.key?('paintScope') && !%w[piece face].include?(options['paintScope'])
       %w[allowShared batch immediate immediatePiece].each do |key|
         raise ExportError,'Configuración de pintado inválida.' if options.key?(key) && ![true,false].include?(options[key])

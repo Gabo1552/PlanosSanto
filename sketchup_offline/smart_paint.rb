@@ -6,6 +6,7 @@ module PlanosSanto
   # Entire gestures/batches are validated before opening ONE native operation.
   # It never calls NativePaint#apply in a loop and never changes OCL attributes.
   class SmartPaint
+    attr_reader :native
     def initialize(model,catalog:)
       @model=model;@catalog=catalog;@native=NativePaint.new(model,catalog:catalog)
     end

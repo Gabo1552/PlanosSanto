@@ -4,13 +4,51 @@ require 'json'
 module PlanosSanto
   # Public SketchUp Tool. Hover, picking and queued selection never write model
   # state. Only the service executes one confirmed, reversible operation.
+  # Hover-time aptitude (PINTURA-08): geometry is evaluated once per definition,
+  # transaction generation, mode, edge count, physical scale and pointed side.
+  # It never writes, never reads the catalog and never hashes files.
+  class PaintVerdict
+    attr_reader :calls
+    def initialize(native);@native=native;@cache={};@calls=0;end
+    def available?;!@native.nil?;end
+    def node_for(target)
+      instances=target['_instances'];{'_entity'=>instances.last,'_parents'=>instances[0...-1],'id'=>target['pieceId']}
+    end
+    def scales(instances)
+      m=instances.inject(Geom::Transformation.new) { |world,entity| world*entity.transformation }.to_a
+      [m[0,3],m[4,3],m[8,3]].map { |axis| Math.sqrt(axis.sum { |v| v*v }).round(3) }
+    end
+    def for(target,mode:,edge_count:,generation:)
+      entity=target['_instances'].last
+      key=[entity.definition.guid.to_s,generation,mode,edge_count,scales(target['_instances']),mode=='sheet' ? nil : target['faceIds'].first]
+      @cache.clear if @cache.length>500
+      @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count)
+    end
+    def compute(node,face,mode,count)
+      @calls+=1
+      axes=@native.automatic_axes(node)
+      faces=@native.expanded_faces(node,[face],mode=='sheet' ? {'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'} : {'mode'=>mode,'axes'=>axes,'edgeCount'=>count})
+      {'ok'=>true,'reason'=>nil,'expandedFaceIds'=>faces.map { |f| @native.face_id(f) },'faces'=>faces,'axes'=>axes}
+    rescue ExportError=>error
+      {'ok'=>false,'reason'=>error.message,'expandedFaceIds'=>[],'faces'=>[]}
+    end
+  end
+
   class SmartPaintTool
     SHIFT_MASK = Object.const_defined?(:CONSTRAIN_MODIFIER_MASK) ? Object.const_get(:CONSTRAIN_MODIFIER_MASK) : 4
-    attr_reader :queued_targets
+    CTRL_MASK = Object.const_defined?(:COPY_MODIFIER_MASK) ? Object.const_get(:COPY_MODIFIER_MASK) : 8
+    EDGE_COUNTS=[1,2,4].freeze
+    attr_reader :queued_targets,:verdicts,:generation
 
-    def initialize(model, service:, options:, on_event:, guard:)
-      @model=model;@service=service;@on_event=on_event;@guard=guard
-      @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil)
+      @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember
+      @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
+      @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil)
+    end
+    def edge_count;@options['mode']=='sheet' ? 1 : @options.fetch('edgeCount',1);end
+    def verdict_for(target)
+      return nil unless immediate? && @verdicts.available?
+      @verdicts.for(target,mode:@options['mode'],edge_count:edge_count,generation:@generation)
     end
     def copy(value);JSON.parse(JSON.generate(value));end
     def immediate?;@options['immediate']==true || @options['immediatePiece']==true;end
@@ -129,7 +167,15 @@ module PlanosSanto
         # Pick-local feedback only: no inventory, geometry classification,
         # catalog I/O, UUID validation or mutation until the actual click.
         @target=target;@preview=nil
-        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side']}
+        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>@options.fetch('scope','unique')}
+        verdict=verdict_for(target)
+        if verdict
+          @hover['expandedFaceIds']=verdict['expandedFaceIds'];@hover['verdict']={'ok'=>verdict['ok'],'reason'=>verdict['reason']}
+          faces=verdict['ok'] ? verdict['faces'] : @options['mode']=='sheet' ? entities_for(target['_instances'].last).grep(Sketchup::Face) : [target['_face']]
+          overlay_faces(target,faces)
+          emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'])
+          return
+        end
         if @options['mode']=='sheet'
           triangles=[]
           entities_for(target['_instances'].last).grep(Sketchup::Face).each do |face|
@@ -149,6 +195,11 @@ module PlanosSanto
               'sharedCount'=>result['sharedCount'] || result.fetch('affectedPaths',[]).length,'side'=>@options['side']}
       build_preview_overlay(target,result)
       emit((result['warnings'] || []).join(' ').empty? ? 'Cara preparada; revisá la ruta y hacé clic para aplicar.' : result['warnings'].join(' '))
+    end
+    def overlay_faces(target,faces)
+      triangles=[];normals=[]
+      faces.each { |face| build_overlay(target.merge('_face'=>face));triangles.concat(@triangles);normals.concat(@normal_line) }
+      @triangles=triangles;@normal_line=@options['mode']=='sheet' ? [] : normals
     end
     def build_preview_overlay(target,result)
       expanded=result.fetch('expandedTargets',[]).find { |row| row['pieceId']==target['pieceId'] }
@@ -171,7 +222,7 @@ module PlanosSanto
         @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
         @service.cancel;emit('Apuntá a una cara de una pieza.');invalidate(view);return
       end
-      key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds']]
+      key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds'],@generation]
       unless key==@hit_key
         hover!(target);@hit_key=key
       end
@@ -214,7 +265,11 @@ module PlanosSanto
         @pick_cache=nil
         target=hit(view,x,y)
         return unless target
+        verdict=verdict_for(target)
+        # The hover verdict only anticipates a refusal: the service validates everything again.
+        raise ExportError,verdict['reason'] if verdict && !verdict['ok']
         applied=@service.apply_immediate(service_options([target_data(target)]))
+        @generation+=1
         clear
         emit(applied['changed'] ? 'Pieza pintada. Hacé clic en otra; Ctrl+Z deshace.' : 'La pieza ya tiene este material. Hacé clic en otra.',changed:applied['changed']==true)
         invalidate(view)
@@ -249,6 +304,15 @@ module PlanosSanto
       end
       emit('Submodo actualizado; se cancelaron las caras pendientes. Revisá el resaltado antes de hacer clic.')
     end
+    def edge_label(count);count==1 ? '1 canto' : "#{count} cantos";end
+    # Ctrl+Tab (immediate): 1 -> 2 opposite -> 4 -> 1, Shift reverses. Remembered.
+    def cycle_edge_count(backwards=false)
+      return emit('Los cantos por clic se eligen en modo canto (Tab cambia de modo).') unless %w[edge remove_edge].include?(@options['mode'])
+      position=EDGE_COUNTS.index(@options.fetch('edgeCount',1)) || 0
+      clear;@options['edgeCount']=EDGE_COUNTS[(position+(backwards ? -1 : 1))%EDGE_COUNTS.length]
+      @remember.call(copy(@options)) if @remember
+      emit("#{edge_label(@options['edgeCount'])} por clic. Revisá el resaltado antes de hacer clic.")
+    end
     def keyboard_material(backwards=false)
       return emit('Elegí un material desde la paleta para este modo.') unless @service.respond_to?(:material_choices)
       choices=@service.material_choices(service_options([]))
@@ -270,7 +334,12 @@ module PlanosSanto
       elsif key==9
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
-        keyboard_submode((flags & SHIFT_MASK)!=0);invalidate(view);true
+        if immediate? && (flags & CTRL_MASK)!=0
+          cycle_edge_count((flags & SHIFT_MASK)!=0)
+        else
+          keyboard_submode((flags & SHIFT_MASK)!=0)
+        end
+        invalidate(view);true
       elsif [37,38,39,40].include?(key)
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
