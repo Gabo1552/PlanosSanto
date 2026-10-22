@@ -65,7 +65,7 @@ module PlanosSanto
     end
     def material(id,kind)
       found=@catalog['items'].find { |item| item['id']==id && item['kind']==kind && item['approved'] }
-      raise ExportError,"Elegí #{kind=='sheet' ? 'una placa' : 'un canto'} aprobado de la biblioteca." unless found
+      raise ExportError,"Elegí #{kind=='sheet' ? 'una placa aprobada' : 'un canto aprobado'} de la biblioteca." unless found
       found
     end
     def mm(number)

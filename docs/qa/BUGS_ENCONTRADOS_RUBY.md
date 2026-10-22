@@ -6,6 +6,8 @@ Todo lo de este documento se detectó con **dobles de la API** (`fake_api.rb`, `
 
 ## BUG-RB-01 — Mensaje "Elegí una placa aprobado de la biblioteca."
 
+> **Estado: corregido** en `claude/noche-bugs-qa` (`'una placa aprobada' : 'un canto aprobado'`); la prueba ya no tiene `skip`.
+
 | Campo | Detalle |
 |---|---|
 | Archivo | `sketchup_offline/supplier_order.rb:68` (`SupplierOrder#material`) |
