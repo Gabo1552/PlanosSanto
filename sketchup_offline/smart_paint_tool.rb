@@ -688,6 +688,8 @@ module PlanosSanto
       elsif key==9
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
+        # Shift as eyedropper key: Shift+Tab is a keyboard chord, not a sample.
+        stop_sampling if @eyedropper_key=='shift'
         if immediate? && (flags & CTRL_MASK)!=0
           cycle_edge_count((flags & SHIFT_MASK)!=0)
         elsif immediate?
@@ -816,8 +818,10 @@ module PlanosSanto
       options=@select_material.call(info['catalogId'],info['kind'])
       raise ExportError,'No se pudo preparar el material tomado. Elegilo en la paleta.' unless options.is_a?(Hash) && options['mode']==info['kind']
       raise ExportError,SAMPLE_MISMATCH unless options['materialUuid']==info['uuid']
-      adopt_options!(options)
-      emit("Material tomado: #{info['name']}. #{@sampling ? "Soltá #{key_label} para pintar con él." : 'Hacé clic en una pieza para pintar.'}")
+      previous=@options['mode'];adopt_options!(options)
+      # The next click changes meaning (e.g. Quitar canto -> Pintar canto): say it.
+      changed=previous==@options['mode'] ? '' : " Modo: #{MODE_LABELS[@options['mode']]}."
+      emit("Material tomado: #{info['name']}.#{changed} #{@sampling ? "Soltá #{key_label} para pintar con él." : 'Hacé clic en una pieza para pintar.'}")
     end
     def adopt_options!(options)
       clear;@last_error=nil;@options=copy(options).merge('scope'=>'unique','allowShared'=>false);refresh_recents!
