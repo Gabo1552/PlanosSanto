@@ -24,6 +24,8 @@ Hoy `boundary_frame` agrupa las caras por `[eje, min|max]` y `expanded_faces` ex
   - **Placa** (`paintScope:'piece'`): las dos caras anchas (`[espesor,min]` y `[espesor,max]`) deben estar completas; devuelve todas sus caras. Si no → «Las caras anchas no cubren la placa completa. Usá pintar Cara.»
 - Validación de `validate_edge!` sigue igual (cada cara debe ser plana en un lado del marco).
 - `smart_paint.rb` no necesita cambios de contrato: ya trabaja con listas de caras.
+- Tolerancia implementada: `|suma−rectángulo| ≤ max(0,5 mm², 1e-3 × rectángulo)`.
+- Excepción al alcance «solo modo inmediato»: `expanded_faces` es compartido, así que la paleta avanzada (vista previa/lote) también expande un lado partido completo y bloquea con el mismo motivo un lado incompleto. Mismas garantías: un Undo, nunca a medias.
 
 ## 2. Herramienta (`smart_paint_tool.rb`)
 
