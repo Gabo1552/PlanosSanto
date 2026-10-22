@@ -180,6 +180,33 @@ class PincelAvanzadoSplitSideTest < Minitest::Test
   end
 end
 
+# F-PINT-A on split sides: repainting an already finished shared door is a real
+# no-op (no make_unique, no Undo); a half-painted side isolates once and paints it whole.
+class PincelAvanzadoSharedNoOpTest < Minitest::Test
+  include AvanzadoFixture
+  def setup;build(grid_board(parts:half_x_min),doors:4);paint_sheet!;end
+  def definitions;@doors.map(&:definition);end
+  def test_split_sides_already_painted_on_every_copy_make_no_undo_and_no_definition
+    assert @smart.apply_immediate(edge_request(@doors[0],102,count:4).merge('scope'=>'all','allowShared'=>true))['changed']
+    before=definitions;undo=@model.undo_states.length;operations=@model.operations.length
+    @doors.each { |door| door.define_singleton_method(:make_unique) { raise 'make_unique must not run for a no-op' } }
+    [{'scope'=>'unique'},{'scope'=>'all','allowShared'=>true}].each do |patch|
+      [[102,4],[106,1],[104,2]].each do |id,count|
+        result=@smart.apply_immediate(edge_request(@doors[2],id,count:count).merge(patch))
+        refute result['changed'];assert result['noChanges']
+      end
+    end
+    assert_equal undo,@model.undo_states.length;assert_equal operations,@model.operations.length;assert_equal before,definitions
+  end
+  def test_one_painted_half_still_isolates_once_and_paints_the_whole_side
+    @board.entities.find { |f| f.persistent_id==104 }.tap { |f| f.material=@edge;f.back_material=@edge }
+    undo=@model.undo_states.length
+    assert @smart.apply_immediate(edge_request(@doors[1],104,count:1))['changed']
+    assert_equal undo+1,@model.undo_states.length;refute_same @board,@doors[1].definition
+    assert_equal [104,106],painted(@doors[1]);assert_equal 2,definitions.uniq.length
+  end
+end
+
 class PincelAvanzadoRebateTest < Minitest::Test
   include AvanzadoFixture
   GAP=PincelAvanzadoSplitSideTest::GAP
