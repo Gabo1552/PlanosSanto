@@ -94,8 +94,8 @@ module Hito2Fixture
      'batch'=>false,'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>false,
      'catalogId'=>binding['catalogId'],'materialUuid'=>binding['uuid']}.merge(patch.transform_keys(&:to_s))
   end
-  # A side split in two coplanar faces (rebaje/geometría sucia): x=0 becomes
-  # 106+107 and, as in SketchUp, both broad faces gain the split vertex.
+  # A side split in two coplanar faces (a line drawn across the edge): x=0
+  # becomes 106+107 and, as in SketchUp, both broad faces gain the split vertex.
   def split_x_min_side!(definition=@board)
     faces=definition.entities;faces.delete_at(4);z=0.75
     [[[[0,0,0],[0,8,0],[0,16,0],[24,16,0],[24,0,0]],[0,0,-1],[[1,2,5],[2,4,5],[2,3,4]]],
@@ -108,6 +108,11 @@ module Hito2Fixture
       face=Sketchup::Face.new(points,[-1,0,0]);id=106+index;face.define_singleton_method(:persistent_id) { id };face
     end
     faces.concat(halves)
+  end
+  # Incomplete side (rebaje): same split, but 107 is not a planar face of the
+  # x=0 boundary, so the side's faces cover only half of its rectangle.
+  def rebate_x_min_side!(definition=@board)
+    split_x_min_side!(definition);definition.entities.find { |face| face.persistent_id==107 }.normal=Sketchup::Point.new(-1,0.01,0)
   end
   def hover_on(door,face_index=2)
     face=faces_of(door)[face_index];@picker.path=[@root,door,face];@picker.leaf=face
@@ -152,23 +157,38 @@ class Hito2EdgeCountTest < Minitest::Test
     assert_equal [@edge,@edge],faces_of(@doors[1]).values_at(4,5).map(&:material)
     assert faces_of(@doors[1]).values_at(2,3).none? { |face| face.material.equal?(@edge) }
   end
+  # PINTURA-15: a side split by a line is one edge; only an incomplete side blocks.
   def test_split_side_blocks_four_and_two_edges_with_reason_and_never_paints_half
     split_x_min_side!
+    sides=[102,103,105,106,107]
+    [[4,'102',sides],[2,'106',[105,106,107]],[2,'105',[105,106,107]]].each_with_index do |(count,id,expected),door|
+      undo=@model.undo_states.length
+      assert @smart.apply_immediate(edge_request(@doors[door],id,count:count))['changed'];assert_equal undo+1,@model.undo_states.length
+      assert_equal expected,faces_of(@doors[door]).select { |face| face.material.equal?(@edge) && face.back_material.equal?(@edge) }.map { |face| @board.entities[face.persistent_id%1000].persistent_id }.sort
+    end
+    build_tool(tool_options('edge'));hover_on(@doors[3],4)
+    assert_equal sides.map(&:to_s),@tool.status['hover']['expandedFaceIds'].sort;assert @tool.status['hover']['verdict']['ok']
+    # Rebaje: the side is not covered; 4 and 2 are refused with the reason, nothing painted.
+    build_fixture;paint_sheet_on_board!;rebate_x_min_side!
     before=@board.entities.map { |face| [face.material,face.back_material] };operations=@model.operations.length
-    [4,2].each do |count|
-      error=assert_raises(PlanosSanto::ExportError) { @smart.apply_immediate(edge_request(@doors[0],'102',count:count)) }
-      assert_match(/caras físicas únicas/,error.message)
+    [[4,'102'],[2,'106'],[2,'105']].each do |count,id|
+      error=assert_raises(PlanosSanto::ExportError) { @smart.apply_immediate(edge_request(@doors[0],id,count:count)) }
+      assert_equal PlanosSanto::NativePaint::SIDE_GAP,error.message
     end
     assert_equal operations,@model.operations.length;assert_equal before,@board.entities.map { |face| [face.material,face.back_material] }
     build_tool(tool_options('edge'))
     hover_on(@doors[0])
-    verdict=@tool.status['hover']['verdict'];refute verdict['ok'];assert_match(/caras físicas únicas/,verdict['reason'])
+    verdict=@tool.status['hover']['verdict'];refute verdict['ok'];assert_match(/no está cubierto por caras planas completas/,verdict['reason'])
     click_on(@doors[0])
-    assert_match(/caras físicas únicas/,@events.last['error']);assert_equal operations,@model.operations.length
+    assert_match(/no se pintó nada/,@events.last['error']);assert_equal operations,@model.operations.length
     assert_equal before,@board.entities.map { |face| [face.material,face.back_material] };assert @tool.status['active']
   end
   def test_one_edge_on_a_split_half_still_paints_only_that_half
     split_x_min_side!
+    halves=%w[106 107].map { |id| @board.entities.index { |face| face.persistent_id.to_s==id } }
+    @smart.apply_immediate(edge_request(@doors[0],'106',count:1)) # split side: the whole side
+    assert_equal halves,faces_of(@doors[0]).each_index.select { |i| faces_of(@doors[0])[i].material.equal?(@edge) }
+    build_fixture;rebate_x_min_side! # incomplete side: still only the pointed half
     index=@board.entities.index { |face| face.persistent_id==106 }
     @smart.apply_immediate(edge_request(@doors[0],'106',count:1))
     assert_equal [index],faces_of(@doors[0]).each_index.select { |i| faces_of(@doors[0])[i].material.equal?(@edge) }
@@ -316,8 +336,8 @@ class Hito2FeedbackTest < Minitest::Test
     count=Sketchup.hito2_status_texts.length;5.times { @tool.onMouseMove(0,41,51,@view) }
     assert_equal count,Sketchup.hito2_status_texts.length
     build_tool(tool_options('edge','scope'=>'all','allowShared'=>true))
-    split_x_min_side!;click_on(@doors[0])
-    assert_match(/\APintar canto · 4 cantos · Canto Blanco · Todas las iguales \(4\) · último error: Los cuatro lados/,Sketchup.hito2_status_texts.last)
+    rebate_x_min_side!;click_on(@doors[0])
+    assert_match(/\APintar canto · 4 cantos · Canto Blanco · Todas las iguales \(4\) · último error: Un lado no está cubierto/,Sketchup.hito2_status_texts.last)
   end
   def test_two_line_tooltip_near_the_cursor_in_green_or_red
     build_tool(tool_options('edge','edgeCount'=>2))
@@ -327,9 +347,9 @@ class Hito2FeedbackTest < Minitest::Test
     assert_equal [76.0,86.0],first.first(2).map(&:to_f) # 18 px * scale 2 from (40,50)
     assert_operator second[1],:>,first[1]
     assert_equal [0,128,0],rgb(options2[:color])
-    split_x_min_side!;build_tool(tool_options('edge','edgeCount'=>4));hover_on(@doors[1]);@tool.draw(@view)
+    rebate_x_min_side!;build_tool(tool_options('edge','edgeCount'=>4));hover_on(@doors[1]);@tool.draw(@view)
     _,line,options=@view.texts.last
-    assert_match(/caras físicas únicas/,line);assert_equal [200,0,0],rgb(options[:color])
+    assert_match(/no está cubierto por caras planas completas/,line);assert_equal [200,0,0],rgb(options[:color])
   end
   def rgb(color);color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3);end
   def test_preview_uses_the_real_material_color_with_own_alpha_and_red_when_blocked
@@ -337,14 +357,14 @@ class Hito2FeedbackTest < Minitest::Test
     hover_on(@doors[0]);@tool.draw(@view)
     colors=@view.draws.select { |mode,_| mode==4 }.map(&:last)
     assert_equal [[240,240,235,60],[240,240,235,110]],colors.map { |c| c.respond_to?(:red) ? [c.red,c.green,c.blue,c.alpha] : c.to_a }
-    split_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@view.draws.clear;@tool.draw(@view)
+    rebate_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@view.draws.clear;@tool.draw(@view)
     assert_equal [220,30,30,110],@view.draws.find { |mode,_| mode==4 }.last.to_a
   end
   def test_own_cursor_per_mode_and_blocked_cursor_created_once_per_process
     build_tool(tool_options('sheet'));hover_on(@doors[0]);assert @tool.onSetCursor
     build_tool(tool_options('edge'));hover_on(@doors[0]);@tool.onSetCursor
     build_tool(tool_options('remove_edge'));@tool.onSetCursor
-    split_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@tool.onSetCursor
+    rebate_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@tool.onSetCursor
     build_tool(tool_options('sheet'));@tool.onSetCursor
     names=UI.hito2_created.map(&:first)
     assert_equal %w[paint-blocked.png paint-edge.png paint-piece.png paint-remove.png],names.sort;assert UI.hito2_created.all? { |_,x,y| [x,y]==[3,3] }
@@ -404,7 +424,7 @@ class Hito2VerdictTest < Minitest::Test
   def test_a_geometry_edit_committed_elsewhere_invalidates_the_cached_verdict
     paint_sheet_on_board!;build_tool(tool_options('edge'))
     hover_on(@doors[0]);assert @tool.status['hover']['verdict']['ok']
-    split_x_min_side!;@model.observers.first.onTransactionCommit(@model)
+    rebate_x_min_side!;@model.observers.first.onTransactionCommit(@model)
     hover_on(@doors[0]);refute @tool.status['hover']['verdict']['ok']
     click_on(@doors[0]);assert_equal 0,@applied;assert_empty @model.undo_states
   end
@@ -455,7 +475,7 @@ class Hito2TimingTest < Minitest::Test
     log=PlanosSanto::PaintTimingLog.new(directory:@dir);ticks=0.0
     build_tool(tool_options('edge','edgeCount'=>4),timing:log,clock:-> { ticks+=0.02 })
     click_on(@doors[0])
-    split_x_min_side!;@model.observers.each { |o| o.onTransactionCommit(@model) };click_on(@doors[1]) # blocked before the service
+    rebate_x_min_side!;@model.observers.each { |o| o.onTransactionCommit(@model) };click_on(@doors[1]) # blocked before the service
     assert_equal 2,log.entries.length
     first,second=log.entries
     assert_equal({'mode'=>'edge','edgeCount'=>4,'scope'=>'unique','changed'=>true,'ok'=>true},first.slice('mode','edgeCount','scope','changed','ok'))
@@ -562,9 +582,9 @@ class Hito2ReviewTest < Minitest::Test
     other={'catalogId'=>'otra','materialUuid'=>'otra-uuid','name'=>'Otra'}
     @smart.define_singleton_method(:material_choices) { |_data| [other] }
     tool!(tool_options('edge'),switch_mode:lambda { |mode| mode=='edge' ? tool_options('edge') : tool_options('sheet') })
-    block=lambda do # a fresh split board each time: the click is refused with a reason
+    block=lambda do # a fresh rebated board each time: the click is refused with a reason
       @board=Fixture.board_definition;@board.entities.each_with_index { |f,i| f.define_singleton_method(:persistent_id) { 100+i };f.material=@sheet;f.back_material=@sheet }
-      @doors.each { |door| door.definition=@board };split_x_min_side!;@model.observers.each { |o| o.onTransactionCommit(@model) }
+      @doors.each { |door| door.definition=@board };rebate_x_min_side!;@model.observers.each { |o| o.onTransactionCommit(@model) }
       click_on(@doors[0]);assert_match(/último error/,Sketchup.hito2_status_texts.last)
     end
     block.call
