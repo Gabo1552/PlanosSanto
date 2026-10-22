@@ -151,7 +151,9 @@ export default function App(){
     if(mode==='selected'&&!result.selected.length)setMessage('No hay grupos o componentes seleccionados en SketchUp. Seleccionalos en el modelo y volvé a analizar.',undefined,'warning');
   },[setMessage]);
   function askDiscard(title:string,confirmLabel:string,run:()=>void){const count=project?.furniture.length||0;setPendingConfirm({title,confirmLabel,run,opener:document.activeElement as HTMLElement|null,detail:`Se pierden los nombres, notas y ajustes de vista que no guardaste${count?` en ${count} ${count===1?'mueble':'muebles'}`:''}. La guía guardada en el modelo no cambia.`});}
-  function closeConfirm(confirmed:boolean){const current=pendingConfirm;setPendingConfirm(undefined);if(!current)return;if(confirmed){const opener=current.opener;focusAfterBusy.current=opener&&opener.isConnected&&opener!==document.body&&!opener.closest('.ux-confirm')?opener:document.querySelector<HTMLElement>('.ux-module-heading');current.run();}else requestAnimationFrame(()=>current.opener?.focus());}
+  function closeConfirm(confirmed:boolean){const current=pendingConfirm;setPendingConfirm(undefined);if(!current)return;const opener=current.opener,heading=document.querySelector<HTMLElement>('.ux-module-heading'),target=opener&&opener.isConnected&&opener!==document.body&&!opener.closest('.ux-confirm')?opener:heading;if(confirmed){focusAfterBusy.current=target;current.run();}
+    // Without a usable opener focus lands on the module heading, never on body; a disabled opener waits for the busy effect.
+    requestAnimationFrame(()=>{const active=document.activeElement;if(active&&active!==document.body)return;target?.focus();if(document.activeElement===target){if(focusAfterBusy.current===target)focusAfterBusy.current=null;}else if(!confirmed)heading?.focus();});}
   async function analyze(mode?:'all'|'selected',confirmed=false){
     if(dirty&&!confirmed){askDiscard('Descartar cambios y volver a analizar','Descartar y analizar',()=>void analyze(mode,true));return;}
     await run('Analizando modelo…',async()=>{
@@ -324,7 +326,7 @@ export default function App(){
       const result=await request<{message?:string}>('piece_highlight',{pieceId:piece.id});setMessage(result.message||'Pieza seleccionada en el modelo de SketchUp.');
     });
   }
-  quickHandler.current=intent=>{
+  useLayoutEffect(()=>{quickHandler.current=intent=>{
     if(workshopDirty||libraryDirty){setError('Hay cambios de biblioteca, importación o pedido sin guardar. Guardalos o cancelalos antes de usar otro acceso rápido.');return;}
     if(busy){setError('Esperá a que termine la operación actual antes de usar otro acceso rápido.');return;}
     if((dirty||draftHidden!==null||contextChanged||modelAnalysisStale)&&!['furniture','guides'].includes(intent.action)){setError('Conservá los cambios pendientes y aplicá o cancelá la visibilidad antes de cambiar de herramienta.');return;}
@@ -349,7 +351,7 @@ export default function App(){
     else if(!liveProject&&liveScan){const sourceScan=liveScan;const roots=selectedFurnitureIds(paths,sourceScan.tree.roots);if(roots.length){setIds(roots);if(!dirty)void generate(roots,intent.action==='furniture'?'furniture':'guides');}}
     setMessage(intent.message||(project?'Revisá el mueble y sus piezas. No se aplicaron nombres ni se exportó ningún archivo.':'Elegí el mueble y pulsá Generar guías para revisar nombres, vistas y notas.'));
     requestAnimationFrame(()=>{const target=document.querySelector<HTMLElement>(project?(intent.action==='furniture'?'.parts-config':'.assembly-drawing'):'#furniture-chooser');target?.scrollIntoView({block:'start'});if(intent.action==='furniture'&&project)target?.querySelector<HTMLInputElement>('input[aria-label="Nombre del grupo"]')?.focus({preventScroll:true});});
-  };
+  };});
   function blockReason(kind:Block,allowLibrary=false):string|undefined{
     if(busy)return `Esperá a que termine «${busy.replace(/…$/,'')}»`;
     if(kind==='nav')return undefined;

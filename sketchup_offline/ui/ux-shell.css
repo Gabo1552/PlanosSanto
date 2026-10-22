@@ -18,7 +18,7 @@
 .ux-shell .furniture-tabs button.active{background:#EAF1EC!important;border-color:#19483D!important;color:#19483D}
 .ux-shell .status,.ux-shell .selected-piece-summary,.ux-shell .selection-notice,.ux-shell .pick-hint{background:#EAF1EC;color:#19483D;border-color:#A6BCAF}
 .ux-shell .parts-config tr.selected,.ux-shell .parts-filter button[aria-pressed=true],.ux-shell .highlight-toggle[aria-pressed=true]{background:#EAF1EC;color:#19483D;border-color:#7E9E8F}
-.ux-shell .parts-config tr.selected td:first-child{box-shadow:inset 3px 0 0 #19483D}.ux-shell .parts-config tr.selected input{border-color:#7E9E8F}
+.ux-shell .parts-config tr.selected td:first-child{box-shadow:inset 3px 0 0 #19483D}.ux-shell .parts-config tr.selected input{border-color:#5A6A61}
 .ux-shell .group-configuration,.ux-shell .viewer-sliders,.ux-shell .parts-instructions,.ux-shell .piece-grouping{background:#F6F5F0}
 .ux-shell tbody tr:nth-child(even):not(.selected){background:#F8F9F5}.ux-shell .parts-config tr.selected:nth-child(even){background:#EAF1EC}
 .ux-shell .search-field:focus-within{outline-color:#19483D}.ux-shell .piece-grouping>label:has(input:checked){color:#19483D}
