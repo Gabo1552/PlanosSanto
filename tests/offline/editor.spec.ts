@@ -6,6 +6,7 @@ import {resolve} from 'node:path';
 import {PDFDocument} from 'pdf-lib';
 import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
+import {showIds} from './ids';
 
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 // Enterprise Chromium policy blocks file:// in this host. Serve the exact packaged bytes
@@ -53,7 +54,8 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del di�
   await expect(page.locator('[data-dimension]')).toHaveCount(2);
   await expect(page.locator('[data-dimension][data-role=espesor]')).toHaveCount(0);
   await expect(page.locator('tbody tr')).toHaveCount(2);
-  await expect(page.locator('[data-label]')).toHaveCount(2);
+  // IDs are hidden by default in the A4 and therefore in the viewer; the guide can show them.
+  await expect(page.locator('[data-label]')).toHaveCount(0);await showIds(page);await expect(page.locator('[data-label]')).toHaveCount(2);
   const originalPoints=await page.locator('[data-piece]').first().getAttribute('points');
   const dirtyBefore=calls.filter(c=>c==='dirty').length;
   await page.getByRole('button',{name:'Ver interior',exact:true}).click();
@@ -71,7 +73,8 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del di�
   const slider=page.getByRole('slider',{name:'Zoom',exact:true});
   await slider.focus();await slider.press('End');for(let i=0;i<12;i++)await slider.press('ArrowLeft');
   await expect(slider).toHaveValue('0.8');
-  await page.getByTestId('note-box').focus();await page.keyboard.press('ArrowDown');
+  // The viewer draws the A4: a note is its numbered marker, placed by the layout.
+  await expect(page.locator('[data-note-marker="1"]')).toBeVisible();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
   await expect(page.getByText('Falta guardar el archivo .skp',{exact:false})).toBeVisible();
   await page.reload();
@@ -102,7 +105,7 @@ test('Ruby bloquea exportación si la geometría cambió después de generar',as
   await expect(page.getByRole('alert')).toContainText('geometría');
 });
 
-test('notas completas: editar, arrastrar, reanclar, eliminar; selección evita padre y descendiente',async({page},info)=>{
+test('notas completas: editar, marcador numerado, reanclar, eliminar; selección evita padre y descendiente',async({page},info)=>{
   await boot(page,info.outputDir);
   const parent=page.getByRole('checkbox',{name:'Mueble de contrato',exact:false}).first();
   await page.locator('.tree > .tree-node').first().getByText('Ver contenido',{exact:true}).first().click();
@@ -111,14 +114,13 @@ test('notas completas: editar, arrastrar, reanclar, eliminar; selección evita p
   await parent.check();
   await expect(page.getByRole('checkbox',{name:'Lateral sintético',exact:false}).first()).not.toBeChecked();
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
-  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
+  await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
   await page.getByLabel('Texto de la nota').fill('Unión revisada');
-  const box=page.getByTestId('note-box');const before=await box.boundingBox();
-  await page.mouse.move(before!.x+50,before!.y+20);await page.mouse.down();await page.mouse.move(before!.x+15,before!.y+70,{steps:5});await page.mouse.up();
-  const after=await box.boundingBox();expect(after!.y).toBeGreaterThan(before!.y+30);
+  // Since 0.8.19 the viewer shows the A4: the note is the numbered marker the sheet prints, placed by the layout.
+  await expect(page.locator('[data-note-marker="1"]')).toBeVisible();
   await page.getByRole('button',{name:'Cambiar destino de la flecha',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();
   await expect(page.getByRole('button',{name:'P02 Unión revisada',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();await expect(page.getByTestId('note-box')).toHaveCount(0);
+  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();await expect(page.locator('[data-note-marker]')).toHaveCount(0);
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Falta guardar el archivo .skp',{exact:false})).toBeVisible();
 });
 
@@ -146,7 +148,7 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
 test('al cambiar muebles se regeneran las guías solas y Escape cancela el anclaje',async({page},info)=>{
   await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
   await expect(page.getByLabel('Nombre P01')).toBeVisible();
-  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.pick-hint')).toHaveCount(0);await expect(page.getByTestId('note-box')).toHaveCount(0);
+  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.pick-hint')).toHaveCount(0);await expect(page.locator('[data-note-marker]')).toHaveCount(0);
   await page.getByRole('checkbox',{name:'Mueble repetido sintético',exact:false}).first().uncheck();
   await expect(page.locator('.furniture-tabs button')).toHaveCount(1);await expect(page.getByRole('alertdialog')).toHaveCount(0);await expect(page.locator('.selection-notice')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeEnabled();

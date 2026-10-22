@@ -3,18 +3,20 @@ import {Matrix4,Vector3} from 'three';
 import {createDemo,demoDocument} from '../lib/demo';
 import {importDocument,mm,type Furniture} from '../lib/model';
 import {makeScene} from '../lib/scene';
-import {dimensionText,dimensionGroups,segmentHitsRect} from '../lib/dimensions';
+import {dimensionChoices,dimensionText,dimensionGroups,segmentHitsRect} from '../lib/dimensions';
 
 function check(f:Furniture){
   const scene=makeScene(f);
-  const representatives=f.pieces.filter((p,i)=>!f.pieces.slice(0,i).some(other=>other.dimensions.every((v,j)=>Math.abs(v-p.dimensions[j])<=1e-6)));
-  expect(scene.warnings).toEqual([]);expect(scene.dimensions).toHaveLength(representatives.length*2);
-  expect(scene.labels).toHaveLength(f.pieces.length);
+  expect(scene.warnings).toEqual([]);expect(scene.labels).toHaveLength(f.pieces.length);
+  // One cota per size and per equal measure in the same direction: every other one is named in `shared` with the same text.
+  for(const c of dimensionChoices(f)){
+    if(scene.dimensions.some(d=>d.pieceId===c.pieceId&&d.role===c.role))continue;
+    expect(scene.dimensions.some(d=>d.shared?.includes(c.code)&&d.text.endsWith(dimensionText(c.valueMm))),`${c.code} ${c.role}`).toBe(true);
+  }
   for(const piece of f.pieces){
     const dims=scene.dimensions.filter(d=>d.pieceId===piece.id);
     if(!dims.length)continue;
-    expect(dims.map(d=>d.role).sort()).toEqual(['ancho','largo']);
-    for(const [role,value] of (['largo','ancho'] as const).map((role,i)=>[role,piece.dimensions[i]] as const))expect(dims.find(d=>d.role===role)!.valueMm).toBeCloseTo(value,7);
+    for(const [role,value] of (['largo','ancho'] as const).map((role,i)=>[role,piece.dimensions[i]] as const)){const d=dims.find(d=>d.role===role);if(d)expect(d.valueMm).toBeCloseTo(value,7);}
     for(const d of dims){
       const a=new Vector3(...d.localStart).applyMatrix4(new Matrix4().fromArray(piece.transform));
       const b=new Vector3(...d.localEnd).applyMatrix4(new Matrix4().fromArray(piece.transform));
@@ -41,7 +43,8 @@ describe('Cotas por pieza calculadas en 3D, no sobre el dibujo',()=>{
   it('elige el mismo código al reordenar piezas y comparte cotas entre piezas rotadas',()=>{
     const f=createDemo().furniture[0],before=check(f);
     expect(before.dimensions.filter(d=>['m-lateral-izq','m-lateral-der'].includes(d.pieceId))).toHaveLength(2);
-    expect(before.dimensions.filter(d=>['m-base','m-tapa'].includes(d.pieceId))).toHaveLength(2);
+    // Base y tapa comparten tamaño; su ancho (450) es la profundidad que ya acota el lateral.
+    expect(before.dimensions.filter(d=>['m-base','m-tapa'].includes(d.pieceId)).map(d=>d.role)).toEqual(['largo']);
     const groups=dimensionGroups(f).map(g=>g.map(p=>p.code));
     f.pieces.reverse();
     expect(dimensionGroups(f).map(g=>g.map(p=>p.code))).toEqual(groups);

@@ -1,12 +1,26 @@
 'use client';
 import { useMemo, type PointerEvent } from 'react';
-import { makeScene, pickAnchor, type View } from '@/lib/scene';
-import type { Furniture, Vec3 } from '@/lib/model';
+import { Ray, Vector3 } from 'three';
+import { makeScene, pickAnchor, type Point, type View } from '@/lib/scene';
+import { bounds, type Furniture, type Piece, type Vec3 } from '@/lib/model';
+import { sheetCaption } from '@/lib/sheet';
 import DimensionLayer from './DimensionLayer';
 import {dimensionCaption,type Dimension} from '@/lib/dimensions';
 import {groupedPieces} from '@/lib/pieceGroups';
 import {diagramViewport} from '@/lib/diagramViewport';
 
+/** Surface point under the pointer in the scene actually drawn: a supplied A4 scene has its own box and defaults. */
+function anchorIn(scene:ReturnType<typeof makeScene>,p:Piece,screen:Point):Vec3{
+  const {right,forward,up}=scene.camera;
+  const origin=right.clone().multiplyScalar((screen.x-scene.origin.x)/scene.scale+scene.cx).add(up.clone().multiplyScalar((scene.origin.y-screen.y)/scene.scale+scene.cy)).add(forward.clone().multiplyScalar(1e7));
+  const ray=new Ray(origin,forward.clone().negate()).applyMatrix4(scene.transforms.get(p.id)!.clone().invert());
+  let nearest:Vector3|undefined;
+  for(const tri of p.mesh.triangles){
+    const hit=ray.intersectTriangle(...tri.map(i=>new Vector3(...p.mesh.vertices[i])) as [Vector3,Vector3,Vector3],false,new Vector3());
+    if(hit&&(!nearest||hit.distanceTo(ray.origin)<nearest.distanceTo(ray.origin)))nearest=hit.clone();
+  }
+  return (nearest||bounds(p.mesh).getCenter(new Vector3())).toArray();
+}
 type Props={ fit?:boolean; highlight?:boolean; furniture:Furniture; view?:View; layout?:'editor'|'sheet'; selected?:string; print?:boolean; paper?:boolean; scene?:ReturnType<typeof makeScene>; onOrbit?:(delta:[number,number])=>void; onMoveDimension?:(pieceId:string,role:Dimension['role'],delta:[number,number])=>void; onHideDimension?:(pieceId:string,role:Dimension['role'])=>void; onPick?:(pieceId:string,anchor:Vec3)=>void; onMove?:(noteId:string,position:[number,number])=>void; onNote?:(id:string)=>void };
 export default function Diagram({furniture:f,view='front',layout='editor',selected,print=false,paper=false,scene:suppliedScene,onPick,onMove,onNote,onHideDimension,onMoveDimension,onOrbit,fit=false,highlight=false}:Props) {
   const scene=useMemo(()=>suppliedScene||makeScene(f,{view,layout}),[f,suppliedScene,view,layout]);
@@ -30,7 +44,7 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
   function pick(e:PointerEvent<SVGElement>,id:string) {
     if(onOrbit||!onPick) return;
     const p=f.pieces.find(p=>p.id===id)!;
-    onPick(id,pickAnchor(f,p,point(e),{view,layout}));
+    onPick(id,suppliedScene?anchorIn(suppliedScene,p,point(e)):pickAnchor(f,p,point(e),{view,layout}));
   }
   return <svg className="diagram" viewBox={viewport} aria-label={`Axonometría ortográfica de ${f.name}`} data-view={view} data-layout={layout} role={print||!(onPick||onOrbit||onMove||onMoveDimension||onHideDimension)?'img':'group'} style={{touchAction:onOrbit?'none':undefined,cursor:onOrbit?'grab':undefined}}
     onPointerDown={e=>{if(!onOrbit)return;e.currentTarget.setPointerCapture(e.pointerId);e.currentTarget.dataset.orbit=JSON.stringify([e.clientX,e.clientY]);}}
@@ -78,6 +92,6 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
     </g>)}
     {/* Text and its opaque backing stay above every note/ID leader. */}
     <DimensionLayer dimensions={visibleScene.dimensions} phase="labels" onHide={print?undefined:onHideDimension} onMove={print?undefined:onMoveDimension}/>
-    {!fitted&&<text x="12" y={scene.height-16} fontFamily="Arial, sans-serif" fontSize="11" fill="#68746a">{f.presentation?.guide?`${view==='front'?'EXTERIOR':'INTERIOR'} · ${dimensionCaption(f)}`:scene.sheet&&view==='back'?(f.presentation?.hideIds?'TRASERA · SIN COTAS':'TRASERA · MISMOS CÓDIGOS · SIN COTAS'):dimensionCaption(f)}</text>}
+    {!fitted&&<text x="12" y={scene.height-16} fontFamily="Arial, sans-serif" fontSize="11" fill="#68746a">{f.presentation?.guide&&layout==='sheet'?sheetCaption(f,view):f.presentation?.guide?`${view==='front'?'EXTERIOR':'INTERIOR'} · ${dimensionCaption(f)}`:scene.sheet&&view==='back'?(f.presentation?.hideIds?'TRASERA · SIN COTAS':'TRASERA · MISMOS CÓDIGOS · SIN COTAS'):dimensionCaption(f)}</text>}
   </svg>;
 }

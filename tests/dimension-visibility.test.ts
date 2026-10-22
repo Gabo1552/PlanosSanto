@@ -10,8 +10,10 @@ describe('Visibilidad de cotas guardada sin alterar las medidas',()=>{
     const f=createDemo().furniture[0],original=JSON.stringify(f.pieces),count=makeScene(f).dimensions.length;
     f.hiddenDimensions=setDimensionVisible(f,f.pieces[1].id,'largo',false);
     for(const options of [{},{view:'back' as const},{layout:'sheet' as const}]){
-      const scene=makeScene(f,options);expect(scene.dimensions).toHaveLength(count-1);expect(scene.warnings).toEqual([]);
+      // The lateral's 700 also stood for the back panel (same height, same direction): that one is drawn now.
+      const scene=makeScene(f,options);expect(scene.dimensions).toHaveLength(count);expect(scene.warnings).toEqual([]);
       expect(scene.dimensions.filter(d=>d.pieceId===f.pieces[0].id).map(d=>d.role)).toEqual(['ancho']);
+      expect(scene.dimensions.find(d=>d.valueMm===700)!.pieceId).not.toMatch(/lateral/);
     }
     expect(dimensionCaption(f)).toContain('1 OCULTA');
     // Stable references remain effective if another equal-size instance becomes representative.

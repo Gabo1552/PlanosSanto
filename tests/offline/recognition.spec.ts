@@ -5,6 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {showIds} from './ids';
 
 // Synthetic browser + actual Ruby controller contracts; no SketchUp execution claimed.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
@@ -34,7 +35,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frente persistido y un único guardado reversible',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();expect(before.names['11']).toBe('');expect(before.names['12']).toBe('');
  await page.getByLabel('Abreviatura de la obra').fill('VF');await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
+ await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
  const dialog=await openProposals(page);await expect(dialog.locator('[aria-label^="Nombre sugerido"]')).toHaveCount(2);
  // Punto 21: the group axes are the default; nothing asks to confirm them.
  await expect(dialog).not.toContainText('Falta confirmar vertical y frente');await expect(dialog.getByLabel('Confirmé frente y vertical en el dibujo',{exact:true})).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true})).toBeDisabled();
