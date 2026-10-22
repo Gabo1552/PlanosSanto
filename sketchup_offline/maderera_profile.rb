@@ -10,17 +10,21 @@ require_relative 'catalog_store'
 
 module PlanosSanto
   # Hito 4 · F-OPT-C: how one supplier works, configured once. Pure rules here;
-  # persistence in MaderaProfileStore. Nothing applies until a version is approved.
+  # persistence in MaderaProfileStore. Simplificación punto 24: there is no
+  # approval step; the profile chosen with «Usar en pedidos» applies.
   module MaderaProfile
     CONTENT=%w[name supplier trimMm kerfMm dimensionRule wastePercent cutPrice edgingPrice encoding decimal header notes].freeze
-    KEYS=(%w[id version approved approvedAt updatedAt contentHash]+CONTENT).freeze
+    # approved/approvedAt belong to profiles saved up to 0.8.15: they still load
+    # (and are kept as they are) but no longer decide anything.
+    LEGACY_KEYS=%w[approved approvedAt].freeze
+    KEYS=(%w[id version updatedAt contentHash]+CONTENT).freeze
     RULES=%w[finished deduct_edge].freeze
     PRICE_UNITS={'cutPrice'=>%w[placa pieza metro],'edgingPrice'=>%w[metro]}.freeze
     PRICE_AGE_DAYS=90
 
-    # Suggested starting values, never approved: a person confirms them with the supplier.
+    # Suggested starting values: a person adjusts them with the supplier.
     def self.template
-      {'id'=>nil,'version'=>0,'approved'=>false,'approvedAt'=>nil,'updatedAt'=>nil,'contentHash'=>nil,'name'=>'','supplier'=>'',
+      {'id'=>nil,'version'=>0,'updatedAt'=>nil,'contentHash'=>nil,'name'=>'','supplier'=>'',
        'trimMm'=>10,'kerfMm'=>3,'dimensionRule'=>'finished','wastePercent'=>15,'cutPrice'=>nil,'edgingPrice'=>nil,
        'encoding'=>'utf8','decimal'=>'.','header'=>false,'notes'=>''}
     end
@@ -39,7 +43,7 @@ module PlanosSanto
     # Same contract for stored rows and for client input (content keys only).
     def self.validate_content(profile)
       raise ExportError,'Perfil de maderera inválido.' unless profile.is_a?(Hash)
-      raise ExportError,'El perfil de maderera tiene campos no permitidos.' unless (profile.keys-KEYS).empty?
+      raise ExportError,'El perfil de maderera tiene campos no permitidos.' unless (profile.keys-KEYS-LEGACY_KEYS).empty?
       name=text(profile['name'],80);raise ExportError,'Poné un nombre al perfil de maderera.' if name.empty?
       text(profile['supplier'],120);text(profile['notes'],500)
       number(profile['trimMm'],0,50,'Refilado');number(profile['kerfMm'],0,10,'Espesor de corte (kerf)');number(profile['wastePercent'],0,100,'Desperdicio')
@@ -60,11 +64,19 @@ module PlanosSanto
     # Compact signed reference for the order manifest.
     def self.reference(profile)
       return nil unless profile
-      profile.slice('id','name','supplier','version','approved','contentHash','trimMm','kerfMm','dimensionRule','wastePercent')
+      profile.slice('id','name','supplier','version','contentHash','trimMm','kerfMm','dimensionRule','wastePercent')
     end
     # What a draft order was reviewed with; export refuses a different one.
     def self.binding(profile);profile && profile.slice('id','version','contentHash');end
-    def self.applies?(profile);profile.is_a?(Hash) && profile['approved']==true;end
+    # Same name as before 0.8.16 (supplier_order.rb calls it): a stored profile
+    # chosen for orders applies; approval is no longer part of the decision.
+    def self.applies?(profile);profile.is_a?(Hash) && profile['id'].is_a?(String) && !profile['id'].empty?;end
+    # Notices for a profile in use. They never block: deducting the edge is the
+    # one setting that can make every piece smaller twice.
+    def self.warnings(profile)
+      return [] unless profile.is_a?(Hash) && profile['dimensionRule']=='deduct_edge'
+      ['Descontar el espesor del canto: confirmá que la maderera no lo descuenta también, o la pieza sale más chica dos veces.']
+    end
 
     # OPT-02: warns (never blocks) when a piece fits the raw board but not its
     # usable area after trimming every side.
@@ -165,27 +177,29 @@ module PlanosSanto
         data['revision'].is_a?(Integer) && data['revision']>=0 && data['profiles'].is_a?(Array) && data['profiles'].length<=MAX_PROFILES
       ids=[]
       data['profiles'].each do |profile|
-        raise ExportError,'Perfil de maderera dañado.' unless profile.is_a?(Hash) && profile.keys.sort==MaderaProfile::KEYS.sort
+        legacy=profile.is_a?(Hash) ? profile.keys & MaderaProfile::LEGACY_KEYS : []
+        raise ExportError,'Perfil de maderera dañado.' unless profile.is_a?(Hash) && (profile.keys-legacy).sort==MaderaProfile::KEYS.sort && (legacy.empty? || legacy.sort==MaderaProfile::LEGACY_KEYS.sort)
         MaderaProfile.validate_content(profile)
         raise ExportError,'Identificador de perfil inválido.' unless profile['id'].is_a?(String) && profile['id'].match?(/\A[0-9a-f-]{36}\z/) && !ids.include?(profile['id'])
         ids << profile['id']
-        raise ExportError,'Versión de perfil inválida.' unless profile['version'].is_a?(Integer) && profile['version']>=1 && [true,false].include?(profile['approved'])
+        raise ExportError,'Versión de perfil inválida.' unless profile['version'].is_a?(Integer) && profile['version']>=1
+        raise ExportError,'Versión de perfil inválida.' if legacy.any? && ![true,false].include?(profile['approved'])
         raise ExportError,'La huella del perfil no coincide con su contenido.' unless profile['contentHash']==MaderaProfile.content_hash(profile)
-        raise ExportError,'Fecha de aprobación del perfil inválida.' unless profile['approved'] ? profile['approvedAt'].is_a?(String) : profile['approvedAt'].nil?
+        raise ExportError,'Fecha de aprobación del perfil inválida.' if legacy.any? && !(profile['approved'] ? profile['approvedAt'].is_a?(String) : profile['approvedAt'].nil?)
         raise ExportError,'Fecha del perfil inválida.' unless profile['updatedAt'].is_a?(String)
-        raise ExportError,'Perfil aprobado que descuenta canto sin confirmación anotada.' if profile['approved'] && profile['dimensionRule']=='deduct_edge' && profile['notes'].strip.length<8
       end
       raise ExportError,'El perfil activo no existe.' unless data['activeId'].nil? || ids.include?(data['activeId'])
       data
     end
-    def active(approved_only: true)
+    # The profile in use for orders, or nil.
+    def active
       data=read;profile=data['profiles'].find { |row| row['id']==data['activeId'] }
-      approved_only && !MaderaProfile.applies?(profile) ? nil : profile
+      MaderaProfile.applies?(profile) ? profile : nil
     end
-    # Client input carries content only: version, approval and hash are server side.
+    # Client input carries content only: version and hash are server side.
     def save(input,revision)
       raise ExportError,'Perfil de maderera inválido.' unless input.is_a?(Hash)
-      raise ExportError,'El perfil de maderera tiene campos no permitidos.' unless (input.keys-MaderaProfile::KEYS).empty?
+      raise ExportError,'El perfil de maderera tiene campos no permitidos.' unless (input.keys-MaderaProfile::KEYS-MaderaProfile::LEGACY_KEYS).empty?
       transaction(revision) do |data|
         current=input['id'].to_s.empty? ? nil : data['profiles'].find { |row| row['id']==input['id'] }
         raise ExportError,'El perfil de maderera ya no existe; volvé a cargarlos.' if !input['id'].to_s.empty? && !current
@@ -195,30 +209,28 @@ module PlanosSanto
         MaderaProfile.validate_content(base.merge(input.slice(*MaderaProfile::CONTENT)))
         profile=base.merge(MaderaProfile.content(base.merge(input.slice(*MaderaProfile::CONTENT))))
         next nil if current && MaderaProfile.content_hash(current)==MaderaProfile.content_hash(profile)
-        profile.merge!('version'=>profile['version']+1,'approved'=>false,'approvedAt'=>nil,'updatedAt'=>Time.now.utc.iso8601)
+        # A new version drops the legacy approval fields: nothing reads them.
+        MaderaProfile::LEGACY_KEYS.each { |key| profile.delete(key) }
+        profile.merge!('version'=>profile['version']+1,'updatedAt'=>Time.now.utc.iso8601)
         profile['contentHash']=MaderaProfile.content_hash(profile)
         data['profiles']=current ? data['profiles'].map { |row| row['id']==profile['id'] ? profile : row } : data['profiles']+[profile]
         data
       end
     end
-    def approve(id,version,revision)
+    # Kept for the 0.8.15 «maderera_profile_approve» action (workshop.rb): the
+    # approval step is gone, so it only checks that the profile still exists
+    # and writes nothing. The UI no longer calls it.
+    def approve(id,_version,revision)
       transaction(revision) do |data|
-        profile=data['profiles'].find { |row| row['id']==id }
-        raise ExportError,'El perfil de maderera ya no existe; volvé a cargarlos.' unless profile
-        raise ExportError,'El perfil cambió desde que lo revisaste; volvé a revisarlo antes de aprobar.' unless profile['version']==version
-        raise ExportError,'Completá nombre y proveedor antes de aprobar el perfil.' if profile['name'].strip.empty? || profile['supplier'].strip.empty?
-        if profile['dimensionRule']=='deduct_edge' && profile['notes'].strip.length<8
-          raise ExportError,'Para descontar el canto, anotá en notas cómo lo confirmó el proveedor (evita descontarlo dos veces).'
-        end
-        profile.merge!('approved'=>true,'approvedAt'=>Time.now.utc.iso8601)
-        data
+        raise ExportError,'El perfil de maderera ya no existe; volvé a cargarlos.' unless data['profiles'].any? { |row| row['id']==id }
+        nil
       end
     end
     def activate(id,revision)
       transaction(revision) do |data|
         unless id.nil?
           profile=data['profiles'].find { |row| row['id']==id }
-          raise ExportError,'Solo se puede usar en los pedidos un perfil de maderera aprobado.' unless MaderaProfile.applies?(profile)
+          raise ExportError,'El perfil de maderera ya no existe; volvé a cargarlos.' unless MaderaProfile.applies?(profile)
         end
         data['activeId']=id;data
       end

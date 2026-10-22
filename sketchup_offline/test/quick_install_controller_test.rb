@@ -85,10 +85,11 @@ class QuickInstallControllerTest < Minitest::Test
     refute again['prepared']['installed'];assert_equal 1,@model.materials.length
   end
 
+  # Punto 26: «all» alone is now valid; a contradictory scope is still refused before installing.
   def test_refused_tool_options_never_leave_an_installed_material_behind
     @controller.quick_action('sheet')
     assert_raises(PlanosSanto::ExportError) do
-      with_tool { @controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>@created['catalogId'],'scope'=>'all'}) }
+      with_tool { @controller.dispatch('smart_quick_start',{'mode'=>'sheet','catalogId'=>@created['catalogId'],'scope'=>'all','allowShared'=>false}) }
     end
     assert_empty @model.materials
   end

@@ -122,22 +122,30 @@ class NamesCoverageTest < Minitest::Test
     @manager.guide_changes([edit],'VF').call
     assert_equal 'Bajo Mesada Ñandú',@root.name
     assert_equal({'version'=>1,'name'=>'Bajo Mesada Ñandú','prefix'=>'VF M01','originalName'=>'Mueble original'},JSON.parse(@root.get_attribute(NM::DICT,NM::ROOT_KEY)))
+    # Punto 20: an isolated piece used as group is a row notice, not a blocker.
     piece_edit={'id'=>'1/11','groupName'=>'Otro nombre','pieces'=>[]}
-    assert_match(/pieza aislada/,assert_raises(PlanosSanto::ExportError){@manager.guide_changes([piece_edit],'')}.message)
+    before=@manager.inventory[:index]['1/11']['currentName']
+    @manager.guide_changes([piece_edit],'').call
+    assert_equal [{'id'=>'1/11','reason'=>'Una pieza aislada se renombra desde su fila, no como grupo padre.'}],@manager.skipped
+    assert_equal before,@manager.inventory[:index]['1/11']['currentName']
   end
   def test_mixed_nodes_are_not_renamed_and_mutation_rechecks_lock_and_acceptance
     @container.entities << Fixture.board_definition.entities[0]
     edit=guide_edit(names:['Lateral','Base']);edit['pieces'] << {'id'=>'1/13','name'=>'Interior','code'=>'P03'}
     edit['naming']['bases'] << {'id'=>'1/13','base'=>'Interior'}
-    assert_match(/geometría mezclada/,assert_raises(PlanosSanto::ExportError){@manager.guide_changes([edit],'')}.message)
-    @container.entities.pop
+    # Punto 20: the mixed row is skipped with its notice; the other rows rename.
+    original=@left.name
+    @manager.guide_changes([edit],'').call
+    assert_equal ['1/13'],@manager.skipped.map { |row| row['id'] };assert_match(/caras propias y subgrupos/,@manager.skipped[0]['reason'])
+    assert_equal 'Lateral',@left.name;refute_equal 'Interior',@container.name
+    @container.entities.pop;@left.name=original
     run=@manager.guide_changes([guide_edit(names:['Lateral','Base'])],'');@left.locked_for_names=true
     assert_match(/bloqueó/,assert_raises(PlanosSanto::ExportError){run.call}.message);@left.locked_for_names=false
     run=@manager.guide_changes([guide_edit(names:['Lateral','Base'])],'')
     @left.define_singleton_method(:name=) { |_v| }
     assert_match(/no aceptó/,assert_raises(PlanosSanto::ExportError){run.call}.message)
   end
-  def test_shared_piece_with_incompatible_bases_is_rejected
+  def test_shared_piece_with_different_names_is_skipped_with_a_row_notice
     shared=Sketchup::ComponentInstance.new(60,'Estante',Fixture.board_definition)
     a=Sketchup::Group.new(61,'Módulo A',Sketchup::Definition.new('A','sa',[shared]))
     b=Sketchup::Group.new(62,'Módulo B',Sketchup::Definition.new('B','sb',[shared]))
@@ -145,9 +153,11 @@ class NamesCoverageTest < Minitest::Test
     edits=[['61','A'],['62','B']].map do |id,base|
       {'id'=>id,'pieces'=>[{'id'=>"#{id}/60",'name'=>'VF M01 Estante','code'=>'P01'}],'naming'=>{'moduleCode'=>'M01','bases'=>[{'id'=>"#{id}/60",'base'=>'Estante'}]}}
     end
-    manager.guide_changes(edits,'VF')
+    manager.guide_changes(edits,'VF');assert_empty manager.skipped
     edits[1]['naming']['moduleCode']='M1';edits[1]['pieces'][0]['name']='VF M1 Estante'
-    assert_match(/nombres distintos/,assert_raises(PlanosSanto::ExportError){manager.guide_changes(edits,'VF')}.message)
+    manager.guide_changes(edits,'VF').call
+    assert_equal %w[61/60 62/60],manager.skipped.map { |row| row['id'] }.sort
+    assert manager.skipped.all? { |row| row['reason'].include?('nombres distintos') };assert_equal 'Estante',shared.name
   end
 
   def test_shared_piece_message_lists_three_missing_paths_and_ellipsis
@@ -157,7 +167,7 @@ class NamesCoverageTest < Minitest::Test
     p=manager.preview('71');assert p['blocked']
     assert_includes p['blockers'].join,'5 apariciones; faltan 4 en este cambio (72/70, 73/70, 74/70, …)'
   end
-  def test_shared_piece_with_same_name_but_incompatible_prefix_split_is_rejected
+  def test_shared_piece_with_same_name_but_incompatible_prefix_split_is_skipped
     shared=Sketchup::ComponentInstance.new(60,'Estante',Fixture.board_definition)
     a=Sketchup::Group.new(61,'Módulo A',Sketchup::Definition.new('A','sa',[shared]))
     b=Sketchup::Group.new(62,'Módulo B',Sketchup::Definition.new('B','sb',[shared]))
@@ -165,7 +175,9 @@ class NamesCoverageTest < Minitest::Test
     edits=[['61','M01','Lado B'],['62','M01 Lado','B']].map do |id,module_code,base|
       {'id'=>id,'pieces'=>[{'id'=>"#{id}/60",'name'=>'VF M01 Lado B','code'=>'P01'}],'naming'=>{'moduleCode'=>module_code,'bases'=>[{'id'=>"#{id}/60",'base'=>base}]}}
     end
-    assert_match(/de P01 tienen abreviaturas o nombres base incompatibles/,assert_raises(PlanosSanto::ExportError){manager.guide_changes(edits,'VF')}.message)
+    manager.guide_changes(edits,'VF').call
+    assert_match(/de P01 tienen abreviaturas o nombres base incompatibles/,manager.skipped.first['reason'])
+    assert_equal 'Estante',shared.name
   end
 
   # --- apply: atomicidad y errores --------------------------------------------

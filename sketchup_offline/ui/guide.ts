@@ -19,14 +19,12 @@ export type LocalGuide = {project:Project;orphans:Record<string,Note[]>;unsaved:
 // without a GUID it lasts only for this session. The v2 key drops the old preferences keyed by the path alone.
 const FOLD_KEY='planos-santo.a4.foldTable.v2';
 const foldId=(modelGuid:string,id:string)=>JSON.stringify([modelGuid,id]);
-// «Permitir hoja 2: despiece completo» (OPT-14) is an explicit per-furniture consent handled exactly like the fold, with its own key.
-const DETAIL_KEY='planos-santo.a4.detailSheet.v1';
 function foldPreferences(storageKey=FOLD_KEY):Record<string,boolean>{try{const value:unknown=JSON.parse(globalThis.localStorage?.getItem(storageKey)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,boolean>:{};}catch{return {};}}
 export const modelGuidOf=(project?:{importedDocument?:RawDocument})=>project?.importedDocument?.exporter?.modelGuid;
 function remember(storageKey:string,modelGuid:string|undefined,id:string,value:boolean){if(!modelGuid)return;try{const all=foldPreferences(storageKey),key=foldId(modelGuid,id);if(value)all[key]=true;else delete all[key];globalThis.localStorage?.setItem(storageKey,JSON.stringify(all));}catch{/* storage unavailable: the option lasts for this session */}}
 export function rememberFoldTable(modelGuid:string|undefined,id:string,value:boolean){remember(FOLD_KEY,modelGuid,id,value);}
-export function rememberDetailSheet(modelGuid:string|undefined,id:string,value:boolean){remember(DETAIL_KEY,modelGuid,id,value);}
 const DEFAULT_GUIDE={mode:'both' as const,hiddenPieceIds:[] as string[],sharedCamera:true,observations:''};
+// detailSheet was the «Permitir hoja 2» consent until 0.8.15: the A4 now adds hoja 2 by itself (punto 29), and a stale value is never sent.
 function withoutLocalOptions(presentation:Presentation):Presentation{
   if(!presentation.guide||!('foldTable' in presentation.guide||'detailSheet' in presentation.guide))return presentation;
   const {foldTable:_omit,detailSheet:_local,...guide}=presentation.guide;void _omit;void _local;return {...presentation,guide};
@@ -66,8 +64,6 @@ export function mergeGuide(document:RawDocument,guide:Guide):LocalGuide {
   const modelGuid=document.exporter?.modelGuid,folds=modelGuid?foldPreferences():{};
   // A remembered fold applies even when the saved guide has no options yet for that furniture.
   if(modelGuid)for(const furniture of project.furniture)if(folds[foldId(modelGuid,furniture.id)])furniture.presentation={...furniture.presentation,guide:{...(furniture.presentation?.guide||DEFAULT_GUIDE),foldTable:true}};
-  const details=modelGuid?foldPreferences(DETAIL_KEY):{};
-  if(modelGuid)for(const furniture of project.furniture)if(details[foldId(modelGuid,furniture.id)])furniture.presentation={...furniture.presentation,guide:{...(furniture.presentation?.guide||DEFAULT_GUIDE),detailSheet:true}};
   project.furniture=project.furniture.map(f=>withNaming({...f,naming:f.naming?{...f.naming,moduleCode:moduleFromName(f.name)||f.naming.moduleCode}:undefined},guide.workCode||''));
   return {project,orphans,unsaved};
 }
@@ -84,10 +80,14 @@ export function countPieces(node:{mesh?:unknown;children:typeof node[]}):number{
   return (node.mesh?1:0)+node.children.reduce((sum,n)=>sum+countPieces(n),0);
 }
 
-export function guideIssues(f:Furniture,orphans:Note[]):string[]{
+/** What cannot be saved or printed. Orphan notes are only a notice (guideNotices, punto 22). */
+export function guideIssues(f:Furniture):string[]{
   const issues:string[]=[];
   if(f.groupName!==undefined&&(!f.groupName.trim()||f.groupName.length>80))issues.push('Completá un nombre de grupo de hasta 80 caracteres.');
-  if(orphans.length)issues.push('Hay notas sin pieza de destino. Reanclalas o eliminalas antes de exportar.');
   if(f.pieces.some(p=>!p.name.trim()||p.name.length>80))issues.push('Cada pieza necesita un nombre de hasta 80 caracteres.');
   return issues;
+}
+/** Notices that never block: notes whose piece is gone stay in the guide and are left out of the PDF. */
+export function guideNotices(orphans:Note[]):string[]{
+  return orphans.length?[`${orphans.length===1?'Hay 1 nota':`Hay ${orphans.length} notas`} sin pieza de destino: no se imprime${orphans.length===1?'':'n'}. Reanclala${orphans.length===1?'':'s'} o eliminala${orphans.length===1?'':'s'} cuando quieras.`]:[];
 }

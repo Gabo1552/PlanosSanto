@@ -1,7 +1,7 @@
 import {afterEach,beforeEach,describe,expect,it} from 'vitest';
 import {demoDocument} from '../lib/demo';
 import type {RawDocument} from '../lib/model';
-import {countPieces,editsFor,guideIssues,mergeGuide,modelGuidOf,rememberFoldTable,type Guide,type GuideFurniture} from '../sketchup_offline/ui/guide';
+import {countPieces,editsFor,guideIssues,guideNotices,mergeGuide,modelGuidOf,rememberFoldTable,type Guide,type GuideFurniture} from '../sketchup_offline/ui/guide';
 import {carryEdits,carryNotice,compositeCode,FULL_NAME_LIMIT,nameChangeKind,nameDiff} from '../sketchup_offline/ui/names';
 import {isQuickIntent,noticeActionFor,shortcutFor} from '../sketchup_offline/ui/quickActions';
 
@@ -105,14 +105,18 @@ describe('Ediciones que vuelven a SketchUp y validación previa al PDF',()=>{
   expect(countPieces(demoDocument.furniture[0] as never)).toBe(6);
   expect(countPieces({mesh:{},children:[{mesh:{},children:[]},{children:[{mesh:{},children:[]}]}]})).toBe(3);
  });
- it('guideIssues bloquea grupo sin nombre, nombres vacíos o de más de 80 caracteres y notas huérfanas',()=>{
+ // Simplificación punto 22: las notas huérfanas son aviso (guideNotices), no bloqueo.
+ it('guideIssues bloquea grupo sin nombre, nombres vacíos o de más de 80 caracteres; las notas huérfanas sólo avisan',()=>{
   const f=mergeGuide(documentWith(),saved([])).project.furniture[0];
-  expect(guideIssues(f,[])).toEqual([]);
+  expect(guideIssues(f)).toEqual([]);
   const note={id:'n',pieceId:'x',anchor:[0,0,0] as [number,number,number],position:[100,100] as [number,number],text:'t'};
-  expect(guideIssues({...f,groupName:'  '},[note])).toEqual(['Completá un nombre de grupo de hasta 80 caracteres.','Hay notas sin pieza de destino. Reanclalas o eliminalas antes de exportar.']);
-  expect(guideIssues({...f,groupName:'x'.repeat(81)},[])).toHaveLength(1);
-  expect(guideIssues({...f,groupName:'x'.repeat(80)},[])).toEqual([]);
-  expect(guideIssues({...f,pieces:f.pieces.map((p,i)=>i?p:{...p,name:'x'.repeat(FULL_NAME_LIMIT+1)})},[])).toEqual(['Cada pieza necesita un nombre de hasta 80 caracteres.']);
+  expect(guideIssues({...f,groupName:'  '})).toEqual(['Completá un nombre de grupo de hasta 80 caracteres.']);
+  expect(guideNotices([note])).toEqual(['Hay 1 nota sin pieza de destino: no se imprime. Reanclala o eliminala cuando quieras.']);
+  expect(guideNotices([note,{...note,id:'m'}])[0]).toMatch(/^Hay 2 notas sin pieza de destino: no se imprimen\./);
+  expect(guideNotices([])).toEqual([]);
+  expect(guideIssues({...f,groupName:'x'.repeat(81)})).toHaveLength(1);
+  expect(guideIssues({...f,groupName:'x'.repeat(80)})).toEqual([]);
+  expect(guideIssues({...f,pieces:f.pieces.map((p,i)=>i?p:{...p,name:'x'.repeat(FULL_NAME_LIMIT+1)})})).toEqual(['Cada pieza necesita un nombre de hasta 80 caracteres.']);
  });
 });
 

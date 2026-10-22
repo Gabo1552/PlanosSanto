@@ -27,6 +27,8 @@ module PlanosSanto
 
   class NativeSession
     attr_reader :document, :fingerprint
+    # Rows the last save kept in the guide without renaming them in SketchUp.
+    attr_reader :skipped_names
 
     def initialize(model)
       @model = model
@@ -79,7 +81,13 @@ module PlanosSanto
       # Validate before constructing a batch so malformed requests cannot write names.
       @store.validate(@document, edits)
       effective_code=work_code.nil? ? @store.read.fetch('workCode','') : work_code
-      rename=NameManager.new(@model).guide_changes(edits,effective_code) if sync_names
+      if sync_names
+        manager=NameManager.new(@model)
+        rename=manager.guide_changes(edits,effective_code)
+        @skipped_names=manager.skipped
+      else
+        @skipped_names=[]
+      end
       refreshed=nil; refreshed_reader=nil; refreshed_tree=nil
       result = @store.save(@document, edits, @revision, work_code: work_code) do
         if rename

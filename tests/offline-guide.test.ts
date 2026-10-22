@@ -7,8 +7,8 @@ import {PDFDocument} from 'pdf-lib';
 import {Matrix4} from 'three';
 import {makeScene} from '../lib/scene';
 import {createDemo,demoDocument} from '../lib/demo';
-import {editsFor,mergeGuide,guideIssues,type Guide} from '../sketchup_offline/ui/guide';
-import {createOfflinePdf} from '../sketchup_offline/ui/pdf';
+import {editsFor,mergeGuide,guideIssues,guideNotices,type Guide} from '../sketchup_offline/ui/guide';
+import {createOfflinePdf,createOfflinePdfPages} from '../sketchup_offline/ui/pdf';
 
 function savedGuide():Guide{return {version:1,revision:1,selection:['modulo','mesa'],furniture:editsFor(createDemo(),{})};}
 describe('Guías locales; fixtures sintéticos, sin ejecutar SketchUp',()=>{
@@ -22,12 +22,12 @@ describe('Guías locales; fixtures sintéticos, sin ejecutar SketchUp',()=>{
     expect(new Set(merged.pieces.map(p=>p.code)).size).toBe(7);
     expect(merged.pieces.every(p=>p.quantity===1)).toBe(true);
   });
-  it('conserva una nota huérfana fuera de la escena y bloquea PDF hasta resolver su destino',()=>{
+  it('conserva una nota huérfana fuera de la escena y la avisa sin bloquear el PDF',()=>{
     const guide=savedGuide();const note={id:crypto.randomUUID(),pieceId:'removed-piece',anchor:[1,2,3] as [number,number,number],position:[718,32] as [number,number],text:'No reasignar automáticamente'};
     guide.furniture[0].notes=[note];
     const merged=mergeGuide(demoDocument,guide);
     expect(merged.project.furniture[0].notes).toEqual([]);expect(merged.orphans.modulo).toEqual([note]);
-    expect(guideIssues(merged.project.furniture[0],merged.orphans.modulo).join()).toMatch(/sin pieza/);
+    expect(guideIssues(merged.project.furniture[0])).toEqual([]);expect(guideNotices(merged.orphans.modulo).join()).toMatch(/sin pieza/);
     expect(editsFor(merged.project,merged.orphans)[0].notes).toEqual([note]);
   });
   it('produce PDF vectorial exacto con todas las piezas y notas, sin servidor',async()=>{
@@ -62,12 +62,14 @@ describe('Guías locales; fixtures sintéticos, sin ejecutar SketchUp',()=>{
     await expect(createOfflinePdf(project,await readFile('sketchup_offline/assets/DejaVuSans.ttf'),await readFile('sketchup_offline/assets/DejaVuSansMono.ttf'))).rejects.toThrow(/notas y observaciones/);
     expect(f.notes).toHaveLength(6);
   });
-  it('conserva treinta piezas y cotas compartidas pero bloquea una tabla A4 que no cabe legiblemente',async()=>{
+  // Simplificación punto 29: el listado que no cabe sigue solo en la hoja 2 (1a, 1b), sin bloquear ni recortar.
+  it('conserva treinta piezas y cotas compartidas y pasa a la hoja 2 un listado que no cabe en la A4',async()=>{
     const project=createDemo();project.furniture=project.furniture.slice(0,1);
     const f=project.furniture[0],template=f.pieces[2];
     f.pieces=Array.from({length:30},(_,i)=>({...template,id:`shelf-${i}`,name:`Estante ${i+1}`,code:`P${String(i+1).padStart(2,'0')}`,transform:new Matrix4().makeTranslation(0,0,i*60).toArray()}));
     const scene=makeScene(f);expect(scene.labels).toHaveLength(30);expect(scene.dimensions).toHaveLength(2);expect(scene.warnings).toEqual([]);
-    await expect(createOfflinePdf(project,await readFile('sketchup_offline/assets/DejaVuSans.ttf'),await readFile('sketchup_offline/assets/DejaVuSansMono.ttf'))).rejects.toThrow(/listado.*A4/);
+    const {pages}=await createOfflinePdfPages(project,await readFile('sketchup_offline/assets/DejaVuSans.ttf'),await readFile('sketchup_offline/assets/DejaVuSansMono.ttf'));
+    expect(pages[0].label).toBe('1a');expect(pages.slice(1).every((p,i)=>p.label===`1${String.fromCharCode(98+i)}`)).toBe(true);expect(pages.length).toBeGreaterThan(1);expect(pages[0].fit?.detail).toMatch(/^Necesita/);
     expect(f.pieces).toHaveLength(30);expect(new Set(f.pieces.map(p=>p.id)).size).toBe(30);
   });
 });

@@ -3,7 +3,7 @@ import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {A4FitError,createOfflinePdf,exportTableTsv,listRows,referenceCoverage,edgeCode,type OrderReference} from '../sketchup_offline/ui/pdf';
+import {A4FitError,createOfflinePdf,createOfflinePdfPages,exportTableTsv,listRows,referenceCoverage,edgeCode,type OrderReference} from '../sketchup_offline/ui/pdf';
 import {createDemo,box} from '../lib/demo';
 import type {Project} from '../lib/model';
 const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf');
@@ -15,6 +15,8 @@ function sample(){
 }
 function text(bytes:Uint8Array,mode='-raw'){const dir=mkdtempSync(join(tmpdir(),'ps-a4-ux2-'));try{const path=join(dir,'guide.pdf');writeFileSync(path,bytes);return execFileSync('pdftotext',[mode,path,'-'],{encoding:'utf8'});}finally{rmSync(dir,{recursive:true,force:true});}}
 const failure=async(project:Project,references?:Record<string,string|OrderReference>)=>{try{await createOfflinePdf(project,regular,mono,undefined,references);}catch(error){return error as A4FitError;}throw new Error('Se esperaba un bloqueo');};
+/** Simplificación punto 29: a list that does not fit goes on to hoja 2 by itself; the lever is advice on page «1a». */
+const advice=async(project:Project,references?:Record<string,string|OrderReference>)=>{const {pages}=await createOfflinePdfPages(project,regular,mono,undefined,references);return pages[0].fit;};
 /** Physical pieces made with groups (no component definition): identical grouping never joins them. */
 function groupsProject(count:number,name='Lateral'){
  const project=sample(),f=project.furniture[0],template=f.pieces[0];
@@ -36,8 +38,9 @@ describe('UX2 planos A4: cantos, agrupación por medidas, diagnóstico y tabla p
   const project=groupsProject(12,'Estante'),ids=project.furniture[0].pieces.map(p=>p.id);
   const structured=Object.fromEntries(ids.map(id=>[id,asymmetric])),legacy=Object.fromEntries(ids.map(id=>[id,asymmetric.text+' · Lote y observación del proveedor']));
   await expect(createOfflinePdf(project,regular,mono,undefined,structured)).resolves.toBeInstanceOf(Uint8Array);
-  const error=await failure(project,legacy);expect(error).toMatchObject({kind:'table'});
-  expect(error.action).toMatch(/^Desactivá «Incluir materiales y cantos del pedido»/);expect(error.detail).toMatch(/^Necesita \d+ mm de 139 mm: (sobra 1 fila|sobran unas \d+ filas)\.$/);
+  expect((await createOfflinePdfPages(project,regular,mono,undefined,structured)).pages.map(p=>p.label)).toEqual(['1']);
+  const fit=(await advice(project,legacy))!;
+  expect(fit.action).toMatch(/^Desactivá «Incluir materiales y cantos del pedido»/);expect(fit.detail).toMatch(/^Necesita \d+ mm de 139 mm: (sobra 1 fila|sobran unas \d+ filas)\.$/);
  });
  it('agrupa por medidas seis laterales hechos con grupos y separa los que tienen otro canto',async()=>{
   const project=groupsProject(6),f=project.furniture[0];
@@ -57,13 +60,15 @@ describe('UX2 planos A4: cantos, agrupación por medidas, diagnóstico y tabla p
   expect(error).toMatchObject({kind:'order',furniture:f.name,reason:'P03 y P05 comparten el ID P03 pero tienen placa o cantos distintos en el pedido.',action:'Desactivá Agrupar componentes iguales en este mueble o igualá su asignación en Biblioteca y pedidos.'});
   expect(error.message).toBe(`${f.name}: ${error.reason} Qué hacer: ${error.action}`);
  });
- it('elige la acción según la causa cuando el listado no entra',async()=>{
-  const groups=groupsProject(45);
-  expect(await failure(groups)).toMatchObject({kind:'table',action:'Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4. También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.'});
+ it('cuando el listado no entra pasa a la hoja 2 y aconseja la acción según la causa',async()=>{
+  // Stacked synthetic pieces: the interior view keeps one, so only the list grows.
+  const stacked=(project:Project)=>{const f=project.furniture[0];f.presentation={...f.presentation,guide:{mode:'interior',hiddenPieceIds:f.pieces.slice(1).map(p=>p.id),sharedCamera:true,observations:''}};return project;};
+  const groups=stacked(groupsProject(45));
+  expect(await advice(groups)).toMatchObject({action:'Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.'});
   groups.furniture[0].presentation!.guide!.foldTable=true;expect(listRows(groups.furniture[0])).toHaveLength(1);
-  const folded=await createOfflinePdf(groups,regular,mono).then(()=>undefined,(error:A4FitError)=>error);expect(folded?.kind).not.toBe('table');
-  const distinct=groupsProject(45);distinct.furniture[0].pieces.forEach((p,i)=>{p.name=`Pieza ${i}${i%5===0?' con un nombre bastante más largo que la columna':''}`;});
-  const error=await failure(distinct);expect(error.action).toMatch(/^Acortá los nombres más largos: P\d+(, P\d+)*\. También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4\.$/);
+  const folded=await createOfflinePdfPages(groups,regular,mono).then(result=>result.pages,(error:A4FitError)=>error);expect(Array.isArray(folded)?folded.map(p=>p.label):folded.kind).toEqual(['1']);
+  const distinct=stacked(groupsProject(45));distinct.furniture[0].pieces.forEach((p,i)=>{p.name=`Pieza ${i}${i%5===0?' con un nombre bastante más largo que la columna':''}`;});
+  expect((await advice(distinct))?.action).toMatch(/^Acortá los nombres más largos: P\d+(, P\d+)*\.$/);
  });
  it('copia la tabla en TSV con encabezado, coma decimal, nombres saneados y columnas del pedido',()=>{
   const project=sample(),f=project.furniture[0];f.pieces[0].name='Lateral\tizq.\nfrente';f.pieces[0].dimensions=[2400.5,560,18];

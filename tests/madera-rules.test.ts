@@ -8,9 +8,12 @@ describe('Perfil de maderera en la UI',()=>{
   expect(Object.keys(sent).sort()).toEqual(['cutPrice','decimal','dimensionRule','edgingPrice','encoding','header','id','kerfMm','name','notes','supplier','trimMm','wastePercent']);
   expect(sent).not.toHaveProperty('approved');expect(sent).not.toHaveProperty('version');expect(sent).not.toHaveProperty('contentHash');
  });
- it('estado legible: aprobado o sin aprobar con versión y en uso',()=>{
-  expect(profileState(profile,'p1')).toEqual(['Aprobado · v 3','En uso en pedidos']);
-  expect(profileState({...profile,approved:false,version:4},null)).toEqual(['Sin aprobar · v 4']);
+ // Simplificación punto 24: sin aprobación; un perfil viejo con approved se muestra igual que uno nuevo.
+ it('estado legible: versión y en uso, sin aprobación',()=>{
+  expect(profileState(profile,'p1')).toEqual(['v 3','En uso en pedidos']);
+  expect(profileState({...profile,approved:false,version:4},null)).toEqual(['v 4']);
+  const {approved:_a,approvedAt:_b,...fresh}=profile;void _a;void _b;
+  expect(profileState(fresh,'p1')).toEqual(['v 3','En uso en pedidos']);
  });
 });
 describe('Presupuesto estimado',()=>{

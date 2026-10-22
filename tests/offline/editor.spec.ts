@@ -142,14 +142,14 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });
 
-test('al cambiar muebles exige regenerar antes del PDF y Escape cancela el anclaje',async({page},info)=>{
+// Simplificación punto 23: changing the furniture regenerates the guides by itself (keeping the edits); no «Generar guías» step.
+test('al cambiar muebles se regeneran las guías solas y Escape cancela el anclaje',async({page},info)=>{
   await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
   await expect(page.getByLabel('Nombre P01')).toBeVisible();
   await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.pick-hint')).toHaveCount(0);await expect(page.getByTestId('note-box')).toHaveCount(0);
   await page.getByRole('checkbox',{name:'Mueble repetido sintético',exact:false}).first().uncheck();
-  await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeDisabled();await expect(page.locator('.selection-notice')).toBeVisible();
-  await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await page.getByRole('alertdialog',{name:'Descartar cambios y regenerar las guías'}).getByRole('button',{name:'Descartar y regenerar',exact:true}).click();
-  await expect(page.locator('.furniture-tabs button')).toHaveCount(1);await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeEnabled();
+  await expect(page.locator('.furniture-tabs button')).toHaveCount(1);await expect(page.getByRole('alertdialog')).toHaveCount(0);await expect(page.locator('.selection-notice')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeEnabled();
 });
 
 test('cotas: ocultar una, guardar/reabrir y PDF sin esa cota; restaurar con teclado y lista',async({page},info)=>{

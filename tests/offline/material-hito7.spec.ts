@@ -181,7 +181,8 @@ test('foto: candado de proporción, errores accesibles y Enter guarda sin pintar
  const dialog=page.getByRole('dialog',{name:'Material desde una foto'});await dialog.getByRole('button',{name:'Elegir foto (JPG/PNG)',exact:true}).click();
  const name=dialog.getByRole('textbox',{name:'Nombre del material desde foto',exact:true});await expect(name).toHaveValue('Nogal QA');
  await name.fill('');await expect(name).toHaveAttribute('aria-invalid','true');await expect(dialog.getByText('Escribí un nombre para el material.',{exact:true})).toBeVisible();
- await dialog.getByText('Escala de textura (opcional)',{exact:true}).click();await dialog.getByRole('checkbox',{name:'Confirmar escala física de la textura',exact:true}).check();
+ // Simplificación punto 28: no «Conozco el tamaño físico…»; writing the measures is enough and they stay optional.
+ await dialog.getByText('Escala de textura (opcional)',{exact:true}).click();await expect(dialog.getByRole('checkbox',{name:'Confirmar escala física de la textura',exact:true})).toHaveCount(0);
  await expect(dialog.getByRole('checkbox',{name:'Mantener la proporción de la foto',exact:true})).toBeChecked();
  await dialog.getByRole('spinbutton',{name:'Ancho físico de textura',exact:true}).fill('1500');await expect(dialog.getByRole('spinbutton',{name:'Alto físico de textura',exact:true})).toHaveValue('500');
  await name.fill('Nogal del taller');await name.press('Enter');await expect.poll(()=>requests('material_photo_create').length).toBe(1);

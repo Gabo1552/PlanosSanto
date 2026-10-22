@@ -37,12 +37,38 @@ test('Escape restaura borrador; Tab y Enter recorren nombres sin RPC de resaltad
  await first.click();await first.fill('Lateral confirmado en guía');await first.press('Tab');await expect(second).toBeFocused();await second.press('Enter');await expect(second).not.toBeFocused();expect(calls.some(call=>call.action==='save')).toBe(false);
 });
 
-test('vista previa permite excluir una pieza y confirma un lote con Undo',async({page},info)=>{
- await boot(page,info.outputDir);await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();const before=await inspect();await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral nuevo lote');await page.getByLabel('Nombre P02',{exact:true}).fill('Pieza excluida lote');
- await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog).toBeVisible();expect(await inspect()).toEqual(before);await expect(dialog).toContainText('Lateral nuevo lote');
- await dialog.getByRole('checkbox',{name:'Incluir renombrado P02 1/13/12',exact:true}).uncheck();await expect(dialog.getByRole('status')).toHaveText('Selección verificada');await expect(dialog.getByRole('button',{name:'Confirmar lote y guardar',exact:true})).toBeEnabled();await dialog.getByRole('button',{name:'Confirmar lote y guardar',exact:true}).click();await expect(dialog).toHaveCount(0);
+// Simplificación punto 20: no «Aplicar renombrado» dialog. Saving the guide renames in ONE operation;
+// a blocked row (locked in SketchUp) keeps its name and shows why on its own row; Ctrl+Z undoes the rest.
+test('guardar la guía renombra sin diálogo, avisa en la fila bloqueada y se deshace con un Undo',async({page},info)=>{
+ await boot(page,info.outputDir);await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();const before=await inspect();
+ await expect(page.getByRole('button',{name:'Aplicar renombrado',exact:true})).toHaveCount(0);
+ await raw(JSON.stringify({version:1,id:randomUUID(),action:'__names_lock',data:{persistentId:'12'}}));
+ await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral nuevo lote');await page.getByLabel('Nombre P02',{exact:true}).fill('Pieza bloqueada lote');
+ expect(await inspect()).toEqual(before);
+ await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
+ await expect(page.getByText('1 nombre no se cambió en SketchUp: mirá el aviso en su fila.',{exact:false})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
+ const row=page.locator('tr[data-piece-row="1/13/12"]');await expect(row.getByRole('note')).toContainText('No se renombró en SketchUp: La instancia o uno de sus contenedores está bloqueado.');
+ await expect(page.locator('tr[data-piece-row="1/11"]').getByRole('note')).toHaveCount(0);
+ await expect(page.getByLabel('Nombre P02',{exact:true})).toHaveValue('Pieza bloqueada lote');
+ expect(calls.filter(call=>call.action==='guide_names_preview')).toHaveLength(0);
  const after=await inspect();expect(after.names['11']).toBe('Lateral nuevo lote');expect(after.names['12']).toBe(before.names['12']);expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);expect(after.operations.filter(op=>op[0]==='start')).toHaveLength(1);
  await raw(JSON.stringify({version:1,id:randomUUID(),action:'__names_undo',data:{}}));expect((await inspect()).names).toEqual(before.names);
+});
+
+// Simplificación punto 18: with edits and an out-of-date analysis, saving is allowed. The guide goes by id:
+// the editor rescans and regenerates first, keeping the edit, then saves and renames in one operation.
+test('guardar con el análisis desactualizado regenera por id, conserva la edición y guarda',async({page},info)=>{
+ await boot(page,info.outputDir);const first=page.getByLabel('Nombre P01',{exact:true});await expect(first).toBeVisible();
+ await first.fill('Lateral tras cambio externo');
+ await raw(JSON.stringify({version:1,id:randomUUID(),action:'__names_geometry',data:{}}));
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-analysis-state',{detail:{stale:true,reason:'Cambió el modelo.',source:'model'}})));
+ await expect(page.getByRole('status',{name:'Análisis desactualizado'})).toBeVisible();
+ const save=page.getByRole('button',{name:'Guardar guía',exact:true});await expect(save).toBeEnabled();
+ const scans=calls.filter(call=>call.action==='scan').length,generates=calls.filter(call=>call.action==='generate').length;
+ await save.click();await expect(page.getByText(/Guía (guardada en el modelo abierto|y archivo SketchUp guardados)/)).toBeVisible();
+ expect(calls.filter(call=>call.action==='scan')).toHaveLength(scans+1);expect(calls.filter(call=>call.action==='generate')).toHaveLength(generates+1);expect(calls.filter(call=>call.action==='save')).toHaveLength(1);
+ await expect(first).toHaveValue('Lateral tras cambio externo');await expect(page.getByRole('status',{name:'Análisis desactualizado'})).toHaveCount(0);
+ const after=await inspect();expect(after.names['11']).toBe('Lateral tras cambio externo');expect(after.operations.filter(op=>op[0]==='start')).toHaveLength(1);
 });
 
 test('acceso de paleta a vinculación visual abre la función real y catálogo vuelve a biblioteca',async({page},info)=>{

@@ -58,11 +58,12 @@ test('configuración integrada: grupo y piezas se editan viendo el dibujo y se s
  await page.screenshot({path:'artifacts/configuracion-integrada-061.png',fullPage:true});
 });
 
-test('configuración integrada bloquea nombres compartidos sin escrituras parciales',async({page},info)=>{
+// Simplificación punto 20: a shared name is not written (no partial writes) and the row says why; the guide is saved.
+test('configuración integrada no renombra nombres compartidos: aviso en la fila, sin escrituras parciales',async({page},info)=>{
  await boot(page,info.outputDir,'shared');const before=await snapshot();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral nuevo');
- await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/compartid/);
- expect(await snapshot()).toEqual(before);await expect(page.getByRole('dialog')).toHaveCount(0);
+ await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.locator('tr[data-piece-row="1/11"]').getByRole('note')).toContainText(/compartid/);
+ const after=await snapshot();expect(after.names).toEqual(before.names);expect(after.definitions).toEqual(before.definitions);expect(after.geometryHash).toBe(before.geometryHash);await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('configuración integrada detecta cambios externos y muestra texto sin ejecutar HTML',async({page},info)=>{
@@ -300,7 +301,8 @@ test('componentes iguales: nombre/ID compartidos, cantidad 2, notas físicas, gu
 test('agrupar no permite renombrar hijos de muebles con padres compartidos',async({page},info)=>{
  await boot(page,info.outputDir,'shared');const before=await snapshot();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await page.getByRole('checkbox',{name:'Agrupar componentes iguales',exact:true}).check();await page.getByLabel('Nombre P01',{exact:true}).fill('PT');
- await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/compartid/);expect(await snapshot()).toEqual(before);
+ await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByRole('table',{name:'Piezas del mueble'}).getByRole('note').first()).toContainText(/compartid/);
+ const after=await snapshot();expect(after.names).toEqual(before.names);expect(after.definitions).toEqual(before.definitions);
 });
 
 
@@ -414,11 +416,12 @@ test('pedido: revisa cada pieza, guarda borrador y genera lotes TXT reales con t
  await page.getByRole('button',{name:'Optimización y presupuesto',exact:true}).click();await page.getByRole('button',{name:'Abrir listas, optimización y presupuesto OCL',exact:true}).click();await expect(page.getByRole('alert')).toContainText('OpenCutList original');
 });
 
-test('sugerencias: ejes confirmados, aplicación explícita y guardado sin alterar definiciones',async({page},info)=>{
+// Punto 21: the group axes give the orientation by default; there is no «Confirmé frente y vertical».
+test('sugerencias: ejes del grupo por defecto, aplicación explícita y guardado sin alterar definiciones',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true}).click();await page.getByRole('checkbox',{name:'Incluir piezas que ya tienen nombre'}).check();
- await expect(page.getByText('Falta confirmar vertical y frente del mueble.',{exact:false}).first()).toBeVisible();
- await page.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo'}).check();await page.getByLabel('Nombre sugerido P01').fill('Panel revisado');await page.getByLabel('Nombre sugerido P02').fill('');await expect(page.getByRole('button',{name:'Confirmar y guardar nombres',exact:true})).toBeDisabled();await page.getByLabel('Nombre sugerido P02').fill('Base revisada');
+ await expect(page.getByRole('dialog',{name:'Sugerencias de nombres'})).toContainText('tomado de los ejes del grupo');await expect(page.getByText('Falta confirmar vertical y frente del mueble.',{exact:false})).toHaveCount(0);
+ await expect(page.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo'})).toHaveCount(0);await page.getByLabel('Nombre sugerido P01').fill('Panel revisado');await page.getByLabel('Nombre sugerido P02').fill('');await expect(page.getByRole('button',{name:'Confirmar y guardar nombres',exact:true})).toBeDisabled();await page.getByLabel('Nombre sugerido P02').fill('Base revisada');
  expect(await snapshot()).toEqual(before);await page.getByRole('button',{name:'Confirmar y guardar nombres',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveValue('Panel revisado');
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();expect(saveRequests).toHaveLength(1);
  const after=await snapshot();expect(after.names['11']).toBe('Panel revisado');expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);

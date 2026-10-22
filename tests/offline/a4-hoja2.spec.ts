@@ -19,13 +19,12 @@ async function harness(page:Page,folder:string){
 }
 test.afterEach(()=>{expect(errors).toEqual([]);});
 
-test('Hoja 2: sin consentimiento bloquea y «Ir a corregir» lleva a la casilla; con consentimiento el paginador lista 1a, 1b, 1c y 2',async({page},info)=>{
+// Simplificación punto 29: no «Permitir hoja 2»; a list that does not fit adds hoja 2 by itself, with the advice next to the size.
+test('Hoja 2: se agrega sola sin casilla ni bloqueo; el paginador lista 1a, 1b, 1c y 2 y aconseja cómo entrar en una hoja',async({page},info)=>{
  const preview=await harness(page,info.outputDir);
- const consent=page.getByRole('checkbox',{name:'Permitir hoja 2: despiece completo',exact:true});await expect(consent).not.toBeChecked();
- const alert=preview.getByRole('alert');await expect(alert).toHaveAttribute('data-fit-kind','table');
- await expect(alert).toContainText('«Permitir hoja 2: despiece completo»');
- await alert.getByRole('button',{name:'Ir a corregir',exact:true}).click();await expect(consent).toBeFocused();
- await consent.check();
+ await expect(page.getByRole('checkbox',{name:'Permitir hoja 2: despiece completo',exact:true})).toHaveCount(0);
+ await expect(preview.getByRole('alert')).toHaveCount(0);
+ await expect(preview.getByTestId('a4-sheet-fit')).toContainText(/^El listado sigue en la hoja 2\. Necesita \d+ mm de 139 mm: .+ Para que entre en una sola hoja: /);
  const sheet=preview.getByRole('combobox',{name:'Hoja visible',exact:true});
  await expect(sheet.locator('option')).toHaveText([/^Hoja 1a de 2 · /,/^Hoja 1b de 2 · /,/^Hoja 1c de 2 · /,/^Hoja 2 de 2 · /]);
  await expect(preview.getByTestId('a4-sheet-size')).toContainText('4 hojas');
@@ -33,13 +32,12 @@ test('Hoja 2: sin consentimiento bloquea y «Ir a corregir» lleva a la casilla;
  // The second furniture opens on its own (only) page; going back to the first opens its page 1a.
  await page.getByRole('navigation',{name:'Muebles'}).getByRole('button').nth(1).click();await expect(sheet).toHaveValue('3');
  await expect(preview.getByTitle('PDF A4 generado')).toHaveAttribute('src',/#page=4&/);
+ await expect(preview.getByTestId('a4-sheet-fit')).toHaveCount(0);
  await page.getByRole('navigation',{name:'Muebles'}).getByRole('button').nth(0).click();await expect(sheet).toHaveValue('0');
- await expect(consent).toBeChecked();
 });
 
 test('Pendientes de pedido: la píldora las cuenta y marca el pedido como parcial',async({page},info)=>{
  const preview=await harness(page,info.outputDir);
- await page.getByRole('checkbox',{name:'Permitir hoja 2: despiece completo',exact:true}).check();
  await page.getByRole('button',{name:'Pedido con pendientes',exact:true}).click();
  const state=preview.locator('.a4-order-state');await expect(state).toHaveAttribute('data-order','partial');
  await expect(state.locator('.a4-order-pill')).toHaveText(/^✓ Con placa y cantos del pedido · \d+ de \d+ piezas · 1 pendiente de pedido$/);

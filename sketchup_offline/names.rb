@@ -205,11 +205,18 @@ module PlanosSanto
 
     # Prepare the entire guide batch before entering the single save operation.
     # No model writes occur during preview/generation or from observers.
+    # Simplificación (punto 20): a row that cannot be renamed safely (shared
+    # occurrence not covered, different names between occurrences, locked,
+    # mixed geometry, isolated piece as group) is skipped and reported in
+    # #skipped as {'id','reason'}; the rest is renamed in the same operation.
+    # Inconsistent data (a piece or group that no longer exists, a name that does
+    # not match obra/módulo/pieza) still refuses the whole save.
     def guide_changes(edits, work_code)
       GuideStore.new(@model).validate_work_code!(work_code)
       snapshot=inventory
       changes=[]
       proposals={}
+      @skipped=[]
       edits.each do |f|
         naming=f['naming']
         if !work_code.empty? && (!naming || naming['moduleCode'].to_s.empty?)
@@ -221,11 +228,14 @@ module PlanosSanto
           raise ExportError, "#{f['id']}: El grupo ya no existe. Volvé a analizar el modelo." unless root
           desired=self.class.clean(f['groupName'])
           if desired!=root['currentName'] && desired!=root['displayName']
-            raise ExportError, "#{root['id']}: Una pieza aislada se renombra desde su fila, no como grupo padre." unless root['role']=='container'
-            proposals[root['id']]={node:root,name:desired}
-            entity=root['_entity']; old=metadata(entity,ROOT_KEY)
-            prefix=[work_code,naming && naming['moduleCode']].compact.reject(&:empty?).join(' ')
-            changes << {entity:entity,name:desired,key:ROOT_KEY,meta:{'version'=>1,'name'=>desired,'prefix'=>prefix,'originalName'=>old ? old['originalName'] : entity.name.to_s}}
+            if root['role']=='container'
+              proposals[root['id']]={node:root,name:desired}
+              entity=root['_entity']; old=metadata(entity,ROOT_KEY)
+              prefix=[work_code,naming && naming['moduleCode']].compact.reject(&:empty?).join(' ')
+              changes << {entity:entity,id:root['id'],name:desired,key:ROOT_KEY,meta:{'version'=>1,'name'=>desired,'prefix'=>prefix,'originalName'=>old ? old['originalName'] : entity.name.to_s}}
+            else
+              skip(root['id'],'Una pieza aislada se renombra desde su fila, no como grupo padre.')
+            end
           end
         end
         f['pieces'].each do |piece|
@@ -239,12 +249,22 @@ module PlanosSanto
           entity=node['_entity']
           proposals[node['id']]={node:node,name:desired}
           next if entity.name.to_s==desired
-          raise ExportError, "#{piece['id']}: No se renombra geometría mezclada con subgrupos; elegí piezas hijas." unless node['role']=='piece'
+          unless node['role']=='piece'
+            skip(piece['id'],'Tiene caras propias y subgrupos: no se renombra en SketchUp; separá las piezas.')
+            next
+          end
           old=metadata(entity,PIECE_KEY)
-          changes << {entity:entity,name:desired,code:piece['code'],meta:{'version'=>1,'base'=>base,'prefix'=>prefix,'originalName'=>old ? old['originalName'] : entity.name.to_s,'appliedName'=>desired}}
+          changes << {entity:entity,id:piece['id'],name:desired,code:piece['code'],meta:{'version'=>1,'base'=>base,'prefix'=>prefix,'originalName'=>old ? old['originalName'] : entity.name.to_s,'appliedName'=>desired}}
         end
       end
-      validate_shared_batch!(changes, proposals, snapshot)
+      rejected=shared_batch_errors(changes, proposals, snapshot)
+      changes=changes.reject do |change|
+        error=rejected[change[:entity].persistent_id]
+        next false unless error
+        # Every occurrence of the shared entity in this batch carries the notice.
+        snapshot[:occurrences].fetch(change[:entity].persistent_id.to_s).each { |route| skip(route,error[1]) if proposals[route] || route==change[:id] }
+        true
+      end
       changes=changes.uniq { |change| [change[:entity].persistent_id, change[:key] || PIECE_KEY] }
       lambda do
         changes.each do |change|
@@ -257,26 +277,46 @@ module PlanosSanto
       end
     end
 
+    # Rows the last #guide_changes left without renaming: [{'id','reason'}].
+    def skipped
+      (@skipped || []).uniq { |row| row['id'] }
+    end
+
+    def skip(id, reason)
+      (@skipped ||= []) << { 'id' => id, 'reason' => reason }
+    end
+
     # A shared child is one SketchUp entity, even when it has several paths.
     # Only accept a coherent batch covering ALL occurrences; never make_unique,
     # detach geometry or silently propagate edits to unselected furniture.
-    def validate_shared_batch!(changes, proposals, snapshot)
+    # Returns {persistent_id => [route, message]} for the entities that cannot
+    # be renamed; the legacy preview flow raises the first one.
+    def shared_batch_errors(changes, proposals, snapshot)
+      errors={}
       changes.each do |change|
         entity=change[:entity]
+        next if errors.key?(entity.persistent_id)
         routes=snapshot[:occurrences].fetch(entity.persistent_id.to_s)
-        routes.each do |route|
-          node=snapshot[:index].fetch(route)
-          error=safety(node,snapshot,proposals.keys)
-          raise ExportError, "#{route}: #{error} Incluí todas sus apariciones con el mismo nombre o desactivá la sincronización con SketchUp para guardar solo la guía." if error
+        blocked=routes.lazy.map { |route| [route,safety(snapshot[:index].fetch(route),snapshot,proposals.keys)] }.find { |_route,error| error }
+        if blocked
+          errors[entity.persistent_id]=[blocked[0],"#{blocked[1]} No se renombró en SketchUp: incluí todas sus apariciones con el mismo nombre."]
+          next
         end
         desired=routes.filter_map { |route| proposals[route] && proposals[route][:name] }.uniq
         if desired.length!=1 || desired.first!=change[:name]
-          raise ExportError, "#{routes.find { |r| proposals[r] } || routes.first}: La pieza compartida#{change[:code] ? " #{change[:code]}" : ''} tiene nombres distintos entre sus apariciones. Usá el mismo nombre para todas o desactivá la sincronización con SketchUp para conservar nombres distintos solo en la guía."
+          errors[entity.persistent_id]=[routes.find { |r| proposals[r] } || routes.first,"La pieza compartida#{change[:code] ? " #{change[:code]}" : ''} tiene nombres distintos entre sus apariciones. No se renombró en SketchUp: usá el mismo nombre para todas."]
+          next
         end
         # Same name but incompatible bases/prefixes would corrupt future naming.
         records=changes.select { |other| other[:entity].persistent_id==entity.persistent_id }.map { |other| other[:meta] || other[:value] }.uniq
-        raise ExportError, "#{routes.find { |r| proposals[r] } || routes.first}: Las apariciones compartidas#{change[:code] ? " de #{change[:code]}" : ''} tienen abreviaturas o nombres base incompatibles." if records.length>1
+        errors[entity.persistent_id]=[routes.find { |r| proposals[r] } || routes.first,"Las apariciones compartidas#{change[:code] ? " de #{change[:code]}" : ''} tienen abreviaturas o nombres base incompatibles. No se renombró en SketchUp."] if records.length>1
       end
+      errors
+    end
+
+    def validate_shared_batch!(changes, proposals, snapshot)
+      error=shared_batch_errors(changes, proposals, snapshot).values.first
+      raise ExportError, "#{error[0]}: #{error[1]}" if error
     end
 
     def apply(data)

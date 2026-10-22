@@ -97,24 +97,19 @@ if(baseline)test('Flujos baseline085: nombres y A4 requieren generar después de
  await screenshot(page,'before-a4-editor');
 });
 if(!baseline){
- test('Flujos086: selección abre piezas inline; un preview confirma un lote real',async({page},info)=>{
+ // Simplificación punto 20: no preview dialog; «Guardar guía» renames the batch in one save.
+ test('Flujos086: selección abre piezas inline; guardar la guía renombra el lote real sin diálogo',async({page},info)=>{
   await boot(page,info.outputDir,false,'furniture');
   const first=page.getByLabel('Nombre P01',{exact:true});await expect(first).toBeVisible();
   expect(calls.filter(call=>call.action==='generate')).toHaveLength(1);
   await screenshot(page,'after-furniture-editor');
   const original=await first.inputValue();await first.fill('Borrador cancelable');await first.press('Escape');await expect(first).toHaveValue(original);
   await first.fill('Lateral QA rápido');await first.press('Enter');
-  await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();
-  const preview=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(preview).toBeVisible();
-  const headers=await preview.locator('th').evaluateAll(nodes=>nodes.map(node=>{
-   const style=getComputedStyle(node),rgb=(value:string)=>value.match(/[\d.]+/g)!.slice(0,3).map(Number),lum=(channels:number[])=>channels.map(value=>{const channel=value/255;return channel<=.04045?channel/12.92:((channel+.055)/1.055)**2.4;}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);
-   const a=lum(rgb(style.color)),b=lum(rgb(style.backgroundColor));return {contrast:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),fontSize:parseFloat(style.fontSize)};
-  }));for(const header of headers){expect(header.contrast).toBeGreaterThanOrEqual(4.5);expect(header.fontSize).toBeGreaterThanOrEqual(12);}
-
-  expect(calls.filter(call=>call.action==='guide_names_preview')).toHaveLength(1);
+  await expect(page.getByRole('button',{name:'Aplicar renombrado',exact:true})).toHaveCount(0);
   const before=await rpc('__flujos_dialogs');expect((before.instanceNames as Record<string,string>)['11']).not.toContain('Lateral QA rápido');
-  await screenshot(page,'after-names-preview');
-  await preview.getByRole('button',{name:'Confirmar lote y guardar',exact:true}).click();await expect(preview).toBeHidden();
+  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);await screenshot(page,'after-names-save');
+  expect(calls.filter(call=>call.action==='guide_names_preview')).toHaveLength(0);
   expect(calls.filter(call=>call.action==='save')).toHaveLength(1);
   const after=await rpc('__flujos_dialogs');expect((after.instanceNames as Record<string,string>)['11']).toContain('Lateral QA rápido');
  });
@@ -155,7 +150,7 @@ test.afterAll(async({browser})=>{
  await gallery.route('https://flujos-gallery.test/**',async route=>{const name=new URL(route.request().url()).pathname.slice(1);if(!/^flujos-086-[A-Za-z0-9-]+\.(html|png)$/.test(name))throw Error('Unexpected gallery asset');await route.fulfill({body:await readFile(resolve('artifacts',name)),contentType:name.endsWith('.html')?'text/html':'image/png'});});
  await gallery.goto('https://flujos-gallery.test/flujos-086-comparacion-SINTETICA.html');await gallery.locator('img').evaluateAll(images=>Promise.all(images.map(image=>(image as HTMLImageElement).decode())));
  await gallery.screenshot({path:'artifacts/flujos-086-comparacion-SINTETICA.png',fullPage:true});await gallery.close();
- const files=[...comparisons.flatMap(([,before,after])=>[`flujos-086-${before}-SINTETICA.png`,`flujos-086-${after}-SINTETICA.png`]),'flujos-086-after-names-preview-SINTETICA.png','flujos-086-after-a4-sheet-SINTETICA.png','flujos-086-A4-SINTETICO.pdf','flujos-086-A4-RENDER-SINTETICO.png'];
+ const files=[...comparisons.flatMap(([,before,after])=>[`flujos-086-${before}-SINTETICA.png`,`flujos-086-${after}-SINTETICA.png`]),'flujos-086-after-names-save-SINTETICA.png','flujos-086-after-a4-sheet-SINTETICA.png','flujos-086-A4-SINTETICO.pdf','flujos-086-A4-RENDER-SINTETICO.png'];
  const hashes=[];for(const name of files)if(existsSync(`artifacts/${name}`))hashes.push({file:name,sha256:createHash('sha256').update(await readFile(`artifacts/${name}`)).digest('hex')});
  await writeFile('artifacts/flujos-086-evidencias.json',JSON.stringify({nativeSketchupExecuted:false,privateCustomerAssets:false,baselineVersion:'0.8.5',candidateVersion:'0.8.6',files:hashes},null,2));
 });

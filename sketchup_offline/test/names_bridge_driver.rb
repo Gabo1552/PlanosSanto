@@ -67,6 +67,10 @@ STDIN.each_line do |line|
     model.entities[0].name=msg.fetch('data',{}).fetch('name','Alacena externa');controller.reply(msg['id'],result:true)
   when '__names_undo'
     model.undo;controller.reply(msg['id'],result:true)
+  when '__names_lock'
+    # Punto 20: a locked piece is skipped on save with a notice on its row.
+    id=msg.fetch('data',{}).fetch('persistentId').to_s
+    model.all_instances.find { |e| e.persistent_id.to_s==id }.locked_for_names=true;controller.reply(msg['id'],result:true)
   when '__names_geometry'
     model.entities[0].transformation=Geom::Transformation.translation(3,2,1);controller.reply(msg['id'],result:true)
   else

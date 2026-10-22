@@ -302,7 +302,9 @@ module PlanosSanto
     end
     def apply(data)
       draft=@draft;@draft=nil
-      raise ExportError,'Confirmá una vista previa vigente antes de pintar.' unless draft && data.is_a?(Hash) && data['token']==draft[:token] && data['confirmed']==true
+      # Simplificación punto 25: the current preview token is the only gate; the
+      # operation is one Undo step, so no extra «Verifiqué…» confirmation.
+      raise ExportError,'Previsualizá de nuevo antes de pintar: la vista previa venció.' unless draft && data.is_a?(Hash) && data['token']==draft[:token]
       raise ExportError,'Hay otra operación de pintado en curso.' if @applying
       @applying=true;started=false
       begin

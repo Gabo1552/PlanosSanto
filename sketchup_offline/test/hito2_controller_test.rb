@@ -105,12 +105,14 @@ class Hito2ControllerTest < Minitest::Test
     assert_equal 2,@controller.smart_settings['edgeCount']
     assert_equal 2,@controller.dispatch('smart_palette_load',{})['settings']['edgeCount']
   end
-  def test_scope_all_needs_allow_shared_in_the_same_request_and_is_never_persisted
-    [{'scope'=>'all'},{'scope'=>'all','allowShared'=>false},{'scope'=>'all','allowShared'=>'true'},{'scope'=>'todas'},{'scope'=>'unique','allowShared'=>'yes'}].each do |patch|
+  # Simplificación punto 26: choosing «Todas las iguales» is the authorization
+  # (no extra checkbox); a contradictory or malformed request is still refused.
+  def test_scope_all_is_its_own_authorization_and_is_never_persisted
+    [{'scope'=>'all','allowShared'=>false},{'scope'=>'all','allowShared'=>'true'},{'scope'=>'todas'},{'scope'=>'unique','allowShared'=>'yes'}].each do |patch|
       assert_raises(PlanosSanto::ExportError) { quick({'mode'=>'sheet','catalogId'=>'placa'}.merge(patch)) }
     end
     assert_empty @prepared;assert_empty @selected.compact
-    quick('mode'=>'sheet','catalogId'=>'placa','scope'=>'all','allowShared'=>true)
+    quick('mode'=>'sheet','catalogId'=>'placa','scope'=>'all')
     assert_equal 'all',tool.options['scope'];assert_equal true,tool.options['allowShared']
     assert_equal 'unique',@controller.smart_settings['scope'];refute @controller.smart_settings.key?('allowShared')
     quick('mode'=>'sheet','catalogId'=>'placa')
