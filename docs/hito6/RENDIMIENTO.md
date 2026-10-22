@@ -74,6 +74,38 @@ Todo está en `sketchup/planos_santo/exporter.rb`.
 
 La etapa L (árbol liviano con malla a demanda) **no se justifica**: el scan simulado bajó a menos de 100 ms y la respuesta enviada ya difiere las mallas.
 
+## Huella del inventario con geometría (clic en modo Cara)
+
+**Corrección:** una versión anterior de este documento decía que `inventory(geometry: true)` no estaba en el camino del clic. Eso vale solo para el clic inmediato. En el modo no inmediato (pintar Cara o lote), `SmartPaintTool`:
+- Prepara una vista previa con token en el hover de cada cara nueva.
+- En el clic la vuelve a preparar y aplica.
+- `SmartPaint#apply` re-planifica para comparar la firma.
+
+Son dos inventarios completos con geometría por clic. Agregué ambos casos al benchmark:
+
+| Medición (mediana, ms) | Antes | Después |
+|---|---:|---:|
+| `inventory(geometry: true)` | 232 | **35** |
+| Hover con vista previa (modo Cara) | 227 | **46** |
+| **Clic con vista previa (preview + apply)** | **434** | **93** |
+| Clic inmediato (referencia, sin cambios) | 15 | 11 |
+
+- **Causa:** el ~70 % del tiempo era `JSON.generate` de la huella. La huella repetía, en cada aparición, la malla cruda de todas sus caras (puntos en floats, polígonos, materiales).
+- **Cambio** (`sketchup_offline/names.rb`, solo `inventory`):
+  - La parte de caras de la huella depende solo de la definición. Se arma una vez por definición: la clave es `entityID`, o `object_id` en los dobles.
+  - Entra en la huella como su SHA-256.
+  - Lo propio de cada aparición sigue entero en la huella: transformación, material, etiqueta, oculto, nombre, atributos y guía.
+  - El tope de 200.000 vértices se sigue sumando por aparición, con el mismo mensaje.
+- **Por qué es seguro:**
+  - La firma solo se compara en memoria entre dos inventarios del mismo proceso (vista previa y aplicación, y renombrado). No se persiste.
+  - Cambiar su formato no rompe nada guardado.
+- **Pruebas:** `sketchup_offline/test/inventory_cache_test.rb` verifica:
+  - que la firma es estable sin cambios;
+  - que cambia con el material, el dorso, la etiqueta, la geometría o el oculto de una cara de una definición compartida, y con los datos de cada instancia;
+  - que se tesela una vez por definición, también con la clave `entityID`;
+  - que el tope se cuenta por aparición (925 entran, 926 no).
+  - Una mutación con un hash constante hace fallar 3 de esas pruebas.
+
 ## PINTURA-09 / ARQ-04: índice de rutas
 
 **Decisión: no se implementa.** El plan lo condiciona a que la medición lo pida, y no lo pide:
@@ -107,7 +139,7 @@ Estimado en medio día con pruebas. No se puede acotar a 30 minutos sin arriesga
 - En SketchUp, `face.mesh`, `material` y los recorridos cruzan de Ruby a C++. Es esperable que los tiempos reales sean varias veces mayores; la proporción antes/después debería mantenerse, porque la caché evita exactamente esas llamadas.
 - Las placas son cajas de 6 caras con 2 triángulos por cara. No hay aristas reales, texturas, UV, `definition.instances` ni `make_unique`.
 - No se mide la herramienta de UI (pick, hover, `invalidate`), el troceo de `reply` en el diálogo, los observers después del commit ni la biblioteca de materiales con fotos.
-- `inventory(geometry: true)` (unos 185 ms) es el siguiente punto caro, pero no está en el camino del clic: lo usan los planes con token y el renombrado.
+- Las cifras del clic suponen que ya se eligió el material: no miden el diálogo ni la paleta.
 
 ## Qué falta validar en SketchUp 2026
 
