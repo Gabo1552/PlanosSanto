@@ -66,19 +66,20 @@ class QuickToolbarTest < Minitest::Test
     @controller=QuickToolbarControllerDouble.new
   end
   def install;PlanosSanto::QuickToolbar.install(@controller);end
-  def test_one_toolbar_with_five_primary_actions_and_all_secondary_menu_shortcuts
+  # Pintura en vista: «Pintar canto» joins «Pintar» on the toolbar.
+  def test_one_toolbar_with_six_primary_actions_and_all_secondary_menu_shortcuts
     registry=install
     assert_equal ['Planos Santo'],UI.toolbars.map(&:name)
     assert_same registry[:main_toolbar],registry[:tools_toolbar]
-    assert_equal %w[sheet furniture order guides materials].map { |key| registry[:commands][key] },registry[:main_toolbar].items
-    assert_equal ['Pintar','Muebles','Maderera','Planos','Materiales'],registry[:main_toolbar].items.map(&:name)
-    %w[main edge remove_edge sample].each do |key|
+    assert_equal %w[sheet edge furniture order guides materials].map { |key| registry[:commands][key] },registry[:main_toolbar].items
+    assert_equal ['Pintar','Pintar canto','Muebles','Maderera','Planos','Materiales'],registry[:main_toolbar].items.map(&:name)
+    %w[main remove_edge sample].each do |key|
       refute_includes registry[:main_toolbar].items,registry[:commands][key]
       assert_includes registry[:menu].items.map(&:first),registry[:commands][key]
     end
     assert_equal %w[main materials sheet edge remove_edge sample furniture order guides],registry[:commands].keys
     assert_equal 'Planos Santo',registry[:menu].name
-    assert_equal 13,registry[:menu].items.length
+    assert_equal 14,registry[:menu].items.length
     registry[:commands].each do |key,command|
       assert_includes registry[:menu].items.map(&:first),command
       refute_empty command.tooltip
@@ -90,6 +91,26 @@ class QuickToolbarTest < Minitest::Test
     assert_equal 9,registry[:commands].values.map(&:tooltip).uniq.length
     assert_equal 9,registry[:commands].values.map(&:status_bar_text).uniq.length
   end
+  # Pintura en vista: paint commands go to paint_in_view (no window), with their
+  # own validation; the palette stays reachable from the menu.
+  def test_paint_commands_paint_in_the_view_and_the_menu_keeps_the_palette
+    painted=[];palette=[];checks=[]
+    @controller.define_singleton_method(:paint_in_view) { |key| painted << key;{'toolState'=>{}} }
+    @controller.define_singleton_method(:paint_block_reason) { |key| key=='remove_edge' ? 'Guardá los cambios de biblioteca o pedido antes de pintar.' : nil }
+    @controller.define_singleton_method(:paint_validation) { |key| checks << key;key=='sheet' ? MF_CHECKED : MF_UNCHECKED }
+    @controller.define_singleton_method(:open_paint_palette) { palette << :opened }
+    registry=install
+    %w[sheet edge remove_edge].each { |key| registry[:commands][key].call }
+    assert_equal %w[sheet edge remove_edge],painted;assert_empty @controller.actions
+    registry[:commands]['sample'].call;assert_equal ['sample'],@controller.actions
+    assert_equal MF_CHECKED,registry[:commands]['sheet'].validation;assert_equal MF_UNCHECKED,registry[:commands]['edge'].validation
+    registry[:commands]['remove_edge'].validation
+    assert_equal 'Guardá los cambios de biblioteca o pedido antes de pintar.',registry[:commands]['remove_edge'].status_bar_text
+    assert_equal %w[sheet edge remove_edge],checks
+    registry[:menu].items.find { |item,_| item=='Paleta de pintura…' }.last.call
+    assert_equal [:opened],palette
+  end
+
   def test_main_command_prefers_full_interface_navigation_without_registering_again
     @controller.define_singleton_method(:open_main) { @full_opened=(@full_opened||0)+1 }
     registry=install;registry[:commands]['main'].call
@@ -115,7 +136,7 @@ class QuickToolbarTest < Minitest::Test
     assert_same first,install
     assert_equal 1,UI.toolbars.length
     assert_equal 1,UI.menu('Extensions').submenus.length
-    assert_equal 13,first[:menu].items.length
+    assert_equal 14,first[:menu].items.length
   end
   def test_operator_hidden_toolbar_is_never_forced_visible
     UI.toolbar_states={'Planos Santo'=>TB_VISIBLE,'Planos Santo - Herramientas'=>TB_HIDDEN}

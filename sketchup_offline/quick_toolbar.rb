@@ -7,8 +7,8 @@ module PlanosSanto
   module QuickToolbar
     ACTIONS = [
       ['materials', 'Materiales', 'Abrir la biblioteca visual del taller y revisar materiales antes de usarlos.'],
-      ['sheet', 'Pintar', 'Elegir melamina / placa y pintar caras autorizadas con Pintura Inteligente.'],
-      ['edge', 'Pintar canto', 'Elegir canto aprobado y aplicarlo a una cara estrecha verificada.'],
+      ['sheet', 'Pintar', 'Pintar placas en el modelo: elegí el material en la tira de la vista o en la bandeja Materiales.'],
+      ['edge', 'Pintar canto', 'Pintar cantos en el modelo: elegí el canto en la tira de la vista o en la bandeja Materiales.'],
       ['remove_edge', 'Quitar canto', 'Restaurar la placa de una cara estrecha con alcance controlado.'],
       ['sample', 'Tomar material (cuentagotas)', 'Consultar el material de una cara sin modificar el modelo.'],
       ['furniture', 'Muebles', 'Revisar muebles, piezas y nombres antes de confirmar cambios.'],
@@ -16,7 +16,9 @@ module PlanosSanto
       ['guides', 'Planos', 'Configurar vistas, cotas y notas; exportar PDF requiere una acción adicional.']
     ].map(&:freeze).freeze unless const_defined?(:ACTIONS, false)
 
-    PRIMARY_ACTIONS = %w[sheet furniture order guides materials].freeze unless const_defined?(:PRIMARY_ACTIONS, false)
+    PRIMARY_ACTIONS = %w[sheet edge furniture order guides materials].freeze unless const_defined?(:PRIMARY_ACTIONS, false)
+    # Pintura en vista: these start the brush in the 3D view and never open a window.
+    PAINT_ACTIONS = %w[sheet edge remove_edge].freeze unless const_defined?(:PAINT_ACTIONS, false)
 
     class << self
       attr_reader :registry
@@ -41,12 +43,17 @@ module PlanosSanto
         menu.add_item(main)
         main_toolbar = UI::Toolbar.new('Planos Santo')
         ACTIONS.each do |key, label, description|
-          command = UI::Command.new(label) { @controller.quick_action(key) }
+          command = UI::Command.new(label) { in_view?(key) ? @controller.paint_in_view(key) : @controller.quick_action(key) }
           command.tooltip = label
           command.status_bar_text = description
           command.small_icon = File.join(__dir__, 'icons', "#{key}-24.png")
           command.large_icon = File.join(__dir__, 'icons', "#{key}-32.png")
           command.set_validation_proc do
+            if in_view?(key)
+              reason = @controller.paint_block_reason(key)
+              command.status_bar_text = reason || description
+              next @controller.paint_validation(key)
+            end
             reason = @controller.quick_block_reason(key) if @controller.respond_to?(:quick_block_reason)
             command.status_bar_text = reason || description
             @controller.quick_validation(key)
@@ -59,6 +66,10 @@ module PlanosSanto
           commands[key] = command
         end
         PRIMARY_ACTIONS.each { |key| main_toolbar.add_item(commands.fetch(key)) }
+        # The full paint palette is still available; painting itself never opens it.
+        menu.add_item('Paleta de pintura…') do
+          @controller.respond_to?(:open_paint_palette) ? @controller.open_paint_palette : @controller.quick_action('sheet')
+        end
         menu.add_item('Mostrar / ocultar barra rápida') do
           main_toolbar.visible? ? main_toolbar.hide : main_toolbar.show
         end
@@ -71,6 +82,10 @@ module PlanosSanto
       end
 
       private
+
+      def in_view?(key)
+        PAINT_ACTIONS.include?(key) && @controller.respond_to?(:paint_in_view)
+      end
 
       def unchecked
         Object.const_defined?(:MF_UNCHECKED) ? Object.const_get(:MF_UNCHECKED) : 0
