@@ -63,3 +63,13 @@ describe('F-DESP-B: filas pendientes de pedido',()=>{
   expect(listRows(f,{[a.id]:asymmetric},false,pending).filter(r=>r.pending).map(r=>r.piece.memberIds)).toEqual([[b.id]]);
  });
 });
+describe('F-DESP-B con piezas iguales agrupadas',()=>{
+ it('una fila agrupada con una pieza todavía en revisión se imprime pendiente en lugar de bloquear la hoja',async()=>{
+  const {pieceRows}=await import('../lib/pieceGroups');
+  const project=createDemo();const f=project.furniture.find(item=>{item.groupIdentical=true;return pieceRows(item).some(row=>row.memberIds.length>1);});
+  expect(f).toBeDefined();const group=pieceRows(f!).find(row=>row.memberIds.length>1)!;
+  const references={[group.memberIds[0]]:{text:'',board:'TEST-18 / 18 mm',edgeMap:[1,0,0,0],principal:'EDGE-1',base:720,height:560}};
+  const row=listRows(f!,references,false,[group.memberIds[1]]).find(r=>r.piece.memberIds.includes(group.memberIds[0]))!;
+  expect(row.pending).toBe(true);expect(row.reference).toBeUndefined();
+ });
+});

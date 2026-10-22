@@ -80,6 +80,8 @@ export function listRows(f:Furniture,references?:OrderReferences,fold=!!f.presen
   const codes=new Map(f.pieces.map(p=>[p.id,p.code])),waiting=new Set(pending||[]);
   const rows=pieceRows(f).map(piece=>{
     const assigned=references?piece.memberIds.map(id=>orderReference(references[id])):[];
+    // A grouped row with a member still under review prints as pending: its order data is not final for any of them.
+    if(piece.memberIds.some(id=>waiting.has(id)&&!assigned[piece.memberIds.indexOf(id)]))return {piece,reference:undefined,also:[] as string[],pending:true};
     const keys=assigned.map(referenceKey),other=keys.findIndex(key=>key!==keys[0]);
     if(other>0){
       const a=codes.get(piece.memberIds[0])||piece.code,b=codes.get(piece.memberIds[other])||piece.memberIds[other];

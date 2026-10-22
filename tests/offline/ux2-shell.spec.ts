@@ -99,14 +99,19 @@ test('un solo h1, estados vacíos con el siguiente paso y plurales correctos',as
 
 test('el foco vuelve a Aplicar renombrado, las advertencias no se releen enteras y el foco del riel se ve',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- const batch=page.getByRole('button',{name:'Aplicar renombrado',exact:true});await batch.click();await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toBeVisible();await page.keyboard.press('Escape');
+ const batch=page.getByRole('button',{name:'Aplicar renombrado',exact:true});await batch.click();await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toBeVisible();
+ // The dialog handles Escape once its initial focus is inside it.
+ await expect(page.getByRole('dialog',{name:'Aplicar renombrado'}).locator(':focus')).toHaveCount(1);await page.keyboard.press('Escape');
  await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toHaveCount(0);await expect(batch).toBeFocused();
  const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('');await expect(page.locator('.warnings').first()).toBeVisible();
  await expect(page.locator('.warnings')).not.toHaveAttribute('role','status');await expect(page.locator('.sr-only[role=status]').filter({hasText:/advertencias? en la hoja/})).toHaveCount(1);
  await name.fill('Lateral');
- await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');await current.focus();
- const style=await current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
- expect(style.style).toBe('solid');expect(style.outline).not.toBe(style.background);
+ await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');
+ // Changing module moves focus to its heading after render: wait for it, or it can steal the rail's focus.
+ // :focus-visible depends on the last input modality: a keystroke right before focusing makes it deterministic.
+ await expect(page.locator('.ux-module-heading')).toBeFocused();await page.keyboard.press('Shift');await current.focus();await expect(current).toBeFocused();
+ const read=()=>current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
+ await expect.poll(async()=>(await read()).style).toBe('solid');const style=await read();expect(style.outline).not.toBe(style.background);
 });
 
 test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un aviso que lleva al pedido',async({page},info)=>{

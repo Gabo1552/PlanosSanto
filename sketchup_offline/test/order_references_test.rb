@@ -42,7 +42,7 @@ class OrderReferencesTest < Minitest::Test
   assert_empty result['excluded']
   reference=result['references'][ids[0]]
   assert_equal [1,0,0,1],reference['edgeMap'];assert_equal 'TEST-18 / 19.05 mm',reference['board']
-  assert_equal 1,reference['lot'];assert_equal false,reference['grain']
+  refute reference.key?('lot'),'con filas pendientes el lote todavía puede cambiar';assert_equal false,reference['grain']
   assert_equal 'TEST-18 / 19.05 mm · Arr:EDGE-1 Aba:sin Izq:sin Der:EDGE-1',reference['text']
  end
  def test_complete_draft_matches_the_full_references_and_reports_excluded_rows
@@ -52,7 +52,7 @@ class OrderReferencesTest < Minitest::Test
   full=@workshop.references;result=PlanosSanto::OrderReferences.partial(@model,@workshop)
   assert_equal full.keys,result['references'].keys
   full.each { |id,value| assert_equal value,result['references'][id].reject { |key,_| %w[lot grain].include?(key) } }
-  assert_empty result['pending'];assert_equal [ids[1]],result['excluded']
+  assert_empty result['pending'];assert_equal [ids[1]],result['excluded'];assert_equal 1,result['references'][ids[0]]['lot']
  end
  def test_stale_catalog_refuses_instead_of_printing_old_references
   @workshop.save_plan(draft)

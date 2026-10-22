@@ -30,6 +30,8 @@ module PlanosSanto
         reference=failing.include?(row['id']) ? nil : reference_for(service,row,lots)
         if reference then references[row['id']]=reference else pending << row['id'] end
       end
+      # Lot numbers are final only when every included row validates: a pending row can still move to another lot and renumber the TXT.
+      references.each_value { |reference| reference.delete('lot') } unless pending.empty?
       {'references'=>references,'pending'=>pending,'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| row['id'] }}
     rescue JSON::ParserError
       raise ExportError,'Borrador de pedido dañado. Prepará uno nuevo sin sobrescribir el anterior.'
