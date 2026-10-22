@@ -122,7 +122,7 @@ export function importDocument(raw: unknown, source: Project['source']): Project
     if (!pieces.length) throw new Error(`El mueble «${root.name}» no tiene piezas con geometría.`);
     if (pieces.length > 500) throw new Error('Un mueble supera 500 piezas. Separá el modelo.');
     const referenceTransform=[...root.transform];[12,13,14].forEach(i=>{referenceTransform[i]*=units;});
-    return { id: root.id, referenceTransform, name: root.name || 'Mueble sin nombre', pieces, notes: [], explosion: 0.45, zoom: 1 };
+    return { id: root.id, referenceTransform, name: (root.name||'').trim() || 'Mueble sin nombre', pieces, notes: [], explosion: 0.45, zoom: 1 };
   });
   const date = new Date().toISOString();
   return { id: crypto.randomUUID(), name: doc.name, source, createdAt: date, updatedAt: date, revision: 0, furniture, ...(source==='sketchup-ruby'?{importedDocument:doc}:{}) };

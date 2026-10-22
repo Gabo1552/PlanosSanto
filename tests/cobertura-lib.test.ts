@@ -47,8 +47,8 @@ describe('Importación: medidas que llegan al plano y al pedido',()=>{
   const f=importDocument(doc([lateral('x',{name:'  '})],{name:''}),'demo').furniture[0];
   expect(f.pieces[0].name).toBe('Pieza 1');expect(f.name).toBe('Mueble sin nombre');
  });
- // BUG-TS-04 (docs/qa/BUGS_ENCONTRADOS_TS.md): el nombre del mueble no se recorta como el de la pieza.
- it.skip('un mueble con nombre solo de espacios recibe el nombre de reemplazo (BUG-TS-04)',()=>{
+ // BUG-TS-04 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido; el nombre del mueble se recorta como el de la pieza.
+ it('un mueble con nombre solo de espacios recibe el nombre de reemplazo (BUG-TS-04)',()=>{
   expect(importDocument(doc([lateral()],{name:'   '}),'demo').furniture[0].name).toBe('Mueble sin nombre');
  });
  it('avisa piezas gruesas, cuadradas, ocultas, no rectangulares y grupos con subgrupos sin duplicar avisos',()=>{

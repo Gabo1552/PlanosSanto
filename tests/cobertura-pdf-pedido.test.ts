@@ -150,10 +150,11 @@ describe('Nombre del archivo descargado',()=>{
   const name=previewFileName({name:'A'.repeat(79)+'-B',furniture:[]},day);
   expect(name).toBe(`${'A'.repeat(79)}-A4-2026-10-05.pdf`);
  });
- // BUG-TS-02 (docs/qa/BUGS_ENCONTRADOS_TS.md): slice(0,80) corta por unidades UTF-16.
- it.skip('no parte un emoji en el corte de 80 caracteres (BUG-TS-02: deja un surrogate suelto en el nombre)',()=>{
+ // BUG-TS-02 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido; el corte es por puntos de código.
+ it('no parte un emoji en el corte de 80 caracteres (BUG-TS-02)',()=>{
   const name=previewFileName({name:'A'.repeat(79)+'😀',furniture:[]},day);
   expect(name).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  expect(name).toBe(`${'A'.repeat(79)}😀-A4-2026-10-05.pdf`);
  });
 });
 
@@ -182,9 +183,12 @@ describe('Errores de encaje A4: causa, acción y detalle',()=>{
   expect(error.kind).toBe('glyph');expect(error.character).toBe('漢');
   expect(error.message).toBe(`${project.furniture[0].name}: El PDF no puede representar el carácter «漢». Qué hacer: Reemplazá el carácter «漢».`);
  });
- // BUG-TS-01 (docs/qa/BUGS_ENCONTRADOS_TS.md): una tabulación pegada desde una planilla bloquea con un carácter invisible.
- it.skip('una tabulación pegada en observaciones no bloquea el PDF con «» invisible (BUG-TS-01)',async()=>{
+ // BUG-TS-01 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido; tabulación y CR se imprimen como espacio.
+ it('una tabulación pegada en observaciones no bloquea el PDF con «» invisible (BUG-TS-01)',async()=>{
   await expect(createOfflinePdf(single('Tornillos\t4 × 50'),regular,mono)).resolves.toBeInstanceOf(Uint8Array);
+  await expect(createOfflinePdf(single('Línea 1\r\nLínea 2'),regular,mono)).resolves.toBeInstanceOf(Uint8Array);
+  const project=single();project.furniture[0].pieces[0].name='Lateral\tizq';
+  await expect(createOfflinePdf(project,regular,mono)).resolves.toBeInstanceOf(Uint8Array);
  });
  it('un código de pieza demasiado ancho para la columna ID bloquea con su acción',async()=>{
   const project=single();project.furniture[0].pieces[0].code='P0000001';

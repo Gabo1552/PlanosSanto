@@ -39,7 +39,8 @@ export class A4FitError extends Error{
 }
 function ensureGlyphs(font:PDFFont,text:string){
   const available=new Set(font.getCharacterSet());
-  for(const char of text)if(char!=='\n'&&!available.has(char.codePointAt(0)!))throw new A4FitError(undefined,{reason:`El PDF no puede representar el carácter «${char}».`,kind:'glyph',character:char});
+  // Tab and CR (pasted from a spreadsheet, CRLF notes) are whitespace, not glyphs: they print as a space.
+  for(const char of text)if(!'\n\t\r'.includes(char)&&!available.has(char.codePointAt(0)!))throw new A4FitError(undefined,{reason:`El PDF no puede representar el carácter «${char}».`,kind:'glyph',character:char});
 }
 /** One row of the reviewed supplier order. A plain string is the legacy text-only contract. */
 export type OrderReference={text:string;board?:string;edgeMap?:number[];principal?:string|null;secondary?:string|null;base?:number;height?:number};
@@ -114,7 +115,7 @@ export function previewFileName(project:Pick<Project,'name'|'furniture'>,date=ne
   const clean=(value:string)=>value.normalize('NFC').replace(/[/\\:*?"<>|\u0000-\u001f]+/g,' ').trim().replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^[-.]+|[-.]+$/g,'');
   const day=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   const parts=[clean(project.name||''),project.furniture.length===1?clean(project.furniture[0].name||''):''].filter(Boolean);
-  const base=(parts.join('-')||'PlanosSanto').slice(0,80).replace(/[-.]+$/,'')||'PlanosSanto';
+  const base=Array.from(parts.join('-')||'PlanosSanto').slice(0,80).join('').replace(/[-.]+$/,'')||'PlanosSanto';
   return `${base}-A4-${day}.pdf`;
 }
 function linesFor(text:string,width:number,font:PDFFont,size:number):string[]{
@@ -132,7 +133,7 @@ function linesFor(text:string,width:number,font:PDFFont,size:number):string[]{
   return result;
 }
 function text(page:PDFPage,value:string,x:number,top:number,size:number,font:PDFFont,color=INK){
-  ensureGlyphs(font,value);page.drawText(value,{x,y:PAGE_H-top-size,size,font,color});
+  ensureGlyphs(font,value);page.drawText(value.replace(/[\t\r\n]/g,' '),{x,y:PAGE_H-top-size,size,font,color});
 }
 function line(page:PDFPage,x1:number,y1:number,x2:number,y2:number,color=BLUE,width=0.7){
   page.drawLine({start:{x:x1,y:PAGE_H-y1},end:{x:x2,y:PAGE_H-y2},color,thickness:width});

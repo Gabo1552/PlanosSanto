@@ -127,8 +127,8 @@ describe('Nombres: casos borde de revisión',()=>{
   expect(carryEdits({},[{ids:['a'],base:'Lat'}],[{ids:['a']}])).toEqual({chosen:{},kept:0,lost:0,auto:0});
   expect(carryNotice({kept:0,lost:2,auto:0})).toMatch(/^Las propuestas automáticas se recalcularon; volvé a seleccionarlas\. 2 ediciones quedaron fuera de la lista/);
  });
- // BUG-TS-03 (docs/qa/BUGS_ENCONTRADOS_TS.md): el plural concatena «descartó»+«n».
- it.skip('el aviso de varias ediciones descartadas dice «se descartaron» (BUG-TS-03: hoy dice «se descartón»)',()=>{
+ // BUG-TS-03 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido; regresión del plural.
+ it('el aviso de varias ediciones descartadas dice «se descartaron» (BUG-TS-03)',()=>{
   expect(carryNotice({kept:0,lost:2,auto:0})).toBe('Las propuestas automáticas se recalcularon; volvé a seleccionarlas. 2 ediciones quedaron fuera de la lista y se descartaron.');
  });
  it('clasifica los cambios que ve el operador antes de renombrar',()=>{

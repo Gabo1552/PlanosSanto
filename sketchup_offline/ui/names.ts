@@ -22,7 +22,7 @@ export function carryEdits(chosen:Record<string,string>,before:Proposal[],after:
 export function carryNotice({kept,lost,auto}:{kept:number;lost:number;auto:number}){
   if(!kept&&!lost&&!auto)return '';
   const parts=[kept?`Se ${kept===1?'conservó 1 nombre editado':`conservaron ${kept} nombres editados`}; las propuestas automáticas se recalcularon.`:'Las propuestas automáticas se recalcularon; volvé a seleccionarlas.'];
-  if(lost)parts.push(`${lost===1?'1 edición quedó':`${lost} ediciones quedaron`} fuera de la lista y se descartó${lost===1?'':'n'}.`);
+  if(lost)parts.push(`${lost===1?'1 edición quedó':`${lost} ediciones quedaron`} fuera de la lista y se ${lost===1?'descartó':'descartaron'}.`);
   return parts.join(' ');
 }
 // Pure, code-point based diff for review screens: common prefix/suffix of the
