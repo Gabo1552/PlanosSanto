@@ -186,3 +186,48 @@ class Hito7SampleTest < Minitest::Test
     @tool.onKeyUp(16,1,0,@view);assert_equal 'edge',@tool.status['mode'] # the sample was dropped
   end
 end
+
+# F-PINT-C: «Revisar lo que falta» marks every piece; read-only, cached per definition.
+class Hito7ReviewTest < Minitest::Test
+  include Hito2Fixture
+  def setup
+    build_fixture;Sketchup.hito2_status_texts=[]
+    # Four distinct boards: no sheet / sheet + 2 edges / sheet + 4 edges / sheet only.
+    @boards=@doors.each_with_index.map do |door,i|
+      board=Fixture.board_definition;board.guid="tablero-#{i}";board.entities[0].material=nil
+      board.entities.each_with_index { |face,k| face.define_singleton_method(:persistent_id) { 100+k } };door.definition=board
+      board.entities.first(2).each { |face| face.material=@sheet;face.back_material=@sheet } unless i.zero?
+      board.entities.drop(2).first({1=>2,2=>4}[i] || 0).each { |face| face.material=@edge }
+      board
+    end
+    @before=@boards.map { |board| board.entities.map { |face| [face.material,face.back_material] } }
+    build_tool(tool_options('edge','edgeCount'=>1))
+  end
+  def colored(rgba);@view.draws.select { |mode,_,color| mode==4 && color.respond_to?(:to_a) && color.to_a==rgba }.sum { |_,count,_| count };end
+  def test_r_toggles_the_review_with_counts_overlay_and_never_writes
+    assert @tool.onKeyDown(82,1,0,@view)
+    review=@events.last['review'];assert_equal({'active'=>true,'missingSheet'=>1,'partialEdges'=>1,'truncated'=>false},review)
+    assert_equal true,@events.last['options']['reviewMissing']
+    @tool.draw(@view)
+    assert_equal 6*6,colored([220,30,30,70]);assert_equal 6*6,colored([230,150,20,70])
+    @tool.onKeyDown(82,2,0,@view);assert @tool.status['review'] # repeat ignored
+    @tool.onKeyDown(82,1,0,@view);refute @events.last.key?('review');assert_equal false,@events.last['options']['reviewMissing']
+    @view.draws.clear;@tool.draw(@view);assert_equal 0,colored([220,30,30,70])
+    assert_empty @model.operations;assert_equal @before,@boards.map { |board| board.entities.map { |face| [face.material,face.back_material] } }
+  end
+  def test_hover_summary_line_and_cache_per_definition_and_generation
+    hover_on(@doors[1]);assert_equal({'sheetName'=>'Melamina Blanca','edgeSides'=>2},@tool.status['hover']['summary'])
+    hover_on(@doors[0]);assert_equal({'sheetName'=>nil,'edgeSides'=>0},@tool.status['hover']['summary'])
+    @tool.tool_option('reviewMissing',true);calls=@tool.verdicts.summary_calls
+    assert_equal 4,calls # one per definition, hovers included
+    hover_on(@doors[1]);@tool.draw(@view);assert_equal 'Placa: Melamina Blanca · Cantos: 2/4',@view.texts.last[1]
+    5.times { @tool.status };assert_equal calls,@tool.verdicts.summary_calls
+    @model.observers.each { |o| o.onTransactionCommit(@model) };@tool.status;assert_equal calls+4,@tool.verdicts.summary_calls
+    assert_raises(PlanosSanto::ExportError) { @tool.tool_option('reviewMissing','sí') }
+    assert_raises(PlanosSanto::ExportError) { @tool.tool_option('otra',true) }
+  end
+  def test_a_partial_occurrence_index_is_reported_as_truncated
+    @tool.instance_variable_set(:@occurrences,PlanosSanto::OccurrenceIndex.new(@model,limit:3))
+    @tool.tool_option('reviewMissing',true);assert_equal true,@events.last['review']['truncated']
+  end
+end

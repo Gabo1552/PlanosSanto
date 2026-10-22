@@ -10,8 +10,8 @@ module PlanosSanto
   # transaction generation, mode, edge count, physical scale and pointed side.
   # It never writes, never reads the catalog and never hashes files.
   class PaintVerdict
-    attr_reader :calls
-    def initialize(native);@native=native;@cache={};@calls=0;end
+    attr_reader :calls,:summary_calls
+    def initialize(native);@native=native;@cache={};@calls=0;@summary_calls=0;end
     def available?;!@native.nil?;end
     def node_for(target)
       instances=target['_instances'];{'_entity'=>instances.last,'_parents'=>instances[0...-1],'id'=>target['pieceId']}
@@ -50,6 +50,31 @@ module PlanosSanto
       {'ok'=>true,'reason'=>nil,'expandedFaceIds'=>faces.map { |f| @native.face_id(f) },'faces'=>faces,'axes'=>axes}
     rescue ExportError=>error
       {'ok'=>false,'reason'=>error.message,'expandedFaceIds'=>[],'faces'=>[]}
+    end
+    # F-PINT-C: what the piece still lacks, same cache key family as the verdict.
+    # {sheetName, edgeSides 0..4, state: ok|missingSheet|partialEdges}; never writes.
+    def summary(instances,generation)
+      inherited=inherited(instances)
+      key=[:summary,instances.last.definition.guid.to_s,generation,scales(instances),inherited&.object_id]
+      @cache.clear if @cache.length>5000
+      @cache[key] ||= compute_summary({'_entity'=>instances.last,'_parents'=>instances[0...-1],'id'=>nil},inherited)
+    end
+    def compute_summary(node,inherited)
+      @summary_calls+=1;faces=@native.faces(node)
+      frame=begin
+        @native.boundary_frame(node,{'axes'=>@native.automatic_axes(node)})
+      rescue ExportError
+        nil # not a rectangular board: only the sheet is judged
+      end
+      broad=frame ? %w[min max].flat_map { |side| frame[:groups][[frame[:thickness],side]] } : faces
+      sheet=broad.flat_map { |f| [f.material || inherited,f.back_material || inherited] }.compact.find { |m| sheet?(m) }
+      sides=frame ? frame[:axes].flat_map { |axis| [[axis,'min'],[axis,'max']] }.map do |key|
+        group=frame[:groups][key];with=group.count { |f| @native.edge_material?(f.material) || @native.edge_material?(f.back_material) }
+        with.zero? ? :none : with==group.length ? :full : :mixed
+      end : []
+      count=sides.count(:full)
+      state=!sheet ? 'missingSheet' : sides.include?(:mixed) || count.between?(1,3) ? 'partialEdges' : 'ok'
+      {'sheetName'=>sheet && (sheet.respond_to?(:display_name) ? sheet.display_name : sheet.name).to_s,'edgeSides'=>count,'state'=>state}
     end
   end
 
@@ -105,6 +130,10 @@ module PlanosSanto
     def paths(definition,generation)
       build(generation) unless @paths && @generation==generation
       @paths[definition] || []
+    end
+    def all_paths(generation)
+      build(generation) unless @paths && @generation==generation
+      @paths.values.flatten(1)
     end
     def build(generation)
       @generation=generation;@builds+=1;@paths={}.compare_by_identity;@truncated=false;count=0
@@ -181,6 +210,7 @@ module PlanosSanto
       result={'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },
               'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch').merge('sampleKey'=>@sample_key,'reviewMissing'=>@review==true)}
       result['sampling']=true if @sample_held
+      result['review']=review_state[:data] if @review && immediate?
       result
     end
     # Palette options applied to the live tool without restarting it (§7).
@@ -197,7 +227,43 @@ module PlanosSanto
         raise ExportError,'Opción de herramienta inválida.'
       end
     end
-    def review!(value);@review=value;emit(value ? 'Revisión activa.' : 'Revisión apagada.');end
+    def review!(value)
+      @review=value;@review_cache=nil
+      return emit('Revisión apagada.') unless value
+      data=review_state[:data]
+      emit("Revisar lo que falta: sin placa #{data['missingSheet']} · cantos parciales #{data['partialEdges']}#{data['truncated'] ? ' (parcial)' : ''}.")
+    end
+    REVIEW_LIMIT=2000
+    def leaf?(entity)
+      @leaf_cache ||= {}.compare_by_identity
+      @leaf_cache.fetch(entity.definition) do
+        items=entities_for(entity)
+        @leaf_cache[entity.definition]=items.any? { |e| e.is_a?(Sketchup::Face) } && items.none? { |e| instance?(e) }
+      end
+    end
+    # Every leaf piece (cap 2000) judged once per generation; hidden ones are skipped.
+    def review_state
+      return @review_cache if @review_cache && @review_cache[:generation]==@generation
+      @leaf_cache=nil
+      paths=@occurrences.all_paths(@generation).select { |path| path.none? { |e| e.respond_to?(:hidden?) && e.hidden? } && leaf?(path.last) }
+      truncated=@occurrences.truncated? || paths.length>REVIEW_LIMIT;marks=[]
+      paths.first(REVIEW_LIMIT).each do |path|
+        state=begin
+          @verdicts.summary(path,@generation)['state']
+        rescue StandardError
+          nil
+        end
+        marks << [path,state] if %w[missingSheet partialEdges].include?(state)
+      end
+      data={'active'=>true,'missingSheet'=>marks.count { |_,st| st=='missingSheet' },'partialEdges'=>marks.count { |_,st| st=='partialEdges' },'truncated'=>truncated}
+      @review_cache={generation:@generation,data:data,marks:marks}
+    end
+    def review_triangles
+      cache=review_state
+      cache[:triangles] ||= cache[:marks].each_with_object({'missingSheet'=>[],'partialEdges'=>[]}) do |(path,state),out|
+        entities_for(path.last).grep(Sketchup::Face).each { |face| out[state].concat(triangles_for(path,face)) }
+      end
+    end
     # ---- PINTURA-07: temporary eyedropper (read-only until the key is released).
     def sample_label;@sample_key=='alt' ? 'Alt' : 'Mayús';end
     def sample_code;(SAMPLE_KEYS[@sample_key] || [])[0];end
@@ -261,7 +327,7 @@ module PlanosSanto
     end
     def signature(event)
       hover=event['hover'] || {};verdict=hover['verdict'] || {}
-      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],hover['sharedTruncated'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode'],hover['depth']]
+      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],hover['sharedTruncated'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode'],hover['depth'],hover['summary']]
     end
     def schedule_flush
       return if @flush_scheduled || !(defined?(UI) && UI.respond_to?(:start_timer))
@@ -336,6 +402,8 @@ module PlanosSanto
       color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
       view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
       view.draw_text(klass.new(x,y+16*scale,0),line2,{color:color.call(blocked? && !@sample_held ? [200,0,0] : [0,128,0]),size:11})
+      summary=@hover['summary']
+      view.draw_text(klass.new(x,y+32*scale,0),"Placa: #{summary['sheetName'] || 'sin placa'} · Cantos: #{summary['edgeSides']}/4",{color:color.call([30,30,30]),size:11}) if @review && summary
     rescue StandardError
       nil
     end
@@ -501,6 +569,10 @@ module PlanosSanto
         @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>@shared_count}
         @hover['sharedTruncated']=true if @shared_truncated
         @hover['depth']=target['depth'] if target['depth']
+        if @verdicts.available?
+          summary=(@verdicts.summary(target['_instances'],@generation) rescue nil)
+          @hover['summary']=summary.slice('sheetName','edgeSides') if summary
+        end
         verdict=verdict_for(target)
         if verdict
           @hover['expandedFaceIds']=verdict['expandedFaceIds'];@hover['verdict']={'ok'=>verdict['ok'],'reason'=>verdict['reason']}
@@ -707,6 +779,9 @@ module PlanosSanto
         return true if @sample_held || (repeat.is_a?(Integer) && repeat>1)
         @sample_held=true;@sampled=nil
         emit("Cuentagotas: hacé clic en una pieza para tomar su material; soltá #{sample_label} para pintar con él.");invalidate(view);true
+      elsif immediate? && key==82
+        return true if repeat.is_a?(Integer) && repeat>1
+        review!(!@review);invalidate(view);true
       elsif key==27
         onCancel(0,view);true
       elsif key==13 && !@queued_targets.empty?
@@ -757,13 +832,17 @@ module PlanosSanto
       xyz=3.times.map { |row| matrix[row]*a[0]+matrix[4+row]*a[1]+matrix[8+row]*a[2]+matrix[12+row] }
       defined?(Geom::Point3d) ? Geom::Point3d.new(*xyz) : Sketchup::Point.new(*xyz)
     end
-    def build_overlay(target)
-      transformation=target['_instances'].inject(Geom::Transformation.new) { |world,entity| world*entity.transformation }.to_a
-      mesh=target['_face'].mesh(0);points=mesh.points.map { |point| world_point(point,transformation) }
-      @triangles=mesh.polygons.flat_map do |polygon|
+    def triangles_for(instances,face,transformation=nil)
+      transformation ||= instances.inject(Geom::Transformation.new) { |world,entity| world*entity.transformation }.to_a
+      mesh=face.mesh(0);points=mesh.points.map { |point| world_point(point,transformation) }
+      mesh.polygons.flat_map do |polygon|
         indices=polygon.map { |index| index.abs-1 }
         (1...(indices.length-1)).flat_map { |i| [points[indices[0]],points[indices[i]],points[indices[i+1]]] }
       end
+    end
+    def build_overlay(target)
+      transformation=target['_instances'].inject(Geom::Transformation.new) { |world,entity| world*entity.transformation }.to_a
+      @triangles=triangles_for(target['_instances'],target['_face'],transformation)
       @normal_line=[]
       if @triangles.length>=3
         a,b,c=@triangles.first(3).map(&:to_a)
@@ -787,6 +866,13 @@ module PlanosSanto
       (points || []).map { |point| klass.new(*point.to_a) }
     end
     def draw(view)
+      if @review && immediate?
+        {'missingSheet'=>[220,30,30],'partialEdges'=>[230,150,20]}.each do |state,rgb|
+          points=review_triangles[state]
+          next if points.empty?
+          view.drawing_color=rgba(rgb,70);view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,points)
+        end
+      end
       (@queued_overlays || {}).each_value do |overlay|
         view.drawing_color='cyan'
         view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,overlay[:triangles]) unless overlay[:triangles].empty?
