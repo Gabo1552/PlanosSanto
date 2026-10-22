@@ -53,7 +53,7 @@ function receiveChunk(message:Chunk){
   let reply:unknown;
   try{reply=JSON.parse(parts.items.join(''));}
   catch{fail(message.id,pending,'SketchUp envió una respuesta por partes incompleta. Volvé a intentar.');return;}
-  if(!reply||typeof reply!=='object'||(reply as Reply).id!==message.id||(reply as Reply).phase!==undefined){fail(message.id,pending,'SketchUp envió una respuesta por partes que no corresponde a esta operación.');return;}
+  if(!reply||typeof reply!=='object'||(reply as Reply).version!==1||(reply as Reply).id!==message.id||(reply as Reply).phase!==undefined){fail(message.id,pending,'SketchUp envió una respuesta por partes que no corresponde a esta operación.');return;}
   receive(reply as Reply);
 }
 window.PlanosSantoBridge={receive,receiveChunk};

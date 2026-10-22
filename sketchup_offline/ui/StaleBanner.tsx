@@ -23,6 +23,8 @@ export default function StaleBanner({stale,deferred=false,busy=false,onStaleChan
     window.addEventListener(ANALYSIS_EVENT,listen);
     return()=>window.removeEventListener(ANALYSIS_EVENT,listen);
   },[onStaleChange]);
+  // The reason belongs to one stale period: a rescan (acceptScan) clears it too.
+  useEffect(()=>{if(!stale)setReason('');},[stale]);
   if(!stale&&!deferred)return null;
   const title=stale?'Análisis desactualizado':'Modelo sin analizar';
   const detail=stale?`${reason?`${reason} `:''}La guía y el pedido usan el análisis anterior.`:'Se abrió sin analizar para no demorar Materiales ni Maderera.';

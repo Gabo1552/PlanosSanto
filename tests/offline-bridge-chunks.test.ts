@@ -57,6 +57,10 @@ describe('SketchUp bridge: replies in parts', () => {
     const parts = split(JSON.stringify({ version: 1, id: 'otra', result: 1, error: null }), 10);
     parts.forEach((data, index) => window.PlanosSantoBridge.receiveChunk({ version: 1, id: sent[1].id, index, total: parts.length, data }));
     await expect(foreign).rejects.toThrow('no corresponde');
+    const versioned = request('generate');
+    const old = split(JSON.stringify({ version: 2, id: sent[2].id, result: 1, error: null }), 10);
+    old.forEach((data, index) => window.PlanosSantoBridge.receiveChunk({ version: 1, id: sent[2].id, index, total: old.length, data }));
+    await expect(versioned).rejects.toThrow('no corresponde');
   });
   it('a total that changes between parts is rejected; unknown ids are ignored', async () => {
     window.PlanosSantoBridge.receiveChunk({ version: 1, id: 'desconocida', index: 0, total: 2, data: '{' });
