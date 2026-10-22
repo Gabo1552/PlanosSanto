@@ -1,8 +1,10 @@
 # frozen_string_literal: true
-# Verificador de SOLO LECTURA para la candidata 0.8.11 (Hitos 1, 2, 6 y 7) en SketchUp 2026.
+# Verificador de SOLO LECTURA para la candidata 0.8.11 (Hitos 1, 2, 3, 5, 6 y 7) en SketchUp 2026.
 # Parte del verificador 0.8.10 y suma: integridad del manifiesto (archivos sobrantes y
 # módulos nuevos), estados de pintura con fichas archivadas, perfil de maderera si existe,
-# ModelWatch registrado, cursores del pincel, costo de la huella y tiempos del pincel.
+# ModelWatch registrado, cursores del pincel, costo de la huella y tiempos del pincel; y, tras
+# integrar los Hitos 3 y 5, pincel avanzado y caché de malla: propuesta de pedido y confirmación
+# en bloque sin guardar, referencias parciales, análisis con y sin caché, y ajustes del pincel.
 # Cargarlo define un módulo y no ejecuta nada. Cada método se invoca a mano desde
 # la consola Ruby, sobre una COPIA del modelo. Ninguno abre operaciones, escribe
 # atributos, instala materiales ni modifica archivos.
@@ -11,9 +13,10 @@ require 'digest'
 
 module PlanosSantoValidacion0811
   VERSION = '0.8.11'
-  # Módulos que tiene que traer una candidata con los Hitos 1, 2, 6 y 7.
+  # Módulos que tiene que traer una candidata con los Hitos 1, 2, 3, 5, 6 y 7.
   MODULOS = %w[paint_materials.rb ocl_attributes.rb model_watch.rb bounded_zip.rb skm_import.rb
-               smart_paint_tool.rb piece_highlight_tool.rb material_library.rb photo_material.rb].freeze
+               smart_paint_tool.rb piece_highlight_tool.rb material_library.rb photo_material.rb
+               order_proposal.rb order_references.rb exporter.rb].freeze
   CURSORES = %w[paint-piece.png paint-edge.png paint-remove.png paint-blocked.png].freeze
   PNG = "\x89PNG\r\n\x1A\n".b.freeze
 
@@ -283,10 +286,81 @@ module PlanosSantoValidacion0811
     result
   end
 
+  # 13) Hito 3: propone el pedido y simula «Confirmar en bloque» sobre el borrador
+  #     actual SIN guardarlo (las dos acciones devuelven un borrador nuevo y no
+  #     escriben el modelo). Requiere un análisis abierto y la guía guardada.
+  def self.pedido
+    model = Sketchup.active_model; modified = model.modified?
+    session = controller.instance_variable_get(:@session) || raise('Abrí Planos Santo y analizá el modelo antes de medir el pedido.')
+    workshop = PlanosSanto::Workshop.new(model, session, directory: directory)
+    started = reloj
+    draft = workshop.plan(false)['plan']
+    proposed = workshop.propose(draft, nil)
+    propose_ms = ((reloj - started) * 1000).round(1)
+    started = reloj
+    bulk = workshop.confirm_bulk(proposed['plan'], nil)
+    bulk_ms = ((reloj - started) * 1000).round(1)
+    unchanged!(model, modified)
+    included = draft['rows'].count { |row| row['include'] }
+    reasons = bulk['review'].flat_map { |row| row['reasons'] }.tally.sort_by { |_reason, count| -count }.to_h
+    share = included.zero? ? nil : (bulk['review'].length * 100.0 / included).round(1)
+    { 'filasIncluidas' => included, 'propuesta' => proposed['proposal']['summary'], 'msProponer' => propose_ms,
+      'confirmables' => bulk['confirmed'].length, 'enRevision' => bulk['review'].length, 'porcentajeRevision' => share,
+      'motivosRevision' => reasons, 'msConfirmarEnBloque' => bulk_ms,
+      'cumple' => share.nil? ? nil : share <= 20, 'nota' => 'Nada se guardó: el borrador propuesto se descarta. Objetivo del plan: revisión individual de 20 % o menos.' }
+  end
+
+  # 14) Hito 5 (F-DESP-B): filas del pedido guardado que ya validan (referencia
+  #     impresa) y las que la A4 y las etiquetas marcarán «pendiente de pedido».
+  def self.referencias_parciales
+    model = Sketchup.active_model; modified = model.modified?
+    session = controller.instance_variable_get(:@session) || raise('Abrí Planos Santo y analizá el modelo antes de leer las referencias.')
+    workshop = PlanosSanto::Workshop.new(model, session, directory: directory)
+    result = PlanosSanto::OrderReferences.partial(model, workshop)
+    unchanged!(model, modified)
+    lots = result['references'].values.map { |row| row['lot'] }.compact.uniq.sort
+    { 'conReferencia' => result['references'].length, 'pendientes' => result['pending'].length, 'excluidas' => result['excluded'].length,
+      'lotes' => lots, 'lotesDefinitivos' => result['pending'].empty? }
+  end
+
+  # 15) Hito 6 (ARQ-01 etapa S): árbol del análisis con y sin caché de malla.
+  #     Mismo resultado salvo tiempo; cuenta los herrajes que quedan fuera.
+  def self.analisis(repeticiones: 3)
+    model = Sketchup.active_model; modified = model.modified?
+    trees = {}
+    measure = lambda do |cache|
+      Array.new(repeticiones) do
+        started = reloj
+        trees[cache] = PlanosSanto::Exporter.new(model, cache: cache).tree
+        ((reloj - started) * 1000).round(1)
+      end
+    end
+    cached = measure.call(true); plain = measure.call(false)
+    unchanged!(model, modified)
+    warnings = trees[true]['warnings']
+    { 'conCache' => { 'msPorArbol' => cached, 'mediana' => mediana(cached) },
+      'sinCache' => { 'msPorArbol' => plain, 'mediana' => mediana(plain) },
+      'equivalente' => JSON.generate(trees[true]) == JSON.generate(trees[false]),
+      'avisosHerraje' => warnings.count { |text| text.to_s.start_with?('Herraje') },
+      'muebles' => trees[true]['roots'].length,
+      'nota' => 'Solo el árbol en Ruby: el scan de la UI suma la respuesta al diálogo (ver replyStats). Objetivo del scan: menos de 10 s.' }
+  end
+
+  # 16) Pincel avanzado: preferencias guardadas (recientes por modo, tecla del
+  #     cuentagotas, cantos por clic). Usa el lector del producto; no escribe.
+  def self.ajustes_pincel
+    settings = controller.send(:smart_settings)
+    recent = settings['recentMaterials'] || {}
+    { 'recientes' => recent.transform_values(&:length), 'maximoPorModo' => recent.values.map(&:length).max.to_i <= 6,
+      'teclaCuentagotas' => settings['eyedropperKey'] || 'alt (por defecto)', 'cantosPorClic' => settings['edgeCount'],
+      'ultimos' => (settings['lastMaterials'] || {}).keys.sort }
+  end
+
   # Resumen de los chequeos que no piden datos: pegar el JSON en el informe.
   def self.resumen
     checks = { 'integridad' => -> { integridad }, 'modelWatch' => -> { model_watch }, 'cursores' => -> { cursores },
-               'perfilMaderera' => -> { perfil_maderera }, 'tiemposPincel' => -> { tiempos_pincel } }
+               'perfilMaderera' => -> { perfil_maderera }, 'tiemposPincel' => -> { tiempos_pincel },
+               'ajustesPincel' => -> { ajustes_pincel } }
     checks.transform_values do |check|
       check.call
     rescue StandardError => error
