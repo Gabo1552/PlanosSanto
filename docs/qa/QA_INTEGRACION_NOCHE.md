@@ -67,6 +67,19 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
 - **Corrección.** El doble responde `viewport_focus` y la prueba verifica que se pide una vez,
   después de `smart_quick_start`. No hubo cambio de producto.
 
+### QA-INT-04 · axe del shell fallaba en Materiales (UX ronda 2 / axe × Hito 7) — corregido
+
+- **Hecho.** `n2-shell.spec.ts › axe no encuentra violaciones serious…` fallaba de forma
+  determinista ya en la base `b613762`: `label-content-name-mismatch` (WCAG 2.5.3, serious)
+  en los filtros «Todos», «Placas», «Cantos», «Otros» y «Archivados» de la biblioteca.
+  La ronda 2 había excluido solo «Por revisar» (docs/qa/CONTRASTE.md); el Hito 7 sumó el
+  contador visible a todos los filtros con `aria-label` fijo.
+- **Corrección mínima** (`MaterialLibraryPanel.tsx`): sin `aria-label`; el contador ya es
+  `aria-hidden`, así que el nombre accesible sigue siendo «Todos», «Placas», etc. y las
+  pruebas que buscan esos nombres no cambian.
+- **Prueba.** La propia de axe del shell, más `a11y-axe`, `material-hito7`, `material-library`
+  y `library-sync` en verde.
+
 ## 3. Verificado sin regresión (con prueba nueva)
 
 | Cruce | Resultado | Prueba |
