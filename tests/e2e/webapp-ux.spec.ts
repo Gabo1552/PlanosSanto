@@ -78,3 +78,20 @@ test('textos secundarios y encabezados de tabla cumplen contraste AA y el foco s
   const focused=page.locator(':focus');await expect(focused).toHaveAttribute('aria-label','Nombre P01');
   expect(await focused.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
 });
+
+test('al eliminar una nota el foco pasa a la nota siguiente y, sin notas, a «Agregar nota»',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'Explorar proyecto DEMO →'}).click();
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+  const items=page.locator('.note-list-item'),initial=await items.count();
+  for(let i=0;i<2;i++){
+    await page.getByRole('button',{name:/^\+ Agregar nota a/}).click();
+    await page.locator('.anchor-hint').getByRole('button',{name:'Cancelar',exact:true}).click();
+  }
+  await expect(items).toHaveCount(initial+2);
+  await items.first().click();
+  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();
+  await expect(items).toHaveCount(initial+1);
+  await expect(items.first()).toBeFocused();
+  while(await items.count()){await items.first().click();await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();}
+  await expect(page.getByRole('button',{name:/^\+ Agregar nota a/})).toBeFocused();
+});
