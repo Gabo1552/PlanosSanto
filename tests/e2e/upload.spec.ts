@@ -27,7 +27,7 @@ test('ofrece la extensión offline actual como descarga separada y explica su va
 test('carga un ZIP de la extensión y recupera el proyecto después de recargar',async({page})=>{
   const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
   const file='sketchup/build/ui-upload.zip';execFileSync('python3',['-c',"from pathlib import Path;Path('sketchup/build/ui-upload.zip').unlink(missing_ok=True)"]);
-  execFileSync(ruby,['sketchup/test/write_zip_fixture.rb',file]);
+  await mkdir('sketchup/build',{recursive:true});execFileSync(ruby,['sketchup/test/write_zip_fixture.rb',file]);
   await page.goto('/');await page.getByLabel('Archivo del proyecto').setInputFiles(file);
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await expect(page.getByText('SKETCHUP · EXTENSIÓN RUBY',{exact:true})).toBeVisible();
