@@ -65,6 +65,32 @@ class MaterialManagementControllerTest < Minitest::Test
     assert_equal 1,Sketchup.focus_calls
   end
 
+  def test_package_export_preview_commit_and_cancel_through_native_dialogs
+    UI.management_save=nil
+    assert dispatch('material_package_export')['cancelled']
+    UI.management_save=File.join(@dir,'lote')
+    exported=dispatch('material_package_export')
+    assert_equal 'lote.zip',exported['fileName'];assert_equal 1,exported['items']
+    other=Dir.mktmpdir
+    begin
+      ENV['PLANOS_SANTO_DATA_DIR']=other
+      UI.management_open=File.join(@dir,'lote.zip')
+      preview=dispatch('material_package_preview')
+      assert_equal ['new'],preview['rows'].map { |row| row['status'] }
+      dispatch('material_package_cancel')
+      assert_raises(PlanosSanto::ExportError) { dispatch('material_package_commit','token'=>preview['token'],'selectedIds'=>[],'revision'=>0,'confirmed'=>true) }
+      preview=dispatch('material_package_preview')
+      result=dispatch('material_package_commit','token'=>preview['token'],'selectedIds'=>preview['rows'].map { |row| row['id'] },'revision'=>preview['revision'],'confirmed'=>true,'renames'=>{})
+      assert_equal 1,result['imported']
+      assert_equal ['Roble QA'],PlanosSanto::CatalogStore.new(directory:other).read['items'].map { |item| item['name'] }
+      assert_includes @notices,'material_package_commit'
+    ensure
+      ENV['PLANOS_SANTO_DATA_DIR']=@dir
+      FileUtils.remove_entry(other)
+    end
+    assert_empty @model.operations
+  end
+
   def test_rejects_non_hash_data
     assert_raises(PlanosSanto::ExportError) { dispatch('material_extras',[]) }
   end

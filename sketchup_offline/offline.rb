@@ -879,6 +879,11 @@ module PlanosSanto
       directory=material_management_directory
       MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory)
     end
+    def material_package
+      directory=material_management_directory
+      catalog=CatalogStore.new(directory:directory)
+      @material_package ||= MaterialPackage.new(library:MaterialLibrary.new(@model,catalog:catalog,directory:directory),catalog:catalog,directory:directory)
+    end
     def material_management(action,data)
       raise ExportError,'Datos de la acción inválidos.' unless data.is_a?(Hash)
       if !MATERIAL_MANAGEMENT_READONLY.include?(action) && @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
@@ -902,6 +907,31 @@ module PlanosSanto
       when 'material_archive'
         active!;clean_for_paint!
         management_library.archive_items(data)
+      when 'material_package_export'
+        active!
+        ids=data['catalogIds']
+        raise ExportError,'Selección de fichas inválida.' unless ids.nil? || ids.is_a?(Array)
+        target=with_user_dialog { UI.savepanel('Exportar paquete de materiales',nil,'PlanosSanto-materiales.zip') }
+        return {'cancelled'=>true} unless target
+        target+='.zip' unless target.downcase.end_with?('.zip')
+        material_package.export(target,catalog_ids:ids,include_archived:data['includeArchived']==true)
+      when 'material_package_preview'
+        active!;clean_for_paint!
+        path=with_user_dialog { UI.openpanel('Importar paquete de materiales',nil,'Paquete de materiales ZIP|*.zip||') }
+        return {'cancelled'=>true} unless path
+        active!
+        @material_package=nil
+        material_package.preview(path)
+      when 'material_package_commit'
+        active!;clean_for_paint!
+        raise ExportError,'Elegí primero un paquete para revisar.' unless @material_package
+        result=material_package.commit(data['token'],data['selectedIds'],data['revision'],confirmed:data['confirmed']==true,renames:data.fetch('renames',{}))
+        @material_package=nil
+        result
+      when 'material_package_cancel'
+        @material_package&.cancel
+        @material_package=nil
+        {'cancelled'=>true}
       else
         raise ExportError,'Acción de materiales no disponible.'
       end

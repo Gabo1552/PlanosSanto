@@ -3,6 +3,8 @@ require_relative 'catalog_store'
 require_relative 'material_resolver'
 require_relative 'material_policy'
 require_relative 'ocl_attributes'
+require_relative 'bounded_zip'
+require_relative 'skm_import'
 
 module PlanosSanto
   # Visual archives are private local SKM files, separate from the commercial
@@ -575,6 +577,286 @@ module PlanosSanto
         write_states(current)
         {'archivedIds'=>after,'changed'=>changed,'rows'=>rows}
       end
+    end
+  end
+
+  # MATERIALES-07: portable library package (.zip) with item records, the
+  # content-addressed SKM/photo/thumbnail files and their SHA-256. Import is
+  # preview → explicit commit, never touches the model and never overwrites:
+  # every entry must be allowlisted, listed in the manifest and match its hash.
+  class MaterialPackage
+    FORMAT='planos-santo.material-package'
+    MAX_PACKAGE=128*1024*1024
+    MAX_ENTRIES=2048
+    MAX_MANIFEST=8*1024*1024
+    MAX_FILE=32*1024*1024
+    FOLDERS={'photo-assets'=>/\A[0-9a-f]{64}\.(?:png|jpg|jpeg)\z/,'material-assets'=>/\A[0-9a-f]{64}\.skm\z/,'skm-import-assets'=>/\A[0-9a-f]{64}\.skm\z/}.freeze
+    MANIFEST_KEYS=%w[createdAt files format items schema visualRecords].freeze
+    RECORD_KEYS=%w[assetHash assetName catalogFingerprint catalogId sourceName].freeze
+    COMPARED=%w[name kind sku supplier thicknessMm widthMm lengthMm grain price].freeze
+    def initialize(library:,catalog:,directory:)
+      @library=library;@catalog=catalog;@directory=directory;@pending=nil
+    end
+
+    def self.path_allowed?(path)
+      folder,name,extra=path.to_s.split('/',3)
+      extra.nil? && FOLDERS.key?(folder) && FOLDERS[folder].match?(name.to_s)
+    end
+
+    # [folder, name, hash] for every private file an item's visual depends on.
+    def references(item,records)
+      refs=[]
+      photo=MaterialPolicy.photo(item)
+      if photo
+        refs << ['photo-assets',photo['imageAsset'],photo['sourceHash']]
+        refs << ['photo-assets',photo['thumbnailAsset'],photo['thumbnailAsset'].to_s.split('.').first]
+        refs << ['material-assets',"#{photo['skmHash']}.skm",photo['skmHash']]
+      end
+      skm=MaterialPolicy.skm_import?(item) && item['observed']['skm']
+      refs << ['skm-import-assets',"#{skm['sha256']}.skm",skm['sha256']] if skm.is_a?(Hash)
+      record=records.find { |row| row['catalogId']==item['id'] }
+      refs << ['material-assets',record['assetName'],record['assetHash']] if record
+      refs.select { |folder,name,hash| name.is_a?(String) && hash.is_a?(String) && path_allowed_ref?(folder,name,hash) }.uniq
+    end
+
+    def path_allowed_ref?(folder,name,hash)
+      self.class.path_allowed?("#{folder}/#{name}") && name.split('.').first==hash
+    end
+
+    def export(target,catalog_ids:nil,include_archived:false)
+      raise ExportError,'Elegí un archivo .zip para el paquete.' unless target.is_a?(String) && File.extname(target).downcase=='.zip'
+      raise ExportError,'Ese archivo ya existe; no se sobrescribió.' if File.exist?(target) || File.symlink?(target)
+      catalog=@catalog.read
+      archived=@library.archived_ids
+      items=if catalog_ids.nil?
+        catalog['items'].reject { |item| !include_archived && archived.include?(item['id']) }
+      else
+        raise ExportError,'Selección de fichas inválida.' unless catalog_ids.is_a?(Array) && catalog_ids.uniq==catalog_ids && catalog_ids.all? { |id| catalog['items'].any? { |item| item['id']==id } }
+        catalog['items'].select { |item| catalog_ids.include?(item['id']) }
+      end
+      raise ExportError,'No hay fichas para exportar.' if items.empty?
+      ids=items.map { |item| item['id'] }
+      items=items.map { |item| JSON.parse(JSON.generate(item)).tap { |copy| copy['compatibleIds']&=ids } }
+      records=@library.assets['records'].select { |row| ids.include?(row['catalogId']) }
+      files={};warnings=[]
+      items.each do |item|
+        references(item,records).each do |folder,name,hash|
+          path="#{folder}/#{name}"
+          next if files.key?(path)
+          if MaterialPolicy.file_matches?(@directory,folder,name,hash)
+            bytes=File.binread(File.join(@directory,folder,name),MAX_FILE+1)
+            raise ExportError,"Un archivo de «#{item['name']}» supera el límite del paquete." if bytes.bytesize>MAX_FILE
+            raise ExportError,"El archivo de «#{item['name']}» cambió durante la exportación." unless Digest::SHA256.hexdigest(bytes)==hash
+            files[path]=bytes
+          else
+            warnings << "«#{item['name']}»: falta o está dañado un archivo visual; se exportó la ficha sin él."
+          end
+        end
+      end
+      manifest={'format'=>FORMAT,'schema'=>1,'createdAt'=>Time.now.utc.iso8601,'items'=>items,
+                'visualRecords'=>records.select { |row| files.key?("material-assets/#{row['assetName']}") },
+                'files'=>files.map { |path,bytes| {'path'=>path,'sha256'=>Digest::SHA256.hexdigest(bytes),'bytes'=>bytes.bytesize} }}
+      json=JSON.pretty_generate(manifest)
+      raise ExportError,'El manifiesto del paquete es demasiado grande; exportá menos fichas.' if json.bytesize>MAX_MANIFEST
+      bytes=BoundedZip.build([['manifest.json',json,true]]+files.map { |path,data| [path,data,false] },max_bytes:MAX_PACKAGE,max_entries:MAX_ENTRIES)
+      begin
+        File.open(target,File::WRONLY|File::CREAT|File::EXCL,0o600) { |file| file.binmode;file.write(bytes);file.flush;file.fsync }
+      rescue Errno::EEXIST
+        raise ExportError,'Ese archivo ya existe; no se sobrescribió.'
+      rescue StandardError
+        File.delete(target) if File.file?(target) && !File.symlink?(target) && File.size(target)!=bytes.bytesize
+        raise
+      end
+      {'fileName'=>File.basename(target),'items'=>items.length,'files'=>files.length,'bytes'=>bytes.bytesize,'sha256'=>Digest::SHA256.hexdigest(bytes),'warnings'=>warnings.uniq}
+    end
+
+    def reject!(detail);raise ExportError,"Paquete de materiales inválido: #{detail} La biblioteca no cambió.";end
+
+    def read_package(path)
+      raise ExportError,'Elegí un paquete .zip local; no enlaces simbólicos.' unless path.is_a?(String) && File.extname(path).downcase=='.zip' && File.file?(path) && !File.symlink?(path)
+      size=File.size(path);raise ExportError,'El paquete supera 128 MiB.' if size>MAX_PACKAGE
+      bytes=File.binread(path,MAX_PACKAGE+1);raise ExportError,'El paquete cambió mientras se leía.' if bytes.bytesize!=size
+      zip=BoundedZip.new(bytes,max_bytes:MAX_PACKAGE,max_entries:MAX_ENTRIES,max_total:256*1024*1024,max_entry:MAX_FILE)
+      names=zip.entries.map(&:name)
+      bad=names.reject { |name| name=='manifest.json' || self.class.path_allowed?(name) }
+      reject!("contiene rutas no permitidas (#{bad.first(3).join(', ')}).") unless bad.empty?
+      manifest_entry=zip.entries.find { |entry| entry.name=='manifest.json' }
+      reject!('falta manifest.json.') unless manifest_entry
+      reject!('el manifiesto es demasiado grande.') if manifest_entry.size>MAX_MANIFEST
+      manifest=begin
+        JSON.parse(zip.read(manifest_entry).force_encoding(Encoding::UTF_8),max_nesting:32)
+      rescue JSON::ParserError,JSON::NestingError
+        reject!('el manifiesto está dañado.')
+      end
+      reject!('formato o versión desconocidos.') unless manifest.is_a?(Hash) && manifest.keys.sort==MANIFEST_KEYS && manifest['format']==FORMAT && manifest['schema']==1 && manifest['createdAt'].is_a?(String) && manifest['createdAt'].length<=40
+      %w[items files visualRecords].each { |key| reject!("#{key} inválido.") unless manifest[key].is_a?(Array) && manifest[key].length<=5000 }
+      rows=manifest['files']
+      reject!('la lista de archivos no coincide con el contenido.') unless rows.all? { |row| row.is_a?(Hash) && row.keys.sort==%w[bytes path sha256] && row['path'].is_a?(String) } &&
+        rows.map { |row| row['path'] }.sort==(names-['manifest.json']).sort
+      files={}
+      rows.each do |row|
+        entry=zip.entries.find { |candidate| candidate.name==row['path'] }
+        hash=File.basename(row['path']).split('.').first
+        reject!("#{row['path']} no coincide con su huella.") unless row['sha256']==hash && row['bytes']==entry.size
+        data=zip.read(entry)
+        reject!("#{row['path']} no coincide con su huella.") unless Digest::SHA256.hexdigest(data)==hash
+        check_file(row['path'],data)
+        files[row['path']]=data
+      end
+      items=manifest['items']
+      begin
+        @catalog.validate({'schema'=>1,'revision'=>0,'items'=>items})
+      rescue ExportError => error
+        reject!("fichas inválidas (#{error.message})")
+      end
+      records=manifest['visualRecords']
+      reject!('registros visuales inválidos.') unless records.all? do |row|
+        row.is_a?(Hash) && row.keys.sort==RECORD_KEYS && items.any? { |item| item['id']==row['catalogId'] } && row['assetName']=="#{row['assetHash']}.skm" &&
+          files.key?("material-assets/#{row['assetName']}") && row['catalogFingerprint'].is_a?(String) && row['sourceName'].is_a?(String) && row['sourceName'].length<=512
+      end && records.map { |row| row['catalogId'] }.uniq.length==records.length
+      {'manifest'=>manifest,'files'=>files,'sha256'=>Digest::SHA256.hexdigest(bytes),'bytes'=>bytes.bytesize}
+    end
+
+    # Defense in depth: content is never executed, but types must be what the
+    # name claims (SKM = bounded ZIP with document.xml; images by signature).
+    def check_file(path,data)
+      if path.end_with?('.skm')
+        archive=begin
+          BoundedZip.new(data,max_bytes:SkmImport::MAX_SKM,max_entries:128,max_total:64*1024*1024,max_entry:32*1024*1024)
+        rescue ExportError
+          reject!("#{path} no es un SKM válido.")
+        end
+        reject!("#{path} no es un SKM válido.") unless archive.entries.any? { |entry| entry.name=='document.xml' }
+      elsif path.end_with?('.png')
+        reject!("#{path} no es una imagen PNG.") unless data.start_with?("\x89PNG\r\n\x1a\n".b)
+      else
+        reject!("#{path} no es una imagen JPG.") unless data.start_with?("\xff\xd8".b)
+      end
+    end
+
+    def same_item?(existing,item)
+      existing['sourceHash']==item['sourceHash'] && COMPARED.all? { |key| existing[key]==item[key] }
+    end
+
+    def thumbnail(item,files)
+      photo=MaterialPolicy.photo(item)
+      if photo
+        bytes=files["photo-assets/#{photo['thumbnailAsset']}"]
+        return bytes && bytes.bytesize<=512*1024 ? 'data:image/png;base64,'+Base64.strict_encode64(bytes) : nil
+      end
+      skm=MaterialPolicy.skm_import?(item) && item['observed']['skm']
+      bytes=skm.is_a?(Hash) && files["skm-import-assets/#{skm['sha256']}.skm"]
+      return nil unless bytes
+      zip=BoundedZip.new(bytes,max_bytes:SkmImport::MAX_SKM,max_entries:128,max_total:64*1024*1024,max_entry:32*1024*1024)
+      image=zip.entries.find { |entry| %w[doc_thumbnail.png thumbnail.png doc_thumbnail.jpg thumbnail.jpg].include?(entry.name.downcase) && entry.size<=SkmImport::MAX_PREVIEW }
+      image ? SkmImport.new(catalog:@catalog,directory:@directory).thumbnail(zip.read(image)) : nil
+    rescue ExportError
+      nil
+    end
+
+    def preview(path)
+      @pending=nil
+      package=read_package(path)
+      manifest=package['manifest'];files=package['files']
+      current=@catalog.read
+      budget=SkmImport::THUMBNAIL_BUDGET
+      names=manifest['items'].map { |item| @library.normalized_name(item['name']) }
+      rows=manifest['items'].map do |item|
+        refs=references(item,manifest['visualRecords'])
+        present=refs.count { |folder,name,_hash| files.key?("#{folder}/#{name}") }
+        warnings=['Se importa sin aprobar: revisá la ficha antes de pedir a maderera.']
+        warnings << 'Faltan archivos visuales en el paquete; la ficha quedará para revisar.' if present<refs.length && refs.any? { |folder,name,hash| !files.key?("#{folder}/#{name}") && !MaterialPolicy.file_matches?(@directory,folder,name,hash) }
+        warnings << 'La foto tiene metadatos inválidos; la ficha quedará para revisar.' if MaterialPolicy.photo?(item) && !MaterialPolicy.metadata_valid?(item)
+        status=if current['items'].any? { |existing| same_item?(existing,item) }
+          'duplicate'
+        elsif current['items'].any? { |existing| @library.normalized_name(existing['name'])==@library.normalized_name(item['name']) } || names.count(@library.normalized_name(item['name']))>1
+          'conflict'
+        else
+          'new'
+        end
+        thumb=thumbnail(item,files)
+        thumb=nil if thumb && thumb.bytesize>budget
+        budget-=thumb.bytesize if thumb
+        {'id'=>SecureRandom.hex(16),'name'=>item['name'],'kind'=>item['kind'],'status'=>status,'thumbnail'=>thumb,'files'=>present,'warnings'=>warnings,'_item'=>item}
+      end
+      @pending={'token'=>SecureRandom.hex(24),'revision'=>current['revision'],'rows'=>rows,'files'=>files,'records'=>manifest['visualRecords']}
+      {'token'=>@pending['token'],'revision'=>current['revision'],
+       'package'=>{'items'=>rows.length,'files'=>files.length,'bytes'=>package['bytes'],'createdAt'=>manifest['createdAt'],'sha256'=>package['sha256']},
+       'rows'=>rows.map { |row| row.reject { |key,_| key.start_with?('_') } }}
+    end
+
+    def cancel;@pending=nil;{'cancelled'=>true};end
+
+    def store(folder,name,bytes,created)
+      directory=File.join(@directory,folder)
+      raise ExportError,'La biblioteca privada no puede usar enlaces simbólicos.' if File.symlink?(@directory) || File.symlink?(directory)
+      FileUtils.mkdir_p(directory)
+      target=File.join(directory,name)
+      if File.exist?(target) || File.symlink?(target)
+        raise ExportError,"El archivo existente #{folder}/#{name} está dañado; no se sobrescribió. Restaurá su copia de seguridad." unless File.file?(target) && !File.symlink?(target) && Digest::SHA256.file(target).hexdigest==name.split('.').first
+        return
+      end
+      Tempfile.create(['.package-','.pending'],directory) do |file|
+        file.binmode;file.write(bytes);file.flush;file.fsync;file.close;File.rename(file.path,target)
+      end
+      created << target
+    end
+
+    def commit(token,selected_ids,revision,confirmed:false,renames:{})
+      raise ExportError,'Confirmá la importación después de revisar el paquete.' unless confirmed==true
+      raise ExportError,'Vista previa vencida; volvé a elegir el paquete.' unless @pending && token==@pending['token'] && revision==@pending['revision']
+      raise ExportError,'Selección de fichas inválida.' unless selected_ids.is_a?(Array) && selected_ids.uniq==selected_ids && selected_ids.all? { |id| id.is_a?(String) && @pending['rows'].any? { |row| row['id']==id } } && renames.is_a?(Hash)
+      result=@library.locked('revision'=>revision,'confirmed'=>true) do |catalog,index|
+        selected=@pending['rows'].select { |row| selected_ids.include?(row['id']) && row['status']!='duplicate' }
+        used=catalog['items'].map { |item| @library.normalized_name(item['name']) }
+        mapping={}
+        candidates=selected.map do |row|
+          name=renames.key?(row['id']) ? @catalog.text(renames[row['id']].to_s) : row['name']
+          if name.empty? || (row['status']=='conflict' && (!renames.key?(row['id']) || @library.normalized_name(name)==@library.normalized_name(row['name']))) || used.include?(@library.normalized_name(name))
+            raise ExportError,'Resolvé el nombre de cada ficha en conflicto; no se sobrescribió ninguna.'
+          end
+          used << @library.normalized_name(name)
+          item=JSON.parse(JSON.generate(row['_item']))
+          id=SecureRandom.uuid
+          id=SecureRandom.uuid while catalog['items'].any? { |existing| existing['id']==id } || mapping.value?(id)
+          mapping[item['id']]=id
+          item.merge!('id'=>id,'name'=>name,'approved'=>false,'updatedAt'=>Time.now.utc.iso8601)
+          [item,row]
+        end
+        candidates.each { |item,_row| item['compatibleIds']=item['compatibleIds'].filter_map { |old| mapping[old] } }
+        next {'catalog'=>catalog,'imported'=>0,'skipped'=>selected_ids.length,'noChanges'=>true} if candidates.empty?
+        catalog['items']+=candidates.map(&:first)
+        @catalog.validate(catalog)
+        created=[];index_path=File.join(@directory,'material-assets.json')
+        previous_index=File.file?(index_path) ? File.binread(index_path) : nil
+        added_records=false
+        begin
+          candidates.each do |item,row|
+            references(row['_item'],@pending['records']).each do |folder,name,_hash|
+              bytes=@pending['files']["#{folder}/#{name}"]
+              store(folder,name,bytes,created) if bytes
+            end
+            record=@pending['records'].find { |candidate| candidate['catalogId']==row['_item']['id'] }
+            next unless record
+            index['records'] << record.merge('catalogId'=>item['id'],'catalogFingerprint'=>MaterialResolver.item_fingerprint(item))
+            added_records=true
+          end
+          if added_records
+            index['revision']+=1
+            @library.write_index(index)
+          end
+          @library.publish_catalog_locked(catalog,revision)
+        rescue Exception
+          if added_records
+            previous_index ? @library.atomic_write(index_path,previous_index) : (File.delete(index_path) if File.file?(index_path))
+          end
+          created.each { |path| File.delete(path) if File.file?(path) && !File.symlink?(path) }
+          raise
+        end
+        {'catalog'=>catalog,'imported'=>candidates.length,'skipped'=>selected_ids.length-candidates.length}
+      end
+      @pending=nil
+      result
     end
   end
 end
