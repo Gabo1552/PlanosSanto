@@ -212,6 +212,33 @@ class NocheIntegracionTest < Minitest::Test
     assert_empty @palette.scripts.select { |script| script.include?('receiveChunk') }
   end
 
+  # Ventanas × Hito 2 × Hito 6: opening Pintar in the main window claims the
+  # painting from the separate palette (closes it, stops its Tool without a
+  # refresh). The paint already done keeps the banner; ModelWatch stays on.
+  def test_main_window_claim_after_palette_painting_keeps_the_paint_banner
+    editor!;palette!;start_tool(@palette)
+    @tool.click(model_observer)
+    loaded=request('smart_palette_load',{'claim'=>true})
+    assert_nil loaded['error'];assert_equal false,loaded['result']['toolState']['active']
+    refute @palette.visible?;assert_nil @controller.instance_variable_get(:@palette_dialog)
+    assert watch.attached?
+    assert_equal 'paint',@controller.send(:analysis_state)['source']
+    walks=counting_fingerprint { watch.flush }
+    assert_equal 0,walks
+  end
+
+  # Hito 7 × Hito 6: the OpenCutList preview writes nothing: no banner, no
+  # library notice, no fingerprint walk.
+  def test_ocl_sync_preview_never_marks_the_analysis_stale
+    editor!;palette!
+    library=Object.new
+    library.define_singleton_method(:ocl_sync) { |_data| {'dryRun'=>true,'changed'=>3,'materials'=>[],'planDigest'=>'d','noChanges'=>true} }
+    reply=@controller.stub(:management_library,library) { request('material_ocl_sync',{'dryRun'=>true}) }
+    assert_equal 3,reply['result']['changed']
+    assert_empty stale_events;assert_empty @palette.events('planos-santo-material-library-changed')
+    assert_equal false,@controller.send(:analysis_state)['stale']
+  end
+
   # Barra rápida × Hito 6: the toolbar runs outside handle(); switching to a
   # non-paint destination stops the pincel and reports the paint reason.
   def test_toolbar_switch_after_painting_keeps_the_paint_reason
