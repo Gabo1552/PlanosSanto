@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "note": "Valores sugeridos para altas rápidas. Nunca quedan aprobados: confirmá SKU, proveedor, formato y veta con la ficha técnica de la maderera.",
+  "presets": [
+    {"id": "melamina-18-2750", "label": "Melamina 18 mm · 2750 × 1830 (formato a confirmar)", "kind": "sheet", "values": {"thicknessMm": 18, "lengthMm": 2750, "widthMm": 1830}},
+    {"id": "melamina-18-2600", "label": "Melamina 18 mm · 2600 × 1830 (formato a confirmar)", "kind": "sheet", "values": {"thicknessMm": 18, "lengthMm": 2600, "widthMm": 1830}},
+    {"id": "canto-22x045", "label": "Canto 22 × 0,45 mm", "kind": "edge", "values": {"widthMm": 22, "thicknessMm": 0.45}},
+    {"id": "canto-22x2", "label": "Canto 22 × 2 mm", "kind": "edge", "values": {"widthMm": 22, "thicknessMm": 2}}
+  ]
+}
