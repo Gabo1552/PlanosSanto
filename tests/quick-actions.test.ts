@@ -23,9 +23,10 @@ describe('Ayuda de atajos y recuperación de errores',()=>{
  it('? abre la ayuda fuera de campos de texto, con o sin Shift según la distribución del teclado',()=>{
   expect(shortcutFor({...base,key:'?',shiftKey:true})).toBe('help');expect(shortcutFor({...base,key:'?'})).toBe('help');
   expect(shortcutFor({...base,key:'?',target:{tagName:'BUTTON',getAttribute:()=>null}})).toBe('help');
+  for(const type of ['checkbox','radio','RADIO'])expect(shortcutFor({...base,key:'?',shiftKey:true,target:{tagName:'INPUT',type,getAttribute:()=>null}})).toBe('help');
  });
  it('? no se roba lo que se escribe ni actúa con modificadores o diálogos abiertos',()=>{
-  for(const target of [{tagName:'INPUT',getAttribute:()=>null},{tagName:'TEXTAREA'},{tagName:'DIV',isContentEditable:true}])expect(shortcutFor({...base,key:'?',shiftKey:true,target})).toBeUndefined();
+  for(const target of [{tagName:'INPUT',getAttribute:()=>null},{tagName:'INPUT',type:'text',getAttribute:()=>null},{tagName:'INPUT',type:'number',getAttribute:()=>null},{tagName:'INPUT',type:'search',getAttribute:()=>null},{tagName:'TEXTAREA'},{tagName:'DIV',isContentEditable:true}])expect(shortcutFor({...base,key:'?',shiftKey:true,target})).toBeUndefined();
   expect(shortcutFor({...base,key:'?',ctrlKey:true})).toBeUndefined();expect(shortcutFor({...base,key:'?',altKey:true})).toBeUndefined();expect(shortcutFor({...base,key:'?'},true)).toBeUndefined();expect(shortcutFor({...base,key:'/'})).toBeUndefined();
  });
  it('ofrece Analizar de nuevo tras un cuelgue de SketchUp o un análisis fallido',()=>{

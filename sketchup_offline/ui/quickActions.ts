@@ -19,11 +19,11 @@ export const moduleShortcuts:ShellModule[]=['home','materials','furniture','orde
 /** Global shell shortcuts. Pure: the caller still checks that the matching button is enabled. */
 export function shortcutFor(event:ShortcutEvent,dialogOpen=false):Shortcut|undefined{
  if(event.defaultPrevented||dialogOpen||event.repeat)return undefined;
- const target=(event.target||{}) as {tagName?:string;isContentEditable?:boolean;getAttribute?:(name:string)=>string|null};
- const tag=String(target.tagName||'').toUpperCase(),role=target.getAttribute?.('role')||'';
+ const target=(event.target||{}) as {tagName?:string;type?:string;isContentEditable?:boolean;getAttribute?:(name:string)=>string|null};
+ const tag=String(target.tagName||'').toUpperCase(),role=target.getAttribute?.('role')||'',typing=tag==='INPUT'&&!['checkbox','radio','button','submit','reset','range','color','file'].includes(String(target.type||'text').toLowerCase());
  if(tag==='TEXTAREA'||tag==='SELECT'||target.isContentEditable||['listbox','combobox','menu','option'].includes(role))return undefined;
  const key=event.key.toLowerCase(),command=event.ctrlKey||!!event.metaKey;
- if(event.key==='?'&&!command&&!event.altKey&&tag!=='INPUT')return 'help';
+ if(event.key==='?'&&!command&&!event.altKey&&!typing)return 'help';
  if(command&&!event.altKey&&!event.shiftKey&&key==='s')return 'save';
  if(command&&!event.altKey&&event.shiftKey&&key==='e')return 'export';
  if(event.altKey&&!command&&!event.shiftKey){const digit=/^Digit([1-5])$/.exec(event.code||'')?.[1]||(/^[1-5]$/.test(event.key)?event.key:undefined);if(digit)return moduleShortcuts[Number(digit)-1];}
