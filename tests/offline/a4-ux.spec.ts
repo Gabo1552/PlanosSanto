@@ -42,13 +42,13 @@ test('A4 UX: 1/2 vistas y clic para ocultar por ruta conservan modelo, tabla y g
  await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior + interior',exact:true})).toHaveAttribute('aria-checked','true');
  await page.getByRole('button',{name:'Ocultar pieza en el dibujo',exact:true}).click();
  await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
- const chip=page.getByRole('button',{name:'Mostrar pieza oculta 1/11',exact:true});await expect(chip).toBeVisible();
+ const chip=page.getByRole('button',{name:/^Mostrar P01 · .+ \(1\/11\)$/});await expect(chip).toBeVisible();
  await expect(page.locator('[data-piece-row]')).toHaveCount(2);
  await chip.click();await expect(chip).toHaveCount(0);
  await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
  await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();await save(page);
  const after=await snapshot();unchanged(before,after);expect(after.guide!.furniture[0].pieces).toHaveLength(2);expect(after.guide!.furniture[0].presentation!.guide!.hiddenPieceIds).toEqual(['1/11']);
- await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('button',{name:'Mostrar pieza oculta 1/11',exact:true})).toBeVisible();
+ await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('button',{name:/^Mostrar P01 · .+ \(1\/11\)$/})).toBeVisible();
 });
 
 for(const viewCount of [1,2])test(`A4 UX: ${viewCount} vistas, la vista previa usa PDF real y coincide píxel a píxel con la exportación`,async({page},info)=>{

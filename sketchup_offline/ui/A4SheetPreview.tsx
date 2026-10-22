@@ -1,28 +1,56 @@
-import {useEffect,useState,type KeyboardEvent} from 'react';
+import {useEffect,useId,useRef,useState,type KeyboardEvent} from 'react';
 import type {Project} from '../../lib/model';
-import {A4FitError,createOfflinePdf,decode64,previewFileName} from './pdf';
+import {A4FitError,createOfflinePdf,decode64,exportTableTsv,previewFileName,referenceCoverage,type A4FitKind,type OrderReferences} from './pdf';
 import regularFont from '../assets/DejaVuSans.ttf';
 import monoFont from '../assets/DejaVuSansMono.ttf';
 import logo from '../assets/santo-carpintero.png?inline';
 import './a4SheetPreview.css';
 
-type Composed={project:Project;references?:Record<string,string>;attempt:number;error?:unknown};
+type Composed={project:Project;references?:OrderReferences;attempt:number;error?:unknown};
 type Sheet={key:string;url:string;bytes:number;pages:number;names:string[];ids:string[];fileName:string};
 const SIZE=new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
 export function formatBytes(bytes:number){return bytes>=1024*1024?`${SIZE.format(bytes/1024/1024)} MB`:`${SIZE.format(Math.max(1,Math.round(bytes/1024)))} KB`;}
-function FitProblem({error,onRetry,stale}:{error:unknown;onRetry:()=>void;stale:boolean}){
+const count=(n:number,one:string,many:string)=>`${n} ${n===1?one:many}`;
+/**
+ * Controls of the editor that fix each kind of layout problem, by stable data attributes (no wiring through App).
+ * The editor shows only the active furniture: they are looked up only once the furniture that fails is the active one.
+ */
+const FIX_TARGETS:Partial<Record<A4FitKind,()=>HTMLElement|null|undefined>>={
+  legend:()=>document.querySelector<HTMLElement>('[data-fix-target="legend"]'),
+  scale:()=>document.querySelector<HTMLElement>('[data-fix-target="scale"] [aria-checked="true"]'),
+  table:()=>document.querySelector<HTMLElement>('[data-fix-target="table"]:not(:checked):not(:disabled)')||document.querySelector<HTMLElement>('[data-piece-row] input'),
+  names:()=>[...document.querySelectorAll<HTMLInputElement>('input[data-piece-name]')].find(input=>!input.value.trim())||document.querySelector<HTMLElement>('input[data-piece-name]'),
+};
+/** Focus the control that fixes `kind`; returns the notice when it cannot be reached. */
+function focusFix(kind:A4FitKind):string|undefined{
+  const target=FIX_TARGETS[kind]?.();
+  if(!target)return 'El control para corregirlo no está en esta pantalla.';
+  target.scrollIntoView?.({block:'center'});target.focus();
+  if(document.activeElement===target)return undefined;
+  return target.matches(':disabled')||target.closest('[aria-disabled="true"]')?'El control para corregirlo está bloqueado: aplicá o cancelá los cambios de visibilidad interior y volvé a intentar.':'No se pudo llevar el foco al control para corregirlo.';
+}
+/** Clipboard of SketchUp's CEF may refuse the async API: fall back to a hidden textarea. */
+async function copyText(value:string){
+  try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(value);return;}}catch{/* fall back below */}
+  const area=document.createElement('textarea');area.value=value;area.setAttribute('readonly','');area.setAttribute('aria-hidden','true');
+  Object.assign(area.style,{position:'fixed',left:'-9999px',top:'0',opacity:'0'});document.body.appendChild(area);area.select();
+  const ok=document.execCommand('copy');area.remove();if(!ok)throw new Error('copy refused');
+}
+function FitProblem({error,onRetry,onFix,stale}:{error:unknown;onRetry:()=>void;onFix?:()=>void;stale:boolean}){
   const fit=error instanceof A4FitError?error:undefined,message=error instanceof Error?error.message:String(error);
   return <div className="a4-preview-blocked" role="alert" data-fit-kind={fit?.kind}>
     <strong>{fit?.furniture?`No entra en la hoja: ${fit.furniture}`:'La hoja necesita un ajuste'}</strong>
     <p className="a4-fit-reason">{fit?fit.reason:message}</p>
+    {fit?.detail&&<p className="a4-fit-detail">{fit.detail}</p>}
     {fit?.action&&<p className="a4-fit-action"><span>Qué hacer:</span> {fit.action}</p>}
     <p className="a4-fit-note">No se recortó información ni se agregaron hojas.{stale?' Se muestra la última versión que entraba.':''}</p>
-    <button type="button" onClick={onRetry}>Reintentar</button>
+    <div className="a4-fit-buttons">{onFix&&<button type="button" className="a4-fit-fix" onClick={onFix}>Ir a corregir</button>}<button type="button" onClick={onRetry}>Reintentar</button></div>
   </div>;
 }
 /** Render the actual export bytes: never a second approximation of the printed sheet. */
-export default function A4SheetPreview({project,references,disabled=false,pendingReason,activeFurnitureId}:{project:Project;references?:Record<string,string>;disabled?:boolean;pendingReason?:string;activeFurnitureId?:string}){
-  const [composed,setComposed]=useState<Composed>(),[sheet,setSheet]=useState<Sheet>(),[attempt,setAttempt]=useState(0),[page,setPage]=useState(0),[synced,setSynced]=useState<string>();
+export default function A4SheetPreview({project,references,disabled=false,pendingReason,activeFurnitureId,onActivate}:{project:Project;references?:OrderReferences;disabled?:boolean;pendingReason?:string;activeFurnitureId?:string;onActivate?:(furnitureId:string)=>void}){
+  const [composed,setComposed]=useState<Composed>(),[sheet,setSheet]=useState<Sheet>(),[attempt,setAttempt]=useState(0),[page,setPage]=useState(0),[synced,setSynced]=useState<string>(),[note,setNote]=useState<{text:string;live:string}>(),[pendingFix,setPendingFix]=useState<{id:string;kind:A4FitKind}>();
+  const blockedId=useId(),copyButton=useRef<HTMLButtonElement>(null);
   // A sheet of another project or set of furniture is never shown as "the previous version"; dropping it releases its URL.
   const key=[project.id,...project.furniture.map(f=>f.id)].join('\n');
   if(sheet&&sheet.key!==key){setSheet(undefined);setPage(0);}
@@ -52,20 +80,54 @@ export default function A4SheetPreview({project,references,disabled=false,pendin
     if(back||forward){event.preventDefault();go(shown+(back?-1:1));}
   }
   const summary=sheet&&`PDF · ${formatBytes(sheet.bytes)} · ${sheet.pages} ${sheet.pages===1?'hoja':'hojas'}`;
-  return <section className="a4-sheet-preview" aria-label="Vista previa del PDF A4" aria-busy={!disabled&&!current} aria-keyshortcuts={pages>1?'PageUp PageDown Alt+ArrowLeft Alt+ArrowRight':undefined} onKeyDown={keys}>
+  const coverage=referenceCoverage(project,references),missing=coverage.total-coverage.covered;
+  const status=disabled?pendingReason||'Aplicá o cancelá los cambios de visibilidad para preparar la hoja completa.':!current?(sheet?'Actualizando…':'Componiendo la hoja con piezas, cotas y anotaciones…'):current.error!==undefined?'La hoja no se actualizó: revisá el aviso.':sheet?`Hoja lista · ${formatBytes(sheet.bytes)}`:'';
+  // One live region: an action's notice is announced in place of the state and gives way when the state changes.
+  const setNotice=(text:string)=>setNote({text,live:status}),live=note&&note.live===status?note.text:status;
+  async function copy(){
+    try{const table=exportTableTsv(project,references);await copyText(table.text);setNotice(`Tabla copiada: ${count(table.rows,'fila','filas')} de ${count(table.furniture,'mueble','muebles')}. Pegala en Excel o Google Sheets.`);}
+    catch(error){setNotice(error instanceof A4FitError?`No se copió la tabla. ${error.message}`:'No se pudo copiar la tabla. Probá de nuevo o descargá la vista previa.');}
+    copyButton.current?.focus();
+  }
+  const fit=current?.error instanceof A4FitError?current.error:undefined;
+  const failing=fit?project.furniture.findIndex(f=>fit.furnitureId?f.id===fit.furnitureId:!!fit.furniture&&f.name===fit.furniture):-1;
+  // Open the sheet of the furniture that fails, make it the active one in the editor and only then focus its control.
+  function fix(){
+    if(!fit)return;
+    const paged=failing>=0&&failing!==shown&&pages>1;
+    if(paged)go(failing);
+    const id=failing>=0?project.furniture[failing].id:undefined,active=activeFurnitureId??(project.furniture.length===1?project.furniture[0].id:undefined);
+    const shownText=paged?`Mostrando la hoja ${failing+1} · ${project.furniture[failing].name}.`:'';
+    if(!id||id===active){const problem=focusFix(fit.kind);if(problem||paged)setNotice([shownText,problem].filter(Boolean).join(' '));return;}
+    if(onActivate){setPendingFix({id,kind:fit.kind});onActivate(id);if(paged)setNotice(shownText);return;}
+    setNotice(`${shownText} Abrí «${project.furniture[failing].name}» en el editor para corregirlo.`.trim());
+  }
+  useEffect(()=>{
+    if(!pendingFix||activeFurnitureId!==pendingFix.id)return;
+    const frame=requestAnimationFrame(()=>{setPendingFix(undefined);const problem=focusFix(pendingFix.kind);if(problem)setNote({text:problem,live:status});});
+    return()=>cancelAnimationFrame(frame);
+  },[pendingFix,activeFurnitureId,status]);
+  return <section className="a4-sheet-preview" aria-label="Vista previa del PDF A4" aria-keyshortcuts={pages>1?'PageUp PageDown Alt+ArrowLeft Alt+ArrowRight':undefined} onKeyDown={keys}>
     <header><div><h2>Hoja A4 para imprimir</h2><p>297 × 210 mm · {project.furniture.length} {project.furniture.length===1?'mueble · 1 hoja':'muebles · una hoja por mueble'}</p></div>
       {!disabled&&pages>1&&sheet&&<div className="a4-sheet-pager" role="group" aria-label="Hojas" title="Cambiar de hoja: RePág / AvPág o Alt + ← / →">
         <button type="button" disabled={shown===0} aria-keyshortcuts="PageUp Alt+ArrowLeft" onClick={()=>go(shown-1)}><span aria-hidden="true">‹</span> Anterior</button>
         <select aria-label="Hoja visible" value={shown} onChange={e=>go(Number(e.target.value))}>{sheet.names.map((name,i)=><option key={sheet.ids[i]??i} value={i}>Hoja {i+1} de {pages} · {name}</option>)}</select>
         <button type="button" disabled={shown>=pages-1} aria-keyshortcuts="PageDown Alt+ArrowRight" onClick={()=>go(shown+1)}>Siguiente <span aria-hidden="true">›</span></button>
       </div>}
-      {!disabled&&sheet&&<nav aria-label="Acciones de vista previa">{fresh?<><a href={sheet.url} target="_blank" rel="noreferrer">Abrir PDF</a><a href={sheet.url} download={sheet.fileName} title={sheet.fileName}>Descargar vista previa</a></>:<><button type="button" className="a4-link-disabled" disabled title="Esperá a que la hoja esté actualizada">Abrir PDF</button><button type="button" className="a4-link-disabled" disabled title="Esperá a que la hoja esté actualizada">Descargar vista previa</button></>}<small className="a4-sheet-size" data-testid="a4-sheet-size">{summary}</small></nav>}
+      <nav aria-label="Acciones de vista previa">{!disabled&&sheet&&(fresh?<><a href={sheet.url} target="_blank" rel="noreferrer">Abrir PDF</a><a href={sheet.url} download={sheet.fileName} title={sheet.fileName}>Descargar vista previa</a></>:<><a role="link" tabIndex={0} className="a4-link-disabled" aria-disabled="true" aria-describedby={blockedId}>Abrir PDF</a><a role="link" tabIndex={0} className="a4-link-disabled" aria-disabled="true" aria-describedby={blockedId}>Descargar vista previa</a></>)}
+        <button ref={copyButton} type="button" className="a4-copy-table" disabled={!project.furniture.length} title="Copia el listado de piezas separado por tabulaciones" onClick={()=>void copy()}>Copiar tabla</button></nav>
+      <div className="a4-sheet-meta">
+        <div className="a4-order-state" data-order={references?(missing?'partial':'complete'):'none'}><p className="a4-order-pill"><span aria-hidden="true">{references?'✓':'○'}</span> {references?`Con placa y cantos del pedido · ${coverage.covered} de ${count(coverage.total,'pieza','piezas')}`:'Sin datos del pedido'}</p>{references&&missing>0&&<p className="a4-order-missing">{missing===1?'1 pieza excluida del pedido se imprime sin material.':`${missing} piezas excluidas del pedido se imprimen sin material.`}</p>}</div>
+        <p className="a4-live-status" role="status" aria-live="polite">{live}</p>
+        {!disabled&&sheet&&!fresh&&<small id={blockedId} className="a4-link-reason">Esperá a que la hoja esté actualizada</small>}
+        {!disabled&&sheet&&<small className="a4-sheet-size" data-testid="a4-sheet-size">{summary}</small>}
+      </div>
     </header>
-    {disabled?<p role="status">{pendingReason||'Aplicá o cancelá los cambios de visibilidad para preparar la hoja completa.'}</p>:<>
-      {current?.error!==undefined&&<FitProblem error={current.error} stale={!!sheet} onRetry={()=>setAttempt(n=>n+1)}/>}
-      {!sheet?(!current&&<p role="status">Componiendo la hoja con piezas, cotas y anotaciones…</p>):<>
-        {current?.error===undefined&&<p className="a4-preview-fidelity">Esta vista abre el PDF generado por el mismo exportador de la guía, con su tabla, cotas y notas completas. Si el visor integrado no está disponible en SketchUp, usá Abrir PDF.</p>}
-        <div className={`a4-sheet-frame${fresh?'':' is-stale'}`}>{!current&&<span className="a4-stale-badge" role="status" aria-live="polite">Actualizando…</span>}<iframe key={`${sheet.url}#${shown}`} title="PDF A4 generado" src={`${sheet.url}#page=${shown+1}&view=FitH&toolbar=0`} data-pdf-bytes={sheet.bytes} data-stale={fresh?undefined:'true'}/></div>
+    {!disabled&&<>
+      {current?.error!==undefined&&<FitProblem error={current.error} stale={!!sheet} onRetry={()=>setAttempt(n=>n+1)} onFix={fit&&(FIX_TARGETS[fit.kind]||failing>=0)?fix:undefined}/>}
+      {sheet&&<>
+        {current?.error===undefined&&<p className="a4-preview-fidelity">PDF real del exportador, con tabla, cotas y notas completas. Si no se ve en SketchUp, usá Abrir PDF.</p>}
+        <div className={`a4-sheet-frame${fresh?'':' is-stale'}`}>{!current&&<span className="a4-stale-badge" aria-hidden="true">Actualizando…</span>}<iframe key={`${sheet.url}#${shown}`} title="PDF A4 generado" src={`${sheet.url}#page=${shown+1}&view=FitH&toolbar=0`} data-pdf-bytes={sheet.bytes} data-stale={fresh?undefined:'true'}/></div>
       </>}
     </>}
   </section>;

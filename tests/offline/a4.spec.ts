@@ -56,8 +56,8 @@ test('A4 interior: previsualizar, cancelar y restaurar; ocultar una ruta anidada
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();
  await expect(page.locator('polygon[data-piece="1/13/12"]')).toHaveCount(0);expect(await page.locator('polygon[data-piece="1/11"]').count()).toBeGreaterThan(0);expect(await snapshot()).toEqual(before);
  await expect(page.getByRole('button',{name:'Guardar guía',exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeDisabled();
- await page.getByRole('button',{name:/^Cancelar previsualización/}).click();expect(await page.locator('polygon[data-piece="1/13/12"]').count()).toBeGreaterThan(0);
- await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Restaurar todas en la previsualización',exact:true}).click();await expect(page.getByLabel('Visible en interior 1/13/12',{exact:true})).toBeChecked();
+ await page.getByRole('button',{name:/^Cancelar vista previa/}).click();expect(await page.locator('polygon[data-piece="1/13/12"]').count()).toBeGreaterThan(0);
+ await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Mostrar todas',exact:true}).click();await expect(page.getByLabel('Visible en interior 1/13/12',{exact:true})).toBeChecked();
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();await expect(page.locator('[data-piece-row="1/13/12"]')).toBeVisible();await save(page);
  const after=await snapshot();unchanged(before,after);expect(after.guide!.furniture[0].pieces).toHaveLength(2);expect(after.guide!.furniture[0].presentation!.guide!.hiddenPieceIds).toEqual(['1/13/12']);
  const output=await pdf(page,info.outputDir);expect(output.text).toContain('P02');await copyFile(output.path,'artifacts/A4-interior-SINTETICO.pdf');
@@ -65,7 +65,7 @@ test('A4 interior: previsualizar, cancelar y restaurar; ocultar una ruta anidada
 });
 
 test('A4 dos vistas: orientación compartida e interior distinto persisten en una página y Undo revierte solo ajustes',async({page},info)=>{
- await boot(page,info.outputDir);const before=await snapshot();await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();await page.getByLabel('Compartir cámara entre vistas',{exact:true}).check();
+ await boot(page,info.outputDir);const before=await snapshot();await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();await page.getByLabel('Compartir orientación entre exterior e interior',{exact:true}).check();
  await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('18');
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();await save(page);
  await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('18');await page.getByRole('button',{name:'Ver exterior',exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('18');
@@ -79,7 +79,7 @@ test('A4 bloquea una nota anclada a una pieza oculta y permite recuperarla sin p
  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Conservar la indicación de la pieza interior');
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/oculta|visible/i);expect(existsSync(resolve(info.outputDir,'PlanosSanto-A4.pdf'))).toBe(false);
- await openVisibility(page);await page.getByRole('button',{name:'Restaurar todas en la previsualización',exact:true}).click();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();const output=await pdf(page,info.outputDir);expect(output.text).toContain('Conservar la indicación de la pieza interior');
+ await openVisibility(page);await page.getByRole('button',{name:'Mostrar todas',exact:true}).click();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();const output=await pdf(page,info.outputDir);expect(output.text).toContain('Conservar la indicación de la pieza interior');
 });
 
 test('A4 composición inviable informa ajustes y no recorta notas ni genera hojas extra',async({page},info)=>{

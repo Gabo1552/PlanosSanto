@@ -145,7 +145,9 @@ module PlanosSanto
         board=service.material(row['materialId'],'sheet')
         roles=[row['principalId'],row['secondaryId']].map { |id| id ? service.material(id,'edge')['sku'] : nil }
         edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{%w[Arr Aba Izq Der][i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
-        [row['id'],"#{board['sku']} / #{board['thicknessMm']} mm · #{edge_text}"]
+        board_text="#{board['sku']} / #{board['thicknessMm']} mm";base,height=service.dimensions(row)
+        # 'text' keeps the previous printed contract; the rest is the same edge map and cut as the supplier TXT (Arr·Aba·Izq·Der over base × height).
+        [row['id'],{'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],'base'=>base,'height'=>height}]
       end
     end
     def export_order(draft,directory);order.export(draft,directory);end
