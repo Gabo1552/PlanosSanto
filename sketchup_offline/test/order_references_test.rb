@@ -65,6 +65,21 @@ class OrderReferencesTest < Minitest::Test
   @workshop.define_singleton_method(:codes) { {ids[0]=>''} }
   refute PlanosSanto::OrderReferences.partial(@model,@workshop)['references'][ids[0]].key?('code'),'un código repetido o ausente no se inventa'
  end
+ def test_an_unfinished_txt_profile_does_not_block_the_printed_references
+  plan=draft;ids=plan['rows'].map { |row| row['id'] }
+  @workshop.save_plan(plan)
+  raw=JSON.parse(@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY));raw['profile']={'encoding'=>'latin9'}
+  @model.set_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY,JSON.generate(raw))
+  assert_raises(PlanosSanto::ExportError){@workshop.references}
+  result=PlanosSanto::OrderReferences.partial(@model,@workshop)
+  assert_equal ids.sort,result['references'].keys.sort;assert_empty result['pending']
+ end
+ def test_a_draft_without_included_pieces_prints_without_order_data
+  plan=draft;ids=plan['rows'].map { |row| row['id'] }
+  plan['rows'].each { |row| row.merge!('include'=>false,'excludeReason'=>'Exclusión sintética revisada') }
+  @workshop.save_plan(plan)
+  assert_equal({'references'=>{},'pending'=>[],'excluded'=>ids},PlanosSanto::OrderReferences.partial(@model,@workshop))
+ end
  def test_stale_catalog_refuses_instead_of_printing_old_references
   @workshop.save_plan(draft)
   catalog=@store.read;@store.save(catalog['items'],catalog['revision'])
