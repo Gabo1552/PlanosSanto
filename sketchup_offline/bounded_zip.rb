@@ -43,6 +43,36 @@ module PlanosSanto
       reject!
     end
     def reject!;raise ExportError,'Archivo ZIP/SKM inválido, inseguro o fuera de los límites permitidos.';end
+    SAFE_NAME=%r{\A[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*\z}
+    # Writer for the packages this reader accepts: no ZIP64, no directories,
+    # stored or raw-deflated entries, plain relative names, fixed timestamp.
+    # entries: [[name, bytes, deflate]]; returns the archive bytes.
+    def self.build(entries,max_bytes:128*1024*1024,max_entries:2048)
+      raise ExportError,'Demasiados archivos para un paquete ZIP.' unless entries.is_a?(Array) && entries.length.between?(1,max_entries)
+      names={};body=''.b;central=''.b
+      time,date=0,(2026-1980)<<9|1<<5|1
+      entries.each do |name,bytes,deflate|
+        raise ExportError,'Ruta inválida dentro del paquete ZIP.' unless name.is_a?(String) && name.bytesize<=1024 && SAFE_NAME.match?(name) && !names.key?(name.downcase)
+        raise ExportError,'Contenido inválido dentro del paquete ZIP.' unless bytes.is_a?(String) && bytes.bytesize<0xffffffff
+        names[name.downcase]=true
+        data=bytes.b;crc=Zlib.crc32(data);method=0
+        if deflate
+          deflater=Zlib::Deflate.new(Zlib::BEST_COMPRESSION,-Zlib::MAX_WBITS)
+          begin
+            packed=deflater.deflate(data,Zlib::FINISH)
+          ensure
+            deflater.close
+          end
+          data,method=packed,8 if packed.bytesize<bytes.bytesize
+        end
+        offset=body.bytesize
+        raw=name.b
+        body << [0x04034b50,20,0x0800,method,time,date,crc,data.bytesize,bytes.bytesize,raw.bytesize,0].pack('VvvvvvVVVvv') << raw << data
+        central << [0x02014b50,20,20,0x0800,method,time,date,crc,data.bytesize,bytes.bytesize,raw.bytesize,0,0,0,0,0,offset].pack('VvvvvvvVVVvvvvvVV') << raw
+        raise ExportError,'El paquete supera el tamaño máximo permitido.' if body.bytesize+central.bytesize+22>max_bytes
+      end
+      body+central+[0x06054b50,0,0,entries.length,entries.length,central.bytesize,body.bytesize,0].pack('VvvvvVVv')
+    end
     def decode_name(raw,flags)
       value=raw.dup.force_encoding(Encoding::UTF_8)
       value=raw.encode(Encoding::UTF_8,Encoding.find('IBM437')) unless value.valid_encoding? || (flags&0x0800)!=0

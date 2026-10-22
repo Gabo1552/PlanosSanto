@@ -5,16 +5,25 @@ require 'fileutils'
 require 'securerandom'
 require 'time'
 require 'date'
+require_relative 'maderera_profile'
+require_relative 'order_proposal'
 
 module PlanosSanto
   class SupplierOrder
     COLUMNS=%w[cant base altura detalle rota canto_arr canto_aba canto_izq canto_der].freeze
+    # Hito 3: código módulo·pieza por id de fila (F-DESP-C); lo calcula Workshop desde la guía guardada.
+    attr_accessor :detail_codes
     ROW_KEYS=%w[id include excludeReason detail axes flipX flipY frontSign materialId principalId secondaryId edgeMap grainPolicy grainAxis grainConfirmed dimensionRule cutBase cutHeight orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed reviewNote edgeResolution edgeBindings edgeOverrideReason].freeze
-    def initialize(document,fingerprint,catalog,edge_review: nil, source_review: nil, material_proposal: nil)
+    def initialize(document,fingerprint,catalog,edge_review: nil, source_review: nil, material_proposal: nil, maderera: nil)
       @document=document;@fingerprint=fingerprint;@catalog=catalog;@nodes={};@edge_review=edge_review;@source_review=source_review;@material_proposal=material_proposal
+      # Hito 4: only an approved supplier profile changes defaults, cut sizes or the estimate.
+      @maderera=MaderaProfile.applies?(maderera) ? maderera : nil
       Exporter.each_node(document['furniture']) { |node| @nodes[node['id']]=node if node['mesh'] }
     end
     def geometry(node)
+      (@geometry ||= {})[node['id']] ||= measure(node)
+    end
+    def measure(node)
       meta=node.fetch('metadata');bounds=meta.fetch('localBounds');matrix=meta.fetch('worldTransform')
       scales=[0,4,8].map { |index| Math.sqrt(matrix[index,3].sum { |n| n*n }) }
       orthogonal=[[0,1],[0,2],[1,2]].all? { |a,b| scales[a]>0 && scales[b]>0 && (3.times.sum { |i| matrix[a*4+i]*matrix[b*4+i] }/(scales[a]*scales[b])).abs<1e-6 }
@@ -24,7 +33,7 @@ module PlanosSanto
        'vertices'=>node['mesh']['vertices'],'triangles'=>node['mesh']['triangles']}
     end
     def proposal
-      {'schema'=>1,'fingerprint'=>@fingerprint,'catalogRevision'=>@catalog['revision'],'profile'=>{'encoding'=>'utf8','decimal'=>'.','header'=>false},
+      {'schema'=>1,'fingerprint'=>@fingerprint,'catalogRevision'=>@catalog['revision'],'maderera'=>MaderaProfile.binding(@maderera),'profile'=>@maderera ? @maderera.slice('encoding','decimal','header') : {'encoding'=>'utf8','decimal'=>'.','header'=>false},
        'rows'=>@nodes.values.map do |node|
          {'id'=>node['id'],'include'=>true,'excludeReason'=>'','detail'=>node['name'],'axes'=>nil,'flipX'=>false,'flipY'=>false,'frontSign'=>nil,
           'materialId'=>'','principalId'=>nil,'secondaryId'=>nil,'edgeMap'=>[0,0,0,0],'grainPolicy'=>nil,'grainAxis'=>nil,'grainConfirmed'=>false,'dimensionRule'=>nil,
@@ -36,6 +45,7 @@ module PlanosSanto
       errors=[];@edge_evidence={}
       raise ExportError,'Pedido incompatible o geometría modificada: volvé a preparar.' unless draft.is_a?(Hash) && draft['schema']==1 && draft['fingerprint']==@fingerprint
       raise ExportError,'La biblioteca cambió; volvé a preparar y revisar el pedido.' unless draft['catalogRevision']==@catalog['revision']
+      raise ExportError,'El perfil de maderera en uso cambió desde que preparaste el pedido: usá «Preparar de nuevo» y revisá las medidas.' unless draft['maderera']==MaderaProfile.binding(@maderera)
       rows=draft['rows'];raise ExportError,'Listado físico de pedido incompleto o duplicado.' unless rows.is_a?(Array) && rows.map { |r| r['id'] }.sort==@nodes.keys.sort
       profile=draft['profile'];raise ExportError,'El perfil del archivo TXT no es válido: revisá codificación, decimal y encabezado en «Perfil del archivo para la maderera».' unless profile.is_a?(Hash) && profile.keys.sort==%w[decimal encoding header] && %w[utf8 windows1252].include?(profile['encoding']) && ['.',','].include?(profile['decimal']) && [true,false].include?(profile['header'])
       rows.each do |row|
@@ -49,11 +59,12 @@ module PlanosSanto
           next
         end
         if collect_errors
-          reasons=validate_row(row,collect:true)
+          reasons=validate_row(row,collect:true)+OrderProposal.detail_reasons(draft,row,@detail_codes)
           errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>reasons.first,'reasons'=>reasons} unless reasons.empty?
         else
           begin
             validate_row(row)
+            OrderProposal.detail_reasons(draft,row,@detail_codes).each { |reason| raise ExportError,reason }
           rescue ExportError => error
             # Check/export stop at the first problem: name the piece so the message is actionable.
             raise ExportError,"#{row['detail'].to_s.strip.empty? ? 'Pieza sin detalle' : row['detail']} (#{row['id']}): #{error.message}"
@@ -65,7 +76,7 @@ module PlanosSanto
     end
     def material(id,kind)
       found=@catalog['items'].find { |item| item['id']==id && item['kind']==kind && item['approved'] }
-      raise ExportError,"Elegí #{kind=='sheet' ? 'una placa' : 'un canto'} aprobado de la biblioteca." unless found
+      raise ExportError,"Elegí #{kind=='sheet' ? 'una placa aprobada' : 'un canto aprobado'} de la biblioteca." unless found
       found
     end
     def mm(number)
@@ -163,6 +174,7 @@ module PlanosSanto
         check.call do
           raise ExportError,'La placa aprobada no tiene largo y ancho cargados en la biblioteca.' unless board['lengthMm'].is_a?(Numeric) && board['widthMm'].is_a?(Numeric)
           base,height=dimensions(row)
+          raise ExportError,"Las medidas de corte quedan en cero o negativas al descontar el canto (#{mm(base)} × #{mm(height)} mm)." unless base>0 && height>0
           fits=(base<=board['lengthMm']+0.1 && height<=board['widthMm']+0.1) || (row['grainPolicy']=='rotate' && height<=board['lengthMm']+0.1 && base<=board['widthMm']+0.1)
           raise ExportError,"La pieza no entra en el formato de placa aprobado: mide #{mm(base)} × #{mm(height)} mm y la placa aprobada es #{mm(board['lengthMm'])} × #{mm(board['widthMm'])} mm." unless fits
         end
@@ -171,7 +183,24 @@ module PlanosSanto
     end
     def dimensions(row)
       return [row['cutBase'],row['cutHeight']] if row['dimensionRule']=='explicit_cut'
-      g=geometry(@nodes.fetch(row['id']));row['axes'].map { |axis| g['lengths'][axis] }
+      g=geometry(@nodes.fetch(row['id']));MaderaProfile.cut_size(@maderera,*row['axes'].map { |axis| g['lengths'][axis] },edge_thicknesses(row))
+    end
+    def edge_thicknesses(row)
+      return [0,0,0,0] unless @maderera && row['edgeMap'].is_a?(Array) && row['edgeMap'].length==4
+      @items ||= @catalog['items'].to_h { |item| [item['id'],item] }
+      row['edgeMap'].map { |role| edge=[1,2].include?(role) && @items[row[role==1 ? 'principalId' : 'secondaryId']];edge && edge['kind']=='edge' ? edge['thicknessMm'] : 0 }
+    end
+    # OPT-02: never blocks; only rows whose board and size are already resolvable.
+    def warnings(draft)
+      return [] unless @maderera
+      draft['rows'].select { |row| row['include'] }.filter_map do |row|
+        board=@catalog['items'].find { |item| item['id']==row['materialId'] && item['kind']=='sheet' }
+        next unless board && row['axes'].is_a?(Array) && (row['dimensionRule']!='explicit_cut' || (row['cutBase'].is_a?(Numeric) && row['cutHeight'].is_a?(Numeric)))
+        message=MaderaProfile.usable_warning(@maderera,board,*dimensions(row),row['grainPolicy']=='rotate')
+        {'id'=>row['id'],'detail'=>row['detail'],'message'=>message} if message
+      rescue ExportError
+        nil
+      end
     end
     def estimate(draft, today: Time.now.utc.to_date)
       validate(draft)
@@ -200,7 +229,12 @@ module PlanosSanto
       end
       charges=lines.flat_map { |line| line['charges'] }
       totals=lambda { |statuses| charges.select { |c| statuses.include?(c['status']) }.group_by { |c| c['price']['currency'] }.transform_values { |group| group.sum { |c| c['amount'] } } }
-      {'lines'=>lines,'totalsByCurrency'=>totals.call(['current_price']),'outdatedTotalsByCurrency'=>totals.call(%w[stale_price future_price]),
+      pieces=draft['rows'].select { |row| row['include'] }.zip(lines).map do |row,line|
+        edges=line['charges'].reject { |c| c['role']=='board' }.each_with_object(Hash.new(0.0)) { |c,sum| sum[c['materialId']]+=c['quantity'] }
+        base,height=dimensions(row);{'materialId'=>row['materialId'],'base'=>base,'height'=>height,'edges'=>edges}
+      end
+      budget=@maderera && MaderaProfile.budget(@maderera,pieces,@catalog['items'].to_h { |item| [item['id'],item] },today:today)
+      {'lines'=>lines,'totalsByCurrency'=>totals.call(['current_price']),'budget'=>budget,'warnings'=>warnings(draft),'outdatedTotalsByCurrency'=>totals.call(%w[stale_price future_price]),
        'pending'=>charges.count { |c| c['status']=='price_pending' },'outdated'=>charges.count { |c| %w[stale_price future_price].include?(c['status']) },'priceAgeDays'=>90,
        'includesWaste'=>false,'includesEdges'=>true,'includesLabor'=>false,'optimized'=>false}
     end
@@ -212,17 +246,17 @@ module PlanosSanto
       token="PlanosSanto-pedido-#{Time.now.strftime('%Y%m%d-%H%M%S')}-#{SecureRandom.hex(4)}"
       staging=File.join(directory,".#{token}.tmp");target=File.join(directory,token);Dir.mkdir(staging,0o700)
       manifest={'schema'=>'planos-santo.supplier-order.v1','createdAt'=>Time.now.utc.iso8601,'fingerprint'=>@fingerprint,'catalogRevision'=>@catalog['revision'],
-        'profile'=>draft['profile'],'columns'=>COLUMNS,'purpose'=>'prueba_importacion_proveedor','production_ready'=>false,'lots'=>[],
+        'profile'=>draft['profile'],'madereraProfile'=>MaderaProfile.reference(@maderera),'columns'=>COLUMNS,'purpose'=>'prueba_importacion_proveedor','production_ready'=>false,'lots'=>[],
         'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| {'id'=>row['id'],'reason'=>row['excludeReason']} }}
       batches.each_with_index do |(key,rows),index|
-        grouped=rows.group_by { |row| [*dimensions(row),row['detail'],row['axes'],row['flipX'],row['flipY'],row['frontSign'],geometry(@nodes.fetch(row['id']))['mirrored'],row['edgeMap'],row['grainPolicy'],row['grainAxis'],row['dimensionRule']] }
+        grouped=rows.group_by { |row| [*dimensions(row),OrderProposal.detail_text(draft,row,@detail_codes),row['axes'],row['flipX'],row['flipY'],row['frontSign'],geometry(@nodes.fetch(row['id']))['mirrored'],row['edgeMap'],row['grainPolicy'],row['grainAxis'],row['dimensionRule']] }
         format_number=lambda do |number|
           raise ExportError,'El proveedor admite hasta tres decimales; revisá medidas.' if number.round(3)<=0
           str=format('%.3f',number).sub(/0+\z/,'').sub(/\.\z/,'');draft['profile']['decimal']==',' ? str.tr('.',',') : str
         end
         lines=grouped.values.map do |members|
           row=members.first;base,height=dimensions(row)
-          [members.length,format_number.call(base),format_number.call(height),row['detail'],row['grainPolicy']=='rotate' ? 1 : 0,*row['edgeMap']].join("\t")
+          [members.length,format_number.call(base),format_number.call(height),OrderProposal.detail_text(draft,row,@detail_codes),row['grainPolicy']=='rotate' ? 1 : 0,*row['edgeMap']].join("\t")
         end
         lines.unshift(COLUMNS.join("\t")) if draft['profile']['header']
         content=lines.join("\r\n")+"\r\n";bytes=content.encode(draft['profile']['encoding']=='windows1252' ? 'Windows-1252' : 'UTF-8')
@@ -231,6 +265,7 @@ module PlanosSanto
         manifest['lots'] << {'file'=>filename,'sha256'=>Digest::SHA256.hexdigest(bytes),'material'=>board,'thicknessMm'=>key[1],
           'principal'=>key[2] && material(key[2],'edge'),'secondary'=>key[3] && material(key[3],'edge'),
           'edgeEvidence'=>rows.to_h { |row| [row['id'],row['edgeResolution']=='observed' ? @edge_evidence.fetch(row['id']) : {'mode'=>'manual','reason'=>row['edgeOverrideReason']}] },
+          'edgeTotals'=>OrderProposal.edge_totals(rows,@catalog) { |row| dimensions(row) },
           'sourceRows'=>rows,'physicalIds'=>rows.map { |row| row['id'] },'physicalQuantity'=>rows.length,'textRows'=>grouped.length}
       end
       File.write(File.join(staging,'manifest.json'),JSON.pretty_generate(manifest));raise ExportError,'Ya existe esa exportación; no se reemplazó.' if File.exist?(target);File.rename(staging,target)

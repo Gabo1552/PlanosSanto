@@ -10,18 +10,19 @@ import {existsSync} from 'node:fs';
 // Usa el controlador Ruby sintético de nombres; no es SketchUp nativo ni un modelo de cliente.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={version:1;id:string;result:unknown;error:string|null};
-let slow=false,hang=false,child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,calls:{action:string;data:Record<string,unknown>}[],errors:string[];
+// `held` retiene el diagnóstico hasta que la prueba llama a `release`: sin esperas fijas ni carreras con el reloj real.
+let held:Promise<void>|undefined,release=()=>{},hang=false,child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,calls:{action:string;data:Record<string,unknown>}[],errors:string[];
 function native(message:string):Promise<Reply>{return new Promise((resolve,reject)=>{const msg=JSON.parse(message);pending.set(msg.id,{resolve,reject});child.stdin.write(message+'\n');});}
 async function boot(page:Page,folder:string,viewport={width:1500,height:1100}){
- await mkdir(folder,{recursive:true});pending=new Map();calls=[];errors=[];slow=false;hang=false;await page.setViewportSize(viewport);
+ await mkdir(folder,{recursive:true});pending=new Map();calls=[];errors=[];held=undefined;hang=false;await page.setViewportSize(viewport);
  child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,'safe'],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  let stderr='';child.stderr.on('data',chunk=>{stderr+=String(chunk);});createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),entry=pending.get(reply.id);if(entry){pending.delete(reply.id);entry.resolve(reply);}});child.on('exit',()=>{for(const entry of pending.values())entry.reject(new Error(stderr));pending.clear();});
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  if(action==='order_references')return {version:1,id:msg.id,result:null,error:'Guardá primero el borrador revisado del pedido.'};
+  if(action==='order_references'||action==='order_references_partial')return {version:1,id:msg.id,result:null,error:'Guardá primero el borrador revisado del pedido.'};
   if(action==='diagnostic'&&hang)return new Promise(()=>{});
-  if(action==='diagnostic'&&slow){await new Promise(done=>setTimeout(done,2500));}
+  if(action==='diagnostic'&&held)await held;
   return native(raw);
  });
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};'});
@@ -68,10 +69,10 @@ test('un cuelgue de SketchUp ofrece Analizar de nuevo; el foco vuelve al botón 
 
 test('el riel conserva el foco durante una operación y explica el bloqueo al tabular o hacer clic',async({page},info)=>{
  await boot(page,info.outputDir);await page.keyboard.press('Alt+3');const furniture=rail(page,'Muebles');
- await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();slow=true;await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
+ await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();held=new Promise(done=>{release=done;});await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
  await furniture.focus();await expect(furniture).toHaveAttribute('aria-disabled','true');await expect(furniture).toBeFocused();await expect(furniture).toHaveAccessibleDescription(/Esperá a que termine «Comprobando instalación»/);
  await rail(page,'Maderera').click({force:true});await expect(page.getByRole('alert')).toContainText('Esperá a que termine la operación actual');await expect(rail(page,'Muebles')).toHaveAttribute('aria-current','page');await furniture.focus();
- await page.clock.fastForward(3000);await expect(page.locator('.ux-busy')).toHaveCount(0);await expect(furniture).not.toHaveAttribute('aria-disabled','true');await expect(furniture).toBeFocused();
+ release();await expect(page.locator('.ux-busy')).toHaveCount(0);await expect(furniture).not.toHaveAttribute('aria-disabled','true');await expect(furniture).toBeFocused();
 });
 
 test('ayuda global: ? abre atajos y diagnóstico desde cualquier módulo, y el diagnóstico se copia',async({page},info)=>{
@@ -99,14 +100,21 @@ test('un solo h1, estados vacíos con el siguiente paso y plurales correctos',as
 
 test('el foco vuelve a Aplicar renombrado, las advertencias no se releen enteras y el foco del riel se ve',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- const batch=page.getByRole('button',{name:'Aplicar renombrado',exact:true});await batch.click();await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toBeVisible();await page.keyboard.press('Escape');
+ const batch=page.getByRole('button',{name:'Aplicar renombrado',exact:true});await batch.click();await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toBeVisible();
+ // El diálogo aparece antes de que termine «Revisando lote de nombres…»; mientras dura, Escape no lo cierra (a propósito).
+ await expect(page.locator('.ux-busy')).toHaveCount(0);
+ // The dialog handles Escape once its initial focus is inside it.
+ await expect(page.getByRole('dialog',{name:'Aplicar renombrado'}).locator(':focus')).toHaveCount(1);await page.keyboard.press('Escape');
  await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toHaveCount(0);await expect(batch).toBeFocused();
  const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('');await expect(page.locator('.warnings').first()).toBeVisible();
  await expect(page.locator('.warnings')).not.toHaveAttribute('role','status');await expect(page.locator('.sr-only[role=status]').filter({hasText:/advertencias? en la hoja/})).toHaveCount(1);
  await name.fill('Lateral');
- await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');await current.focus();
- const style=await current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
- expect(style.style).toBe('solid');expect(style.outline).not.toBe(style.background);
+ await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');
+ // Changing module moves focus to its heading after render: wait for it, or it can steal the rail's focus.
+ // :focus-visible depends on the last input modality: a keystroke right before focusing makes it deterministic.
+ await expect(page.locator('.ux-module-heading')).toBeFocused();await page.keyboard.press('Shift');await current.focus();await expect(current).toBeFocused();
+ const read=()=>current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
+ await expect.poll(async()=>(await read()).style).toBe('solid');const style=await read();expect(style.outline).not.toBe(style.background);
 });
 
 test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un aviso que lleva al pedido',async({page},info)=>{

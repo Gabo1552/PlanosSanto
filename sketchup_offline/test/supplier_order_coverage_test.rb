@@ -174,7 +174,7 @@ class SupplierOrderCoverageTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError){svc.material(cat['items'][1]['id'],'sheet')}
   end
   def test_missing_sheet_message_agrees_in_gender
-    skip 'BUG-RB-01 (docs/qa/BUGS_ENCONTRADOS_RUBY.md): supplier_order.rb:68 dice «una placa aprobado».'
+    # BUG-RB-01 (docs/qa/BUGS_ENCONTRADOS_RUBY.md): corregido; regresión de la concordancia.
     svc,_d,cat=setup_order
     assert_equal 'Elegí una placa aprobada de la biblioteca.',assert_raises(PlanosSanto::ExportError){svc.material(cat['items'][1]['id'],'sheet')}.message
   end

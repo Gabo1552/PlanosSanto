@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 # Synthetic-only driver, not packaged; never opens or writes a SKP.
 require_relative 'names_double'
+require_relative 'cantos_double'
 require_relative 'ocl_read_double'
 $LOADED_FEATURES << 'sketchup.rb'
 module Kernel
@@ -9,7 +10,7 @@ end
 module Sketchup
   def self.active_model
     @names_model ||= begin
-      model=ARGV[1] == 'shared' ? NamingModelDouble.new(Fixture.model) : NamesFixture.model
+      model=ARGV[1] == 'shared' ? NamingModelDouble.new(Fixture.model) : ARGV[1]=='cantos' ? CantosFixture.model : NamesFixture.model
       OclReadFixture.prepare(model) if ARGV[1].to_s.start_with?('materials')
       if ARGV[1]=='materials-edges'
         board=model.materials[0];first=model.materials[1]

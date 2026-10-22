@@ -1,5 +1,11 @@
 # Bugs encontrados por las pruebas unitarias TypeScript
 
+> **Estado (rama `claude/noche-bugs-qa`): los cuatro están corregidos** y sus pruebas pasaron de `it.skip` a `it` como regresión.
+> - BUG-TS-01: `ensureGlyphs` trata `\t` y `\r` como espacio en blanco y `text()` los dibuja como espacio. La prueba cubre observaciones con tabulación y con `\r\n`, y un nombre de pieza con tabulación.
+> - BUG-TS-02: `previewFileName` corta con `Array.from(...)` (puntos de código).
+> - BUG-TS-03: `carryNotice` dice «se descartó» / «se descartaron».
+> - BUG-TS-04: `importDocument` recorta el nombre del mueble antes del reemplazo.
+
 Pasada de cobertura vitest de la rama `claude/noche-cobertura-ts`. **No se corrigió código de producto**: cada bug queda con su prueba en `it.skip` y el motivo, lista para activarse cuando se corrija.
 
 | ID | Severidad | Archivo:línea | Prueba en `it.skip` |

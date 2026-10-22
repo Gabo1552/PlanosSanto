@@ -280,7 +280,19 @@ Orden: primero valor para el taller y después esfuerzo. Cada hito arranca solo 
 **Criterio de aceptación en SketchUp:** dar de alta 10 colores de melamina con preset lleva menos de 2 minutos. Un lateral de 2600 sobre una placa de 2600 con 10 mm de refilado muestra un aviso. El presupuesto de un mueble de referencia queda dentro de ±10 % de la cotización real de la maderera. Una biblioteca v1 migra sin perder fichas y el backup queda escrito.
 **Riesgos:** descontar dos veces el canto si la maderera ya descuenta (de ahí apagado por defecto y validación con el proveedor). Valores del perfil mal cargados (requiere aprobación). La migración del esquema puede invalidar JSON exportados viejos.
 
-### Hito 5: Planos A4 y etiquetas atadas al pedido
+### Hito 5 (implementado, pendiente de validación nativa): Planos A4 y etiquetas atadas al pedido
+
+**Estado (2026-10-22, rama `claude/noche-hito5-a4`):** los 7 entregables están implementados y probados con dobles (vitest, Ruby y Playwright). **Falta el criterio de aceptación en SketchUp 2026 real.**
+- CANTOS-04: glifo y código `1·1·0·2` ya existían; ahora una prueba con 5 piezas asimétricas (fixture `tests/offline/fixtures/cantos-asimetricos.json`) verifica que el TXT, las referencias, el glifo dibujado en el PDF y la vista 2D marcan los mismos lados. El aviso de hoja sin materiales queda para pedido sin guardar o desactualizado.
+- F-DESP-B: acción `order_references_partial` (`so/order_references.rb`); las filas que validan imprimen placa y cantos y las demás «pendiente de pedido». Con filas pendientes no se imprime el lote, porque todavía puede renumerarse.
+- DESPIECE-02: «Agrupar por medidas» ya existía con clave de placa, mapa de cantos y referencia del pedido; ahora también separa las filas pendientes.
+- DESPIECE-01: «Codificar despiece» (`CodePlanDialog.tsx`) con orden placa → espesor → largo → ancho; «Renumerar» explícito, que `guide_store.rb` acepta solo con `renumber:true` y deja el código anterior en `previousCode`.
+- OPT-14: «Permitir hoja 2: despiece completo» (preferencia local por mueble); hojas 1a/1b… agrupadas por placa, sin recortar nada.
+- DESPIECE-07 / OPT-10 + F-OPT-D: `ui/labels.ts`, plantillas 3 × 7 y 2 × 5 con márgenes ajustables. **Decisión F-OPT-D:** cada etiqueta lleva el código de su pieza física y el lote, aunque el TXT agrupe varias piezas en un renglón. Con pedido, el código es el módulo·pieza que calcula Ruby (`OrderProposal.codes`, el mismo del detalle del TXT del Hito 3); sin pedido, `compositeCode`.
+- DESPIECE-05 (parcial): «Copiar tabla» en TSV ya existía; ahora marca las filas pendientes.
+
+**Pendiente:** validar en SketchUp con una cocina de más de 40 piezas (hoja 1 + hoja 2), imprimir las etiquetas en una hoja autoadhesiva real y cotejar las 5 piezas asimétricas a mano. Limitación conocida: un perfil de TXT inválido o un pedido sin piezas incluidas todavía impide imprimir referencias parciales.
+
 
 **Objetivo:** que el armador y el que recibe la entrega identifiquen cada pieza y sus cantos en papel.
 **Entregables:**
