@@ -1,5 +1,8 @@
 import {describe,expect,it} from 'vitest';
-import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {deflateSync} from 'node:zlib';
 import {PDFDocument} from 'pdf-lib';
 import {
@@ -272,3 +275,32 @@ function verticalPng():Uint8Array{
  const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr[8]=8;ihdr[9]=6;
  return new Uint8Array(Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]));
 }
+
+describe('Contenido impreso de la tabla con pedido',()=>{
+ const pdfText=(bytes:Uint8Array,bbox=false)=>{const dir=mkdtempSync(join(tmpdir(),'ps-cov-'));try{const path=join(dir,'a4.pdf');writeFileSync(path,bytes);return execFileSync('pdftotext',[bbox?'-bbox':'-layout',path,'-'],{encoding:'utf8'});}finally{rmSync(dir,{recursive:true,force:true});}};
+ it('un nombre de una sola palabra más ancho que la columna se corta por caracteres sin perder letras',async()=>{
+  const project=single(),word='Contrafrentecajonerainferiorizquierda';project.furniture[0].pieces[0].name=word;
+  const words=[...pdfText(await createOfflinePdf(project,regular,mono),true).matchAll(/<word [^>]*>([^<]+)<\/word>/g)].map(m=>m[1]);
+  const start=words.findIndex(w=>word.startsWith(w));
+  expect(start).toBeGreaterThanOrEqual(0);expect(words[start]).not.toBe(word);
+  expect(words[start]+words[start+1]).toBe(word);
+ });
+ it('cantos con rol sin producto asignado se leen «sin asignar» en la leyenda',async()=>{
+  const project=single(),f=project.furniture[0];
+  const text=pdfText(await createOfflinePdf(project,regular,mono,undefined,{[f.pieces[0].id]:{...placa,principal:null,secondary:null}}));
+  expect(text).toContain('1 = sin asignar');expect(text).toContain('2 = sin asignar');expect(text).toContain('1·1·0·2');
+ });
+ it('el glifo de cantos admite piezas altas, apaisadas y sin base × altura del pedido',async()=>{
+  const project=single(),[a,b,c]=project.furniture[0].pieces;
+  const references={[a.id]:{...placa,base:100,height:2400},[b.id]:{...placa,base:2400,height:60},[c.id]:{...placa,base:undefined,height:undefined}};
+  const text=pdfText(await createOfflinePdf(project,regular,mono,undefined,references));
+  expect(text).toContain('corte 100 × 2400');expect(text).toContain('corte 2400 × 60');
+ });
+ it('una vista interior sin piezas visibles bloquea la hoja aunque la tabla las conserve',async()=>{
+  const project=single(),f=project.furniture[0];
+  f.presentation!.guide={...f.presentation!.guide!,mode:'interior',hiddenPieceIds:f.pieces.map(p=>p.id)};
+  const error=await fitError(project);
+  expect(error.kind).toBe('view');expect(error.reason).toMatch(/^Vista interior: La vista interior no tiene piezas visibles\./);
+  expect(error.action).toBe('Corregí lo indicado en el editor de la guía y volvé a revisar la hoja.');
+ });
+});
