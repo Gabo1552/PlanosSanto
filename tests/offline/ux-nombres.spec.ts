@@ -62,14 +62,14 @@ test('lote vacío: un mensaje claro y un único Cerrar con foco, sin tabla ni Co
 
 test('sugerencias: foco útil, motivos pendientes, Enter avanza, Esc deshace la fila y Ctrl+Enter confirma',async({page},info)=>{
  await boot(page,info.outputDir,'recognition');const dialog=await openProposals(page),confirm=dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true});
- await expect(dialog.getByRole('checkbox',{name:'Frente y vertical confirmados',exact:true})).toBeFocused();
+ await expect(dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true})).toBeFocused();
  const reasons=dialog.getByRole('list',{name:'Falta para confirmar'});await expect(reasons).toContainText('Confirmá frente y vertical en el dibujo.');await expect(reasons).toContainText('Elegí al menos una propuesta.');
  await expect(confirm).toHaveAttribute('aria-describedby','naming-pending');await expect(confirm).toBeDisabled();
  await page.keyboard.press('Space');await expect(reasons).not.toContainText('Confirmá frente');
  const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true}),p02=dialog.getByLabel('Nombre sugerido P02',{exact:true});
  // Enter only moves between rows: walking through them never accepts a proposal, not even on the last row.
  await p01.click();await p01.press('Enter');await expect(p02).toBeFocused();await p02.press('Enter');await expect(p02).toBeFocused();await p02.press('Shift+Enter');await expect(p01).toBeFocused();await expect(dialog).toContainText('0 de 2 propuestas seleccionadas');
- await expect(dialog.getByRole('checkbox',{name:'Aceptar sugerencia P01',exact:true})).not.toBeChecked();await expect(dialog.getByRole('checkbox',{name:'Aceptar sugerencia P02',exact:true})).not.toBeChecked();
+ await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).not.toBeChecked();await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P02',exact:true})).not.toBeChecked();
  await p01.fill('Estante por teclado');await p01.press('Enter');await expect(p02).toBeFocused();await expect(dialog).toContainText('1 de 2 propuestas seleccionadas');
  await p02.fill('Borrador descartado');await p02.press('Escape');await expect(dialog).toBeVisible();await expect(p02).not.toHaveValue('Borrador descartado');await expect(dialog).toContainText('1 de 2 propuestas seleccionadas');
  await p02.press('Shift+Enter');await expect(p01).toBeFocused();await expect(p01).toHaveValue('Estante por teclado');
@@ -78,7 +78,7 @@ test('sugerencias: foco útil, motivos pendientes, Enter avanza, Esc deshace la 
 });
 
 test('sugerencias: filtros por confianza, maestro de la tabla y Desmarcar todas sin perder selección oculta',async({page},info)=>{
- await boot(page,info.outputDir,'recognition');const dialog=await openProposals(page);await dialog.getByRole('checkbox',{name:'Frente y vertical confirmados',exact:true}).check();
+ await boot(page,info.outputDir,'recognition');const dialog=await openProposals(page);await dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true}).check();
  const group=dialog.getByRole('group',{name:'Filtrar propuestas por confianza'}),all=group.getByRole('button',{name:/^Todas \(\d+\)$/});await expect(all).toHaveAttribute('aria-pressed','true');
  const master=dialog.getByRole('checkbox',{name:'Aplicar todas las propuestas visibles',exact:true});await master.check();await expect(dialog).toContainText('2 de 2 propuestas seleccionadas');
  for(const name of [/^Geométricas \(\d+\)$/,/^Revisar \(\d+\)$/,/^Sin clasificar \(\d+\)$/]){const button=group.getByRole('button',{name});await button.click();await expect(button).toHaveAttribute('aria-pressed','true');const rows=await dialog.locator('[data-suggestion-row]').count(),shown=Number((await button.textContent())!.match(/\((\d+)\)/)![1]);expect(rows).toBe(shown);}
@@ -89,14 +89,14 @@ test('sugerencias: filtros por confianza, maestro de la tabla y Desmarcar todas 
  await expect(p02).toHaveCount(0);const reasons=dialog.getByRole('list',{name:'Falta para confirmar'});await expect(reasons).toContainText('Completá o desmarcá 1 propuesta vacía.');
  await reasons.getByRole('button',{name:'Ir a la propuesta vacía',exact:true}).click();await expect(all).toHaveAttribute('aria-pressed','true');await expect(p02).toBeFocused();
  await dialog.getByRole('button',{name:'Desmarcar todas',exact:true}).click();await expect(dialog).toContainText('0 de 2 propuestas seleccionadas');await expect(master).not.toBeChecked();
- await dialog.getByRole('button',{name:'Cerrar sugerencias',exact:true}).click();await expect(dialog).toHaveCount(0);expect(count('save')).toBe(0);
+ await dialog.getByRole('button',{name:'Cerrar',exact:true}).click();await expect(dialog).toHaveCount(0);expect(count('save')).toBe(0);
 });
 
 test('lote bloqueado: la franja fija explica el bloqueo junto a la acción y lleva a la fila',async({page},info)=>{
  await boot(page,info.outputDir,'names','shared');await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral compartido');const before=await inspect(),dialog=await openBatch(page);
  const strip=dialog.locator('.name-batch-issues');await expect(strip.getByRole('alert')).toContainText('1 bloqueo impide confirmar');await expect(strip).toContainText(/compartida/);
  await expect(dialog.getByRole('status')).toHaveText('Bloqueado: 1 problema');await expect(dialog.getByRole('button',{name:'Confirmar lote y guardar',exact:true})).toBeDisabled();
- await strip.getByRole('button',{name:'Ver fila P01',exact:true}).click();await expect(dialog.locator('tr[data-batch-row="1/11"]')).toBeFocused();
+ await strip.getByRole('button',{name:'Ver fila P01 1/11',exact:true}).click();await expect(dialog.locator('tr[data-batch-row="1/11"]')).toBeFocused();
  await strip.getByRole('button',{name:'Excluir y revisar',exact:true}).click();await expect(dialog.getByRole('checkbox',{name:'Incluir renombrado P01 1/11',exact:true})).not.toBeChecked();
  await expect(dialog.getByRole('button',{name:'Confirmar lote y guardar',exact:true})).toBeDisabled();expect(await inspect()).toEqual(before);
 });

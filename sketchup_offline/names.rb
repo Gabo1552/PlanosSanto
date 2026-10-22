@@ -75,7 +75,7 @@ module PlanosSanto
       fingerprint = []; vertex_count = 0
       visit = lambda do |entity, parents, stack|
         raise ExportError, 'La jerarquía supera 25 niveles o 5.000 ocurrencias.' if parents.length >= 25 || index.length >= 5000
-        raise ExportError, 'Hay una entidad eliminada. Actualizá el listado.' unless valid?(entity)
+        raise ExportError, 'Hay una entidad eliminada. Volvé a analizar el modelo.' unless valid?(entity)
         raise ExportError, 'Definición recursiva: no se puede renombrar con seguridad.' if stack.include?(entity.definition.guid.to_s)
         route = (parents + [entity]).map { |e| e.persistent_id.to_s }.join('/')
         raise ExportError, 'Rutas de ocurrencia repetidas.' if index.key?(route)
@@ -143,7 +143,7 @@ module PlanosSanto
     def preview(id)
       snapshot = inventory
       root = snapshot[:index][id]
-      raise ExportError, 'El mueble no existe. Actualizá el listado.' unless root
+      raise ExportError, 'El mueble no existe. Volvé a analizar el modelo.' unless root
       warnings = []; rows = []
       walk = lambda do |node, depth|
         piece = node['role'] == 'piece'
@@ -200,13 +200,16 @@ module PlanosSanto
       proposals={}
       edits.each do |f|
         naming=f['naming']
-        raise ExportError, 'Falta el módulo (por ejemplo M01).' if !work_code.empty? && (!naming || naming['moduleCode'].empty?)
+        if !work_code.empty? && (!naming || naming['moduleCode'].to_s.empty?)
+          label=[f['groupName'],snapshot[:index][f['id']]&.fetch('currentName',nil),f['name']].map { |v| v.to_s.strip }.find { |v| !v.empty? } || 'sin nombre'
+          raise ExportError, "#{f['id']}: Falta el módulo del mueble «#{label}» (por ejemplo M01)."
+        end
         if f.key?('groupName')
           root=snapshot[:index][f['id']]
-          raise ExportError, 'El grupo ya no existe; volvé a analizar.' unless root
+          raise ExportError, "#{f['id']}: El grupo ya no existe. Volvé a analizar el modelo." unless root
           desired=self.class.clean(f['groupName'])
           if desired!=root['currentName'] && desired!=root['displayName']
-            raise ExportError, 'Una pieza aislada se renombra desde su fila, no como grupo padre.' unless root['role']=='container'
+            raise ExportError, "#{root['id']}: Una pieza aislada se renombra desde su fila, no como grupo padre." unless root['role']=='container'
             proposals[root['id']]={node:root,name:desired}
             entity=root['_entity']; old=metadata(entity,ROOT_KEY)
             prefix=[work_code,naming && naming['moduleCode']].compact.reject(&:empty?).join(' ')
@@ -215,17 +218,18 @@ module PlanosSanto
         end
         f['pieces'].each do |piece|
           node=snapshot[:index][piece['id']]
-          raise ExportError, 'Una pieza ya no existe; volvé a analizar.' unless node
+          label=piece['code'].to_s.empty? ? 'La pieza' : "La pieza #{piece['code']}"
+          raise ExportError, "#{piece['id']}: #{label} ya no existe. Volvé a analizar el modelo." unless node
           base=naming ? naming['bases'].find { |b| b['id']==piece['id'] }.fetch('base') : piece['name']
           prefix=work_code.empty? ? '' : "#{work_code} #{naming['moduleCode']}"
           desired=prefix.empty? ? self.class.clean(base) : self.class.clean("#{prefix} #{self.class.clean(base)}")
-          raise ExportError, 'El nombre de la tabla no coincide con obra, módulo y pieza.' unless desired==piece['name']
+          raise ExportError, "#{piece['id']}: El nombre de #{label.sub('La pieza','la pieza')} no coincide con obra, módulo y pieza. Volvé a analizar el modelo." unless desired==piece['name']
           entity=node['_entity']
           proposals[node['id']]={node:node,name:desired}
           next if entity.name.to_s==desired
-          raise ExportError, 'No se renombra geometría mezclada con subgrupos; elegí piezas hijas.' unless node['role']=='piece'
+          raise ExportError, "#{piece['id']}: No se renombra geometría mezclada con subgrupos; elegí piezas hijas." unless node['role']=='piece'
           old=metadata(entity,PIECE_KEY)
-          changes << {entity:entity,name:desired,meta:{'version'=>1,'base'=>base,'prefix'=>prefix,'originalName'=>old ? old['originalName'] : entity.name.to_s,'appliedName'=>desired}}
+          changes << {entity:entity,name:desired,code:piece['code'],meta:{'version'=>1,'base'=>base,'prefix'=>prefix,'originalName'=>old ? old['originalName'] : entity.name.to_s,'appliedName'=>desired}}
         end
       end
       validate_shared_batch!(changes, proposals, snapshot)
@@ -255,11 +259,11 @@ module PlanosSanto
         end
         desired=routes.filter_map { |route| proposals[route] && proposals[route][:name] }.uniq
         if desired.length!=1 || desired.first!=change[:name]
-          raise ExportError, "La pieza compartida #{entity.persistent_id} tiene nombres distintos entre sus apariciones. Usá el mismo nombre para todas o desactivá la sincronización con SketchUp para conservar nombres distintos solo en la guía."
+          raise ExportError, "#{routes.find { |r| proposals[r] } || routes.first}: La pieza compartida#{change[:code] ? " #{change[:code]}" : ''} tiene nombres distintos entre sus apariciones. Usá el mismo nombre para todas o desactivá la sincronización con SketchUp para conservar nombres distintos solo en la guía."
         end
         # Same name but incompatible bases/prefixes would corrupt future naming.
         records=changes.select { |other| other[:entity].persistent_id==entity.persistent_id }.map { |other| other[:meta] || other[:value] }.uniq
-        raise ExportError, 'Las apariciones compartidas tienen abreviaturas o nombres base incompatibles.' if records.length>1
+        raise ExportError, "#{routes.find { |r| proposals[r] } || routes.first}: Las apariciones compartidas#{change[:code] ? " de #{change[:code]}" : ''} tienen abreviaturas o nombres base incompatibles." if records.length>1
       end
     end
 
