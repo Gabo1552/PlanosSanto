@@ -34,7 +34,7 @@ async function rpc(page:Page,action:string,data:Record<string,unknown>={}){
 }
 async function savePhotoWithoutPainting(page:Page){
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
- await page.getByRole('button',{name:'+ Material',exact:true}).click();
+ await page.getByRole('button',{name:'Crear',exact:true}).click();await page.getByRole('button',{name:'Material desde una foto…',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Material desde una foto',exact:true});
  await dialog.getByRole('button',{name:'Elegir foto (JPG/PNG)',exact:true}).click();
  await expect(dialog.getByRole('img',{name:'Foto elegida para la textura y miniatura del material'})).toBeVisible();
@@ -109,6 +109,7 @@ test('Hito 1: Biblioteca → "Abrir paleta de pintura" con un material no instal
  await rpc(page,'__photo_new_model');await page.reload();
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
  const card=page.getByRole('article',{name:'Material Foto QA ámbar',exact:true});await card.getByRole('button').first().click();
+ await page.getByRole('dialog',{name:'Propiedades del material «Foto QA ámbar»',exact:true}).getByRole('tab',{name:'Textura',exact:true}).click();
  const open=page.getByRole('button',{name:'Abrir paleta de pintura',exact:true});await expect(open).toBeEnabled();await open.click();
  await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
  await expect(page.getByText('● Pintando',{exact:true})).toBeVisible();
