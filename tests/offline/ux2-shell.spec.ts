@@ -20,7 +20,7 @@ async function boot(page:Page,folder:string,viewport={width:1500,height:1100}){
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  if(action==='order_references')return {version:1,id:msg.id,result:null,error:'Guardá primero el borrador revisado del pedido.'};
+  if(action==='order_references'||action==='order_references_partial')return {version:1,id:msg.id,result:null,error:'Guardá primero el borrador revisado del pedido.'};
   if(action==='diagnostic'&&hang)return new Promise(()=>{});
   if(action==='diagnostic'&&held)await held;
   return native(raw);
@@ -102,15 +102,19 @@ test('el foco vuelve a Aplicar renombrado, las advertencias no se releen enteras
  await boot(page,info.outputDir);await generated(page);
  const batch=page.getByRole('button',{name:'Aplicar renombrado',exact:true});await batch.click();await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toBeVisible();
  // El diálogo aparece antes de que termine «Revisando lote de nombres…»; mientras dura, Escape no lo cierra (a propósito).
- await expect(page.locator('.ux-busy')).toHaveCount(0);await page.keyboard.press('Escape');
+ await expect(page.locator('.ux-busy')).toHaveCount(0);
+ // The dialog handles Escape once its initial focus is inside it.
+ await expect(page.getByRole('dialog',{name:'Aplicar renombrado'}).locator(':focus')).toHaveCount(1);await page.keyboard.press('Escape');
  await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toHaveCount(0);await expect(batch).toBeFocused();
  const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('');await expect(page.locator('.warnings').first()).toBeVisible();
  await expect(page.locator('.warnings')).not.toHaveAttribute('role','status');await expect(page.locator('.sr-only[role=status]').filter({hasText:/advertencias? en la hoja/})).toHaveCount(1);
  await name.fill('Lateral');
- // Alt+3 lleva el foco al título del módulo en un requestAnimationFrame: se espera ese foco para que no le gane al del riel.
- await page.keyboard.press('Alt+3');await expect(page.locator('.ux-module-heading')).toBeFocused();const current=rail(page,'Muebles');await current.focus();await expect(current).toBeFocused();
- const style=await current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
- expect(style.style).toBe('solid');expect(style.outline).not.toBe(style.background);
+ await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');
+ // Changing module moves focus to its heading after render: wait for it, or it can steal the rail's focus.
+ // :focus-visible depends on the last input modality: a keystroke right before focusing makes it deterministic.
+ await expect(page.locator('.ux-module-heading')).toBeFocused();await page.keyboard.press('Shift');await current.focus();await expect(current).toBeFocused();
+ const read=()=>current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
+ await expect.poll(async()=>(await read()).style).toBe('solid');const style=await read();expect(style.outline).not.toBe(style.background);
 });
 
 test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un aviso que lleva al pedido',async({page},info)=>{

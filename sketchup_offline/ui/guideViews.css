@@ -6,3 +6,4 @@
 .guide-pending-tag{flex:none;padding:2px 7px;border-radius:999px;border:1px solid #C98A1B;background:#fff3dd;color:#6B4510;font-size:11px;white-space:nowrap}.guide-physical-pieces>div[data-pending=se\ restaura] .guide-pending-tag{border-color:#2D7A5F;background:#E6F3EC;color:#1E5641}.guide-physical-pieces>div[data-pending]{box-shadow:inset 3px 0 0 #C98A1B}.guide-physical-pieces>div[data-pending=se\ restaura]{box-shadow:inset 3px 0 0 #2D7A5F}
 .guide-visibility .guide-piece-empty{margin:0;padding:10px;font-size:13px;color:#62736A}.guide-discard{font-weight:400}
 .guide-fold{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px}.guide-fold label{display:flex;align-items:center;gap:7px}
+.guide-detail-sheet{margin-top:6px}
