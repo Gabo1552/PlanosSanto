@@ -96,11 +96,8 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
 
 ## 4. Queda pendiente (no corregido esta noche)
 
-1. **Fichas archivadas visibles en la paleta del pincel** (H7 × H2). Ya anotado por el
-   Hito 7 en `docs/hito7/COORDINACION.md`. El Tab del pincel también puede volver al último
-   material recordado aunque esté archivado. Requiere decidir la regla («ocultar salvo que
-   esté en el modelo»); no es un cambio mínimo. **Recomendación:** filtrar en
-   `smart_palette_load` con `MaterialLibrary#extras['archivedIds']` y dejar las que estén en uso.
+1. ~~Fichas archivadas visibles en la paleta del pincel~~ → resuelto en la segunda tanda
+   (QA-INT-05).
 2. **Supuesto a validar en SketchUp real:** si aplicar un material a una cara dispara
    `MaterialsObserver#onMaterialChange`, cada ráfaga de clics del pincel provocaría un aviso
    `material-library-changed` y una recarga de la paleta (`smart_palette_load`, con miniaturas).
@@ -113,6 +110,30 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
 4. Con la corrección QA-INT-01 la franja aparece **en el primer clic**, no al detener la
    herramienta. Es coherente con el aviso «documento invalidado» que ya se emitía en ese
    clic, pero conviene confirmarlo visualmente en SketchUp (casos 1.1 y 2.6).
+
+## 4 bis. Segunda tanda (merge de `claude/ux-extras-0811` en `9e881dd`)
+
+Integra rendimiento (caché de malla, ARQ-01), validación 0.8.11, Hito 3 (pedido: proponer,
+confirmar en bloque, aplicar), Hito 5 (referencias parciales y etiquetas) y pincel avanzado.
+Merge sin conflictos.
+
+| Cruce | Resultado |
+|---|---|
+| Pincel avanzado × franja (H7 × H6) | `smart_tool_view`, `smart_toggle_transparency` y `smart_eyedropper_key` corren dentro de `handle()` y no marcan la franja. Las escrituras del menú del pincel (ocultar, mostrar, renombrar pieza) emiten `changed:true`: con QA-INT-01 marcan la franja sin recorrer el modelo. **Matiz:** el motivo dice «Pintaste desde Planos Santo.» también para ocultar o renombrar; es escritura propia del pincel, pero el texto podría ser «Editaste desde el pincel». No se cambió. |
+| Caché de malla × pintura (H6 rendimiento × H2) | Sin riesgo: el caché vive por instancia de `Exporter` y se reinicia en cada `tree`; no sobrevive a un análisis ni a una pintura. |
+| `order_propose` / `order_confirm_bulk` / `order_apply` × `order_references_partial` (H3 × H5) | Comparten la rama de taller de `offline.rb` con `active!` y el bloqueo por guía sin guardar. Proponer, confirmar y aplicar son de solo cálculo (no escriben el modelo); solo `order_save` escribe, dentro de `handle()`. |
+| `App.tsx` con referencias parciales (H5) | La vista previa A4 y el PDF piden `order_references_partial`; exportar sigue bloqueado con la franja activa; `CodePlanDialog` suma a `dialogOpen`, así que los atajos del shell no actúan con él abierto. |
+
+### QA-INT-05 · Fichas archivadas en la paleta del pincel (H7 × H2) — corregido
+
+- **Hecho.** Archivar una ficha (MATERIALES-09) la ocultaba en Materiales pero seguía
+  apareciendo en la paleta Pintar (pendiente anotado en `docs/hito7/COORDINACION.md`).
+- **Corrección** (`offline.rb`, `smart_palette_load`): se quitan del catálogo de la paleta
+  las fichas archivadas que este modelo no usa; las que ya tienen material en el modelo se
+  conservan. Si el índice de archivadas está dañado, la paleta muestra todo y avisa en consola.
+  Tab y la tira de recientes solo usan materiales ya listos en el modelo, así que cumplen la
+  misma regla sin cambios.
+- **Prueba.** `test_archived_items_leave_the_paint_palette_unless_the_model_uses_them`.
 
 ## 5. Batería
 

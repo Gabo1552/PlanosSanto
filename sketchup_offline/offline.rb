@@ -843,7 +843,8 @@ module PlanosSanto
         end
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
-        {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
+        visuals=MaterialLibrary.new(@model,catalog:catalog,directory:directory).status
+        {'catalog'=>without_archived(catalog.read,visuals),'visuals'=>visuals,
          'paintStates'=>paint_materials.states,
          'settings'=>smart_settings,'toolState'=>smart_view_state,'thumbnails'=>material_thumbnails}
       when 'smart_material_prepare'
@@ -1152,6 +1153,20 @@ module PlanosSanto
       options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
       remember_smart_settings(options);@quick_options=options
       options
+    end
+
+    # QA integración (Hito 7 × Hito 2): an archived item leaves the paint palette
+    # unless this model already uses it. A broken archive index never hides the palette.
+    def without_archived(catalog,visuals)
+      archived=begin
+        management_library.archived_ids
+      rescue StandardError => error
+        warn("Planos Santo: no se pudo leer el índice de fichas archivadas: #{error.class}")
+        []
+      end
+      return catalog if archived.empty? || !catalog['items'].is_a?(Array)
+      used=(visuals['materials'] || []).filter_map { |material| material.is_a?(Hash) ? material.dig('binding','catalogId') : nil }
+      catalog.merge('items'=>catalog['items'].reject { |item| archived.include?(item['id']) && !used.include?(item['id']) })
     end
 
     # Hito 7 (PINTURA-04/07): material chosen from the view (recents strip or
