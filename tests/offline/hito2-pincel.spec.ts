@@ -34,6 +34,8 @@ async function boot(page:Page,folder:string,{props={},settings={},active}:{props
   else if(action==='smart_quick_start'){tool={active:true,mode:data.mode as string,options:{...data,scope:data.scope==='all'&&data.allowShared===true?'all':'unique'},queuedCount:0,hover:tool.hover};result={toolState:tool};}
   else if(action==='smart_tool_stop'){tool={active:false,mode:tool.mode,queuedCount:0};result={toolState:tool};}
   else if(action==='smart_tool_status')result={toolState:tool};
+  // Hito 7 (MATERIALES-19): tras el arranque automático la paleta pide foco al viewport.
+  else if(action==='viewport_focus')result={focused:true,method:'Sketchup.focus'};
   else throw Error('Unexpected action '+action);
   return {version:1,id:message.id,result,error:null};
  });
@@ -73,6 +75,7 @@ test('hito2: selector 1·2·4 toma settings.edgeCount, viaja en smart_quick_star
 test('hito2: arranque con material elegido usa la cantidad persistida, no 1 fijo',async({page},info)=>{
  await boot(page,info.outputDir,{props:{initialCatalogId:'edge',autoStart:true},settings:{edgeCount:4,mode:'edge'}});
  await expect.poll(()=>starts().length).toBe(1);expect(starts()[0].data).toMatchObject({mode:'edge',catalogId:'edge',edgeCount:4,scope:'unique'});expect(starts()[0].data.allowShared).not.toBe(true);
+ await expect.poll(()=>requests('viewport_focus').length).toBe(1);expect(calls.map(call=>call.action).lastIndexOf('viewport_focus')).toBeGreaterThan(calls.map(call=>call.action).indexOf('smart_quick_start'));
  await expect(edgeGroup(page).getByRole('button',{name:'4 cantos',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 
