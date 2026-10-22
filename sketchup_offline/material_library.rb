@@ -528,7 +528,7 @@ module PlanosSanto
           end
           raise
         end
-        warnings=['La copia queda pendiente de aprobación para maderera: revisá su ficha antes de pedir.']
+        warnings=['La copia conserva el SKU del original: cambialo si es otro producto.']
         warnings << 'Comparte la foto o el SKM de la ficha original; no se duplicaron archivos.' if MaterialPolicy.photo?(copy) || MaterialPolicy.skm_import?(copy) || record
         {'catalog'=>catalog,'catalogId'=>copy['id'],'duplicatedFrom'=>source['id'],'name'=>copy['name'],'warnings'=>warnings}
       end
@@ -893,7 +893,7 @@ module PlanosSanto
       rows=manifest['items'].map do |item|
         refs=references(item,manifest['visualRecords'])
         present=refs.count { |folder,name,_hash| files.key?("#{folder}/#{name}") }
-        warnings=['Se importa sin aprobar: revisá la ficha antes de pedir a maderera.']
+        warnings=[]
         warnings << 'Faltan archivos visuales en el paquete; la ficha quedará para revisar.' if present<refs.length && refs.any? { |folder,name,hash| !files.key?("#{folder}/#{name}") && !MaterialPolicy.file_matches?(@directory,folder,name,hash) }
         warnings << 'La foto tiene metadatos inválidos; la ficha quedará para revisar.' if MaterialPolicy.photo?(item) && !MaterialPolicy.metadata_valid?(item)
         status=if existing_by_hash.fetch(item['sourceHash'],[]).any? { |existing| same_item?(existing,item) }
