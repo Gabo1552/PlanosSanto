@@ -322,6 +322,11 @@ hardware_paths = fixture[:hardware_paths]
 items = %w[1 2].map do |n|
   { 'id' => "11111111-1111-4111-8111-00000000000#{n}", 'name' => "Placa bench #{n}", 'kind' => 'sheet', 'approved' => true, 'observed' => {} }
 end
+# Dos cantos vinculados (A/B) para el clic de canto del pincel (PINTURA-15).
+items += %w[1 2].map do |n|
+  { 'id' => "22222222-2222-4222-8222-00000000000#{n}", 'name' => "Canto bench #{n}", 'kind' => 'edge', 'approved' => true,
+    'observed' => {}, 'thicknessMm' => 1, 'widthMm' => 22 }
+end
 bound = items.each_with_index.map do |item, i|
   material = PhotoFixture::Material.new(9001 + i, item['name'])
   material.set_attribute(PlanosSanto::MaterialResolver::DICT, PlanosSanto::MaterialResolver::KEY, JSON.generate(PlanosSanto::MaterialResolver.binding_for(item)))
@@ -392,6 +397,20 @@ row, = measure('clic inmediato pieza compartida (scope all)', runs: runs, warmup
   r
 end
 results << row
+# Clic de canto inmediato: la cara 3 de la caja es un lado (normal -y). Con 1
+# canto se arma el marco local para unir caras partidas; con 4, los cuatro lados.
+edge_face = unique_def.entities[2].persistent_id.to_s
+[1, 4].each do |count|
+  row, = measure("clic inmediato canto (#{count} #{count == 1 ? 'canto' : 'cantos'})", runs: runs, warmup: warmup) do |i|
+    material = bound[2 + (i % 2)]
+    r = smart.apply_immediate({ 'mode' => 'edge', 'immediate' => true, 'edgeCount' => count, 'side' => 'both', 'scope' => 'unique',
+                                'catalogId' => items[2 + (i % 2)]['id'], 'materialUuid' => PlanosSanto::MaterialResolver.read_binding(material)['uuid'],
+                                'targets' => [{ 'pieceId' => unique_piece, 'faceIds' => [edge_face] }] })
+    click_results << r['changed']
+    r
+  end
+  results << row
+end
 raise 'Algún clic medido no cambió el material (no-op): la medición no sería comparable.' unless click_results.all?(true)
 
 exporter_file = OPTIONS[:exporter]
