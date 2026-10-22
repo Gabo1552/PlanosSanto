@@ -153,4 +153,14 @@ class Hito2ControllerTest < Minitest::Test
     Sketchup.hito2_prefs[['PlanosSanto','smart_paint_settings_v2']]='ps2:'+Base64.strict_encode64(JSON.generate('schema'=>2,'settings'=>{'lastMaterials'=>'canto'}))
     refute @controller.smart_settings.key?('lastMaterials')
   end
+  def test_click_timings_are_exposed_in_tool_status_and_diagnostic
+    quick('mode'=>'sheet','catalogId'=>'placa')
+    timing=tool.args[:timing];assert_kind_of PlanosSanto::PaintTimingLog,timing
+    timing.record('at'=>'t','ms'=>42.0,'mode'=>'sheet','edgeCount'=>1,'scope'=>'unique','changed'=>true,'ok'=>true)
+    assert_equal 1,@controller.dispatch('smart_tool_status',{})['timings']['count']
+    clicks=@controller.dispatch('diagnostic',{})['paintClicks']
+    assert_equal [1,42.0,42.0,42.0],clicks.values_at('count','p50','p95','max')
+    assert File.exist?(File.join(@dir,'diagnostico','pincel-tiempos.jsonl'))
+    @controller.dispatch('smart_tool_stop',{});quick('mode'=>'edge','catalogId'=>'canto');assert_equal 2,@selected.compact.length;assert_same timing,tool.args[:timing]
+  end
 end

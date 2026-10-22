@@ -639,7 +639,7 @@ module PlanosSanto
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
           guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
           remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
-          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) })
+          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing)
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -673,7 +673,7 @@ module PlanosSanto
         end
         stopped.merge('toolState'=>smart_state)
       when 'smart_tool_status'
-        @smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}
+        (@smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
       when 'smart_tool_stop'
         stop_smart_tool
       when 'smart_palette_compact'
@@ -778,7 +778,7 @@ module PlanosSanto
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
           'layoutModulePresent' => Object.const_defined?(:Layout), 'pdfEngine' => 'pdf-lib local; no requiere LayOut',
-          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false }
+          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'paintClicks' => smart_timing.summary }
       else
         raise ExportError, 'Acción desconocida.'
       end
@@ -868,6 +868,15 @@ module PlanosSanto
       options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
       remember_smart_settings(options);@quick_options=options
       options
+    end
+
+    # One click-time log per process; its folder is the Planos Santo data folder.
+    def smart_timing
+      @smart_timing ||= PaintTimingLog.new(directory:begin
+        ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      rescue StandardError
+        nil # memory only; diagnostics must never fail because of the log
+      end)
     end
 
     def smart_event(event)

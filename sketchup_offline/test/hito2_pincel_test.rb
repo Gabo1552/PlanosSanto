@@ -444,3 +444,41 @@ class Hito2ThrottleTest < Minitest::Test
     @tool.onKeyDown(9,1,PlanosSanto::SmartPaintTool::CTRL_MASK,@view);assert_equal count+3,@events.length
   end
 end
+
+class Hito2TimingTest < Minitest::Test
+  include Hito2Fixture
+  def setup;build_fixture;paint_sheet_on_board!;@dir=Dir.mktmpdir;end
+  def teardown;FileUtils.remove_entry(@dir);end
+  def log_path;File.join(@dir,'diagnostico','pincel-tiempos.jsonl');end
+  def test_each_immediate_click_is_measured_in_memory_and_in_jsonl
+    log=PlanosSanto::PaintTimingLog.new(directory:@dir);ticks=0.0
+    build_tool(tool_options('edge','edgeCount'=>4),timing:log,clock:-> { ticks+=0.02 })
+    click_on(@doors[0])
+    split_x_min_side!;@model.observers.each { |o| o.onTransactionCommit(@model) };click_on(@doors[1]) # blocked before the service
+    assert_equal 2,log.entries.length
+    first,second=log.entries
+    assert_equal({'mode'=>'edge','edgeCount'=>4,'scope'=>'unique','changed'=>true,'ok'=>true},first.slice('mode','edgeCount','scope','changed','ok'))
+    assert_operator first['ms'],:>,0;refute second['ok'];assert_equal false,second['changed']
+    lines=File.readlines(log_path).map { |line| JSON.parse(line) };assert_equal log.entries,lines
+    summary=log.summary
+    assert_equal 2,summary['count'];assert_equal summary['max'],log.entries.map { |e| e['ms'] }.max;assert_equal second,summary['last']
+    assert summary.key?('p50') && summary.key?('p95')
+  end
+  def test_ring_keeps_200_and_the_file_rotates_after_512_kb
+    log=PlanosSanto::PaintTimingLog.new(directory:@dir)
+    FileUtils.mkdir_p(File.dirname(log_path));File.write(log_path,'x'*(512*1024+1))
+    205.times { |i| log.record('ms'=>i.to_f,'mode'=>'sheet','edgeCount'=>1,'scope'=>'unique','changed'=>true,'ok'=>true) }
+    assert_equal 200,log.entries.length;assert_equal 5.0,log.entries.first['ms']
+    assert File.exist?(log_path+'.1');assert_operator File.size(log_path),:<,512*1024
+    assert_equal 205,File.readlines(log_path).length
+    s=log.summary;assert_equal [200,104.0,194.0,204.0],s.values_at('count','p50','p95','max')
+  end
+  def test_write_failure_only_warns_and_never_breaks_the_click
+    File.write(File.join(@dir,'diagnostico'),'no soy una carpeta')
+    log=PlanosSanto::PaintTimingLog.new(directory:@dir)
+    build_tool(tool_options('sheet'),timing:log)
+    _,err=capture_io { click_on(@doors[0]) }
+    assert_match(/Planos Santo pincel/,err);assert_equal 1,log.entries.length;assert_nil @events.last['error']
+    assert_equal({'count'=>0,'p50'=>nil,'p95'=>nil,'max'=>nil,'last'=>nil},PlanosSanto::PaintTimingLog.new(directory:nil).summary)
+  end
+end

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 require 'json'
+require 'time'
+require 'fileutils'
 
 module PlanosSanto
   # Public SketchUp Tool. Hover, picking and queued selection never write model
@@ -51,6 +53,37 @@ module PlanosSanto
     end
   end
 
+  # PINTURA-09: cost of each immediate click (hit + verdict + apply). A ring of
+  # 200 entries in memory plus one JSONL line per click, rotated to .1 past 512 KB.
+  class PaintTimingLog
+    RING=200
+    MAX_BYTES=512*1024
+    attr_reader :entries
+    def initialize(directory:);@directory=directory;@entries=[];end
+    def path;@directory && File.join(@directory,'diagnostico','pincel-tiempos.jsonl');end
+    def record(entry)
+      @entries << entry;@entries.shift while @entries.length>RING
+      write(entry);entry
+    end
+    def write(entry)
+      return unless path
+      FileUtils.mkdir_p(File.dirname(path))
+      if File.file?(path) && File.size(path)>MAX_BYTES
+        File.delete(path+'.1') if File.exist?(path+'.1')
+        File.rename(path,path+'.1')
+      end
+      File.open(path,'a') { |file| file.write(JSON.generate(entry)+"\n") }
+    rescue StandardError=>error
+      warn("Planos Santo pincel: no se pudo registrar el tiempo del clic (#{error.class}).")
+    end
+    def summary
+      values=@entries.map { |entry| entry['ms'] }.compact.sort
+      return {'count'=>0,'p50'=>nil,'p95'=>nil,'max'=>nil,'last'=>nil} if values.empty?
+      rank=lambda { |p| values[[(p*values.length).ceil-1,0].max] }
+      {'count'=>values.length,'p50'=>rank.call(0.5),'p95'=>rank.call(0.95),'max'=>values.last,'last'=>@entries.last}
+    end
+  end
+
   # Minimal ModelObserver: only counts transactions, never walks the model.
   class PaintGenerationObserver
     def initialize(&block);@bump=block;end
@@ -92,8 +125,8 @@ module PlanosSanto
     attr_reader :queued_targets,:verdicts,:generation
 
     HOVER_INTERVAL=0.1
-    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil)
-      @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil, timing:nil)
+      @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode;@timing=timing
       @clock=clock || lambda { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
       @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
       @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil);@occurrences=OccurrenceIndex.new(model)
@@ -460,8 +493,17 @@ module PlanosSanto
       @queued_targets=[];@queued_overlays={};@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
       emit(applied['changed'] ? 'Pintado aplicado. Podés deshacerlo con Undo.' : 'Las caras ya tenían ese material.',changed:applied['changed']==true)
     end
+    def timed!(ok,changed)
+      started=@click_started;@click_started=nil
+      return unless @timing && started
+      @timing.record('at'=>Time.now.utc.iso8601(3),'ms'=>((@clock.call-started)*1000).round(1),'mode'=>@options['mode'],'edgeCount'=>edge_count,
+                     'scope'=>scope,'changed'=>changed==true,'ok'=>ok)
+    rescue StandardError
+      nil
+    end
     def onLButtonDown(flags,x,y,view)
       if immediate?
+        @click_started=@clock.call
         verify_guard!
         @pick_cache=nil
         target=hit(view,x,y)
@@ -472,6 +514,7 @@ module PlanosSanto
         raise ExportError,verdict['reason'] if verdict && !verdict['ok']
         applied=@service.apply_immediate(service_options([target_data(target)]))
         @generation+=1;@last_error=nil
+        timed!(true,applied['changed'])
         clear
         emit(applied['changed'] ? 'Pieza pintada. Hacé clic en otra; Ctrl+Z deshace.' : 'La pieza ya tiene este material. Hacé clic en otra.',changed:applied['changed']==true)
         invalidate(view)
@@ -487,6 +530,7 @@ module PlanosSanto
       end
       invalidate(view)
     rescue StandardError=>error
+      timed!(false,false)
       @service.cancel;emit('No se aplicó el pintado.',error:error.message);invalidate(view)
     end
     def keyboard_submode(backwards=false)
