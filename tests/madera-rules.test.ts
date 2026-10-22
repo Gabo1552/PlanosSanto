@@ -22,7 +22,8 @@ describe('Presupuesto estimado',()=>{
   expect(cellAmount(1234.5,'ARS','current_price')).toEqual({text:'ARS 1.234,50',counted:true});
   expect(cellAmount(10,'ARS','stale_price')).toEqual({text:'ARS 10,00',counted:false});
   expect(cellAmount(null,'ARS','price_pending')).toEqual({text:'Pendiente',counted:false});
-  expect(cellAmount(10,'ARS','size_pending').text).toBe('Pendiente');
+  expect(cellAmount(10,'ARS','size_pending')).toEqual({text:'ARS 10,00',counted:false});
+  expect(cellAmount(null,'ARS','size_pending').text).toBe('Pendiente');
   expect(moneyTotals({ARS:1000,USD:2})).toBe('ARS 1.000,00 · USD 2,00');
  });
 });

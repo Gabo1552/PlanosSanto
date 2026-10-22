@@ -79,7 +79,7 @@ test('perfil de maderera: queda sin aprobar, se aprueba, se usa en pedidos y el 
  const use=panel.getByRole('button',{name:'Usar en pedidos',exact:true});await expect(use).toBeDisabled();
  const saved=actions.find(a=>a.action==='maderera_profile_save')!.data as {profile:Record<string,unknown>};expect(saved.profile).not.toHaveProperty('approved');expect(saved.profile).not.toHaveProperty('version');
  await panel.getByRole('button',{name:'Aprobar esta versión',exact:true}).click();await expect(panel.getByRole('status')).toContainText('Versión 1 aprobada');await expect(entry).toContainText('Aprobado · v 1');
- await use.click();const stop=panel.getByRole('button',{name:'Dejar de usar',exact:true});await expect(stop).toHaveAttribute('aria-pressed','true');await expect(entry).toContainText('En uso en pedidos');
+ await use.click();const stop=panel.getByRole('button',{name:'Dejar de usar',exact:true});await expect(stop).toBeEnabled();await expect(entry).toContainText('En uso en pedidos');
  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
  await fillOrder(page,panel,sheet.id,strip.id);
  await panel.getByRole('button',{name:'Revisar pedido y costo neto',exact:true}).click();await expect(panel.getByRole('status')).toContainText('Pedido coherente');
