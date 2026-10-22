@@ -135,7 +135,7 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
   await page.keyboard.press('Escape');await expect(popup).toHaveCount(0);await expect(help).toBeFocused();
   await page.getByRole('button',{name:'Ayuda: PDF para imprimir',exact:true}).click();
   await expect(page.getByRole('dialog',{name:'PDF para imprimir',exact:true})).toContainText('una hoja A4 horizontal por mueble');
-  await page.locator('.guide-heading h1').click();await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.locator('.guide-heading h2').click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button',{name:'Ayuda: Guardar guía',exact:true}).click();
   await page.getByRole('button',{name:'Cerrar ayuda: Guardar guía',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(input).toHaveValue(original);expect(calls).not.toContain('save');expect(calls).not.toContain('pdf');

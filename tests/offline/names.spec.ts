@@ -93,7 +93,7 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  await page.getByLabel('Módulo de este mueble').fill('M01');
  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral');
  await expect(page.locator('tbody tr').first()).toContainText('VF M01 Lateral');
- await page.getByRole('button',{name:'Otro mueble 1 piezas',exact:true}).click();
+ await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();
  await page.getByLabel('Módulo de este mueble').fill('M02');
  await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
  expect((await snapshot()).operations).toEqual([]);
@@ -134,7 +134,7 @@ test('el nuevo número del grupo se toma al analizar y recompone nombres sin acu
  await boot(page,info.outputDir);await send('__names_external',{name:'M01 Estantería izq. Util.'});await page.getByRole('button',{name:'Volver a analizar',exact:true}).click();
  await page.getByLabel('Abreviatura de la obra').fill('VF');await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await expect(page.getByLabel('Módulo de este mueble')).toHaveValue('M01');await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral');
- await page.getByRole('button',{name:'Otro mueble 1 piezas',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');
+ await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await send('__names_external',{name:'M03 Estantería izq. Util.'});await page.getByRole('button',{name:'Volver a analizar',exact:true}).click();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await expect(page.getByLabel('Módulo de este mueble')).toHaveValue('M03');await expect(page.locator('tbody tr').first()).toContainText('VF M03 Lateral');

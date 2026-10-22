@@ -33,7 +33,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 
 test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frente persistido y un único guardado reversible',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();expect(before.names['11']).toBe('');expect(before.names['12']).toBe('');
- await page.getByLabel('Abreviatura de la obra').fill('VF');await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 piezas',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
+ await page.getByLabel('Abreviatura de la obra').fill('VF');await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
  const dialog=await openProposals(page);await expect(dialog.locator('[aria-label^="Nombre sugerido"]')).toHaveCount(2);
  await expect(dialog).toContainText('Falta confirmar vertical y frente');await expect(dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true})).toBeDisabled();

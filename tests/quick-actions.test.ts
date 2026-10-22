@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {isQuickIntent,shortcutFor} from '../sketchup_offline/ui/quickActions';
+import {isQuickIntent,noticeActionFor,shortcutFor} from '../sketchup_offline/ui/quickActions';
 describe('Atajos globales del shell',()=>{
  const base={key:'',ctrlKey:false,shiftKey:false,altKey:false,defaultPrevented:false};
  it('Ctrl+S guarda, Ctrl+Shift+E exporta y Alt+1…5 cambian de módulo',()=>{
@@ -16,6 +16,27 @@ describe('Atajos globales del shell',()=>{
   expect(shortcutFor({...save,defaultPrevented:true})).toBeUndefined();expect(shortcutFor({...save,repeat:true})).toBeUndefined();expect(shortcutFor(save,true)).toBeUndefined();
   for(const target of [{tagName:'TEXTAREA'},{tagName:'select'},{tagName:'DIV',isContentEditable:true},{tagName:'DIV',getAttribute:(name:string)=>name==='role'?'listbox':null}])expect(shortcutFor({...save,target})).toBeUndefined();
   expect(shortcutFor({...save,target:{tagName:'INPUT',getAttribute:()=>null}})).toBe('save');
+ });
+});
+describe('Ayuda de atajos y recuperación de errores',()=>{
+ const base={key:'',ctrlKey:false,shiftKey:false,altKey:false,defaultPrevented:false};
+ it('? abre la ayuda fuera de campos de texto, con o sin Shift según la distribución del teclado',()=>{
+  expect(shortcutFor({...base,key:'?',shiftKey:true})).toBe('help');expect(shortcutFor({...base,key:'?'})).toBe('help');
+  expect(shortcutFor({...base,key:'?',target:{tagName:'BUTTON',getAttribute:()=>null}})).toBe('help');
+ });
+ it('? no se roba lo que se escribe ni actúa con modificadores o diálogos abiertos',()=>{
+  for(const target of [{tagName:'INPUT',getAttribute:()=>null},{tagName:'TEXTAREA'},{tagName:'DIV',isContentEditable:true}])expect(shortcutFor({...base,key:'?',shiftKey:true,target})).toBeUndefined();
+  expect(shortcutFor({...base,key:'?',ctrlKey:true})).toBeUndefined();expect(shortcutFor({...base,key:'?',altKey:true})).toBeUndefined();expect(shortcutFor({...base,key:'?'},true)).toBeUndefined();expect(shortcutFor({...base,key:'/'})).toBeUndefined();
+ });
+ it('ofrece Analizar de nuevo tras un cuelgue de SketchUp o un análisis fallido',()=>{
+  const action={label:'Analizar de nuevo',kind:'analyze'};
+  expect(noticeActionFor('SketchUp no respondió. No vuelvas a guardar todavía: revisá si sigue trabajando y luego analizá el modelo para recuperar el estado.','Guardando guía…')).toEqual(action);
+  expect(noticeActionFor('No se pudo leer el grupo 12.','Analizando modelo…')).toEqual(action);
+ });
+ it('no ofrece reintentos que no sirven y deja sin acción los errores de validación',()=>{
+  expect(noticeActionFor('Actualización pendiente: la ventana es 0.8.10, pero SketchUp sigue usando la versión 0.8.9.','Analizando modelo…')).toBeUndefined();
+  expect(noticeActionFor('Abrí Planos Santo desde el menú de SketchUp. Esta ventana necesita la extensión instalada.','Analizando modelo…')).toBeUndefined();
+  expect(noticeActionFor('Mueble 1: falta la abreviatura de la obra.','Guardando guía…')).toBeUndefined();expect(noticeActionFor('Error')).toBeUndefined();
  });
 });
 describe('Native quick command event contract',()=>{
