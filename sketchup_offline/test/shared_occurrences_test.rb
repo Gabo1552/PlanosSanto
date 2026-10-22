@@ -91,4 +91,22 @@ class SharedOccurrencesTest < Minitest::Test
     assert_equal 'Lateral',@leaf.name;assert_empty @leaf.names_attributes;assert_empty @model.attributes
     assert_equal :abort,@model.operations.last[0]
   end
+  # UX2 TC-04: every batch blocker starts with the affected route so the UI can
+  # offer «Ver fila» / «Excluir y revisar», and never shows an internal persistent_id.
+  def test_batch_blockers_start_with_route_and_name_the_piece_or_furniture
+    changes=edits;changes[0]['pieces'][1]['name']='VF M15 Otra';changes[0]['naming']['bases'][1]['base']='Otra'
+    message=assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
+    assert message.start_with?("#{@paths[0]}: La pieza compartida P01 tiene nombres distintos"),message
+    refute_includes message,'44976 tiene'
+    changes=edits;changes[0]['naming']['moduleCode']=''
+    message=assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
+    assert_equal '62228: Falta el módulo del mueble «M15 Guardado bajo» (por ejemplo M01).',message
+    changes=edits;changes[0]['pieces'][2]['id']='62228/1/2';changes[0]['pieces'][2]['code']='P07';changes[0]['naming']['bases'][2]['id']='62228/1/2'
+    assert_equal '62228/1/2: La pieza P07 ya no existe. Volvé a analizar el modelo.',assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
+    changes=edits;changes[0]['pieces'][3]['name']='VF M15 Otro nombre'
+    assert_equal "#{@paths[3]}: El nombre de la pieza P04 no coincide con obra, módulo y pieza. Volvé a analizar el modelo.",assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
+    changes=edits;changes[0]['groupName']='Nuevo';@model.entities.clear
+    assert_equal '62228: El grupo ya no existe. Volvé a analizar el modelo.',assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
+    assert_empty @model.operations
+  end
 end
