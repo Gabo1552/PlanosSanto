@@ -59,7 +59,7 @@ describe('Reconocimiento contextual en el marco de cada mueble',()=>{
   ].map(data=>({...template,...data,name:'Grupo#1',definition:data.id})));
   const base=(id:string)=>nameSuggestions(f,orientation).find(s=>s.ids.includes(id))?.base;
   expect(base('modulo/liston-40')).toBe('Listón');expect(base('modulo/liston-70')).toBe('Listón');
-  f.pieces.find(p=>p.id==='modulo/liston-40')!.metadata={...f.pieces.find(p=>p.id==='modulo/liston-40')!.metadata,rectangular:false};
+  const liston=f.pieces.find(p=>p.id==='modulo/liston-40')!;liston.metadata={...liston.metadata!,rectangular:false};
   expect(base('modulo/liston-40')).toBe('Sin clasificar');
  });
  it('un frente no confirmado u oblicuo no habilita roles automáticos',()=>{

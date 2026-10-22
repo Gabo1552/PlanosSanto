@@ -48,6 +48,8 @@ Pasada de cobertura vitest de la rama `claude/noche-cobertura-ts`. **No se corri
 
 ## BUG-TS-05 — Los listones comunes nunca se proponen como «Listón»
 
+**Estado: corregido en 0.8.12** (la regla de Listón se evalúa antes del filtro de tablón fino; la prueba quedó activa).
+
 - **Dónde:** `lib/nameSuggestions.ts:34-35` (`classify`). La regla «proporciones ajenas a un tablón fino» (`ordered[2]/ordered[1] > 0.2`) se evalúa **antes** que la de listón (`ordered[0]/ordered[1] > 8`).
 - **Escenario:** «Proponer nombres» con frente confirmado sobre un listón de 764 × 40 × 18 mm (o 2400 × 70 × 18). Espesor/ancho = 0,45 (o 0,26), así que la pieza sale como «Sin clasificar — Geometría irregular o proporciones ajenas a un tablón fino». La propuesta «Listón» solo aparece si el ancho es más de 5 veces el espesor y el largo más de 8 veces el ancho (por ejemplo 1000 × 100 × 18), que no es la sección típica de un listón.
 - **Esperado:** evaluar primero la regla de pieza alargada (largo/ancho > 8) o no aplicar el filtro de tablón fino a piezas alargadas, que es justamente lo que describe el motivo «Pieza alargada; confirmar listón/travesaño/refuerzo (List)».

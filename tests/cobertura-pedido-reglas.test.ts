@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {applyEquivalent,blockedField,boardOf,edgeAmounts,edgeTotals,equivalentRows,rotationBlock,rowDimensions,rowThickness,rowWarnings} from '../sketchup_offline/ui/workshopRules';
+import {blockedField,boardOf,edgeAmounts,edgeTotals,equivalentRows,rotationBlock,rowDimensions,rowThickness,rowWarnings} from '../sketchup_offline/ui/workshopRules';
 import type {Catalog,CatalogItem,Geometry,OrderRow} from '../sketchup_offline/ui/WorkshopPanel';
 
 const item=(patch:Partial<CatalogItem>):CatalogItem=>({id:'x',name:'Item',kind:'sheet',sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:true,updatedAt:'',sourceHash:'',observed:{},...patch});
@@ -85,19 +85,7 @@ describe('Totales de canto, equivalentes e importes: casos borde',()=>{
   const plan={rows:[source,row('b'),row('c'),row('d'),row('e')],geometry:{a:panel,b:geo([18,720,450]),c:geo([720,450,18],{rectangular:false}),d:geo([720,450,18.2]),e:geo([720,450,18],{mirrored:true})}};
   expect(equivalentRows(plan,source).map(r=>r.id)).toEqual(['b']);
  });
- it('copiar sin grupos elegidos no cambia ni cuenta filas; copiar veta invalida solo la veta',()=>{
-  const source=row('a',{grainAxis:'u',grainPolicy:'rotate'}),rows=[source,row('b')];
-  const none=applyEquivalent(rows,source,['b'],{material:false,edges:false,grain:false,dimensions:false});
-  expect(none.applied).toBe(0);expect(none.rows[1]).toBe(rows[1]);
-  const grain=applyEquivalent(rows,source,['b','a'],{material:false,edges:false,grain:true,dimensions:false}).rows;
-  expect(grain[1]).toMatchObject({grainAxis:'u',grainPolicy:'rotate',grainConfirmed:false,materialConfirmed:true,edgesConfirmed:true});
-  expect(grain[0]).toBe(source);
- });
- it('sin medidas de corte en el origen no se cruzan base y altura',()=>{
-  const source=row('a',{dimensionRule:'finished_accepted'});
-  const result=applyEquivalent([source,row('b',{axes:[1,0]})],source,['b'],{material:false,edges:false,grain:false,dimensions:true},{a:panel,b:panel});
-  expect(result.cutsSwapped).toBe(0);expect(result.rows[1]).toMatchObject({cutBase:null,cutHeight:null,dimensionRule:'finished_accepted'});
- });
+ // Copiar a piezas equivalentes pasó a Ruby con el Hito 3 (OrderProposal#apply): lo cubre order_proposal_test.rb.
  it('los importes de canto ignoran cargos sin producto y suman monedas por separado',()=>{
   const amounts=edgeAmounts([{amount:5,status:'current_price',price:{currency:'ARS'},role:'principal_edge'},
    {materialId:'e1',role:'principal_edge',amount:10,status:'current_price',price:{currency:'ARS'}},{materialId:'e1',role:'secondary_edge',amount:2,status:'current_price',price:{currency:'USD'}},

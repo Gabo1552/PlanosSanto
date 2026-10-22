@@ -63,8 +63,8 @@ describe('Propuestas de nombre por posición en el mueble',()=>{
   expect(byId(f,'cubo')).toMatchObject({base:'Sin clasificar',confidence:'unclassified'});
   expect(byId(f,'puerta').base).toBe('Puerta');expect(byId(f,'cajon').base).toBe('Frente cajón');
  });
- // BUG-TS-05 (docs/qa/BUGS_ENCONTRADOS_TS.md): el filtro de «tablón fino» descarta los listones antes de la regla de Listón.
- it.skip('un listón de sección 40 × 18 se propone como Listón (BUG-TS-05: hoy queda «Sin clasificar»)',()=>{
+ // BUG-TS-05 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido en 0.8.12; la regla de Listón va antes del filtro de tablón fino.
+ it('un listón de sección 40 × 18 se propone como Listón (BUG-TS-05)',()=>{
   const f=module([board('liston','Componente',[764,40,18],[18,410,600])]);
   expect(byId(f,'liston')).toMatchObject({base:'Listón',confidence:'review'});
  });
