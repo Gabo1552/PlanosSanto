@@ -39,8 +39,8 @@ test('UX A4: un solo selector de vistas con flechas y orientación compartida so
  await expect(page.getByRole('combobox',{name:'Vistas en el PDF'})).toHaveCount(0);await expect(page.getByRole('button',{name:'1 vista',exact:true})).toHaveCount(0);
  const exterior=group.getByRole('radio',{name:'Exterior',exact:true}),interior=group.getByRole('radio',{name:'Interior',exact:true}),both=group.getByRole('radio',{name:'Exterior + interior',exact:true});
  await expect(both).toHaveAttribute('aria-checked','true');await expect(both).toHaveAttribute('tabindex','0');await expect(exterior).toHaveAttribute('tabindex','-1');
- await expect(page.getByLabel('Compartir cámara entre vistas',{exact:true})).toBeVisible();
- await interior.click();await expect(interior).toHaveAttribute('aria-checked','true');await expect(page.getByLabel('Compartir cámara entre vistas',{exact:true})).toHaveCount(0);
+ await expect(page.getByLabel('Compartir orientación entre exterior e interior',{exact:true})).toBeVisible();
+ await interior.click();await expect(interior).toHaveAttribute('aria-checked','true');await expect(page.getByLabel('Compartir orientación entre exterior e interior',{exact:true})).toHaveCount(0);
  await interior.press('ArrowLeft');await expect(exterior).toHaveAttribute('aria-checked','true');await expect(exterior).toBeFocused();
  await exterior.press('ArrowLeft');await expect(both).toHaveAttribute('aria-checked','true');await expect(both).toBeFocused();
  await both.press('Home');await expect(exterior).toHaveAttribute('aria-checked','true');
@@ -52,7 +52,7 @@ test('UX A4: buscar piezas, diferencia frente a lo aplicado y atajos Esc / Ctrl+
  await boot(page,info.outputDir);await openVisibility(page);
  const status=page.getByTestId('a4-view-stage'),apply=page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true});
  await expect(status).toContainText('Sin cambios respecto de lo aplicado');await expect(apply).toBeDisabled();
- await expect(page.getByRole('button',{name:'Cancelar previsualización',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Cancelar vista previa',exact:true})).toBeVisible();
  const search=page.getByRole('searchbox',{name:'Buscar pieza (código o nombre)',exact:true});
  await search.fill('p02');await expect(page.locator('.guide-physical-pieces [data-piece-path]')).toHaveCount(1);await expect(page.getByText('1 de 2',{exact:true})).toBeVisible();
  await search.fill('zzz');await expect(page.getByText('Ninguna pieza coincide con «zzz».',{exact:true})).toBeVisible();
@@ -60,14 +60,14 @@ test('UX A4: buscar piezas, diferencia frente a lo aplicado y atajos Esc / Ctrl+
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();
  await expect(status).toContainText('Sin aplicar: 1 nueva oculta');await expect(apply).toBeEnabled();
  await expect(page.locator('[data-piece-path="1/13/12"]')).toContainText('nueva oculta');
- await expect(page.getByRole('button',{name:'Cancelar previsualización (descarta 1 cambio)',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Cancelar vista previa (descarta 1 cambio)',exact:true})).toBeVisible();
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).check();await expect(status).toContainText('Sin cambios respecto de lo aplicado');await expect(apply).toBeDisabled();
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await search.focus();await page.keyboard.press('Control+Enter');
- await expect(page.getByTestId('a4-view-stage')).toHaveCount(0);await expect(page.getByRole('button',{name:'Mostrar pieza oculta 1/13/12',exact:true})).toBeVisible();
+ await expect(page.getByTestId('a4-view-stage')).toHaveCount(0);await expect(page.getByRole('button',{name:/^Mostrar P0\d · .+ \(1\/13\/12\)$/})).toBeVisible();
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).check();
  await expect(status).toContainText('Sin aplicar: 1 se restaura');await expect(page.locator('[data-piece-path="1/13/12"]')).toContainText('se restaura');
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).focus();await page.keyboard.press('Escape');
- await expect(page.getByTestId('a4-view-stage')).toHaveCount(0);await expect(page.getByRole('button',{name:'Mostrar pieza oculta 1/13/12',exact:true})).toBeVisible();
+ await expect(page.getByTestId('a4-view-stage')).toHaveCount(0);await expect(page.getByRole('button',{name:/^Mostrar P0\d · .+ \(1\/13\/12\)$/})).toBeVisible();
 });
 
 test('UX A4: el bloqueo dice mueble, causa y acción; la hoja anterior queda visible mientras se recompone',async({page},info)=>{
@@ -81,7 +81,7 @@ test('UX A4: el bloqueo dice mueble, causa y acción; la hoja anterior queda vis
  await expect(frame).toHaveAttribute('src',/^blob:.*#page=1&view=FitH/);const first=await frame.getAttribute('src');
  // Editing keeps the previous sheet on screen, dimmed, with download disabled until the new one arrives.
  await observations.fill('Revisar escuadra.');
- await expect(preview.getByRole('status').filter({hasText:'Actualizando…'})).toBeVisible();await expect(frame).toHaveCount(1);await expect(frame).toHaveAttribute('data-stale','true');await expect(link).toHaveCount(0);
+ await expect(preview.getByRole('status').filter({hasText:'Actualizando…'})).toBeVisible();await expect(frame).toHaveCount(1);await expect(frame).toHaveAttribute('data-stale','true');await expect(link).toHaveAttribute('aria-disabled','true');
  await expect(frame).not.toHaveAttribute('src',first!);await expect(frame).not.toHaveAttribute('data-stale');await expect(link).toBeVisible();
  // A failing layout keeps the last sheet that fit and says what to change.
  await observations.fill('Revisar las uniones y la alineación antes del montaje. '.repeat(35));
@@ -89,7 +89,7 @@ test('UX A4: el bloqueo dice mueble, causa y acción; la hoja anterior queda vis
  await expect(alert.locator('strong')).toHaveText(/^No entra en la hoja: .+/);
  await expect(alert).toContainText('Las notas y observaciones no caben legiblemente');await expect(alert).toContainText('Qué hacer: Acortá observaciones o notas.');
  await expect(alert).toContainText('Se muestra la última versión que entraba.');await expect(alert).not.toContainText('Revisá las vistas, el zoom o los textos');
- await expect(frame).toHaveCount(1);await expect(frame).toHaveAttribute('data-stale','true');await expect(link).toHaveCount(0);
+ await expect(frame).toHaveCount(1);await expect(frame).toHaveAttribute('data-stale','true');await expect(link).toHaveAttribute('aria-disabled','true');
  await alert.getByRole('button',{name:'Reintentar',exact:true}).click();await expect(alert.locator('strong')).toHaveText(/^No entra en la hoja: /);
  await observations.fill('Revisar escuadra antes del montaje.');await expect(alert).toHaveCount(0);await expect(link).toBeVisible();await expect(frame).not.toHaveAttribute('data-stale');
  await expect(preview.getByRole('group',{name:'Hojas'})).toHaveCount(0);
@@ -115,8 +115,8 @@ test('UX A4: editar el proyecto no cambia la hoja navegada; solo el mueble activ
  await page.getByRole('button',{name:'Activar segundo mueble',exact:true}).click();await expect(sheet).toHaveValue('1');await expect(frame).toHaveAttribute('src',/#page=2&/);
  await preview.getByRole('button',{name:'Anterior',exact:true}).click();await expect(sheet).toHaveValue('0');const first=await frame.getAttribute('src');
  await page.getByRole('button',{name:'Editar proyecto',exact:true}).click();
- // While the edit is composed the old sheet stays, and the unavailable actions are real disabled buttons.
- await expect(preview.getByRole('button',{name:'Abrir PDF',exact:true})).toBeDisabled();await expect(preview.getByRole('button',{name:'Descargar vista previa',exact:true})).toBeDisabled();
+ // While the edit is composed the old sheet stays, and the unavailable actions are links marked aria-disabled with a visible reason.
+ for(const name of ['Abrir PDF','Descargar vista previa']){const blocked=preview.getByRole('link',{name,exact:true});await expect(blocked).toHaveAttribute('aria-disabled','true');await expect(blocked).not.toHaveAttribute('href');await expect(blocked).toHaveAccessibleDescription('Esperá a que la hoja esté actualizada');}
  await expect(frame).not.toHaveAttribute('src',first!);await expect(frame).not.toHaveAttribute('data-stale');
  await expect(sheet).toHaveValue('0');await expect(frame).toHaveAttribute('src',/#page=1&/);await expect(preview.getByRole('link',{name:'Abrir PDF',exact:true})).toBeVisible();
 });

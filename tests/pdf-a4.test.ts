@@ -50,7 +50,7 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
  });
  it('rechaza tablas extensas y textos largos con opciones de ajuste sin truncar ni agregar páginas',async()=>{
   const project=sample('exterior'),f=project.furniture[0];const template=f.pieces[0];f.pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
-  await expect(createOfflinePdf(project,regular,mono)).rejects.toThrow(/listado.*A4.*8 pt.*hoja adicional requiere aprobación/);
+  await expect(createOfflinePdf(project,regular,mono)).rejects.toThrow(/listado.*A4.*8 pt\. Necesita \d+ mm de 139 mm: sobran unas \d+ filas\. Qué hacer: /);
   const notes=sample('exterior');notes.furniture[0].presentation!.guide!.observations='Texto extenso de armado '.repeat(120);
   await expect(createOfflinePdf(notes,regular,mono)).rejects.toThrow(/notas y observaciones.*Acortá/);
  });
@@ -62,20 +62,20 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
   expect(text).toContain('DEMOSTRACIÓN SINTÉTICA');expect(text).toContain('17 piezas');expect(text).toContain('VISTA EXTERIOR');expect(text).toContain('VISTA INTERIOR');expect(text).toContain('P09 ×6');expect(text).toContain('P11 ×3');expect(text.match(/1200/g)!.length).toBeGreaterThanOrEqual(3);expect(text).toContain('520 m');expect(text.match(/Observaciones de armado:/g)).toHaveLength(1);expect(JSON.stringify(project)).toBe(original);
  });
  it('no acepta proyectos vacíos ni nombres sin completar',async()=>{
-  const project=sample();project.furniture=[];await expect(createOfflinePdf(project,regular,mono)).rejects.toThrow(/Seleccioná/);
-  const blank=sample();blank.furniture[0].pieces[0].name='';await expect(createOfflinePdf(blank,regular,mono)).rejects.toThrow(/nombres vacíos/);
+  const project=sample();project.furniture=[];await expect(createOfflinePdf(project,regular,mono)).rejects.toThrow(/ningún mueble seleccionado.*Qué hacer: Marcá al menos un mueble/);
+  const blank=sample();blank.furniture[0].pieces[0].name='';await expect(createOfflinePdf(blank,regular,mono)).rejects.toThrow(/Hay piezas sin nombre\. Qué hacer: Completá el nombre de cada pieza\./);
  });
- it('tipifica cada bloqueo con mueble, motivo y una acción concreta sin cambiar el mensaje',async()=>{
+ it('tipifica cada bloqueo con mueble, causa y acción, y el mensaje de exportación dice lo mismo que la vista previa',async()=>{
   const failure=async(project:Project)=>{try{await createOfflinePdf(project,regular,mono);}catch(error){return error;}throw new Error('Se esperaba un bloqueo');};
   const notes=sample('exterior');notes.furniture[0].presentation!.guide!.observations='Texto extenso de armado '.repeat(120);
   const legend=await failure(notes);expect(legend).toBeInstanceOf(A4FitError);
   expect(legend).toMatchObject({kind:'legend',furniture:notes.furniture[0].name,action:'Acortá observaciones o notas.'});
-  expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toMatch(new RegExp(`^${notes.furniture[0].name}: Las notas.*hoja adicional requiere aprobación\\.$`));
+  expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toBe(`${notes.furniture[0].name}: Las notas y observaciones no caben legiblemente debajo de las vistas. Qué hacer: Acortá observaciones o notas.`);
   const blank=sample();blank.furniture[0].pieces[0].name='';expect(await failure(blank)).toMatchObject({kind:'names'});
   const table=sample('exterior'),template=table.furniture[0].pieces[0];table.furniture[0].pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
-  expect(await failure(table)).toMatchObject({kind:'table',action:'Agrupá piezas iguales o acortá sus nombres.'});
+  expect(await failure(table)).toMatchObject({kind:'table',action:'Activá Agrupar componentes iguales en este mueble.',detail:expect.stringMatching(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/)});
   const glyph=sample();glyph.furniture[0].presentation!.guide!.observations='Usar tornillo 🪚 largo';
-  const g=await failure(glyph);expect(g).toMatchObject({kind:'glyph',character:'🪚',furniture:glyph.furniture[0].name,action:'Reemplazá el carácter «🪚».'});expect((g as Error).message).toBe('El PDF no puede representar el carácter «🪚». Cambiá ese carácter antes de exportar.');
+  const g=await failure(glyph);expect(g).toMatchObject({kind:'glyph',character:'🪚',furniture:glyph.furniture[0].name,action:'Reemplazá el carácter «🪚».'});expect((g as Error).message).toBe(`${glyph.furniture[0].name}: El PDF no puede representar el carácter «🪚». Qué hacer: Reemplazá el carácter «🪚».`);
  });
  it('propone un nombre de descarga por obra, mueble y fecha, sin caracteres inválidos',()=>{
   const date=new Date(2026,9,21);

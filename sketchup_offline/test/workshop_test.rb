@@ -130,8 +130,22 @@ class WorkshopTest < Minitest::Test
   workshop.save_plan(service.proposal);assert_raises(PlanosSanto::ExportError){workshop.references}
   draft['rows'][1]['include']=false;draft['rows'][1]['excludeReason']='Exclusión sintética revisada'
   workshop.save_plan(draft);references=workshop.references
-  assert_equal ['1/11'],references.keys;assert_includes references['1/11'],'TEST-18';assert_includes references['1/11'],'Arr:EDGE-1'
+  assert_equal ['1/11'],references.keys;assert_includes references['1/11']['text'],'TEST-18';assert_includes references['1/11']['text'],'Arr:EDGE-1'
   catalog=@store.read;@store.save(catalog['items'],catalog['revision']);assert_raises(PlanosSanto::ExportError){workshop.references}
+ end
+ def test_references_carry_the_same_edge_map_board_and_cut_as_the_supplier_txt
+  service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  catalog=@store.read;second=@store.new_item('Canto secundario','edge');second.merge!('sku'=>'EDGE-2','supplier'=>'Proveedor de prueba','thicknessMm'=>0.4,'widthMm'=>22,'approved'=>true)
+  items=catalog['items'];items[0]['compatibleIds']=[items[1]['id'],second['id']];saved=@store.save([*items,second],catalog['revision'])
+  service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,saved);draft=service.proposal.merge('rows'=>draft['rows'])
+  draft['catalogRevision']=saved['revision'];draft['rows'].each { |row| row.merge!('secondaryId'=>second['id'],'edgeMap'=>[1,1,0,2]) }
+  draft['rows'][1].merge!('include'=>false,'excludeReason'=>'Exclusión sintética revisada')
+  workshop.save_plan(draft);reference=workshop.references.fetch('1/11')
+  base,height=service.dimensions(draft['rows'][0])
+  assert_equal({'board'=>'TEST-18 / 19.05 mm','edgeMap'=>[1,1,0,2],'principal'=>'EDGE-1','secondary'=>'EDGE-2','base'=>base,'height'=>height},reference.reject { |key,_| key=='text' })
+  assert_equal 'TEST-18 / 19.05 mm · Arr:EDGE-1 Aba:EDGE-1 Izq:sin Der:EDGE-2',reference['text']
+  result=service.export(draft,@dir);line=File.read(File.join(result['directory'],'lote-01.txt')).lines.map { |l| l.chomp.split("\t") }.find { |cols| cols[0]=~/\A\d+\z/ }
+  assert_equal reference['edgeMap'],line[5,4].map(&:to_i)
  end
  def test_nested_non_uniform_scale_and_rotation_cannot_become_a_rectangular_order
   catalog=approved_catalog;document=Marshal.load(Marshal.dump(@session.document))

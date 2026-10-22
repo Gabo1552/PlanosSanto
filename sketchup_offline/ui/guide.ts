@@ -11,6 +11,15 @@ export type Guide = {workCode?:string;version:1;revision:number;selection:string
 export type Generated = {document:RawDocument;guide:Guide;fingerprint:string};
 export type LocalGuide = {project:Project;orphans:Record<string,Note[]>};
 
+// «Agrupar por medidas» is a per-workstation convenience until guide_store.rb accepts the field: never sent to SketchUp.
+const FOLD_KEY='planos-santo.a4.foldTable';
+function foldPreferences():Record<string,boolean>{try{const value:unknown=JSON.parse(globalThis.localStorage?.getItem(FOLD_KEY)||'{}');return value&&typeof value==='object'?value as Record<string,boolean>:{};}catch{return {};}}
+export function rememberFoldTable(id:string,value:boolean){try{const all=foldPreferences();if(value)all[id]=true;else delete all[id];globalThis.localStorage?.setItem(FOLD_KEY,JSON.stringify(all));}catch{/* storage unavailable: the option lasts for this session */}}
+function withoutLocalOptions(presentation:Presentation):Presentation{
+  if(!presentation.guide||!('foldTable' in presentation.guide))return presentation;
+  const {foldTable:_omit,...guide}=presentation.guide;void _omit;return {...presentation,guide};
+}
+
 export function mergeGuide(document:RawDocument,guide:Guide):LocalGuide {
   const project=importDocument(document,'sketchup-ruby');
   const orphans:Record<string,Note[]>={};
@@ -20,6 +29,7 @@ export function mergeGuide(document:RawDocument,guide:Guide):LocalGuide {
     if(!Array.isArray(previous.pieces)||!Array.isArray(previous.notes))throw new Error('La guía guardada es incompatible. No se sobrescribió.');
     furniture.groupIdentical=previous.groupIdentical;
     furniture.presentation=structuredClone(previous.presentation);
+    if(furniture.presentation?.guide&&foldPreferences()[furniture.id])furniture.presentation.guide.foldTable=true;
     if(furniture.presentation?.guide)furniture.presentation.guide.hiddenPieceIds=furniture.presentation.guide.hiddenPieceIds.filter(id=>furniture.pieces.some(p=>p.id===id));
     if(furniture.presentation?.dimensionOffsets)furniture.presentation.dimensionOffsets=furniture.presentation.dimensionOffsets.filter(ref=>furniture.pieces.some(p=>p.id===ref.pieceId));
     furniture.naming=structuredClone(previous.naming);
@@ -45,7 +55,7 @@ export function mergeGuide(document:RawDocument,guide:Guide):LocalGuide {
 }
 
 export function editsFor(project:Project,orphans:Record<string,Note[]>):GuideFurniture[]{
-  return project.furniture.map(f=>({id:f.id,groupName:f.groupName,groupIdentical:f.groupIdentical||false,explosion:f.explosion,zoom:f.zoom,presentation:f.presentation||{},naming:f.naming,hiddenDimensions:f.hiddenDimensions||[],
+  return project.furniture.map(f=>({id:f.id,groupName:f.groupName,groupIdentical:f.groupIdentical||false,explosion:f.explosion,zoom:f.zoom,presentation:withoutLocalOptions(f.presentation||{}),naming:f.naming,hiddenDimensions:f.hiddenDimensions||[],
     pieces:f.pieces.map(p=>({id:p.id,name:p.name,code:p.code})),notes:[...f.notes,...(orphans[f.id]||[])]}));
 }
 

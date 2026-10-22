@@ -409,7 +409,7 @@ test('pedido: revisa cada pieza, guarda borrador y genera lotes TXT reales con t
  await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();
  await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Incluir materiales y cantos del pedido revisado en el PDF',exact:true}).check();
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
- const {execFileSync}=await import('node:child_process');const pdfText=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'});expect(pdfText).toContain('TEST-19');expect(pdfText).toContain('Arr:sin');
+ const {execFileSync}=await import('node:child_process');const pdfText=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'});expect(pdfText).toContain('TEST-19');expect(pdfText).toMatch(/[012]·[012]·[012]·[012] TEST-19/);expect(pdfText.replace(/\s+/g,' ')).toContain('orden Arr·Aba·Izq·Der sobre base × altura del pedido');
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
  await page.getByRole('button',{name:'Optimización y presupuesto',exact:true}).click();await page.getByRole('button',{name:'Abrir listas, optimización y presupuesto OCL',exact:true}).click();await expect(page.getByRole('alert')).toContainText('OpenCutList original');
 });
