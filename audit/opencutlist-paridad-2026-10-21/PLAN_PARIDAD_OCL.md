@@ -291,7 +291,7 @@ Orden: primero valor para el taller y después esfuerzo. Cada hito arranca solo 
 - DESPIECE-07 / OPT-10 + F-OPT-D: `ui/labels.ts`, plantillas 3 × 7 y 2 × 5 con márgenes ajustables. **Decisión F-OPT-D:** cada etiqueta lleva el código de su pieza física y el lote, aunque el TXT agrupe varias piezas en un renglón. Con pedido, el código es el módulo·pieza que calcula Ruby (`OrderProposal.codes`, el mismo del detalle del TXT del Hito 3); sin pedido, `compositeCode`.
 - DESPIECE-05 (parcial): «Copiar tabla» en TSV ya existía; ahora marca las filas pendientes.
 
-**Pendiente:** validar en SketchUp con una cocina de más de 40 piezas (hoja 1 + hoja 2), imprimir las etiquetas en una hoja autoadhesiva real y cotejar las 5 piezas asimétricas a mano. Limitación conocida: un perfil de TXT inválido o un pedido sin piezas incluidas todavía impide imprimir referencias parciales.
+**Pendiente:** validar en SketchUp con una cocina de más de 40 piezas (hoja 1 + hoja 2), imprimir las etiquetas en una hoja autoadhesiva real y cotejar las 5 piezas asimétricas a mano. Un perfil de TXT sin terminar o un pedido sin piezas incluidas ya no impiden imprimir la A4 ni las etiquetas.
 
 
 **Objetivo:** que el armador y el que recibe la entrega identifiquen cada pieza y sus cantos en papel.
