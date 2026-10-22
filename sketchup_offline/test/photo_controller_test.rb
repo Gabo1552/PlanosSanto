@@ -78,11 +78,13 @@ class PhotoControllerTest < Minitest::Test
     assert dispatch('material_photo_cancel')['cancelled'];assert_nil @controller.instance_variable_get(:@photo_material)
     refute @controller.instance_variable_get(:@photo_preview_active);assert_empty @model.operations
   end
-  def test_active_paint_blocks_material_creation_and_preview_until_stopped
+  # 0.8.17: an active brush no longer answers «Detené Pintura Inteligente…»:
+  # it stops by itself and the photo flow goes on.
+  def test_active_paint_stops_by_itself_and_the_photo_flow_goes_on
     @controller.instance_variable_set(:@smart_state,{'active'=>true,'mode'=>'sheet'})
-    assert_raises(PlanosSanto::ExportError) { dispatch('material_photo_pick') }
-    assert_raises(PlanosSanto::ExportError) { dispatch('material_photo_create',{}) }
-    assert_empty @service.calls
+    dispatch('material_photo_pick')
+    assert_equal false,@controller.send(:smart_state)['active']
+    refute_empty @service.calls;assert @controller.instance_variable_get(:@photo_preview_active)
   end
   def test_optional_modes_are_strict_and_do_not_persist_shared_permissions
     base={'confirmed'=>true,'mode'=>'edge','axes'=>[0,1],'side'=>'front','scope'=>'unique'}

@@ -47,14 +47,17 @@ class MaterialManagementControllerTest < Minitest::Test
     assert_empty @model.operations
   end
 
-  def test_mutations_are_refused_while_smart_paint_is_active_or_guide_is_dirty
+  # 0.8.17: an active brush stops by itself (no «Detené…»); a dirty guide still refuses.
+  def test_mutations_stop_an_active_smart_paint_by_themselves_and_a_dirty_guide_refuses
     @controller.instance_variable_set(:@smart_state,{'active'=>true,'mode'=>'sheet'})
-    assert_raises(PlanosSanto::ExportError) { dispatch('material_duplicate','catalogId'=>@item['id'],'revision'=>1,'confirmed'=>true) }
     assert_equal [],dispatch('material_extras')['archivedIds']
+    assert_equal true,@controller.send(:smart_state)['active'],'read-only requests keep the brush'
+    copy=dispatch('material_duplicate','catalogId'=>@item['id'],'revision'=>1,'confirmed'=>true)
+    assert_equal 'Roble QA (copia)',copy['name'];assert_equal false,@controller.send(:smart_state)['active']
     @controller.instance_variable_set(:@smart_state,nil)
     @controller.instance_variable_set(:@dirty,true)
-    assert_raises(PlanosSanto::ExportError) { dispatch('material_archive','catalogIds'=>[@item['id']],'archived'=>true,'revision'=>1,'confirmed'=>true) }
-    assert_equal 1,@catalog.read['items'].length
+    assert_raises(PlanosSanto::ExportError) { dispatch('material_archive','catalogIds'=>[@item['id']],'archived'=>true,'revision'=>2,'confirmed'=>true) }
+    assert_equal 2,@catalog.read['items'].length
   end
 
   def test_viewport_focus_is_best_effort_and_reports_support

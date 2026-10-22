@@ -206,12 +206,23 @@ module PlanosSanto
     def in_view?;!@swatches_source.nil?;end
     def material_missing?;%w[sheet edge].include?(@options['mode']) && @options['materialUuid'].to_s.empty?;end
     NO_MATERIAL='Elegí un material: clic en una muestra de la tira de abajo o en la bandeja Materiales de SketchUp.'.freeze
+    # 0.8.17 (cortes): choosing a material in SketchUp's Materials tray also
+    # selects SketchUp's own Paint Bucket, which deactivates this Tool. The tray
+    # choice is not «choosing another tool»: when it is a usable library material
+    # the brush adopts it and selects itself again. TRAY_GRACE covers both orders
+    # of SketchUp's callbacks (tray before or after the deactivation).
+    TRAY_GRACE=1.5
+    def tray_grace?
+      !@stopped && @deactivated_at && @clock.call-@deactivated_at<=TRAY_GRACE
+    end
     def native_material_chosen(material)
-      return false unless @native_material && @active && immediate? && material
+      return false unless @native_material && immediate? && material && (@active || tray_grace?)
       verify_guard!
       options=@native_material.call(material)
       raise ExportError,'No se pudo usar ese material para pintar.' unless options.is_a?(Hash) && %w[sheet edge].include?(options['mode'])
       adopt_options!(options)
+      @tray_pick_at=@clock.call
+      reselect! unless @active # the Paint Bucket already took over: come back
       name=(material.respond_to?(:display_name) ? material.display_name : material.name).to_s
       emit("Material activo: #{name} (bandeja Materiales). Hacé clic en una pieza.")
       invalidate(@model.active_view) if @model.respond_to?(:active_view)
@@ -220,7 +231,27 @@ module PlanosSanto
       emit('No se cambió el material.',error:error.is_a?(ExportError) ? error.message : 'No se pudo usar el material de la bandeja.')
       false
     end
+    # Selects this same Tool again on the next tick (never from inside a
+    # SketchUp callback), unless it was stopped or the model changed meanwhile.
+    def reselect!
+      return false if @stopped || @reselect_scheduled || !@model.respond_to?(:select_tool)
+      action=lambda do
+        @reselect_scheduled=false
+        next if @stopped || @active
+        next if defined?(Sketchup) && Sketchup.respond_to?(:active_model) && !Sketchup.active_model.equal?(@model)
+        @model.select_tool(self)
+      end
+      if defined?(UI) && UI.respond_to?(:start_timer)
+        @reselect_scheduled=true;UI.start_timer(0,false) { action.call }
+      else
+        action.call
+      end
+      true
+    rescue StandardError
+      @reselect_scheduled=false;false
+    end
     def activate
+      @stopped=false;@deactivated_at=nil
       observe!
       @generation+=1 # transactions while inactive were not observed
       refresh_recents!
@@ -229,7 +260,27 @@ module PlanosSanto
       emit(immediate? ? 'Hacé clic en una pieza para pintar. Escape termina.' : 'Elegí una cara. Mayús agrega caras; Enter aplica la selección. Esc cancela.')
     end
     def deactivate(view)
-      unobserve!;stop_sampling;@depth=0;@stack_key=nil;@active=false;clear;emit('Herramienta desactivada.');invalidate(view)
+      @deactivated_at=@clock.call
+      tray=!@stopped && @tray_pick_at && @deactivated_at-@tray_pick_at<=TRAY_GRACE
+      # In the view the tray observer outlives the deactivation for TRAY_GRACE, so
+      # a tray choice that arrives after SketchUp's tool switch is still seen.
+      keep=in_view? && !@stopped && @materials_observer && defined?(UI) && UI.respond_to?(:start_timer)
+      if keep
+        @model.remove_observer(@observer) if @observer && @model.respond_to?(:remove_observer)
+        @observer=nil
+        UI.start_timer(TRAY_GRACE,false) { unobserve_materials! unless @active }
+      else
+        unobserve!
+      end
+      stop_sampling;@depth=0;@stack_key=nil;@active=false;@ui_hover=nil;@bar_hover=nil;@strip_hover=nil;clear
+      if tray
+        @tray_pick_at=nil
+        emit('Material elegido en la bandeja; el pincel vuelve a activarse.')
+        reselect!
+      else
+        emit('Herramienta desactivada.')
+      end
+      invalidate(view)
     end
     def suspend(view)
       emit('Cuentagotas cerrado; volvé a sostener la tecla para tomar un material.') if stop_sampling
@@ -343,15 +394,15 @@ module PlanosSanto
       return unless immediate? && @mouse && view.respond_to?(:draw_text)
       scale=ui_scale;klass=point_class
       x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
-      color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
+      # Near the bottom strip the tooltip goes above the cursor, inside the view.
+      y=@mouse[1]-40*scale if view.respond_to?(:vpheight) && y+40*scale>view.vpheight.to_f
+      color=lambda { |rgb| text_color(rgb) }
       if @strip_hover && (row=@strip_rows[@strip_hover])
-        text="#{row['name']} · clic#{@strip_hover<RECENT_LIMIT ? " o #{@strip_hover+1}" : ''}"
+        text="#{row['name']} · clic#{@strip_hover<@recents.length ? " o #{@strip_hover+1}" : ''}"
         text+=' · se instala al elegirlo' if row['state']=='installable'
         return view.draw_text(klass.new(x,y,0),text,{color:color.call([30,30,30]),size:11})
       end
-      if @bar_hover && (item=bar_items.find { |key,| key==@bar_hover })
-        return view.draw_text(klass.new(x,y,0),bar_hint(item.first),{color:color.call([30,30,30]),size:11})
-      end
+      return view.draw_text(klass.new(x,y,0),bar_hint(@bar_hover),{color:color.call([30,30,30]),size:11}) if @bar_hover
       return unless @hover
       info=material_info;sample=@hover['sample']
       line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],sample ? 'Cuentagotas' : mode_short]
@@ -577,25 +628,16 @@ module PlanosSanto
     end
     def onMouseMove(_flags,x,y,view)
       @mouse=[x,y];key=nil
+      # Pintura en vista (0.8.17): the bars and the strip are resolved BEFORE the
+      # guard and the model pick; over them there is no piece pick at all.
+      if (item=ui_item(view,x,y))
+        @ui_hover=item;@bar_hover=%i[tab count none nav].include?(item[0]) ? item[1] : nil;@strip_hover=item[0]==:cell ? item[1] : nil
+        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+        emit(ui_hint(item),hover: :clear)
+        return invalidate(view)
+      end
+      @ui_hover=nil;@bar_hover=nil;@strip_hover=nil
       verify_guard!
-      # Pintura en vista: over the mode bar there is no piece pick at all.
-      if (key=bar_hit(view,x,y))
-        @bar_hover=key;@strip_hover=nil;@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
-        emit(bar_hint(key),hover: :clear)
-        return invalidate(view)
-      end
-      @bar_hover=nil
-      # PINTURA-04: over the recents strip there is no piece pick at all.
-      if (index=strip_index(view,x,y))
-        @strip_hover=index;@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
-        row=@strip_rows[index]
-        message=if index<@recents.length then "Reciente #{index+1}: #{row['name']}. Clic o tecla #{index+1} para usarlo; no pinta."
-                else "#{row['name']}. Clic para usarlo#{row['state']=='installable' ? ' (se instala en el modelo)' : ''}; no pinta."
-                end
-        emit(message,hover: :clear)
-        return invalidate(view)
-      end
-      @strip_hover=nil
       target=hit(view,x,y)
       unless target
         @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
@@ -651,11 +693,9 @@ module PlanosSanto
     end
     def onLButtonDown(flags,x,y,view)
       if immediate?
-        if (key=bar_hit(view,x,y))
-          bar_click(key);return invalidate(view)
-        end
-        if (index=strip_index(view,x,y))
-          choose_recent(index);return invalidate(view)
+        # Tabs, counts and material cells always win over the model pick (0.8.17).
+        if (item=ui_item(view,x,y))
+          ui_click(item);return invalidate(view)
         end
         if material_missing? && !(@sampling || sample_flag?(flags))
           emit(NO_MATERIAL);return invalidate(view)
@@ -721,14 +761,33 @@ module PlanosSanto
     MODE_LABELS={'sheet'=>'Pintar pieza','edge'=>'Pintar canto','remove_edge'=>'Quitar canto'}.freeze
     # Tab / Shift+Tab (immediate, PINTURA-06): sheet <-> edge with the last
     # material of the destination mode, resolved by the controller (never installs).
-    def switch_mode
-      destination=@options['mode']=='sheet' ? 'edge' : 'sheet'
+    # 0.8.17 (placa → canto): the controller REFUSES (ExportError) a remembered
+    # material that is not ready in this model (e.g. an edge used in another
+    # model: «se instala al elegirlo»). In the view that refusal used to cancel
+    # the switch; now the mode always changes, without material, and the strip
+    # of the new mode is shown to choose one. The palette brush keeps refusing.
+    def switch_mode(destination=nil)
+      destination ||= @options['mode']=='sheet' ? 'edge' : 'sheet'
       missing="Elegí #{destination=='edge' ? 'un canto' : 'una placa'} en la paleta para usar Tab."
-      options=@switch_mode && @switch_mode.call(destination)
+      reason=nil
+      options=if destination=='remove_edge'
+                in_view? ? blank_options('remove_edge') : nil
+              else
+                begin
+                  @switch_mode && @switch_mode.call(destination)
+                rescue StandardError=>error
+                  raise unless in_view?
+                  reason=error.is_a?(ExportError) ? error.message : 'No se pudo preparar el último material de este modo.'
+                  nil
+                end
+              end
       options=blank_options(destination) if !options.is_a?(Hash) && in_view?
       return emit(missing) unless options.is_a?(Hash)
       clear;@last_error=nil;@options=copy(options).merge('scope'=>'unique','allowShared'=>false);refresh_recents!
-      return emit("#{MODE_LABELS[destination]}. #{NO_MATERIAL}") if material_missing?
+      return emit("#{MODE_LABELS[destination]}. Hacé clic en el canto de una pieza para restaurar su placa; Tab vuelve a Pintar pieza.") if destination=='remove_edge'
+      if material_missing?
+        return emit("#{MODE_LABELS[destination]}. #{NO_MATERIAL}#{reason ? " (El último #{destination=='edge' ? 'canto' : 'material'} usado no está listo en este modelo: #{reason})" : ''}")
+      end
       emit("#{MODE_LABELS[destination]}. Hacé clic en una pieza; Tab vuelve al otro modo.")
     rescue ExportError=>error
       emit('No se cambió de modo.',error:error.message)
@@ -801,11 +860,17 @@ module PlanosSanto
         @generation+=1;invalidate(view)
       when 1 then nil
       else
-        stop(view)
-        @model.select_tool(nil) if @model.respond_to?(:select_tool)
+        begin
+          stop(view)
+        ensure
+          @model.select_tool(nil) if @model.respond_to?(:select_tool)
+        end
       end
     end
+    # Esc, the controller (toolbar again, another Planos Santo tool, closing the
+    # model) or an explicit stop: never selected again by the tray grace.
     def stop(view=nil)
+      @stopped=true;@tray_pick_at=nil
       unobserve!;stop_sampling;clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
       invalidate(view)
     end
@@ -909,7 +974,7 @@ module PlanosSanto
     def material_mode;{'sheet'=>'sheet','edge'=>'edge'}[@options['mode']];end
     def recents_on?;immediate? && !@recents_source.nil? && !@select_material.nil? && !material_mode.nil?;end
     def refresh_recents!
-      @recents=[];@strip_rows=[]
+      @recents=[];@strip_rows=[];@strip_page=0;@ui_layout=nil
       return unless recents_on?
       list=@recents_source.call(material_mode)
       @recents=(list.is_a?(Array) ? list : []).select { |row| row.is_a?(Hash) && row['catalogId'].is_a?(String) && !row['catalogId'].empty? }.first(RECENT_LIMIT).map do |row|
@@ -937,8 +1002,9 @@ module PlanosSanto
     rescue StandardError
       nil
     end
+    # Palette brush only (the view brush draws its own strip in draw_ui).
     def strip_rects(view)
-      return [] unless recents_on? && !@strip_rows.empty? && view.respond_to?(:draw2d) && view.respond_to?(:vpheight)
+      return [] unless recents_on? && !ui_on? && !@strip_rows.empty? && view.respond_to?(:draw2d) && view.respond_to?(:vpheight)
       size=STRIP_SIZE*ui_scale;bottom=view.vpheight.to_f-STRIP_MARGIN
       count=@strip_rows.length
       count=[count,((view.vpwidth.to_f-2*STRIP_MARGIN+STRIP_GAP)/(size+STRIP_GAP)).floor].min if view.respond_to?(:vpwidth)
@@ -981,37 +1047,174 @@ module PlanosSanto
     rescue StandardError=>error
       emit('No se cambió el material.',error:error.is_a?(ExportError) ? error.message : 'No se pudo preparar el material elegido.');true
     end
-    # Pintura en vista: mode bar drawn at the top-left of the view (Pieza / Canto,
-    # and 1 · 2 · 4 cantos in edge mode). No piece pick under it.
-    BAR_HEIGHT=24
-    BAR_GAP=4
-    BAR_MARGIN=12
-    def bar_items
-      return [] unless in_view? && immediate? && %w[sheet edge].include?(@options['mode'])
-      items=[['sheet','Pieza',64],['edge','Canto',64]]
-      items+=EDGE_COUNTS.map { |count| ["count#{count}",count.to_s,28] } if @options['mode']=='edge'
-      items
-    end
-    def bar_rects(view)
-      return [] unless view.respond_to?(:draw2d)
-      scale=ui_scale;left=BAR_MARGIN.to_f;top=BAR_MARGIN.to_f;height=BAR_HEIGHT*scale
-      bar_items.map do |key,label,width|
-        right=left+width*scale;rect=[left,top,right,top+height];left=right+BAR_GAP*scale
-        [key,label,rect]
+    # ---- Pintura en vista 0.8.17: interfaz dibujada en la vista, estilo taller.
+    # Arriba, una barra oscura de pestañas (Pintar piezas · Pintar cantos · Quitar
+    # canto) y, en los modos de canto, una franja clara «Cantos por clic 1 2 4».
+    # Abajo, una tira oscura de materiales: «Ningún material» y una celda ancha por
+    # material con su color y su nombre centrado; la activa lleva borde naranja.
+    # Todo lo que cae dentro de estas bandas es interfaz: el clic y el hover se
+    # resuelven ANTES que el pick del modelo y nunca eligen una pieza de abajo.
+    # Escrito de cero (sin código ni recursos de OpenCutList).
+    TABS=[['sheet','Pintar piezas'],['edge','Pintar cantos'],['remove_edge','Quitar canto']].freeze
+    TOP_HEIGHT=30
+    SUB_HEIGHT=26
+    STRIP_HEIGHT=36
+    TAB_MIN=104
+    COUNT_SIZE=24
+    NONE_WIDTH=150
+    CELL_MIN=96
+    CELL_MAX=210
+    NAV_WIDTH=30
+    UI_MARGIN=12
+    TEXT_SIZE=10
+    ORANGE=[240,128,20].freeze
+    BAND=[56,50,45].freeze
+    BAND_HOVER=[86,78,70].freeze
+    BAND_LINE=[96,88,80].freeze
+    SUB_BAND=[247,246,243].freeze
+    LIGHT_TEXT=[238,234,228].freeze
+    DARK_TEXT=[34,32,30].freeze
+    def ui_on?;in_view? && immediate? && %w[sheet edge remove_edge].include?(@options['mode']);end
+    def edge_modes?;%w[edge remove_edge].include?(@options['mode']);end
+    def strip_on?;ui_on? && %w[sheet edge].include?(@options['mode']);end
+    # Approximate text width in pixels: SketchUp's text_bounds when present.
+    def text_width(view,text,size=TEXT_SIZE,bold=false)
+      if view.respond_to?(:text_bounds)
+        bounds=view.text_bounds(point_class.new(0,0,0),text,{size:size,bold:bold})
+        return bounds.width.to_f if bounds.respond_to?(:width)
       end
+      text.to_s.length*size*0.68*ui_scale
     rescue StandardError
-      []
+      text.to_s.length*size*0.68*ui_scale
     end
-    def bar_hit(view,x,y)
-      found=bar_rects(view).find { |_key,_label,(left,top,right,bottom)| x>=left && x<=right && y>=top && y<=bottom }
-      found && found.first
+    def fit_text(view,text,width,size=TEXT_SIZE)
+      text=text.to_s
+      return text if text_width(view,text,size)<=width
+      chars=[(width/(size*0.68*ui_scale)).floor-1,1].max
+      text[0,chars].rstrip+'…'
+    end
+    # Bands and hit items for the current viewport, mode and strip page.
+    # Item: [kind,key,rect,label]; kind :tab, :count, :none, :cell (key = row
+    # index in @strip_rows), :nav (key 'prev'/'next'). Rect = [left,top,right,bottom].
+    def ui_layout(view)
+      return nil unless ui_on? && view.respond_to?(:draw2d) && view.respond_to?(:vpwidth) && view.respond_to?(:vpheight)
+      s=ui_scale;width=view.vpwidth.to_f;height=view.vpheight.to_f;margin=UI_MARGIN*s
+      key=[width,height,s,@options['mode'],edge_count,@strip_rows.map { |row| row['catalogId'] },@strip_page.to_i]
+      return @ui_layout[1] if @ui_layout && @ui_layout[0]==key
+      top_h=TOP_HEIGHT*s;items=[];bands={top:[0.0,0.0,width,top_h]}
+      # Tabs, centred when there is room; the title and the hint only when they fit.
+      widths=TABS.map { |_,label| [TAB_MIN*s,text_width(view,label)+28*s].max }
+      title_w=text_width(view,'PINTAR',TEXT_SIZE,true)+2*margin
+      hint='Tab cambia · Esc termina';hint_w=text_width(view,hint)+2*margin
+      total=widths.sum
+      if total>width-2*margin
+        widths=widths.map { (width-2*margin)/TABS.length };total=widths.sum;title_w=0;hint_w=0
+      elsif total>width-title_w-hint_w
+        hint_w=0
+        title_w=0 if total>width-title_w
+      end
+      left=[(width-total)/2,title_w].max
+      left=[left,width-hint_w-total].min if hint_w>0
+      left=[left,margin].max if title_w.zero?
+      TABS.each_with_index do |(mode,label),index|
+        right=left+widths[index]
+        items << [:tab,mode,[left,0.0,right,top_h],label];left=right
+      end
+      bands[:title]=title_w>0 ? 'PINTAR' : nil;bands[:hint]=hint_w>0 ? hint : nil
+      bottom=top_h
+      if edge_modes?
+        sub_h=SUB_HEIGHT*s;bands[:sub]=[0.0,top_h,width,top_h+sub_h];bottom=top_h+sub_h
+        label='Cantos por clic';size=COUNT_SIZE*s;gap=6*s
+        group=text_width(view,label)+gap*2+EDGE_COUNTS.length*size+(EDGE_COUNTS.length-1)*gap
+        left=[(width-group)/2,margin].max
+        bands[:sub_label]=[label,left,top_h+sub_h/2]
+        left+=text_width(view,label)+gap*2
+        EDGE_COUNTS.each do |count|
+          y=top_h+(sub_h-size)/2
+          items << [:count,"count#{count}",[left,y,left+size,y+size],count.to_s];left+=size+gap
+        end
+      end
+      bands[:top_bottom]=bottom
+      if strip_on?
+        strip_h=STRIP_HEIGHT*s;top=height-strip_h;inset=3*s;bands[:strip]=[0.0,top,width,height]
+        none_w=[NONE_WIDTH*s,width/3].min
+        items << [:none,'none',[inset,top+inset,none_w,height-inset],'Ningún material']
+        rows=@strip_rows.length;room=width-none_w-inset
+        if rows>0
+          cell=[[room/rows,CELL_MIN*s].max,CELL_MAX*s].min
+          per_page=[(room/cell).floor,1].max
+          if rows>per_page
+            per_page=[((room-2*NAV_WIDTH*s)/cell).floor,1].max
+            pages=(rows.to_f/per_page).ceil
+            @strip_page=@strip_page.to_i.clamp(0,pages-1)
+            first=@strip_page*per_page
+            nav_left=width-2*NAV_WIDTH*s
+            items << [:nav,'prev',[nav_left,top+inset,nav_left+NAV_WIDTH*s-inset,height-inset],'‹'] if @strip_page>0
+            items << [:nav,'next',[nav_left+NAV_WIDTH*s,top+inset,width-inset,height-inset],'›'] if @strip_page<pages-1
+          else
+            @strip_page=0;first=0
+          end
+          left=none_w+inset
+          (first...[first+per_page,rows].min).each do |index|
+            items << [:cell,index,[left,top+inset,left+cell-inset,height-inset],@strip_rows[index]['name']];left+=cell
+          end
+        else
+          bands[:empty]=[none_w+3*inset,top+strip_h/2,"No hay #{@options['mode']=='edge' ? 'cantos' : 'placas'} en la biblioteca: agregalos desde Materiales."]
+        end
+      end
+      layout={bands:bands,items:items}
+      @ui_layout=[key,layout];layout
+    rescue StandardError
+      nil
+    end
+    def inside?(rect,x,y)
+      rect && x>=rect[0] && x<=rect[2] && y>=rect[1] && y<=rect[3]
+    end
+    # [kind,key] under the cursor, [:band,nil] on an empty part of a band, nil on the model.
+    def ui_item(view,x,y)
+      if (layout=ui_layout(view))
+        item=layout[:items].find { |_kind,_key,rect,| inside?(rect,x,y) }
+        return [item[0],item[1]] if item
+        bands=layout[:bands]
+        return [:band,nil] if y<=bands[:top_bottom] || inside?(bands[:strip],x,y)
+        return nil
+      end
+      index=strip_index(view,x,y) # palette brush: the old squares
+      index ? [:cell,index] : nil
     end
     def bar_active?(key)
-      key==@options['mode'] || (@options['mode']=='edge' && key=="count#{edge_count}")
+      key==@options['mode'] || (edge_modes? && key=="count#{edge_count}")
     end
     def bar_hint(key)
       return "#{edge_label(key.delete_prefix('count').to_i)} por clic (Ctrl+Tab también cambia)." if key.start_with?('count')
-      key=='sheet' ? 'Pieza: pinta las dos caras grandes de la placa (Tab cambia de modo).' : 'Canto: pinta los cantos de la pieza (Tab cambia de modo).'
+      return 'Sin material: el pincel no pinta hasta que elijas uno en la tira.' if key=='none'
+      return 'Ver más materiales.' if key=='next'
+      return 'Ver los materiales anteriores.' if key=='prev'
+      {'sheet'=>'Pintar piezas: pinta las dos caras grandes de la placa (Tab cambia de modo).',
+       'edge'=>'Pintar cantos: pinta los cantos de la pieza (Tab cambia de modo).',
+       'remove_edge'=>'Quitar canto: restaura la placa en el canto elegido; no necesita material.'}.fetch(key,'')
+    end
+    def cell_hint(index)
+      row=@strip_rows[index] or return ''
+      return "Reciente #{index+1}: #{row['name']}. Clic o tecla #{index+1} para usarlo; no pinta." if index<@recents.length
+      "#{row['name']}. Clic para usarlo#{row['state']=='installable' ? ' (se instala en el modelo)' : ''}; no pinta."
+    end
+    def ui_hint(item)
+      kind,key=item
+      return cell_hint(key) if kind==:cell
+      return 'Barra del pincel: elegí un modo o un material; no pinta.' if kind==:band
+      bar_hint(key)
+    end
+    def ui_click(item)
+      kind,key=item
+      case kind
+      when :tab,:count then bar_click(key)
+      when :cell then choose_recent(key)
+      when :none then clear_material!
+      when :nav
+        @strip_page=@strip_page.to_i+(key=='next' ? 1 : -1);@ui_layout=nil
+        emit("Materiales · página #{@strip_page+1}.")
+      end
     end
     def bar_click(key)
       verify_guard!
@@ -1019,9 +1222,17 @@ module PlanosSanto
     rescue StandardError=>error
       emit('No se cambió el modo.',error:error.is_a?(ExportError) ? error.message : 'No se pudo cambiar el modo.')
     end
+    # «Ningún material»: the brush keeps its mode and stops painting until a
+    # material is chosen. Tool state only; nothing is written.
+    def clear_material!
+      return emit('Este modo no usa material.') unless %w[sheet edge].include?(@options['mode'])
+      return emit(NO_MATERIAL) if material_missing?
+      clear;@last_error=nil;@options=blank_options(@options['mode']).merge('scope'=>'unique','allowShared'=>false)
+      emit("Sin material. #{NO_MATERIAL}")
+    end
     def switch_to(destination)
       return emit("#{MODE_LABELS[destination]} ya está activo.") if destination==@options['mode']
-      switch_mode
+      switch_mode(destination)
     end
     # Same options with the destination mode and no material (in-view only).
     def blank_options(mode)
@@ -1029,20 +1240,93 @@ module PlanosSanto
         .merge('mode'=>mode,'paintScope'=>mode=='sheet' ? 'piece' : 'face','immediatePiece'=>mode=='sheet',
                'edgeCount'=>mode=='sheet' ? 1 : (EDGE_COUNTS.include?(@options['edgeCount']) ? @options['edgeCount'] : 1))
     end
-    def draw_bar(view)
-      rects=bar_rects(view);return if rects.empty?
-      klass=point_class;quads=Object.const_defined?(:GL_QUADS) ? Object.const_get(:GL_QUADS) : 7
-      loop=Object.const_defined?(:GL_LINE_LOOP) ? Object.const_get(:GL_LINE_LOOP) : 2
-      rects.each do |key,label,(left,top,right,bottom)|
-        corners=[[left,top],[right,top],[right,bottom],[left,bottom]].map { |x,y| klass.new(x,y,0) }
-        active=bar_active?(key);hover=@bar_hover==key
-        view.drawing_color=rgba(active ? [25,72,61] : hover ? [235,242,236] : [250,250,248],235);view.draw2d(quads,corners)
-        view.drawing_color=rgba(active ? [25,72,61] : [120,128,124],255);view.draw2d(loop,corners)
-        next unless view.respond_to?(:draw_text)
-        view.draw_text(klass.new(left+8*ui_scale,top+5*ui_scale,0),label,{size:10,color:(Sketchup::Color.new(*(active ? [255,255,255] : [30,30,30])) rescue nil)}.compact)
-      end
+    def gl(name,fallback);Object.const_defined?(name) ? Object.const_get(name) : fallback;end
+    def corners(left,top,right,bottom)
+      klass=point_class;[[left,top],[right,top],[right,bottom],[left,bottom]].map { |x,y| klass.new(x,y,0) }
+    end
+    def fill(view,rect,rgb,alpha=255)
+      view.drawing_color=rgba(rgb,alpha);view.draw2d(gl(:GL_QUADS,7),corners(*rect))
+    end
+    def outline(view,rect,rgb,width=1)
+      view.line_width=width if view.respond_to?(:line_width=)
+      view.drawing_color=rgba(rgb,255);view.draw2d(gl(:GL_LINE_LOOP,2),corners(*rect))
+      view.line_width=1 if view.respond_to?(:line_width=)
+    end
+    # Readable text on any swatch colour (perceived luminance).
+    def contrast(rgb)
+      r,g,b=rgb.to_a.first(3).map(&:to_f)
+      0.299*r+0.587*g+0.114*b>150 ? DARK_TEXT : [255,255,255]
+    end
+    def text_color(rgb)
+      Sketchup::Color.new(*rgb)
     rescue StandardError
-      nil
+      rgb
+    end
+    # Centred label: SketchUp's align options when present, else an estimated left.
+    def draw_label(view,text,cx,cy,rgb,size:TEXT_SIZE,bold:false,align: :center)
+      return unless view.respond_to?(:draw_text)
+      options={size:size,color:text_color(rgb)};options[:bold]=true if bold
+      if Object.const_defined?(:TextAlignCenter) && Object.const_defined?(:TextVerticalAlignCenter)
+        options[:align]=Object.const_get(align==:center ? :TextAlignCenter : :TextAlignLeft)
+        options[:vertical_align]=Object.const_get(:TextVerticalAlignCenter)
+        return view.draw_text(point_class.new(cx,cy,0),text,options)
+      end
+      left=align==:center ? cx-text_width(view,text,size,bold)/2 : cx
+      view.draw_text(point_class.new(left,cy-size*0.7*ui_scale,0),text,options)
+    end
+    def draw_ui(view)
+      layout=ui_layout(view);return unless layout
+      bands=layout[:bands];s=ui_scale
+      fill(view,bands[:top],BAND,245)
+      draw_label(view,bands[:title],UI_MARGIN*s,bands[:top][3]/2,LIGHT_TEXT,bold:true,align: :left) if bands[:title]
+      draw_label(view,bands[:hint],bands[:top][2]-UI_MARGIN*s-text_width(view,bands[:hint]),bands[:top][3]/2,[200,194,186],align: :left) if bands[:hint]
+      if bands[:sub]
+        fill(view,bands[:sub],SUB_BAND,240)
+        label,x,y=bands[:sub_label];draw_label(view,label,x,y,DARK_TEXT,bold:true,align: :left)
+      end
+      if bands[:strip]
+        fill(view,bands[:strip],BAND,245)
+        empty=bands[:empty];draw_label(view,empty[2],empty[0],empty[1],LIGHT_TEXT,align: :left) if empty
+      end
+      layout[:items].each { |item| draw_item(view,*item) }
+    rescue StandardError=>error
+      callback_failed('draw (barra del pincel)',error)
+    end
+    def draw_item(view,kind,key,rect,label)
+      left,top,right,bottom=rect;s=ui_scale;hover=@ui_hover==[kind,key]
+      cx=(left+right)/2;cy=(top+bottom)/2;width=right-left
+      case kind
+      when :tab
+        active=bar_active?(key)
+        fill(view,rect,active ? ORANGE : hover ? BAND_HOVER : BAND,active ? 255 : 245)
+        view.drawing_color=rgba(BAND_LINE,255);view.draw2d(gl(:GL_LINES,1),[point_class.new(right,top,0),point_class.new(right,bottom,0)])
+        draw_label(view,fit_text(view,label,width-12*s),cx,cy,active ? [255,255,255] : LIGHT_TEXT)
+      when :count
+        active=bar_active?(key)
+        fill(view,rect,active ? [255,255,255] : hover ? [232,229,224] : [236,234,230])
+        outline(view,rect,active ? ORANGE : [200,196,190],active ? 2 : 1)
+        draw_label(view,label,cx,cy,DARK_TEXT,bold:active)
+      when :none
+        active=material_missing?
+        fill(view,rect,[250,250,250])
+        view.drawing_color=rgba([214,212,208],255)
+        view.draw2d(gl(:GL_TRIANGLES,4),[point_class.new(left,bottom,0),point_class.new(right,bottom,0),point_class.new(left,top+(bottom-top)*0.35,0)])
+        outline(view,rect,active ? ORANGE : hover ? [255,255,255] : [120,112,104],active ? 3 : 1)
+        draw_label(view,fit_text(view,label,width-12*s),cx,cy,DARK_TEXT)
+      when :cell
+        row=@strip_rows[key];color=row['color'] || [200,200,200]
+        active=!row['materialUuid'].to_s.empty? && row['materialUuid']==@options['materialUuid']
+        fill(view,rect,color)
+        if row['state']=='installable' # not in this model yet: a corner mark
+          view.drawing_color=rgba([255,255,255],230)
+          view.draw2d(gl(:GL_TRIANGLES,4),[point_class.new(right-12*s,top,0),point_class.new(right,top,0),point_class.new(right,top+12*s,0)])
+        end
+        outline(view,rect,active ? ORANGE : hover ? [255,255,255] : BAND_LINE,active ? 3 : hover ? 2 : 1)
+        draw_label(view,fit_text(view,label,width-14*s),cx,cy,contrast(color),bold:active)
+      when :nav
+        fill(view,rect,hover ? BAND_HOVER : [70,64,58])
+        draw_label(view,label,cx,cy,LIGHT_TEXT,size:12,bold:true)
+      end
     end
     # PINTURA-11: arrows down/up walk the stack; the hover event is sent at once.
     def change_depth(delta,view)
@@ -1339,14 +1623,61 @@ module PlanosSanto
         view.drawing_color=immediate? ? hover_color(60) : 'orange'
         view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@copy_triangles)
       end
+      unless @triangles.nil? || @triangles.empty?
+        view.drawing_color=immediate? ? hover_color(110) : 'orange'
+        view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@triangles)
+        view.drawing_color='blue'
+        view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,@normal_line) unless @normal_line.empty?
+      end
+      # 2D interface last, over the overlays: bars, strip, tooltip.
+      ui_on? ? draw_ui(view) : draw_strip(view)
       draw_tooltip(view)
-      draw_strip(view)
-      draw_bar(view)
-      return if @triangles.nil? || @triangles.empty?
-      view.drawing_color=immediate? ? hover_color(110) : 'orange'
-      view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@triangles)
-      view.drawing_color='blue'
-      view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,@normal_line) unless @normal_line.empty?
+    end
+    # 0.8.17 (cortes): an exception that escapes a Tool callback goes to SketchUp,
+    # which prints it, may leave the Tool half-updated and, in draw, repeats it on
+    # every frame. Every callback below is wrapped: the error goes to the status
+    # bar and the Ruby console, the Tool stays active and nothing else changes.
+    def callback_failed(name,error)
+      @last_error="#{error.class}: #{error.message}"[0,200]
+      # draw repeats on every frame: one console line per distinct failure.
+      signature=[name,error.class,error.message]
+      warn("Planos Santo pincel: #{name} falló (#{error.class}: #{error.message}); la herramienta sigue activa.") unless signature==@last_failure
+      @last_failure=signature
+      text="Pincel: falló #{name} (#{error.class}). La herramienta sigue activa; Esc termina."
+      if defined?(Sketchup) && Sketchup.respond_to?(:status_text=) && text!=@status_text
+        @status_text=text;Sketchup.status_text=text
+      end
+      nil
+    rescue StandardError
+      nil
     end
   end
+
+  module SafeToolCallbacks
+    # Fallback answer to SketchUp when the callback failed. getMenu is left out:
+    # it already answers false on any error and SketchUp reads its arity.
+    FALLBACKS={activate:nil,deactivate:nil,suspend:nil,resume:nil,onMouseMove:nil,onLButtonDown:nil,onKeyDown:true,
+               onKeyUp:false,onCancel:nil,draw:nil,onSetCursor:false}.freeze
+    def self.wrap(klass)
+      return if klass.instance_variable_get(:@safe_callbacks) # a reload keeps one wrapper
+      klass.instance_variable_set(:@safe_callbacks,true)
+      mod=Module.new
+      FALLBACKS.each do |name,fallback|
+        next unless klass.method_defined?(name)
+        parameters=klass.instance_method(name).parameters
+        next unless parameters.all? { |kind,_| kind==:req } # same arity as the original
+        args=(0...parameters.length).map { |index| "a#{index}" }.join(',')
+        mod.module_eval(<<~RUBY,__FILE__,__LINE__+1)
+          def #{name}(#{args})
+            super # always the current definition, also after a reload
+          rescue StandardError=>error
+            callback_failed('#{name}',error)
+            #{fallback.inspect}
+          end
+        RUBY
+      end
+      klass.prepend(mod)
+    end
+  end
+  SafeToolCallbacks.wrap(SmartPaintTool)
 end

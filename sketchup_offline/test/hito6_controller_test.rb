@@ -144,7 +144,10 @@ class Hito6ControllerTest < Minitest::Test
     assert_equal false,result['toolState']['changed']
     assert_equal 1,Hito6ScanCounter.count
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('generate',{'ids'=>['1']}) }
-    assert_raises(PlanosSanto::ExportError) { @controller.dispatch('piece_highlight',{'pieceId'=>'1/11'}) }
+    # 0.8.17: highlighting no longer asks to stop the brush or to reanalyze
+    # first; a path that changed is refused by the highlight tool itself.
+    highlighted=@controller.dispatch('piece_highlight',{'pieceId'=>'1/11'})
+    assert_equal 'highlight',highlighted['toolState']['mode']
     # Undo after an own write keeps the banner: the analyzed session was replaced,
     # so the debounced check does not even walk the model again.
     PlanosSanto::ModelWatch.stub(:fingerprint,->(_model) { raise 'no debe recorrer el modelo' }) { @controller.model_watch_changed(['model']) }
