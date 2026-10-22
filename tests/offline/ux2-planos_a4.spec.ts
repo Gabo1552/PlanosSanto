@@ -49,6 +49,7 @@ test('UX2 A4: copiar tabla en TSV, estado del pedido, un único estado vivo y «
  await expect(preview.locator('.a4-order-pill')).toHaveText('○ Sin datos del pedido');
  const copy=preview.getByRole('button',{name:'Copiar tabla',exact:true});await copy.click();
  await expect(preview.getByRole('status').filter({hasText:'Tabla copiada:'})).toHaveText(/^Tabla copiada: \d+ filas de 1 mueble\. Pegala en Excel o Google Sheets\.$/);await expect(copy).toBeFocused();
+ await expect(preview.getByRole('status')).toHaveCount(1);
  const clip=await page.evaluate(()=>navigator.clipboard.readText());const lines=clip.trimEnd().split('\r\n');
  expect(lines[0]).toBe('Mueble\tID\tNombre\tLargo\tAncho\tEsp.\tCant.');expect(lines[1]).toMatch(/^[^\t]+\tP01\t[^\t]+\t\d+(,\d+)?\t\d+(,\d+)?\t\d+(,\d+)?\t\d+$/);
  // A sheet that does not fit still lets the list be copied, and «Ir a corregir» lands on the field to shorten.
@@ -83,7 +84,7 @@ test('UX2 A4: «Agrupar por medidas» se guarda sin romper la guía, plural de o
  await expect(page.getByText(/^Piezas visibles en la vista interior · 1 oculta$/)).toBeVisible();
 });
 
-test('UX2 A4: el pedido parcial se indica sin depender del color y «Ir a corregir» abre la hoja del mueble que falla',async({page},info)=>{
+test('UX2 A4: el pedido parcial se indica sin depender del color y «Ir a corregir» abre la hoja y activa el mueble que falla',async({page},info)=>{
  const preview=await harness(page,info.outputDir);
  await expect(preview.locator('.a4-order-pill')).toHaveText('○ Sin datos del pedido');
  await page.getByRole('button',{name:'Pedido parcial',exact:true}).click();
@@ -97,7 +98,11 @@ test('UX2 A4: el pedido parcial se indica sin depender del color y «Ir a correg
  const blocked=preview.getByRole('link',{name:'Abrir PDF',exact:true});await expect(blocked).toHaveAttribute('aria-disabled','true');await expect(blocked).toHaveAccessibleDescription('Esperá a que la hoja esté actualizada');
  await alert.getByRole('button',{name:'Ir a corregir',exact:true}).click();
  await expect(sheet).toHaveValue('1');await expect(preview.getByRole('status').filter({hasText:/^Mostrando la hoja 2 · /})).toBeVisible();
- await expect(page.getByLabel('Observaciones de armado',{exact:true})).toBeFocused();
+ // The furniture that fails becomes the active one before its own control is focused (not the one of the other furniture).
+ const second=await page.evaluate(()=>document.querySelectorAll('nav[aria-label="Muebles"] button')[1].textContent);
+ await expect(page.getByTestId('active-furniture')).toHaveText(second!);
+ const observations=page.getByLabel('Observaciones de armado',{exact:true});await expect(observations).toBeFocused();
+ await expect(observations).toHaveValue(/^Revisar las uniones/);
  await preview.getByRole('button',{name:'Copiar tabla',exact:true}).click();
  await expect(preview.getByRole('status').filter({hasText:/Tabla copiada|No se pudo copiar/})).toBeVisible();
 });

@@ -70,7 +70,7 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
   const notes=sample('exterior');notes.furniture[0].presentation!.guide!.observations='Texto extenso de armado '.repeat(120);
   const legend=await failure(notes);expect(legend).toBeInstanceOf(A4FitError);
   expect(legend).toMatchObject({kind:'legend',furniture:notes.furniture[0].name,action:'Acortá observaciones o notas.'});
-  expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toBe(`${notes.furniture[0].name}: Las notas y observaciones no caben legiblemente debajo de las vistas. Qué hacer: Acortá observaciones o notas.`);
+  expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toBe(`${notes.furniture[0].name}: Las notas y observaciones no caben legiblemente debajo de las vistas. ${(legend as A4FitError).detail} Qué hacer: Acortá observaciones o notas.`);expect((legend as A4FitError).detail).toMatch(/^Necesita \d+ mm de 42 mm\.$/);
   const blank=sample();blank.furniture[0].pieces[0].name='';expect(await failure(blank)).toMatchObject({kind:'names'});
   const table=sample('exterior'),template=table.furniture[0].pieces[0];table.furniture[0].pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
   expect(await failure(table)).toMatchObject({kind:'table',action:'Activá Agrupar componentes iguales en este mueble.',detail:expect.stringMatching(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/)});

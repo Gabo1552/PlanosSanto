@@ -27,9 +27,10 @@ export type A4FitKind='table'|'legend'|'scale'|'header'|'glyph'|'names'|'size'|'
 const FIT_ACTIONS:Partial<Record<A4FitKind,string>>={table:'Agrupá piezas iguales o acortá sus nombres.',legend:'Acortá observaciones o notas.',scale:'Pasá a 1 vista.',header:'Acortá el nombre del mueble o del proyecto.',names:'Completá el nombre de cada pieza.',size:'Reducí la cantidad de muebles por PDF.',view:'Corregí lo indicado en el editor de la guía y volvé a revisar la hoja.',order:'Desactivá Agrupar componentes iguales en este mueble o igualá su asignación en Biblioteca y pedidos.',empty:'Marcá al menos un mueble y generá su guía.'};
 /** Layout infeasibility: `reason` is the cause, `action` the fix, `detail` the numbers. The same text reaches the preview and the export notice. */
 export class A4FitError extends Error{
-  furniture:string;reason:string;kind:A4FitKind;action?:string;character?:string;detail?:string;
-  constructor(message:string|undefined,{furniture='',reason,kind,action,character,detail}:{furniture?:string;reason:string;kind:A4FitKind;action?:string;character?:string;detail?:string}){
-    super('');this.name='A4FitError';this.furniture=furniture;this.reason=reason;this.kind=kind;this.character=character;this.detail=detail;
+  /** `furniture` is the printed name; `furnitureId` the instance path that lets the editor open the furniture that fails. */
+  furniture:string;furnitureId?:string;reason:string;kind:A4FitKind;action?:string;character?:string;detail?:string;
+  constructor(message:string|undefined,{furniture='',furnitureId,reason,kind,action,character,detail}:{furniture?:string;furnitureId?:string;reason:string;kind:A4FitKind;action?:string;character?:string;detail?:string}){
+    super('');this.name='A4FitError';this.furniture=furniture;this.furnitureId=furnitureId;this.reason=reason;this.kind=kind;this.character=character;this.detail=detail;
     this.action=action??(kind==='glyph'&&character?`Reemplazá el carácter «${character}».`:FIT_ACTIONS[kind]);
     this.message=message||this.compose();
   }
@@ -71,7 +72,7 @@ export function listRows(f:Furniture,references?:OrderReferences,fold=!!f.presen
     const keys=assigned.map(referenceKey),other=keys.findIndex(key=>key!==keys[0]);
     if(other>0){
       const a=codes.get(piece.memberIds[0])||piece.code,b=codes.get(piece.memberIds[other])||piece.memberIds[other];
-      throw new A4FitError(undefined,{furniture:f.name,kind:'order',reason:a===b?`${a}: las piezas agrupadas tienen placa o cantos distintos en el pedido.`:`${a} y ${b} comparten el ID ${piece.code} pero tienen placa o cantos distintos en el pedido.`});
+      throw new A4FitError(undefined,{furniture:f.name,furnitureId:f.id,kind:'order',reason:a===b?`${a}: las piezas agrupadas tienen placa o cantos distintos en el pedido.`:`${a} y ${b} comparten el ID ${piece.code} pero tienen placa o cantos distintos en el pedido.`});
     }
     return {piece,reference:assigned[0],also:[] as string[]};
   });
@@ -87,15 +88,18 @@ export function listRows(f:Furniture,references?:OrderReferences,fold=!!f.presen
   }
   return [...folded.values()];
 }
-/** Tab separated list for a spreadsheet or a message: one header, one row per printed row, decimal comma. */
+/** One spreadsheet cell: no tabs or line breaks, and text that a spreadsheet would evaluate as a formula is quoted. */
+export function tsvCell(value:string){const flat=value.replace(/[\t\r\n]+/g,' ').trim();return /^[=+\-@]/.test(flat)?`'${flat}`:flat;}
+/**
+ * Tab separated list for a spreadsheet or a message: the same rows, quantities and order validation as the printed list
+ * (with «Agrupar por medidas» the folded codes go in «También»), decimal comma. Throws the A4FitError of listRows.
+ */
 export function exportTableTsv(project:Project,references?:OrderReferences):{text:string;rows:number;furniture:number}{
-  const clean=(value:string)=>value.replace(/[\t\r\n]+/g,' ').trim();
-  const withOrder=!!references;
-  const lines=[['Mueble','ID','Nombre','Largo','Ancho','Esp.','Cant.',...(withOrder?['Placa','Cantos']:[])].join('\t')];
-  for(const f of project.furniture)for(const piece of pieceRows(f)){
-    const assigned=withOrder?[...new Map(piece.memberIds.map(id=>orderReference(references[id])).filter((r):r is OrderReference=>!!r).map(r=>[referenceKey(r),r])).values()]:[];
-    lines.push([clean(f.name),clean(piece.code),clean(piece.name),...piece.dimensions.map(plainMm),String(piece.quantity),
-      ...(withOrder?[clean(assigned.map(r=>r.board||r.text).join(' | ')),assigned.map(edgeCode).filter(Boolean).join(' | ')]:[])].join('\t'));
+  const withOrder=!!references,listed=project.furniture.map(f=>({f,rows:listRows(f,references)})),folded=listed.some(({rows})=>rows.some(r=>r.also.length));
+  const lines=[['Mueble','ID','Nombre','Largo','Ancho','Esp.','Cant.',...(folded?['También']:[]),...(withOrder?['Placa','Cantos']:[])].join('\t')];
+  for(const {f,rows} of listed)for(const {piece,reference,also} of rows){
+    lines.push([tsvCell(f.name),tsvCell(piece.code),tsvCell(piece.name),...piece.dimensions.map(plainMm),String(piece.quantity),
+      ...(folded?[tsvCell(also.join(', '))]:[]),...(withOrder?[tsvCell(reference?reference.board||reference.text:''),edgeCode(reference)]:[])].join('\t'));
   }
   return {text:lines.join('\r\n')+'\r\n',rows:lines.length-1,furniture:project.furniture.length};
 }
@@ -192,7 +196,7 @@ function diagram(page:PDFPage,f:Furniture,fonts:Fonts,view:View,scene:ReturnType
 
 type EdgeDetail={code:string;codeWidth:number;top:number;lines:string[]};
 type TableRow={piece:PieceRow;lines:string[];extra:string[];reference?:OrderReference;detail?:EdgeDetail;orderLines:number;height:number};
-const TABLE_FONT=8, TABLE_LEADING=10, REF_FONT=7, REF_LEADING=8.5, CODE_FONT=6.5, NAME_W=35*MM, GLYPH_W=10*MM, GLYPH_H=4.5*MM, DETAIL_W=74*MM, TABLE_LIMIT=139*MM;
+const LEGEND_LIMIT=42*MM, TABLE_FONT=8, TABLE_LEADING=10, REF_FONT=7, REF_LEADING=8.5, CODE_FONT=6.5, NAME_W=35*MM, GLYPH_W=10*MM, GLYPH_H=4.5*MM, DETAIL_W=74*MM, TABLE_LIMIT=139*MM;
 /**
  * Name (and «también …») inside the Nombre cell; with an order row, the edge glyph at the cell's right and,
  * below, one line «1·1·0·2  SKU / 18 mm · corte 720 × 560» that spans the measure columns (they hold a single value).
@@ -225,12 +229,14 @@ function edgeGlyph(page:PDFPage,reference:OrderReference&{edgeMap:number[]},righ
   sides.forEach(([x1,y1,x2,y2],i)=>{const role=reference.edgeMap[i];
     page.drawLine({start:{x:x1,y:PAGE_H-y1},end:{x:x2,y:PAGE_H-y2},color:role?INK:GRAY,thickness:role===1?1.6:role===2?1.1:0.5,...(role===2?{dashArray:[1.6,1.1]}:{})});});
 }
-function edgeLegend(rows:TableRow[]):string|undefined{
+/** Full legend of the edge code and a compact one with the same SKUs, used only when the full one does not fit. */
+function edgeLegend(rows:TableRow[]):{full:string;compact:string}|undefined{
   const structured=rows.map(r=>r.reference).filter(hasEdgeMap);
   if(!structured.length)return undefined;
   const skus=(role:1|2)=>[...new Set(structured.filter(r=>r.edgeMap.includes(role)).map(r=>(role===1?r.principal:r.secondary)||'sin asignar'))].join(' / ');
   const principal=skus(1),secondary=skus(2);
-  return `Cantos: ${[principal&&`1 = ${principal} (principal)`,secondary&&`2 = ${secondary} (secundario)`,'0 = sin canto'].filter(Boolean).join(' · ')} · orden Arr·Aba·Izq·Der sobre base × altura del pedido.`;
+  return {full:`Cantos: ${[principal&&`1 = ${principal} (principal)`,secondary&&`2 = ${secondary} (secundario)`,'0 = sin canto'].filter(Boolean).join(' · ')} · orden Arr·Aba·Izq·Der sobre base × altura del pedido.`,
+    compact:`Cantos Arr·Aba·Izq·Der: ${[principal&&`1 = ${principal}`,secondary&&`2 = ${secondary}`,'0 = sin canto'].filter(Boolean).join(' · ')}.`};
 }
 function foldCount(f:Furniture,references?:OrderReferences){try{return listRows(f,references,true).length;}catch{return Infinity;}}
 /** Numbers and the lever that matches the cause, for a list that does not fit. */
@@ -255,7 +261,7 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
   pdf.setTitle(`Planos Santo · ${project.name}`);pdf.setCreator(`Planos Santo ${version} · PDF A4 offline`);
   const prepared=project.furniture.map(source=>{
     const f:Furniture={...source,presentation:{...source.presentation,guide:source.presentation?.guide||{mode:'both',hiddenPieceIds:[],sharedCamera:true,observations:''}}};
-    const fail=(reason:string,kind:A4FitKind,action?:string,detail?:string):never=>{throw new A4FitError(undefined,{furniture:f.name,reason,kind,action,detail});};
+    const fail=(reason:string,kind:A4FitKind,action?:string,detail?:string):never=>{throw new A4FitError(undefined,{furniture:f.name,furnitureId:f.id,reason,kind,action,detail});};
     try{
     if(f.pieces.some(p=>!p.name.trim()))fail('Hay piezas sin nombre.','names');
     const rows=tableRows(listRows(f,references),fonts),used=rows.reduce((h,r)=>h+r.height,0);
@@ -264,11 +270,17 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
       if(fonts.regular.widthOfTextAtSize(piece.code,TABLE_FONT)>9*MM)fail(`${piece.code}: el identificador no entra en la columna ID.`,'table','Acortá el código de la pieza.');
       for(const value of [...piece.dimensions.map(mm),String(piece.quantity)])if(fonts.regular.widthOfTextAtSize(value,TABLE_FONT)>12*MM)fail(`${piece.code}: una medida o cantidad no entra en su columna.`,'table','Revisá la medida o la cantidad de esa pieza.');
     }
-    const cantos=edgeLegend(rows),entries=[...(cantos?[cantos]:[]),...sheetEntries(f)];
-    const legendLines=entries.flatMap(entry=>linesFor(entry,175*MM,fonts.regular,8));
-    const hasObservations=!!f.presentation?.guide?.observations?.trim();
-    const legendHeight=Math.max(16*MM,legendLines.length*10+14+(hasObservations?0:8*MM));
-    if(legendHeight>42*MM)fail('Las notas y observaciones no caben legiblemente debajo de las vistas.','legend');
+    const cantos=edgeLegend(rows),entries=sheetEntries(f),hasObservations=!!f.presentation?.guide?.observations?.trim();
+    const legendFor=(first?:string)=>{const lines=[...(first?[first]:[]),...entries].flatMap(entry=>linesFor(entry,175*MM,fonts.regular,8));return {lines,height:Math.max(16*MM,lines.length*10+14+(hasObservations?0:8*MM))};};
+    // The edge legend is not editable: its compact form is tried before blaming the notes, and a failure caused by it says so.
+    let legend=legendFor(cantos?.full);
+    if(legend.height>LEGEND_LIMIT&&cantos)legend=legendFor(cantos.compact);
+    if(legend.height>LEGEND_LIMIT){
+      const detail=`Necesita ${Math.round(legend.height/MM)} mm de ${Math.round(LEGEND_LIMIT/MM)} mm.`;
+      if(cantos&&legendFor().height<=LEGEND_LIMIT)fail('Las notas y observaciones no dejan lugar a la leyenda de cantos del pedido debajo de las vistas.','legend','Acortá observaciones o notas para dejar una línea a la leyenda de cantos, o desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado.',detail);
+      fail('Las notas y observaciones no caben legiblemente debajo de las vistas.','legend',undefined,detail);
+    }
+    const legendLines=legend.lines,legendHeight=legend.height;
     const legendTop=194*MM-legendHeight, diagramTop=44*MM, diagramBottom=legendTop-9*MM;
     const views=guideViews(f),single=views.length===1,diagramWidth=(single?177:86)*MM;
     const scale=diagramWidth/(single?640:320);
@@ -284,7 +296,7 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
     });
     if(linesFor(f.name,130*MM,fonts.regular,13).length>1||linesFor(project.name,130*MM,fonts.regular,9).length>1)fail('El nombre del proyecto o del mueble no entra en el encabezado.','header');
     return {f,rows,legendLines,legendTop,scenes};
-    }catch(error){if(error instanceof A4FitError&&!error.furniture){error.furniture=f.name;error.message=error.compose();}throw error;}
+    }catch(error){if(error instanceof A4FitError&&!error.furniture){error.furniture=f.name;error.furnitureId=f.id;error.message=error.compose();}throw error;}
   });
   for(const [pageIndex,{f,rows,legendLines,legendTop,scenes}] of prepared.entries()){
     const page=pdf.addPage([PAGE_W,PAGE_H]);page.setMediaBox(0,0,PAGE_W,PAGE_H);page.setCropBox(0,0,PAGE_W,PAGE_H);

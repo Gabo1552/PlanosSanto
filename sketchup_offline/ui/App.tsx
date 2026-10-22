@@ -11,8 +11,8 @@ import { makeScene, layoutWarnings, type View } from '../../lib/scene';
 import { request } from './bridge';
 import {isQuickIntent,shortcutFor,type QuickIntent} from './quickActions';
 import {ensureRuntime} from './runtime';
-import { countPieces, editsFor, guideIssues, mergeGuide, type Generated, type Guide } from './guide';
-import { createOfflinePdf, decode64, encode64 } from './pdf';
+import { countPieces, editsFor, guideIssues, mergeGuide, modelGuidOf, type Generated, type Guide } from './guide';
+import { createOfflinePdf, decode64, encode64, type OrderReferences } from './pdf';
 import regularFont from '../assets/DejaVuSans.ttf';
 import monoFont from '../assets/DejaVuSansMono.ttf';
 import logo from '../assets/santo-carpintero.png?inline';
@@ -94,14 +94,14 @@ export default function App(){
   useEffect(()=>{if(!dirty)setPendingConfirm(undefined);},[dirty]);
   const [view,setView]=useState<View>('front');
   const [draftHidden,setDraftHidden]=useState<string[]|null>(null),[hideMode,setHideMode]=useState(false);
-  const [previewReferences,setPreviewReferences]=useState<Record<string,string>>(),[previewReferenceError,setPreviewReferenceError]=useState('');
+  const [previewReferences,setPreviewReferences]=useState<OrderReferences>(),[previewReferenceError,setPreviewReferenceError]=useState('');
   const noteInput=useRef<HTMLTextAreaElement>(null);
   const partsScroll=useRef<HTMLDivElement>(null);
   const furniture=project?.furniture.find(f=>f.id===furnitureId)||project?.furniture[0];
   const previewFurniture=useMemo(()=>furniture&&draftHidden!==null?{...furniture,presentation:{...furniture.presentation,guide:{...ensureGuide(furniture).presentation!.guide!,hiddenPieceIds:draftHidden}}}:furniture,[furniture,draftHidden]);
   useEffect(()=>{setDraftHidden(null);setHideMode(false);},[furniture?.id]);
   const sheetPreviewProject=useMemo(()=>project&&furniture?{...project,furniture:[furniture]}:undefined,[project,furniture]);
-  useEffect(()=>{let current=true;setPreviewReferences(undefined);setPreviewReferenceError('');if(!printMaterials||destination!=='guides')return;void request<Record<string,string>>('order_references').then(result=>{if(current)setPreviewReferences(result);}).catch(value=>{if(current)setPreviewReferenceError(value instanceof Error?value.message:String(value));});return()=>{current=false;};},[printMaterials,destination,revision,fingerprint]);
+  useEffect(()=>{let current=true;setPreviewReferences(undefined);setPreviewReferenceError('');if(!printMaterials||destination!=='guides')return;void request<OrderReferences>('order_references').then(result=>{if(current)setPreviewReferences(result);}).catch(value=>{if(current)setPreviewReferenceError(value instanceof Error?value.message:String(value));});return()=>{current=false;};},[printMaterials,destination,revision,fingerprint]);
   useEffect(()=>{const mode=furniture?.presentation?.guide?.mode;if(mode==='exterior')setView('front');else if(mode==='interior')setView('back');},[furniture?.id,furniture?.presentation?.guide?.mode]);
   const orphanNotes=furniture?orphans[furniture.id]||[]:[];
   const note=furniture?[...furniture.notes,...orphanNotes].find(n=>n.id===noteId):undefined;
@@ -211,7 +211,7 @@ export default function App(){
       await ensureRuntime();
       for(const f of project.furniture){const issues=[...guideIssues(f,orphans[f.id]||[]),...namingIssues(f,workCode)];if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
       if(selectionChanged){setError('La selección cambió. Pulsá Generar guías para actualizar los muebles del PDF.',{label:'Regenerar guías',kind:'generate'});return;}
-      const references=printMaterials?await request<Record<string,string>>('order_references'):undefined;
+      const references=printMaterials?await request<OrderReferences>('order_references'):undefined;
       const bytes=await createOfflinePdf(project,decode64(regularFont),decode64(monoFont),decode64(logo),references);
       const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint,furniture:editsFor(project,orphans),base64:encode64(bytes)});
       setMessage(result.cancelled?'Exportación cancelada.':`PDF A4 guardado: ${result.path}`);
@@ -408,8 +408,8 @@ export default function App(){
               </section>
               <ViewAdjustments furniture={furniture} view={view} mode={tool} showTools={false} disabled={!!busy||draftHidden!==null} onMode={setTool} onChange={presentation=>changeFurniture(f=>({...f,presentation}))}/>
               <DimensionControls furniture={furniture} disabled={!!busy} onChange={hiddenDimensions=>changeFurniture(f=>({...f,hiddenDimensions}))}/>
-              <GuideViews hideMode={hideMode} onHideMode={()=>{setTool('select');setPicking(undefined);setHideMode(value=>!value);}} furniture={furniture} view={view} selectedId={piece?.id} draftHidden={draftHidden} disabled={!!busy} onChange={next=>changeFurniture(()=>next)} onSelect={id=>selectPiece(id)} onView={view=>{setView(view);if(view==='front')setHideMode(false);}} onDraft={ids=>{setTool('select');setPicking(undefined);setDraftHidden(ids);}} onApply={()=>{if(draftHidden!==null)changeFurniture(f=>({...f,presentation:{...f.presentation,guide:{...ensureGuide(f).presentation!.guide!,hiddenPieceIds:draftHidden}}}));setDraftHidden(null);setHideMode(false);}} onCancel={()=>{setDraftHidden(null);setHideMode(false);}}/>
-              {destination==='guides'&&sheetPreviewProject&&<A4SheetPreview project={sheetPreviewProject} references={printMaterials?previewReferences:undefined} disabled={draftHidden!==null||contextChanged||modelAnalysisStale||(printMaterials&&!previewReferences)} pendingReason={draftHidden!==null?'Aplicá o cancelá las piezas ocultas para actualizar la hoja.':contextChanged?'Volvé al modelo de la guía para revisar la hoja.':previewReferenceError||(printMaterials&&!previewReferences?'Revisando referencias de materiales y cantos del pedido…':undefined)}/>}
+              <GuideViews modelGuid={modelGuidOf(project)} hideMode={hideMode} onHideMode={()=>{setTool('select');setPicking(undefined);setHideMode(value=>!value);}} furniture={furniture} view={view} selectedId={piece?.id} draftHidden={draftHidden} disabled={!!busy} onChange={next=>changeFurniture(()=>next)} onSelect={id=>selectPiece(id)} onView={view=>{setView(view);if(view==='front')setHideMode(false);}} onDraft={ids=>{setTool('select');setPicking(undefined);setDraftHidden(ids);}} onApply={()=>{if(draftHidden!==null)changeFurniture(f=>({...f,presentation:{...f.presentation,guide:{...ensureGuide(f).presentation!.guide!,hiddenPieceIds:draftHidden}}}));setDraftHidden(null);setHideMode(false);}} onCancel={()=>{setDraftHidden(null);setHideMode(false);}}/>
+              {destination==='guides'&&sheetPreviewProject&&<A4SheetPreview project={sheetPreviewProject} activeFurnitureId={furniture.id} references={printMaterials?previewReferences:undefined} disabled={draftHidden!==null||contextChanged||modelAnalysisStale||(printMaterials&&!previewReferences)} pendingReason={draftHidden!==null?'Aplicá o cancelá las piezas ocultas para actualizar la hoja.':contextChanged?'Volvé al modelo de la guía para revisar la hoja.':previewReferenceError||(printMaterials&&!previewReferences?'Revisando referencias de materiales y cantos del pedido…':undefined)}/>}
               {!!warnings.length&&<div className="warnings" role="status">{warnings.map(w=><p key={w}>{w}</p>)}</div>}
             </div>
             <div className="assembly-inspector">
