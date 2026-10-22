@@ -24,7 +24,7 @@ async function boot(page:Page,folder:string,driver:'names'|'recognition'){
  await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
  const generate=page.getByRole('button',{name:'Generar guías (2)',exact:true});await expect(generate).toBeEnabled();await generate.click();
 }
-async function modules(page:Page,work=''){if(work)await page.getByLabel('Abreviatura de la obra').fill(work);await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 piezas',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');}
+async function modules(page:Page,work=''){if(work)await page.getByLabel('Abreviatura de la obra').fill(work);await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');}
 async function openProposals(page:Page){await page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog).toBeVisible();return dialog;}
 async function openBatch(page:Page){await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog).toBeVisible();return dialog;}
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});

@@ -59,11 +59,11 @@ describe('UX2 planos A4: cantos, agrupación por medidas, diagnóstico y tabla p
  });
  it('elige la acción según la causa cuando el listado no entra',async()=>{
   const groups=groupsProject(45);
-  expect(await failure(groups)).toMatchObject({kind:'table',action:'Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.'});
+  expect(await failure(groups)).toMatchObject({kind:'table',action:'Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4. También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.'});
   groups.furniture[0].presentation!.guide!.foldTable=true;expect(listRows(groups.furniture[0])).toHaveLength(1);
   const folded=await createOfflinePdf(groups,regular,mono).then(()=>undefined,(error:A4FitError)=>error);expect(folded?.kind).not.toBe('table');
   const distinct=groupsProject(45);distinct.furniture[0].pieces.forEach((p,i)=>{p.name=`Pieza ${i}${i%5===0?' con un nombre bastante más largo que la columna':''}`;});
-  const error=await failure(distinct);expect(error.action).toMatch(/^Acortá los nombres más largos: P\d+(, P\d+)*\.$/);
+  const error=await failure(distinct);expect(error.action).toMatch(/^Acortá los nombres más largos: P\d+(, P\d+)*\. También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4\.$/);
  });
  it('copia la tabla en TSV con encabezado, coma decimal, nombres saneados y columnas del pedido',()=>{
   const project=sample(),f=project.furniture[0];f.pieces[0].name='Lateral\tizq.\nfrente';f.pieces[0].dimensions=[2400.5,560,18];

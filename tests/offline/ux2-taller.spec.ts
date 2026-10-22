@@ -118,19 +118,19 @@ test('avisos en vivo: espesor, veta en V y giro deshabilitado con motivo, sin es
  expect(actions.filter(a=>a==='order_audit'||a==='order_check')).toHaveLength(0);
 });
 
-test('aplicar a piezas equivalentes: copia los grupos elegidos, no las verificaciones, y anuncia lo pendiente',async({page},info)=>{
+test('aplicar a piezas equivalentes: Ruby copia los grupos elegidos, no las verificaciones, y anuncia lo pendiente',async({page},info)=>{
  await boot(page,info.outputDir);const [sheet]=await catalog([{name:'Placa repetida',kind:'sheet',patch:board}]);
  const panel=await openOrder(page),select=panel.getByLabel('Pieza del pedido');
  const ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));
  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Placa aprobada del pedido').selectOption(sheet.id);
  await page.getByLabel('Medidas que recibe la maderera').selectOption('finished_accepted');await page.getByLabel('Fuente / explicación de la revisión').fill('Laterales iguales revisados');
  await page.getByLabel('Material y espesor verificados',{exact:true}).check();
- const apply=panel.locator('details.workshop-apply');await expect(apply.locator('summary')).toHaveText(/^Aplicar a piezas equivalentes \(\d+\)$/);await apply.locator('summary').click();
+ const apply=panel.locator('details.workshop-apply');await expect(apply.locator(':scope > summary')).toHaveText(/^Aplicar a otras piezas · \d+ equivalentes?$/);await apply.locator(':scope > summary').click();
  const targets=apply.getByRole('group',{name:/^Piezas destino/});const count=await targets.getByRole('checkbox').count();expect(count).toBeGreaterThan(0);
  for(const box of await targets.getByRole('checkbox').all())await expect(box).toBeChecked();
  await apply.getByRole('checkbox',{name:/^Cantos/}).uncheck();await apply.getByRole('checkbox',{name:'Veta y rotación'}).uncheck();
  await apply.getByRole('button',{name:/^Aplicar a \d+ piezas?$/}).click();
- await expect(panel.getByRole('status')).toHaveText(new RegExp(`^Aplicado a ${count} piezas?; quedan \\d+ verificaci(ón|ones) por confirmar\\.$`));
+ await expect(panel.getByRole('status')).toHaveText(new RegExp(`^Aplicado a ${count} piezas?; (se invalidó 1 confirmación|se invalidaron \\d+ confirmaciones|no se invalidó ninguna confirmación) y quedan \\d+ verificaci(ón|ones) por confirmar\\.$`));
  await select.selectOption(ids[1]);await expect(page.getByLabel('Placa aprobada del pedido')).toHaveValue(sheet.id);
  await expect(page.getByLabel('Fuente / explicación de la revisión')).toHaveValue('Laterales iguales revisados');await expect(page.getByLabel('Medidas que recibe la maderera')).toHaveValue('finished_accepted');
  await expect(page.getByLabel('Material y espesor verificados',{exact:true})).not.toBeChecked();await expect(page.getByLabel('Dirección de veta en esta vista')).toHaveValue('');

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { Project } from '@/lib/model';
 import type { UploadResult } from '@/lib/archive';
 import PairingPanel from './PairingPanel';
+import {fetchJson} from './apiError';
 type Props={onImport:(p:Project)=>Promise<void>;onRefresh:()=>Promise<void>;inputRef?:RefObject<HTMLInputElement|null>;compact?:boolean};
 export default function RubyImport({onImport,onRefresh,inputRef,compact=false}:Props){
   const internalRef=useRef<HTMLInputElement>(null),file=inputRef||internalRef;
@@ -15,8 +16,7 @@ export default function RubyImport({onImport,onRefresh,inputRef,compact=false}:P
     try{
       if(selected.size>50*1024*1024)throw new Error('El archivo supera 50 MB. Elegí uno más pequeño.');
       const form=new FormData();form.append('file',selected);
-      const response=await fetch('/api/import/file',{method:'POST',body:form});
-      const result=await response.json();if(!response.ok)throw new Error(result.error);
+      const result=await fetchJson<UploadResult>('/api/import/file',{method:'POST',body:form});
       if(result.state==='needs-sketchup')setConversion(result);
       else await onImport(result.project);
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}

@@ -114,33 +114,35 @@ class PaintControllerTest < Minitest::Test
     end
     assert_empty @paint.calls;assert_empty @library.calls;assert_empty @model.operations
   end
-  def test_apply_refreshes_scan_discards_generated_document_and_clears_paint_and_naming
+  def test_apply_marks_analysis_stale_discards_generated_document_and_clears_paint_and_naming
     @controller.dispatch('generate',{'ids'=>['1']});session=@controller.instance_variable_get(:@session)
     refute_nil session.document
     @controller.instance_variable_set(:@naming,Object.new)
     dispatch('paint_preview',{'pieceId'=>'1/11'})
     result=dispatch('paint_apply',confirmation)
-    assert result['changed'];assert result['scan']['tree'];assert_nil session.document
+    assert result['changed'];assert result['stale'];refute result.key?('scan');assert_nil @controller.instance_variable_get(:@session).document
     assert_nil @controller.instance_variable_get(:@paint);assert_nil @controller.instance_variable_get(:@naming)
     assert_equal 1,@paint.calls.count { |call| call[0]==:apply }
     assert_raises(PlanosSanto::ExportError) { dispatch('paint_apply',confirmation) }
     assert_equal 1,@paint.calls.count { |call| call[0]==:apply }
   end
-  def test_material_bind_and_install_also_refresh_after_success
+  def test_material_bind_and_install_also_mark_stale_after_success
     %w[catalog_bind catalog_install].each do |action|
+      @controller.dispatch('scan',{}) # ARQ-02: reanalyze after the previous write.
       @controller.dispatch('generate',{'ids'=>['1']})
       result=dispatch(action,{'confirmed'=>true,'source'=>'saved'})
-      assert_equal 'material-123',result['materialId'];assert result['scan']['tree']
+      assert_equal 'material-123',result['materialId'];assert result['stale'];refute result.key?('scan')
       assert_nil @controller.instance_variable_get(:@session).document
     end
     assert_equal %i[bind install],@library.calls.map(&:first)
   end
-  def test_scan_failure_after_apply_reports_committed_result_without_reapplying
+  # ARQ-02: the committed write never rescans, so a slow or failing scan cannot follow it.
+  def test_apply_never_rescans_and_reports_committed_result_without_reapplying
     session=@controller.instance_variable_get(:@session)
-    def session.scan;raise PlanosSanto::ExportError,'synthetic scan failure after commit';end
+    def session.scan;raise PlanosSanto::ExportError,'synthetic scan must not run after commit';end
     dispatch('paint_preview',{'pieceId'=>'1/11'})
     result=dispatch('paint_apply',confirmation)
-    assert result['changed'];assert_match(/Material aplicado/,result['refreshWarning']);assert_match(/synthetic scan failure/,result['refreshWarning'])
+    assert result['changed'];assert result['stale'];refute result.key?('refreshWarning')
     refute result.key?('scan');refute_same session,@controller.instance_variable_get(:@session)
     assert_nil @controller.instance_variable_get(:@paint)
     assert_raises(PlanosSanto::ExportError) { dispatch('paint_apply',confirmation) }

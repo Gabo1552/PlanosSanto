@@ -75,7 +75,7 @@ items.each_with_index do |item,i|
   item['id']="11111111-1111-4111-8111-#{(i+1).to_s.rjust(12,'0')}";item['updatedAt']='2026-10-20T00:00:00Z'
   material=model.materials.add(item['name']);material.set_attribute(PlanosSanto::MaterialResolver::DICT,PlanosSanto::MaterialResolver::KEY,JSON.generate(PlanosSanto::MaterialResolver.binding_for(item,"22222222-2222-4222-8222-#{(i+1).to_s.rjust(12,'0')}")))
 end
-File.binwrite(File.join(folder,'catalog.json'),JSON.pretty_generate('schema'=>1,'revision'=>1,'items'=>items))
+File.binwrite(File.join(folder,'catalog.json'),JSON.pretty_generate('schema'=>(defined?(PlanosSanto::CatalogStore::SCHEMA) ? PlanosSanto::CatalogStore::SCHEMA : 1),'revision'=>1,'items'=>items))
 image=File.join(ARGV.fetch(0),'Foto QA ámbar.png');File.binwrite(image,PhotoFixture.png(128,96));UI.photo_browser_path=image
 Sketchup.photo_browser_model=model
 class PhotoBrowserController < PlanosSanto::OfflineController

@@ -82,7 +82,8 @@ if(process.env.PLANOS_PHOTO_CAPTURE_BASELINE!=='1'){
   await page.getByRole('button',{name:'+ Material',exact:true}).click();
   const palettePhoto=page.getByRole('dialog',{name:'Material desde una foto',exact:true});await expect(palettePhoto).toBeVisible();
   expect(calls.some(call=>call.action==='smart_tool_stop')).toBe(true);
-  await page.keyboard.press('Escape');await expect(palettePhoto).toBeHidden();await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
+  // While the panel is busy Escape is ignored on purpose: wait until it is idle.
+  await expect(palettePhoto).toHaveAttribute('aria-busy','false');await page.keyboard.press('Escape');await expect(palettePhoto).toBeHidden();await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
  });
  test('Foto 085: guardar sin pintar, duplicado explícito, cancelación y foco modal',async({page},info)=>{
   await boot(page,info.outputDir);let dialog=await openPhoto(page);

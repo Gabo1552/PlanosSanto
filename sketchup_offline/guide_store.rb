@@ -28,8 +28,8 @@ module PlanosSanto
         text!(f['id'], 1000); finite!(f['explosion'], 0, 1); finite!(f['zoom'], 0.35, 1.4)
         raise ExportError, 'Listado guardado incompatible.' unless f['pieces'].is_a?(Array) && f['pieces'].length <= 500 && f['notes'].is_a?(Array) && f['notes'].length <= 40
         f['pieces'].each do |p|
-          keys!(p, %w[id name code], context: 'pieza de la guía'); text!(p['id'], 1000); text!(p['name'], 80)
-          raise ExportError, 'Código guardado incompatible.' unless p['code'].is_a?(String) && p['code'].match?(/\AP\d{2,4}\z/) && p['code'][1..].to_i.positive?
+          keys!(p, %w[id name code], %w[previousCode], context: 'pieza de la guía'); text!(p['id'], 1000); text!(p['name'], 80)
+          raise ExportError, 'Código guardado incompatible.' unless piece_code?(p['code']) && (!p.key?('previousCode') || piece_code?(p['previousCode']))
         end
         raise ExportError, 'Piezas o códigos guardados repetidos.' unless f['pieces'].map { |p| p['id'] }.uniq.length == f['pieces'].length && f['pieces'].map { |p| p['code'] }.uniq.length == f['pieces'].length
         validate_hidden_dimensions!(f['hiddenDimensions'], f['pieces'].map { |p| p['id'] }) if f.key?('hiddenDimensions')
@@ -145,6 +145,10 @@ module PlanosSanto
       end
     end
 
+    def piece_code?(value)
+      value.is_a?(String) && value.match?(/\AP\d{2,4}\z/) && value[1..].to_i.positive?
+    end
+
     def finite!(value, min, max)
       raise ExportError, 'Valor numérico fuera de rango.' unless value.is_a?(Numeric) && value.finite? && value.between?(min, max)
     end
@@ -169,8 +173,9 @@ module PlanosSanto
       raise ExportError, 'Listado de muebles inconsistente.' unless edits.map { |f| f.is_a?(Hash) && f['id'] }.sort == index.keys.sort
       hidden_by_furniture = {}
       edits.each do |f|
-        keys!(f, %w[id explosion zoom pieces notes], %w[hiddenDimensions presentation naming groupName groupIdentical], context: 'mueble de la guía')
+        keys!(f, %w[id explosion zoom pieces notes], %w[hiddenDimensions presentation naming groupName groupIdentical renumber], context: 'mueble de la guía')
         text!(f['groupName'],80) if f.key?('groupName')
+        raise ExportError, 'Renumeración inválida.' if f.key?('renumber') && f['renumber'] != true
         finite!(f['explosion'], 0, 1); finite!(f['zoom'], 0.35, 1.4)
         pieces = {}
         Exporter.each_node([index.fetch(f['id'])]) { |n| pieces[n['id']] = n if n['mesh'] }
@@ -187,11 +192,12 @@ module PlanosSanto
         raise ExportError, 'Listado de piezas inconsistente.' unless f['pieces'].is_a?(Array) && f['pieces'].map { |p| p.is_a?(Hash) && p['id'] }.sort == pieces.keys.sort
         codes = []
         f['pieces'].each do |p|
-          keys!(p, %w[id name code], context: 'pieza de la guía'); text!(p['name'], 80)
+          keys!(p, %w[id name code], %w[previousCode], context: 'pieza de la guía'); text!(p['name'], 80)
           code = p['code']
-          raise ExportError, 'Identificador de pieza inválido.' unless code.is_a?(String) && code.match?(/\AP\d{2,4}\z/) && code[1..].to_i.positive?
+          raise ExportError, 'Identificador de pieza inválido.' unless piece_code?(code)
+          raise ExportError, 'Código anterior de pieza inválido.' if p.key?('previousCode') && !piece_code?(p['previousCode'])
           prior = previous_pieces[p['id']]
-          raise ExportError, 'No se puede cambiar el código de una pieza guardada.' if prior && prior['code'] != code
+          raise ExportError, 'No se puede cambiar el código de una pieza guardada.' if prior && prior['code'] != code && !f['renumber']
           codes << code
         end
         raise ExportError, 'Hay códigos de pieza repetidos.' unless codes.uniq.length == codes.length
@@ -217,8 +223,18 @@ module PlanosSanto
       result = JSON.parse(JSON.generate(edits))
       result.each do |f|
         f.delete('groupName') # One-shot model rename intent; the model remains the source of group names.
+        f.delete('renumber') # One-shot permission to change saved codes; never stored.
         f['hiddenDimensions'] = hidden_by_furniture[f['id']] if hidden_by_furniture.key?(f['id'])
         prior=old['furniture'].find { |row| row['id']==f['id'] }
+        # The store owns the code history: a changed code keeps the one it replaced (already printed labels),
+        # an unchanged one keeps its stored history, and client values are ignored.
+        prior_pieces=(prior || {}).fetch('pieces', []).to_h { |p| [p['id'], p] }
+        f['pieces'].each do |p|
+          was=prior_pieces[p['id']]; p.delete('previousCode')
+          if was && was['code'] != p['code'] then p['previousCode'] = was['code']
+          elsif was && was['previousCode'] then p['previousCode'] = was['previousCode']
+          end
+        end
         %w[presentation naming groupIdentical].each { |key| f[key]=JSON.parse(JSON.generate(prior[key])) if !f.key?(key) && prior && prior.key?(key) }
         # Inherited settings can refer to pieces deleted since the last analysis.
         # Fresh edits were validated above and must never silently accept foreign paths.

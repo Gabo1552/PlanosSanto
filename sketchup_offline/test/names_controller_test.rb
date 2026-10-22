@@ -30,6 +30,7 @@ class NamesControllerTest < Minitest::Test
   end
   def test_no_changes_keeps_generated_document_and_avoids_rescan
     @controller.dispatch('names_apply',payload)
+    @controller.dispatch('scan',{}) # ARQ-02: the operator reanalyzes before generating again.
     p=payload;@controller.dispatch('generate',{'ids'=>['1']})
     session=@controller.instance_variable_get(:@session);doc=session.document
     # Use the reviewed values (AS) to make an idempotent request.
@@ -37,11 +38,13 @@ class NamesControllerTest < Minitest::Test
     assert result['noChanges'];assert_same doc,session.document;refute result.key?('scan')
     assert_equal 1,@model.operations.count { |op| op[0]==:start }
   end
-  def test_names_already_committed_are_reported_as_applied_when_guide_rescan_fails
+  # ARQ-02: applied names mark the analysis stale; no rescan follows the commit.
+  def test_names_applied_mark_analysis_stale_without_rescanning
     data=payload;session=@controller.instance_variable_get(:@session)
-    def session.scan; raise PlanosSanto::ExportError,'synthetic rescan failure'; end
+    def session.scan; raise PlanosSanto::ExportError,'synthetic rescan must not run'; end
     result=@controller.dispatch('names_apply',data)
-    assert_match(/Nombres aplicados/,result['refreshWarning']);assert_equal 'Alacena Superior',@model.entities[0].name
+    assert result['stale'];refute result.key?('refreshWarning');refute_same session,@controller.instance_variable_get(:@session)
+    assert_equal 'Alacena Superior',@model.entities[0].name
     assert_equal :commit,@model.operations.last[0];refute result.key?('scan')
   end
   def test_saving_skp_is_explicit_and_optional_and_never_called_when_disabled
