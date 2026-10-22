@@ -99,6 +99,18 @@ class MaterialManagementControllerTest < Minitest::Test
     assert_empty @model.operations;assert_empty @notices
   end
 
+  def test_texture_actions_delegate_to_photo_service_and_refresh_after_apply
+    service=Object.new;calls=[]
+    service.define_singleton_method(:texture_preview) { |data| calls << [:preview,data];{'noChanges'=>true,'affected'=>[]} }
+    service.define_singleton_method(:texture_apply) { |data| calls << [:apply,data];{'catalogId'=>'x','verification'=>{'ok'=>true,'checked'=>1}} }
+    @controller.instance_variable_set(:@photo_material,service)
+    assert dispatch('material_texture_preview','catalogId'=>'x','rotation'=>90)['noChanges']
+    applied=dispatch('material_texture_apply','catalogId'=>'x','confirmed'=>true)
+    assert applied.key?('scan')
+    assert_equal %i[preview apply],calls.map(&:first)
+    assert_equal ['material_texture_apply'],@notices
+  end
+
   def test_rejects_non_hash_data
     assert_raises(PlanosSanto::ExportError) { dispatch('material_extras',[]) }
   end

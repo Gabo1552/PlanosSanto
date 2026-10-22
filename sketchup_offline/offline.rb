@@ -933,6 +933,12 @@ module PlanosSanto
         clean_for_paint! unless data['dryRun']==true
         result=management_library.ocl_sync(data)
         result['changed'].to_i>0 ? refresh_after_material_change(result) : result
+      when 'material_texture_preview'
+        active!
+        photo_material.texture_preview(data)
+      when 'material_texture_apply'
+        active!;clean_for_paint!
+        refresh_after_material_change(photo_material.texture_apply(data))
       when 'material_package_cancel'
         @material_package&.cancel
         @material_package=nil
