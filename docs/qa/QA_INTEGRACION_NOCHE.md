@@ -106,7 +106,11 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
    `material-library-changed` y una recarga de la paleta (`smart_palette_load`, con miniaturas).
    Con dobles no se puede afirmar. Medirlo en el caso 1.6 de `docs/hito6/VALIDACION_SKETCHUP.md`;
    si ocurre, ignorar el tipo `materials` mientras la herramienta pinta.
-3. Con la corrección QA-INT-01 la franja aparece **en el primer clic**, no al detener la
+3. **Prueba inestable bajo carga:** `photo-experience.spec.ts › Foto 085: crear textura privada…`
+   falló 1 vez en 4 corridas completas (Escape no cerró «Material desde una foto»); en aislado pasó
+   15/15. Hipótesis sin verificar: el Escape llega mientras el panel está `busy` y
+   `PhotoMaterialPanel` lo ignora en silencio. No se tocó: no se pudo reproducir de forma determinista.
+4. Con la corrección QA-INT-01 la franja aparece **en el primer clic**, no al detener la
    herramienta. Es coherente con el aviso «documento invalidado» que ya se emitía en ese
    clic, pero conviene confirmarlo visualmente en SketchUp (casos 1.1 y 2.6).
 
@@ -116,4 +120,19 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
 sketchup_offline/ui tests`, `vitest run`, `build-offline.mjs`, `test-offline-ruby.mjs`,
 `playwright --config playwright.offline.config.ts`.
 
-<!-- RESULTADOS -->
+Base (`b613762`, antes de corregir): `n2-shell › axe…` fallaba de forma determinista (QA-INT-04).
+
+Final, sobre el último commit, dos pasadas completas seguidas:
+
+| Paso | Pasada 1 | Pasada 2 |
+|---|---|---|
+| `tsc --noEmit` | OK | OK |
+| `eslint` | OK | OK |
+| `vitest` | 290/290 | 290/290 |
+| `build-offline` | OK | OK |
+| Ruby offline | todas en verde (716 runs, 0 fallas) | todas en verde (716 runs, 0 fallas) |
+| Playwright offline | 200/201 (falla inestable: pendiente 3) | **201/201** |
+
+Pruebas nuevas: `sketchup_offline/test/noche_integracion_test.rb` (9, en el runner Ruby),
+`tests/noche-integracion.test.ts` (6), `tests/offline/noche-integracion.spec.ts` (2) y una
+aserción nueva en `tests/offline/hito2-pincel.spec.ts`.
