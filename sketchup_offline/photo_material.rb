@@ -73,9 +73,11 @@ module PlanosSanto
     rescue StandardError
       reject_image!
     end
+    # Close the copy before decoding: on Windows ImageRep#load_file fails while
+    # Ruby still holds the file open (0.8.13 native F0).
     def temporary(bytes,extension)
       Tempfile.create(['.planos-photo-',extension]) do |file|
-        file.binmode;file.write(bytes);file.flush
+        file.binmode;file.write(bytes);file.flush;file.close
         yield file.path
       end
     end

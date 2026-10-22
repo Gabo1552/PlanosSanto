@@ -1,3 +1,14 @@
+# Entrega 0.8.14 — corrección del F0 nativo de la 0.8.13 (fotos rechazadas), PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.14-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.13:
+- La foto se decodifica con la copia temporal cerrada. En Windows, `ImageRep#load_file` falla si el archivo sigue abierto, y por eso toda foto válida se rechazaba.
+- `ALT_MASK` queda definida una sola vez.
+- El verificador espera los 5 cursores y la versión 0.8.14.
+
+Validar con `docs/validacion-0814/ENCARGO_SESION_LOCAL_0814.md`, empezando por F0–F3. `PlanosSanto-0.8.14-Validacion-Local.zip` trae los anexos, la guía, el verificador y los checklists de cada hito. No se instala. Producción no aprobada.
+
+---
+
 # Entrega 0.8.13 — 0.8.12 + latencia del pincel, fix del cuentagotas y empaquetado seguro, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.13-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.12 suma:

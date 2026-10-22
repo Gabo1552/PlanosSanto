@@ -293,6 +293,17 @@ class PhotoMaterialTest < Minitest::Test
   # Validación 0.8.10 (juez): ImageRep#resize NO existe en la API (2018-2026).
   # Toda foto de más de 256 px fallaba al armar la vista previa en SketchUp real.
   IMAGE_REP_API=%w[bits_per_pixel color_at_uv colors data height load_file row_padding save_file set_data size width].freeze
+  # 0.8.13 nativo (F0): en Windows load_file falla si Ruby tiene el archivo abierto. El doble lo
+  # reproduce, y el código cierra la copia temporal antes de decodificar.
+  def test_image_rep_double_fails_like_windows_on_an_open_file_and_pick_closes_its_copy
+    Tempfile.create(['abierto','.jpg']) do |file|
+      file.binmode;file.write('x');file.flush
+      assert_raises(ArgumentError) { Sketchup::ImageRep.new.load_file(file.path) }
+    end
+    source=File.read(File.expand_path('../photo_material.rb',__dir__),encoding:'UTF-8')
+    assert_match(/def temporary\(bytes,extension\).*?file\.close\s*\n\s*yield file\.path/m,source)
+  end
+
   def test_photo_code_only_calls_documented_image_rep_methods
     source=File.read(File.expand_path('../photo_material.rb',__dir__),encoding:'UTF-8')
     called=source.scan(/\brep\.(\w+)/).flatten.uniq-%w[respond_to]

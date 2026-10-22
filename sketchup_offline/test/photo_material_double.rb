@@ -135,7 +135,13 @@ module Sketchup
       self.class.set_data_calls=(self.class.set_data_calls||0)+1
       @width,@height,@bits_per_pixel,@row_padding,@data=width,height,bits,padding,pixels;self
     end
+    # Windows (0.8.13 native F0): load_file raises while Ruby still holds the file open.
+    def self.open_in_ruby?(path)
+      target=File.expand_path(path)
+      ObjectSpace.each_object(File).any? { |file| !file.closed? && file.respond_to?(:path) && file.path && File.expand_path(file.path)==target rescue false }
+    end
     def load_file(path)
+      raise ArgumentError,'failed to load image' if self.class.open_in_ruby?(path)
       return false unless decode(path)
       @bits_per_pixel=32;@row_padding=0;@data="\x00".b*(@width*@height*4);nil
     end
