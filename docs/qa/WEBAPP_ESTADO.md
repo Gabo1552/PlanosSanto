@@ -96,9 +96,9 @@ npx playwright test --config playwright.config.ts
 3. **Auditoría axe (WCAG 2.2 AA)** en `tests/e2e/a11y.spec.ts` con `@axe-core/playwright` (dependencia de desarrollo). Cubre inicio (también con aviso de error), las tres páginas de instalación, el editor (DEMO, nota abierta, moviendo cotas, visibilidad interior), la impresión y el celular. Falla con violaciones serious o critical. Se corrigieron tres:
    - Contraste del código de pieza en la lista de notas (4,48 → 5,65:1).
    - Contraste del detalle de «vista previa» de visibilidad interior (4,44 → 5,3:1). El estilo original vive en `sketchup_offline/ui/guideViews.css`, así que la web lo pisa desde `globals.css` y la extensión queda igual.
-   - Nombre accesible de la tarjeta arrastrable de la nota (`label-content-name-mismatch`): ahora empieza con el texto visible. `components/Diagram.tsx` **también lo compila la extensión**, así que el cambio llega al RBZ. Es solo el `aria-label` y espacios invisibles en el SVG, sin cambio visual. Las pruebas offline dan lo mismo antes y después: 158/160. Las 2 fallas de `ux2-nombres.spec` ya estaban en la línea base.
+   - Nombre accesible de la tarjeta arrastrable de la nota (`label-content-name-mismatch`): ahora empieza con el texto visible. `components/Diagram.tsx` **también lo compila la extensión**, así que el cambio llega al RBZ. Es solo el `aria-label` y espacios invisibles en el SVG, sin cambio visual. Las pruebas offline dan lo mismo antes y después del cambio. Las 2 fallas de `ux2-nombres.spec` ya estaban en la línea base: la prueba buscaba «Otro mueble 1 piezas» y la interfaz dice «1 pieza». Se corrigió la prueba y offline queda en 160/160.
 
 ### Pendiente
 
 - Decidir el futuro del editor web (ver §1). No es una tarea de código.
-- Las 2 fallas offline de `tests/offline/ux2-nombres.spec.ts` son preexistentes y están fuera del alcance de la web.
+- En la extensión, `.guide-preview-status small` (`sketchup_offline/ui/guideViews.css`) sigue en 4,44:1. La web lo corrige desde `globals.css`, pero conviene pasar el color a #5a665e en el CSS de la extensión.
