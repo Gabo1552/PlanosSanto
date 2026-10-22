@@ -221,7 +221,7 @@ module PlanosSanto
         return result.merge('catalog'=>@catalog.read,'catalogId'=>result.dig('binding','catalogId'),'materialUuid'=>result.dig('binding','uuid'),'thumbnail'=>thumbnails[data['existingId']],'created'=>false,'reused'=>true,'designReady'=>true)
       end
       result=nil
-      @library.locked('revision'=>data['revision'],'confirmed'=>true) do |catalog,index|
+      @library.locked({'revision'=>data['revision'],'confirmed'=>true}) do |catalog,index|
         verify_guard!
         old=catalog['items'].find { |item| item['id']==data['existingId'] }
         if data['action']=='replace'
@@ -282,7 +282,11 @@ module PlanosSanto
                   'replaced'=>data['action']=='replace','textureScale'=>scale,
                   'warnings'=>['Listo para diseño; pendiente de validación para maderera.']+(scale['verified'] ? [] : ['Escala y repetición de la foto sin verificar.'])}
         rescue Exception
-          @model.abort_operation if started
+          begin
+            @model.abort_operation if started
+          rescue StandardError => abort_error
+            warn("Planos Santo: abort_operation falló al ajustar textura: #{abort_error.class}")
+          end
           restore_file(catalog_path,previous_catalog);restore_file(index_path,previous_index)
           (Dir.glob(File.join(@directory,'material-assets','*.skm'))-prior_assets).each { |path| File.delete(path) unless File.symlink?(path) }
           created.uniq.each { |path| File.delete(path) if File.file?(path) && !File.symlink?(path) }
@@ -322,10 +326,17 @@ module PlanosSanto
       return rep if degrees.zero?
       bytes=rep.bits_per_pixel/8;width=rep.width;height=rep.height
       raise ExportError,'La foto es demasiado grande para girarla aquí (máximo 4 megapíxeles). Girala antes de cargarla.' if width*height>MAX_ROTATE_PIXELS
+      raise ExportError,'Formato de imagen no admitido para girar.' unless [3,4].include?(bytes)
       stride=width*bytes+rep.row_padding;source=rep.data
+      # Integers per pixel (immediate values), never one String per pixel.
       grid=Array.new(height) do |y|
         row=source.byteslice(y*stride,width*bytes)
-        bytes==4 ? row.unpack('V*') : row.unpack("a#{bytes}"*width)
+        if bytes==4
+          row.unpack('V*')
+        else
+          channels=row.unpack('C*')
+          Array.new(width) { |x| channels[x*3]|channels[x*3+1]<<8|channels[x*3+2]<<16 }
+        end
       end
       grid=case degrees
            when 90 then grid.transpose.map(&:reverse)
@@ -335,7 +346,7 @@ module PlanosSanto
       new_width=grid.first.length;new_height=grid.length
       padding=(4-(new_width*bytes)%4)%4
       pixels=String.new(capacity:(new_width*bytes+padding)*new_height,encoding:Encoding::BINARY)
-      grid.each { |row| pixels << (bytes==4 ? row.pack('V*') : row.join.b) << ("\x00".b*padding) }
+      grid.each { |row| pixels << (bytes==4 ? row.pack('V*') : row.flat_map { |v| [v&255,(v>>8)&255,(v>>16)&255] }.pack('C*')) << ("\x00".b*padding) }
       Sketchup::ImageRep.new.set_data(new_width,new_height,rep.bits_per_pixel,padding,pixels)
     end
     def rotated_png(path,degrees,limit)
@@ -382,19 +393,31 @@ module PlanosSanto
       end
       affected=texture_targets(item,catalog).map { |material| {'materialId'=>@library.material_id(material),'name'=>material.name.to_s} }
       warnings << 'Cargá este material en el modelo para ajustar su textura.' if affected.empty?
+      excluded=@library.materials.count { |material| @library.observed(material).dig('binding','catalogId')==item['id'] }-affected.length
+      warnings << "#{excluded} material(es) vinculados con problemas no se ajustarán; revisalos en el modelo." if excluded>0
       {'catalogId'=>item['id'],'current'=>photo['textureScale'].merge('rotation'=>0),'proposed'=>{'widthMm'=>data['widthMm'],'heightMm'=>data['heightMm'],'rotation'=>data['rotation']},
-       'pixels'=>pixels,'thumbnail'=>thumbnail,'affected'=>affected,'repeats'=>repeats,'warnings'=>warnings,'noChanges'=>true}
+       'pixels'=>pixels,'thumbnail'=>thumbnail,'affected'=>affected,'materialIds'=>affected.map { |row| row['materialId'] },'repeats'=>repeats,'warnings'=>warnings,
+       'revision'=>catalog['revision'],'assetRevision'=>@library.assets['revision'],'noChanges'=>true}
     end
     def texture_apply(data)
       verify_guard!;verify_directories!
       data=texture_options(data)
       raise ExportError,'Confirmá el ajuste de textura después de revisar la vista previa.' unless data['confirmed']==true
       result=nil
-      @library.locked(data) do |catalog,index|
+      raise ExportError,'Volvé a verificar la vista previa antes de aplicar.' unless data['materialIds'].is_a?(Array)
+      @library.locked(data,confirm_message:'Confirmá el ajuste de textura después de revisar la vista previa.') do |catalog,index|
         verify_guard!
         item=texture_item(catalog,data['catalogId'])
         targets=texture_targets(item,catalog)
         raise ExportError,'Cargá este material en el modelo para ajustar su textura.' if targets.empty?
+        unless targets.map { |material| @library.material_id(material) }.sort==data['materialIds'].map(&:to_s).sort
+          raise ExportError,'Los materiales del modelo cambiaron desde la vista previa; volvé a verificarla.'
+        end
+        scale=item['observed']['photo']['textureScale']
+        if data['rotation'].zero? && scale['verified'] && scale['widthMm']==data['widthMm'] && scale['heightMm']==data['heightMm']
+          result={'catalogId'=>item['id'],'applied'=>[],'textureScale'=>scale,'rotation'=>0,'verification'=>{'ok'=>true,'checked'=>0},'warnings'=>['La textura ya tenía esa escala; no se cambió nada.'],'noChanges'=>true}
+          next
+        end
         photo=JSON.parse(JSON.generate(item['observed']['photo']))
         pixels,_repeats,warnings=texture_summary(item,data)
         catalog_path=File.join(@directory,'catalog.json');index_path=File.join(@directory,'material-assets.json')

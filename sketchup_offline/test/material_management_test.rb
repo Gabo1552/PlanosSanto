@@ -130,6 +130,18 @@ class MaterialManagementTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { @library.archive_items('catalogIds'=>[@edge['id']],'archived'=>true,'revision'=>revision,'confirmed'=>true) }
   end
 
+  def test_orphan_records_can_be_restored_and_are_cleaned_on_write
+    @library.archive_items('catalogIds'=>[@edge['id']],'archived'=>true,'revision'=>revision,'confirmed'=>true)
+    @catalog.save([@sheet.merge('compatibleIds'=>[])],revision)
+    result=@library.archive_items('catalogIds'=>[@edge['id']],'archived'=>false,'revision'=>revision,'confirmed'=>true)
+    assert_equal 1,result['changed']
+    assert_empty @library.states['records']
+    stale=assert_raises(PlanosSanto::ExportError) { @library.archive_items('catalogIds'=>[@sheet['id']],'archived'=>true,'revision'=>revision,'confirmed'=>true,'statesRevision'=>0) }
+    assert_match(/otra ventana/,stale.message)
+    message=assert_raises(PlanosSanto::ExportError) { @library.duplicate('catalogId'=>@sheet['id'],'confirmed'=>true) }.message
+    assert_match(/duplicar/,message)
+  end
+
   def test_extras_ignore_records_of_deleted_items
     @library.archive_items('catalogIds'=>[@edge['id']],'archived'=>true,'revision'=>revision,'confirmed'=>true)
     @catalog.save([@sheet.merge('compatibleIds'=>[])],revision)

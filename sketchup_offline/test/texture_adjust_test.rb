@@ -31,7 +31,8 @@ class TextureAdjustTest < Minitest::Test
     {'catalogId'=>@id,'widthMm'=>800,'heightMm'=>400,'rotation'=>0}.merge(extra)
   end
   def apply(extra={})
-    @service.texture_apply(request({'revision'=>@catalog.read['revision'],'assetRevision'=>library.assets['revision'],'confirmed'=>true}.merge(extra)))
+    preview=@service.texture_preview(request(extra.reject { |key,_| %w[confirmed revision].include?(key) })) rescue {'materialIds'=>[],'revision'=>@catalog.read['revision'],'assetRevision'=>library.assets['revision']}
+    @service.texture_apply(request({'revision'=>preview['revision'],'assetRevision'=>preview['assetRevision'],'materialIds'=>preview['materialIds'],'confirmed'=>true}.merge(extra)))
   end
 
   def test_preview_reports_affected_repeats_and_ratio_without_writing
@@ -90,6 +91,15 @@ class TextureAdjustTest < Minitest::Test
     rotated=@service.rotate_rep(three,90)
     assert_equal [2,1,24,2],[rotated.width,rotated.height,rotated.bits_per_pixel,rotated.row_padding]
     assert_equal "DEFABC\x00\x00".b,rotated.data
+  end
+
+  def test_apply_refuses_when_affected_materials_differ_from_preview_and_skips_no_op
+    error=assert_raises(PlanosSanto::ExportError) { apply('materialIds'=>['999']) }
+    assert_match(/vista previa/,error.message)
+    apply
+    operations=@model.operations.length
+    again=apply
+    assert again['noChanges'];assert_equal operations,@model.operations.length
   end
 
   def test_failed_verification_aborts_and_restores_files

@@ -44,7 +44,10 @@ class OclSyncTest < Minitest::Test
   end
   def teardown;FileUtils.remove_entry(@directory);end
   def edit(changes);@catalog.save([@catalog.read['items'].first.merge(changes)],@catalog.read['revision']);end
-  def sync(dry_run:false);@library.ocl_sync('dryRun'=>dry_run,'confirmed'=>true);end
+  def sync(dry_run:false)
+    preview=@library.ocl_sync('dryRun'=>true)
+    dry_run ? preview : @library.ocl_sync('dryRun'=>false,'confirmed'=>true,'planDigest'=>preview['planDigest'])
+  end
 
   def test_write_missing_records_what_planos_santo_wrote
     result=PlanosSanto::OclAttributes.write_missing(@material,@sheet)
@@ -105,6 +108,21 @@ class OclSyncTest < Minitest::Test
     row=sync['materials'].first
     assert_equal '18mm',@material.get_attribute(DICT,'std_thicknesses')
     assert_equal 'std_thicknesses',row['kept'].first['key']
+  end
+
+  def test_apply_refuses_a_plan_different_from_the_reviewed_one
+    preview=@library.ocl_sync('dryRun'=>true)
+    @material.set_attribute(DICT,'std_thicknesses','25mm')
+    assert_raises(PlanosSanto::ExportError) { @library.ocl_sync('dryRun'=>false,'confirmed'=>true,'planDigest'=>preview['planDigest']) }
+    assert_equal '25mm',@material.get_attribute(DICT,'std_thicknesses')
+    assert_nil @material.get_attribute(DICT,'type')
+  end
+
+  def test_record_never_names_keys_planos_santo_does_not_write
+    @material.set_attribute(DICT,'std_lengths','3000mm')
+    @material.set_attribute(PlanosSanto::MaterialResolver::DICT,PlanosSanto::OclAttributes::WRITTEN_KEY,JSON.generate('std_lengths'=>'3000mm'))
+    sync
+    assert_equal '3000mm',@material.get_attribute(DICT,'std_lengths')
   end
 
   def test_requires_confirmation_filters_by_item_and_aborts_on_failed_commit

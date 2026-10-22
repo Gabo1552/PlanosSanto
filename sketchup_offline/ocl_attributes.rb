@@ -15,6 +15,8 @@ module PlanosSanto
   module OclAttributes
     DICT = 'ladb_opencutlist'
     WRITTEN_KEY = 'ocl_written_v1'
+    # The only keys Planos Santo ever writes; a record can never name others.
+    KNOWN_KEYS = %w[type std_thicknesses std_sizes grained thickness std_widths].freeze
     TYPES = { 'sheet' => 2, 'edge' => 4 }.freeze
     UNKNOWN = 0
 
@@ -66,7 +68,8 @@ module PlanosSanto
       raw = material.get_attribute(MaterialResolver::DICT, WRITTEN_KEY, nil)
       return {} unless raw.is_a?(String) && raw.bytesize <= 4096
       data = JSON.parse(raw)
-      data.is_a?(Hash) && data.all? { |key, value| key.is_a?(String) && [String, Integer, TrueClass, FalseClass].any? { |type| value.is_a?(type) } } ? data : {}
+      return {} unless data.is_a?(Hash) && data.all? { |key, value| key.is_a?(String) && [String, Integer, TrueClass, FalseClass].any? { |type| value.is_a?(type) } }
+      data.select { |key, _value| KNOWN_KEYS.include?(key) }
     rescue JSON::ParserError
       {}
     end

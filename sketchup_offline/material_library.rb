@@ -126,8 +126,8 @@ module PlanosSanto
         end, 'issues' => [] }
     end
 
-    def validate_request(data)
-      raise ExportError, 'Confirmá el vínculo del material.' unless data.is_a?(Hash) && data['confirmed'] == true && data['revision'].is_a?(Integer)
+    def validate_request(data, message = 'Confirmá el vínculo del material.')
+      raise ExportError, message unless data.is_a?(Hash) && data['confirmed'] == true && data['revision'].is_a?(Integer)
       if data.key?('assetRevision') && !(data['assetRevision'].is_a?(Integer) && data['assetRevision'] >= 0)
         raise ExportError, 'La revisión de activos debe ser un entero no negativo.'
       end
@@ -136,8 +136,11 @@ module PlanosSanto
       end
     end
 
-    def locked(data)
-      validate_request(data)
+    # Older callers pass a braceless string-keyed hash, which Ruby 3 routes to
+    # **request; both forms are accepted.
+    def locked(data = nil, confirm_message: 'Confirmá el vínculo del material.', **request)
+      data = request if data.nil?
+      validate_request(data, confirm_message)
       FileUtils.mkdir_p(@directory)
       File.open(File.join(@directory, 'catalog.lock'), File::RDWR | File::CREAT, 0o600) do |catalog_lock|
         raise ExportError, 'La biblioteca está ocupada.' unless catalog_lock.flock(File::LOCK_EX | File::LOCK_NB)
@@ -495,7 +498,7 @@ module PlanosSanto
     def duplicate(data)
       raise ExportError,'Confirmá duplicar la ficha.' unless data.is_a?(Hash) && data['confirmed']==true
       raise ExportError,'Nombre de copia inválido.' if data.key?('name') && !data['name'].nil? && !data['name'].is_a?(String)
-      locked(data) do |catalog,index|
+      locked(data,confirm_message:'Confirmá duplicar la ficha.') do |catalog,index|
         source=catalog['items'].find { |item| item['id']==data['catalogId'] }
         raise ExportError,'La ficha ya no existe en la biblioteca.' unless source
         name=data['name'].nil? ? copy_name(source['name'],catalog) : @catalog.text(data['name'])
@@ -517,14 +520,25 @@ module PlanosSanto
         end
         begin
           publish_catalog_locked(catalog,data['revision'])
-        rescue StandardError
-          (previous_index ? atomic_write(@path,previous_index) : File.delete(@path)) if record
+        rescue Exception
+          begin
+            (previous_index ? atomic_write(@path,previous_index) : File.delete(@path)) if record
+          rescue StandardError => restore_error
+            warn("Planos Santo: no se pudo restaurar material-assets.json: #{restore_error.class}")
+          end
           raise
         end
         warnings=['La copia queda pendiente de aprobación para maderera: revisá su ficha antes de pedir.']
         warnings << 'Comparte la foto o el SKM de la ficha original; no se duplicaron archivos.' if MaterialPolicy.photo?(copy) || MaterialPolicy.skm_import?(copy) || record
         {'catalog'=>catalog,'catalogId'=>copy['id'],'duplicatedFrom'=>source['id'],'name'=>copy['name'],'warnings'=>warnings}
       end
+    end
+
+    # Restoring may name records whose item was deleted (they are cleaned up).
+    def check_archive_ids!(catalog,ids,archived)
+      known=archived ? [] : archived_ids
+      missing=ids.reject { |id| catalog['items'].any? { |item| item['id']==id } || known.include?(id) }
+      raise ExportError,'Alguna ficha ya no existe en la biblioteca; volvé a cargarla.' unless missing.empty?
     end
 
     def archive_rows(catalog,ids)
@@ -550,27 +564,34 @@ module PlanosSanto
       raise ExportError,'Indicá si archivar o restaurar.' unless [true,false].include?(data['archived'])
       raise ExportError,'Vista previa inválida.' if data.key?('dryRun') && ![true,false].include?(data['dryRun'])
       catalog=@catalog.read
-      missing=ids.reject { |id| catalog['items'].any? { |item| item['id']==id } }
-      raise ExportError,'Alguna ficha ya no existe en la biblioteca; volvé a cargarla.' unless missing.empty?
+      check_archive_ids!(catalog,ids,data['archived'])
       if data['dryRun']==true
         raise ExportError,'La biblioteca cambió; volvé a cargarla.' unless data['revision']==catalog['revision']
         current=archived_ids
         changed=ids.count { |id| current.include?(id)!=data['archived'] }
         return {'archivedIds'=>current,'changed'=>changed,'rows'=>archive_rows(catalog,ids),'noChanges'=>true,'dryRun'=>true}
       end
-      locked(data) do |locked_catalog,_index|
+      locked(data,confirm_message:'Confirmá archivar o restaurar las fichas.') do |locked_catalog,_index|
+        check_archive_ids!(locked_catalog,ids,data['archived'])
         current=states
-        rows=archive_rows(locked_catalog,ids)
+        if data.key?('statesRevision') && data['statesRevision']!=current['revision']
+          raise ExportError,'Las fichas archivadas cambiaron en otra ventana; volvé a cargar la biblioteca.'
+        end
+        rows=archive_rows(locked_catalog,ids.select { |id| locked_catalog['items'].any? { |item| item['id']==id } })
+        existing=locked_catalog['items'].map { |item| item['id'] }
+        orphans=current['records'].count { |row| !existing.include?(row['catalogId']) }
         before=current['records'].map { |row| row['catalogId'] }
+        # Records of deleted items are dropped on every write (lossless: the item is gone).
+        current['records'].select! { |row| existing.include?(row['catalogId']) }
         if data['archived']
           now=Time.now.utc.iso8601
-          ids.each { |id| current['records'] << {'catalogId'=>id,'archived'=>true,'archivedAt'=>now} unless before.include?(id) }
+          ids.each { |id| current['records'] << {'catalogId'=>id,'archived'=>true,'archivedAt'=>now} unless current['records'].any? { |row| row['catalogId']==id } }
         else
           current['records'].reject! { |row| ids.include?(row['catalogId']) }
         end
         after=current['records'].map { |row| row['catalogId'] }
         changed=(before-after).length+(after-before).length
-        if changed.zero?
+        if changed.zero? && orphans.zero?
           next {'archivedIds'=>after,'changed'=>0,'rows'=>rows,'noChanges'=>true}
         end
         current['revision']+=1
@@ -599,7 +620,10 @@ module PlanosSanto
         plan=OclAttributes.plan(material,item)
         {'materialId'=>material_id(material),'name'=>material.name.to_s,'catalogId'=>item['id']}.merge(plan)
       end
-      return {'dryRun'=>true,'changed'=>rows.count { |row| !row['changes'].empty? },'materials'=>rows,'noChanges'=>true} if dry_run
+      digest=Digest::SHA256.hexdigest(JSON.generate([catalog['revision'],rows]))
+      return {'dryRun'=>true,'changed'=>rows.count { |row| !row['changes'].empty? },'materials'=>rows,'planDigest'=>digest,'noChanges'=>true} if dry_run
+      # The applied plan must be exactly the one the operator reviewed.
+      raise ExportError,'Los materiales o la ficha cambiaron desde la vista previa; volvé a revisar la sincronización.' unless data['planDigest']==digest
       changing=targets.zip(rows).select { |_pair,row| !row['changes'].empty? || !row['kept'].empty? }
       return {'dryRun'=>false,'changed'=>0,'materials'=>rows,'noChanges'=>true} if changing.none? { |_pair,row| !row['changes'].empty? }
       raise ExportError,'No se pudo iniciar la operación.' if @model.start_operation('Planos Santo — sincronizar OpenCutList',true)==false
@@ -906,7 +930,7 @@ module PlanosSanto
       raise ExportError,'Confirmá la importación después de revisar el paquete.' unless confirmed==true
       raise ExportError,'Vista previa vencida; volvé a elegir el paquete.' unless @pending && token==@pending['token'] && revision==@pending['revision']
       raise ExportError,'Selección de fichas inválida.' unless selected_ids.is_a?(Array) && selected_ids.uniq==selected_ids && selected_ids.all? { |id| id.is_a?(String) && @pending['rows'].any? { |row| row['id']==id } } && renames.is_a?(Hash)
-      result=@library.locked('revision'=>revision,'confirmed'=>true) do |catalog,index|
+      result=@library.locked({'revision'=>revision,'confirmed'=>true},confirm_message:'Confirmá la importación del paquete.') do |catalog,index|
         selected=@pending['rows'].select { |row| selected_ids.include?(row['id']) && row['status']!='duplicate' }
         used=catalog['items'].map { |item| @library.normalized_name(item['name']) }
         mapping={}
@@ -920,7 +944,7 @@ module PlanosSanto
           id=SecureRandom.uuid
           id=SecureRandom.uuid while catalog['items'].any? { |existing| existing['id']==id } || mapping.value?(id)
           mapping[item['id']]=id
-          item.merge!('id'=>id,'name'=>name,'approved'=>false,'updatedAt'=>Time.now.utc.iso8601)
+          item.merge!('id'=>id,'name'=>name,'approved'=>false,'favorite'=>false,'updatedAt'=>Time.now.utc.iso8601)
           [item,row]
         end
         candidates.each { |item,_row| item['compatibleIds']=item['compatibleIds'].filter_map { |old| mapping[old] } }
