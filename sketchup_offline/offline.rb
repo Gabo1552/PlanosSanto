@@ -458,7 +458,7 @@ module PlanosSanto
         result = @session.scan
         @dirty = false
         result
-      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_edges','order_audit','ocl_open'
+      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_edges','order_audit','order_propose','order_confirm_bulk','order_apply','ocl_open'
         active!
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -487,6 +487,9 @@ module PlanosSanto
           when 'order_plan' then workshop.plan(data['reset']==true)
           when 'order_save' then workshop.save_plan(data.fetch('plan'))
           when 'order_check' then workshop.check(data.fetch('plan'))
+          when 'order_propose' then workshop.propose(data.fetch('plan'),data['ids'])
+          when 'order_confirm_bulk' then workshop.confirm_bulk(data.fetch('plan'),data['ids'])
+          when 'order_apply' then workshop.apply_rows(data.fetch('plan'),data.fetch('sourceId'),data.fetch('targetIds'),data.fetch('groups'))
           when 'order_export'
             path= with_user_dialog { UI.select_directory(title:'Elegir carpeta para TXT y manifiesto') }
             return {'cancelled'=>true} unless path
