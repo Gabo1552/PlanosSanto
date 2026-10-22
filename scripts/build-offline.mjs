@@ -49,7 +49,10 @@ const copies={
 for(const action of ['sheet','edge','remove_edge','sample','furniture','order','guides','materials','main']){
   for(const size of [24,32])copies[`planos_santo/icons/${action}-${size}.png`]=`sketchup_offline/icons/${action}-${size}.png`;
 }
+// Own paint cursors (Hito 2, PINTURA-12); the Tool degrades to the native cursor if one is missing.
+for(const key of ['piece','edge','remove','blocked'])copies[`planos_santo/cursors/paint-${key}.png`]=`sketchup_offline/cursors/paint-${key}.png`;
 await mkdir(resolve(out,'planos_santo/icons'),{recursive:true});
+await mkdir(resolve(out,'planos_santo/cursors'),{recursive:true});
 for(const [target,source] of Object.entries(copies)){
   if(target==='planos_santo/exporter.rb'){
     const original=await readFile(resolve(root,source),'utf8');
