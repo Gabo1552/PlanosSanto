@@ -167,3 +167,12 @@ aserción nueva en `tests/offline/hito2-pincel.spec.ts`.
 | `vitest` | 322/322 | 322/322 |
 | Ruby offline | todas en verde | todas en verde |
 | Playwright offline | 218/219 (falla inestable: pendiente 3) | **219/219** |
+
+### Tercera tanda (sobre `f2d9334`: incluye 0.8.11 candidata y Hito 4; dos pasadas seguidas)
+
+| Paso | Pasada 1 | Pasada 2 |
+|---|---|---|
+| `tsc` / `eslint` / build | OK | OK |
+| `vitest` | 330/330 | 330/330 |
+| Ruby offline | todas en verde | todas en verde |
+| Playwright offline | **223/223** | **223/223** |
