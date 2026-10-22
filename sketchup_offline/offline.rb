@@ -861,9 +861,6 @@ module PlanosSanto
         advanced={select_material:lambda { |catalog_id,mode| tool_guard!(generation);smart_select_material(catalog_id,mode) },
           recents:lambda { |mode| generation==(@tool_generation || 0) ? smart_recent_materials(mode) : [] },
           eyedropper_key:smart_settings['eyedropperKey'] || 'alt'}
-        # Only the keywords the installed Tool accepts (a Tool without Hito 7 keeps working).
-        accepted=SmartPaintTool.instance_method(:initialize).parameters
-        advanced.select! { |key,_| accepted.any? { |type,name| type==:keyrest || name==key } }
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
           guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
           remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
