@@ -206,7 +206,7 @@ module PlanosSanto
     end
     def signature(event)
       hover=event['hover'] || {};verdict=hover['verdict'] || {}
-      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],hover['sharedTruncated'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode']]
+      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],hover['sharedTruncated'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode'],hover['depth']]
     end
     def schedule_flush
       return if @flush_scheduled || !(defined?(UI) && UI.respond_to?(:start_timer))
@@ -271,11 +271,12 @@ module PlanosSanto
     end
     def draw_tooltip(view)
       return unless immediate? && @hover && @mouse && view.respond_to?(:draw_text)
-      scale=defined?(UI) && UI.respond_to?(:scale_factor) ? UI.scale_factor.to_f : 1.0
+      scale=ui_scale
       klass=defined?(Geom::Point3d) ? Geom::Point3d : Sketchup::Point
       x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
       info=material_info
-      line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'],@hover['sharedTruncated'])].join(' · ')
+      depth=@hover['depth']
+      line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'],@hover['sharedTruncated']),depth && "#{depth['index']}/#{depth['count']} bajo el cursor"].compact.join(' · ')
       line2=blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
       color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
       view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
@@ -346,8 +347,47 @@ module PlanosSanto
     end
     def hit(view,x,y)
       picker=view.pick_helper;picker.do_pick(x,y)
-      return nil if picker.respond_to?(:count) && picker.count.zero?
-      path=picker.path_at(0);leaf=picker.leaf_at(0)
+      count=picker.respond_to?(:count) ? picker.count : 1
+      return (@stack_ids=nil) if count.zero?
+      first=target_at(picker,0)
+      return (@stack_ids=nil) unless first
+      list=[first]
+      # PINTURA-11: distinct pieces under the cursor, nearest first. A deeper
+      # pick never replaces an unresolved nearest one (validation 0.8.10 R1).
+      (1...count).each do |index|
+        break if list.length>=16
+        target=begin
+          target_at(picker,index)
+        rescue ExportError
+          nil
+        end
+        list << target if target && list.none? { |row| row['pieceId']==target['pieceId'] }
+      end if immediate?
+      choose_depth(list,x,y)
+    end
+    def ui_scale;defined?(UI) && UI.respond_to?(:scale_factor) ? UI.scale_factor.to_f : 1.0;end
+    DEPTH_PX=6
+    # The chosen depth survives moves under 6 px (x UI scale) over the same pieces.
+    def choose_depth(list,x,y)
+      ids=list.map { |row| row['pieceId'] };@stack_ids=ids
+      kept=@depth && @depth[:ids]==ids && Math.hypot(x-@depth[:at][0],y-@depth[:at][1])<DEPTH_PX*ui_scale
+      @depth=nil unless kept
+      index=kept ? @depth[:index] : 0
+      list.length>1 ? list[index].merge('depth'=>{'index'=>index+1,'count'=>list.length}) : list[index]
+    end
+    def depth_step(step,view)
+      ids=@stack_ids
+      return emit('No hay otra pieza bajo el cursor.') unless ids && ids.length>1 && @mouse
+      @depth={ids:ids,index:((@depth ? @depth[:index] : 0)+step)%ids.length,at:@mouse.dup}
+      @instant_hover=true
+      begin
+        onMouseMove(0,@mouse[0],@mouse[1],view)
+      ensure
+        @instant_hover=false
+      end
+    end
+    def target_at(picker,index)
+      path=picker.path_at(index);leaf=picker.leaf_at(index)
       path=path.to_a if path.respond_to?(:to_a)
       return nil unless path.is_a?(Array)
       if defined?(Sketchup::Edge) && leaf.is_a?(Sketchup::Edge)
@@ -361,9 +401,8 @@ module PlanosSanto
       active=(@model.respond_to?(:active_path) && @model.active_path) || []
       active=active.to_a
       cache_key=[path,active]
-      if immediate? && @pick_cache && @pick_cache[:key]==cache_key
-        return @pick_cache[:target] if path.all? { |entity| !entity.respond_to?(:valid?) || entity.valid? }
-      end
+      cached=immediate? && @pick_cache && @pick_cache[cache_key]
+      return cached if cached && path.all? { |entity| !entity.respond_to?(:valid?) || entity.valid? }
       roots=@model.entities.to_a
       unless roots.include?(path.first)
         raise ExportError,'La cara no tiene una ruta de instancia completa.' if active.empty?
@@ -385,7 +424,10 @@ module PlanosSanto
       name=instances.last.name.to_s
       name=instances.last.definition.name.to_s if name.empty?
       target={'pieceId'=>piece_id,'faceIds'=>[persistent(leaf)],'_face'=>leaf,'_instances'=>instances,'name'=>name}
-      @pick_cache={key:cache_key,target:target} if immediate?
+      if immediate?
+        @pick_cache=nil if @pick_cache && @pick_cache.length>64
+        (@pick_cache ||= {})[cache_key]=target
+      end
       target
     end
     def service_options(targets)
@@ -402,6 +444,7 @@ module PlanosSanto
         copies=copies_of(target);@shared_count=[copies.length,1].max;@shared_truncated=@occurrences.truncated?
         @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>@shared_count}
         @hover['sharedTruncated']=true if @shared_truncated
+        @hover['depth']=target['depth'] if target['depth']
         verdict=verdict_for(target)
         if verdict
           @hover['expandedFaceIds']=verdict['expandedFaceIds'];@hover['verdict']={'ok'=>verdict['ok'],'reason'=>verdict['reason']}
@@ -414,7 +457,7 @@ module PlanosSanto
             end
             @triangles,@normal_line=main
           end
-          emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'],hover:true)
+          emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'],hover:hover_kind)
           return
         end
         if @options['mode']=='sheet'
@@ -426,7 +469,7 @@ module PlanosSanto
         else
           build_overlay(target)
         end
-        emit(@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.',hover:true)
+        emit(@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.',hover:hover_kind)
         return
       end
       result=@service.preview(service_options([target_data(target)]))
@@ -437,6 +480,8 @@ module PlanosSanto
       build_preview_overlay(target,result)
       emit((result['warnings'] || []).join(' ').empty? ? 'Cara preparada; revisá la ruta y hacé clic para aplicar.' : result['warnings'].join(' '),hover:true)
     end
+    # A depth change (keyboard) is instant; plain hovers go through the limiter.
+    def hover_kind;@instant_hover ? :clear : true;end
     def overlay_faces(target,faces)
       triangles=[];normals=[]
       faces.each { |face| build_overlay(target.merge('_face'=>face));triangles.concat(@triangles);normals.concat(@normal_line) }
@@ -616,7 +661,11 @@ module PlanosSanto
       elsif [37,38,39,40].include?(key)
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
-        keyboard_material([37,38].include?(key));invalidate(view);true
+        # Immediate: Up/Down pick the piece behind (PINTURA-11), Left/Right the material.
+        if immediate? && [38,40].include?(key) then depth_step(key==40 ? 1 : -1,view)
+        else keyboard_material([37,38].include?(key))
+        end
+        invalidate(view);true
       end
     rescue StandardError=>error
       @service.cancel;emit('No se aplicó la selección.',error:error.message);invalidate(view)

@@ -65,3 +65,58 @@ class Hito7RebateTest < Minitest::Test
     click_on(@doors[0]);assert_match(/no es una placa rectangular/,@events.last['error']);assert_equal operations,@model.operations.length
   end
 end
+
+# PINTURA-11: Up/Down walk the distinct pieces under the cursor.
+class Hito7DepthTest < Minitest::Test
+  include Hito2Fixture
+  def setup
+    build_fixture;paint_sheet_on_board!;UI.hito2_timers=[];@now=0.0
+    build_tool(tool_options('sheet'),clock:-> { @now })
+    @stack=Hito7Picker.new;@view=Hito2View.new(@stack)
+    @stack.rows=[row(@doors[0],1),row(@doors[0],3),row(@doors[1],1),row(@doors[2],0)] # door 1 twice: one piece
+  end
+  def row(door,index);face=faces_of(door)[index];[[@root,door,face],face];end
+  def move(x=40,y=50);@tool.onMouseMove(0,x,y,@view);end
+  def key(code);@tool.onKeyDown(code,1,0,@view);end
+  def hover;@tool.status['hover'];end
+  def test_down_and_up_cycle_the_distinct_pieces_nearest_first_and_emit_at_once
+    move;assert_equal '1/11',hover['pieceId'];assert_equal({'index'=>1,'count'=>3},hover['depth'])
+    count=@events.length;@now=0.01
+    assert key(40);assert_equal '1/12',hover['pieceId'];assert_equal({'index'=>2,'count'=>3},hover['depth'])
+    assert_equal count+1,@events.length;assert_equal({'index'=>2,'count'=>3},@events.last['hover']['depth'])
+    key(40);assert_equal '1/13',hover['pieceId'];key(40);assert_equal '1/11',hover['pieceId'] # wraps
+    key(38);assert_equal '1/13',hover['pieceId']
+    @tool.onKeyDown(40,2,0,@view);assert_equal '1/13',hover['pieceId'] # repeat ignored
+    assert_equal binding_of(@sheet)['uuid'],@tool.status['options']['materialUuid'];assert_empty @model.operations
+  end
+  def test_the_click_paints_the_chosen_piece_only
+    move;key(40);undo=@model.undo_states.length
+    @board.entities.first(2).each { |face| face.material=nil;face.back_material=nil }
+    @model.observers.each { |o| o.onTransactionCommit(@model) };move
+    assert_equal '1/12',hover['pieceId']
+    @tool.onLButtonDown(0,41,50,@view)
+    assert @events.last['changed'];assert_equal undo+1,@model.undo_states.length
+    assert faces_of(@doors[1]).first(2).all? { |face| face.material.equal?(@sheet) }
+    assert faces_of(@doors[0]).first(2).none? { |face| face.material.equal?(@sheet) }
+  end
+  def test_the_choice_survives_small_moves_and_resets_on_a_long_move_or_a_new_list
+    move;key(40);move(45,50);assert_equal '1/12',hover['pieceId'] # 5 px < 6 px * scale 2
+    move(40+13,50);assert_equal '1/11',hover['pieceId'];assert_equal 1,hover['depth']['index']
+    move;key(40);@stack.rows=@stack.rows.first(3);move;assert_equal '1/11',hover['pieceId'];assert_equal 2,hover['depth']['count']
+  end
+  def test_tooltip_counts_the_pieces_and_a_single_piece_has_no_depth
+    move;key(40);@tool.draw(@view)
+    assert_equal 'Puerta 2 · Pieza · Solo esta (de 4) · 2/3 bajo el cursor',@view.texts[-2][1]
+    @stack.rows=[row(@doors[3],1)];move;refute hover.key?('depth')
+    key(40);assert_match(/No hay otra pieza bajo el cursor/,@events.last['message']);assert_equal '1/14',hover['pieceId']
+  end
+  def test_left_and_right_still_change_the_material
+    other={'catalogId'=>'otra','materialUuid'=>'otra-uuid','name'=>'Otra'}
+    @smart.define_singleton_method(:material_choices) { |_data| [other] }
+    move;key(39);assert_equal 'otra-uuid',@tool.status['options']['materialUuid']
+  end
+  def test_an_unresolved_nearest_pick_keeps_refusing_instead_of_taking_a_deeper_piece
+    @stack.rows=[[[@root,@doors[0]],Object.new],row(@doors[1],1)];move
+    assert_nil hover;key(40);assert_nil hover
+  end
+end
