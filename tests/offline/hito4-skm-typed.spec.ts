@@ -48,8 +48,8 @@ test('vista previa SKM: tipo por fila prellenado, tipo en lote para los seleccio
  await expect(modal.getByLabel('Tipo de Melamina Blanca 18mm.skm')).toHaveValue('edge');await expect(modal.getByLabel('Tipo de Textura libre.skm')).toHaveValue('edge');
  await modal.getByLabel('Tipo de Melamina Blanca 18mm.skm').selectOption('sheet');
  const suggest=batch.getByLabel('Usar el espesor sugerido por el nombre del archivo como sugerencia (sin aprobar)');await expect(suggest).not.toBeChecked();await suggest.check();
- await expect(modal).toContainText('El espesor se guarda solo como sugerencia, sin aprobar.');
- await modal.getByRole('button',{name:'Importar 2 pendientes',exact:true}).click();await expect(modal).toHaveCount(0);
+ await expect(modal).toContainText('El espesor se precarga en la ficha; corregilo si no coincide.');
+ await modal.getByRole('button',{name:'Importar 2 materiales',exact:true}).click();await expect(modal).toHaveCount(0);
  const commit=calls.filter(call=>call.action==='skm_commit_typed');expect(commit).toHaveLength(1);expect(calls.some(call=>call.action==='skm_commit')).toBe(false);
  expect(commit[0].data).toEqual({token:'typed-token',revision:4,selectedIds:['1','3'],renames:{},confirmed:true,kinds:{'1':'sheet','3':'edge'},applySuggestions:true});
 });

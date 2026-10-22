@@ -353,10 +353,10 @@ test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin toca
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
  await page.getByRole('button',{name:'Importar JSON…',exact:true}).click();
  await page.getByRole('button',{name:/Placa prueba E2E/}).click();
- await expect(page.getByLabel('Datos revisados y aprobados para este producto')).not.toBeChecked();
+ await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, espesor, largo, ancho, veta');await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);
  await page.getByLabel('SKU de biblioteca').fill('PL-E2E');await page.getByLabel('Proveedor de biblioteca').fill('Proveedor sintético');
  await page.getByLabel('Espesor de biblioteca').fill('19.05');await page.getByLabel('Ancho de biblioteca').fill('2000');await page.getByLabel('Largo de biblioteca').fill('3000');
- await page.getByLabel('Veta de biblioteca').selectOption('false');await page.getByLabel('Datos revisados y aprobados para este producto').check();
+ await page.getByLabel('Veta de biblioteca').selectOption('false');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
  await page.getByRole('button',{name:'Guardar biblioteca',exact:true}).click();await expect(page.getByRole('status')).toContainText('Biblioteca guardada');
  await page.setViewportSize({width:1000,height:800});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
@@ -364,44 +364,41 @@ test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin toca
  await page.screenshot({path:'artifacts/biblioteca-068-SINTETICA-1000px.png',fullPage:false});
  expect(await snapshot()).toEqual(before);
  await page.getByRole('button',{name:'Exportar copia…',exact:true}).click();await expect(page.getByRole('status')).toContainText('Copia de biblioteca exportada');
- const library=JSON.parse(await readFile(resolve(info.outputDir,'biblioteca-exportada.json'),'utf8'));expect(library.items[0].price).toBeNull();expect(library.items[0].approved).toBe(true);
+ const library=JSON.parse(await readFile(resolve(info.outputDir,'biblioteca-exportada.json'),'utf8'));expect(library.items[0].price).toBeNull();expect(library.items[0].approved).toBe(false);// la casilla vieja queda en el JSON por compatibilidad, sin usarse
  await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();await page.reload();
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
- await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.getByLabel('Datos revisados y aprobados para este producto')).toBeChecked();
- await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.getByLabel('Datos revisados y aprobados para este producto')).not.toBeChecked();
+ await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
+ await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
+ await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toContainText('Falta: espesor');
  page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();
  expect(await snapshot()).toEqual(before);
 });
 
-test('pedido: revisa cada pieza, guarda borrador y genera lotes TXT reales con trazabilidad',async({page},info)=>{
+test('pedido: propuesto desde el modelo, guardado solo y lotes TXT reales sin tildes',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();
  const added=await send('catalog_add',{revision:0,item:{name:'Placa E2E',kind:'sheet'}});expect(added.error).toBeNull();
  const library=added.result as {catalog:{revision:number;items:Record<string,unknown>[]}};
- Object.assign(library.catalog.items[0],{sku:'TEST-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true});
+ Object.assign(library.catalog.items[0],{sku:'TEST-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false});
  const saved=await send('catalog_save',{revision:library.catalog.revision,items:library.catalog.items});expect(saved.error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();
- await page.getByRole('button',{name:'Revisar pedido y costo neto',exact:true}).click();await expect(page.getByRole('alert')).toContainText('Elegí ejes');
+ const summary=page.getByRole('dialog').locator('#workshop-problems-summary');await expect(summary).toHaveText('3 piezas con 3 problemas que impiden exportar.');
  const select=page.getByLabel('Pieza del pedido'),ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));expect(ids).toHaveLength(3);
  for(const id of ids){
-  await select.selectOption(id);await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
-  await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeVisible();
-  await page.getByLabel('Placa aprobada del pedido').selectOption(library.catalog.items[0].id as string);
-  await page.getByLabel('Dirección de veta en esta vista').selectOption('none');await page.getByLabel('Veta / rotación del pedido').selectOption('locked');
-  await page.getByLabel('Origen de la revisión de cantos').selectOption('manual');await page.getByLabel('Motivo y fuente de la inspección manual').fill('Cantos sintéticos inspeccionados en modelo de prueba');
-  await page.getByLabel('Medidas que recibe la maderera').selectOption('finished_accepted');await page.getByLabel('Fuente / explicación de la revisión').fill('Dimensiones sintéticas verificadas para prueba de proveedor');
-  for(const label of ['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con la maderera','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'])await page.getByLabel(label,{exact:true}).check();
+  // Ejes, cara, veta y medidas vienen propuestos del modelo: solo falta la placa, que el doble no tiene pintada.
+  await select.selectOption(id);await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeVisible();
+  await page.getByLabel('Placa del pedido').selectOption(library.catalog.items[0].id as string);
  }
+ await expect(summary).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
  await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeInViewport({ratio:0.9});
  await expect(page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true})).toBeInViewport();
  await page.screenshot({path:'artifacts/pedido-068-SINTETICO-2D.png',fullPage:false});
- await page.getByRole('button',{name:'Guardar borrador del pedido',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('Borrador guardado');
+ // Se guardó solo: al cerrar no se pregunta nada y al reabrir sigue igual.
  await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();
- await expect(page.getByLabel('Orientación y cara verificadas')).toBeChecked();
- await page.getByRole('button',{name:'Revisar pedido y costo neto',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('Pedido coherente');
+ await expect(page.getByLabel('Placa del pedido')).toHaveValue(library.catalog.items[0].id as string);await expect(summary).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
  await expect(page.locator('.workshop-figures dd').nth(2)).toHaveText('3');await expect(page.locator('.workshop-estimate-table tbody tr')).toHaveCount(3);
- await page.getByRole('button',{name:'Exportar TXT de prueba…',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
+ await page.getByRole('button',{name:'Exportar TXT…',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
  const folders=(await readdir(info.outputDir)).filter(name=>name.startsWith('PlanosSanto-pedido-'));expect(folders).toHaveLength(1);
  const manifest=JSON.parse(await readFile(resolve(info.outputDir,folders[0],'manifest.json'),'utf8'));expect(manifest.production_ready).toBe(false);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(manifest.columns).toHaveLength(9);
  const txt=await readFile(resolve(info.outputDir,folders[0],'lote-01.txt'),'utf8');for(const row of txt.trim().split('\r\n'))expect(row.split('\t')).toHaveLength(9);
@@ -437,38 +434,36 @@ test('interior conserva la tabla agrupada y las instancias físicas al cambiar d
  expect((await snapshot()).geometryHash).toBe(before.geometryHash);
 });
 
-test('cantos por cara: vinculación explícita, cuatro lados y TXT auditado sin pintar el SKP',async({page},info)=>{
+test('cantos por cara: se leen solos de las caras, se vinculan los materiales sin ficha y el TXT sale auditado sin pintar el SKP',async({page},info)=>{
  await boot(page,info.outputDir,'materials-edges');const before=await snapshot();
  let response=await send('catalog_add',{revision:0,item:{name:'Placa observable',kind:'sheet'}});
  let library=(response.result as {catalog:{revision:number;items:Record<string,unknown>[]}}).catalog;
  response=await send('catalog_add',{revision:library.revision,item:{name:'Principal biblioteca',kind:'edge'}});library=(response.result as {catalog:typeof library}).catalog;
  response=await send('catalog_add',{revision:library.revision,item:{name:'Secundario biblioteca',kind:'edge'}});library=(response.result as {catalog:typeof library}).catalog;
  const [board,first,second]=library.items;
- Object.assign(board,{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true,compatibleIds:[first.id,second.id]});
- for(const [index,edge] of [first,second].entries())Object.assign(edge,{sku:`EDGE-${index+1}`,supplier:'Prueba',thicknessMm:index?1:.8,widthMm:22,approved:true});
+ Object.assign(board,{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false});
+ for(const [index,edge] of [first,second].entries())Object.assign(edge,{sku:`EDGE-${index+1}`,supplier:'Prueba',thicknessMm:index?1:.8,widthMm:22});
  response=await send('catalog_save',{revision:library.revision,items:library.items});expect(response.error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog');await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
- await panel.getByRole('button',{name:'Ver piezas bloqueadas',exact:true}).click();await expect(panel.getByLabel('Piezas bloqueadas').locator(':scope > li')).toHaveCount(3);
+ await expect(panel.getByLabel('Piezas con problemas').locator(':scope > li')).toHaveCount(3);
+ const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});
+ await links.getByLabel('Canto de biblioteca para Canto de prueba').selectOption(first.id as string);await links.getByLabel('Canto de biblioteca para Canto secundario de prueba').selectOption(second.id as string);
+ await expect(panel.getByRole('region',{name:'Cantos del pedido'})).toContainText('EDGE-2');
  const select=page.getByLabel('Pieza del pedido'),ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));
+ const values=()=>Promise.all(['Arriba','Abajo','Izquierda','Derecha'].map(side=>page.getByLabel(`${side} · canto del pedido`).inputValue()));
  for(const id of ids){
-  await select.selectOption(id);await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
-  await page.getByLabel('Placa aprobada del pedido').selectOption(board.id as string);await page.getByLabel('Canto principal (1) del pedido').selectOption(first.id as string);await page.getByLabel('Canto secundario (2) del pedido').selectOption(second.id as string);
-  await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await expect(panel.getByText('Recorrido completo',{exact:true})).toBeVisible();
-  await page.getByLabel(/\(material:888\)$/).selectOption(first.id as string);await page.getByLabel(/\(material:890\)$/).selectOption(second.id as string);
-  await panel.getByRole('button',{name:'Usar propuesta de los cuatro lados',exact:true}).click();
-  await expect(page.getByLabel('Arriba · canto del pedido')).toHaveValue('1');await expect(page.getByLabel('Abajo · canto del pedido')).toHaveValue('0');await expect(page.getByLabel('Izquierda · canto del pedido')).toHaveValue('2');await expect(page.getByLabel('Derecha · canto del pedido')).toHaveValue('0');
-  await page.getByLabel('Dirección de veta en esta vista').selectOption('none');await page.getByLabel('Veta / rotación del pedido').selectOption('locked');await page.getByLabel('Medidas que recibe la maderera').selectOption('finished_accepted');await page.getByLabel('Fuente / explicación de la revisión').fill('Dimensiones sintéticas aceptadas para probar formato');
-  for(const label of ['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con la maderera','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'])await page.getByLabel(label,{exact:true}).check();
+  await select.selectOption(id);await page.getByLabel('Placa del pedido').selectOption(board.id as string);
+  expect((await values()).sort()).toEqual(['0','0','1','2']);
  }
- await panel.getByRole('button',{name:'Revisar pedido y costo neto',exact:true}).click();await expect(panel.getByRole('status')).toContainText('Pedido coherente');
+ await expect(panel.locator('#workshop-problems-summary')).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
  await page.screenshot({path:'artifacts/cantos-069-SINTETICO.png',fullPage:false});
- await panel.getByRole('button',{name:'Exportar TXT de prueba…',exact:true}).click();await expect(panel.getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
+ await panel.getByRole('button',{name:'Exportar TXT…',exact:true}).click();await expect(panel.getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
  const folder=(await readdir(info.outputDir)).find(name=>name.startsWith('PlanosSanto-pedido-'))!,manifest=JSON.parse(await readFile(resolve(info.outputDir,folder,'manifest.json'),'utf8'));
- expect(manifest.lots).toHaveLength(1);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(manifest.lots[0].sourceRows.every((row:{edgeResolution:string})=>row.edgeResolution==='observed')).toBe(true);expect(manifest.production_ready).toBe(false);
+ expect(manifest.lots).toHaveLength(1);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(Object.values(manifest.lots[0].edgeSource)).toEqual(['model','model','model']);expect(manifest.production_ready).toBe(false);
  const {execFileSync}=await import('node:child_process');execFileSync('python3',['planos-santo-loop-068/scripts/validar_txt_maderera.py',resolve(info.outputDir,folder,'lote-01.txt')]);
  const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);
- // Reversing the shown face invalidates confirmations and relocates the observed left edge.
- await page.getByLabel('Cara mostrada de la vista 2D').selectOption('-1');await expect(page.getByLabel('Los cuatro cantos coinciden con esta vista')).not.toBeChecked();
- await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await panel.getByRole('button',{name:'Usar propuesta de los cuatro lados',exact:true}).click();await expect(page.getByLabel('Izquierda · canto del pedido')).toHaveValue('0');await expect(page.getByLabel('Derecha · canto del pedido')).toHaveValue('2');
+ // Reversing the shown face keeps every edge on its physical face: left and right swap, nothing is re-read or lost.
+ const sidesBefore=await values(),face=page.getByLabel('Cara mostrada de la vista 2D');await face.selectOption((await face.inputValue())==='1'?'-1':'1');
+ expect(await values()).toEqual([sidesBefore[0],sidesBefore[1],sidesBefore[3],sidesBefore[2]]);await expect(panel.getByText('Cantos leídos de las caras pintadas del modelo.',{exact:true})).toBeVisible();
 });

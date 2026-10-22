@@ -45,7 +45,7 @@ module PlanosSanto
       raise ExportError,'Opción de código en el detalle inválida.' unless DETAIL_CODES.include?(draft.fetch('detailCode','none'))
       proposed=draft.fetch('proposed',{})
       shape=proposed.is_a?(Hash) && proposed.length<=MAX_ROWS && proposed.all? do |id,entry|
-        id.is_a?(String) && entry.is_a?(Hash) && entry['values'].is_a?(Hash) && entry.fetch('edgeBlockers',[]).is_a?(Array) && entry.fetch('edgeBlockers',[]).all?(String) &&
+        id.is_a?(String) && entry.is_a?(Hash) && entry['values'].is_a?(Hash) && [nil,true,false].include?(entry['mirrored']) && entry.fetch('edgeBlockers',[]).is_a?(Array) && entry.fetch('edgeBlockers',[]).all?(String) &&
           entry.fetch('notes',[]).is_a?(Array) && entry.fetch('notes',[]).all? { |n| n.is_a?(Hash) && NOTE_GROUPS.include?(n['group']) && n['text'].is_a?(String) }
       end
       raise ExportError,'Propuesta del pedido dañada: volvé a proponer el pedido desde el modelo.' unless shape
@@ -58,19 +58,41 @@ module PlanosSanto
     end
     # True while the row still holds what the model proposed for that group.
     def self.same_group?(row,values,group);PROPOSED.fetch(group).all? { |key| values.key?(key) && row[key]==values[key] };end
+    # Physical face [axis, bound] of each side of the 2D view, same rule as OclReader.projected_edges.
+    def self.side_faces(view,mirrored)
+      axes=view['axes']
+      return nil unless axes.is_a?(Array) && axes.size==2 && axes.uniq.size==2 && axes.all? { |v| v.is_a?(Integer) && v.between?(0,2) } && [-1,1].include?(view['frontSign'])
+      u,v=axes;parity=[[0,1],[1,2],[2,0]].include?(axes) ? 1 : -1
+      flip_x=(view['flipX']==true) ^ (view['frontSign']*parity*(mirrored ? -1 : 1)<0)
+      [[v,view['flipY']==true ? 0 : 1],[v,view['flipY']==true ? 1 : 0],[u,flip_x ? 1 : 0],[u,flip_x ? 0 : 1]]
+    end
+    # Edge map of one view expressed in another: every edge stays on its physical face.
+    def self.remap_edges(before,after,map,mirrored)
+      from=side_faces(before,mirrored);to=side_faces(after,mirrored)
+      return map unless from && to && map.is_a?(Array)
+      to.map { |face| index=from.index(face);index ? map[index] : 0 }
+    end
+    # The edges are still the model's own, even if the view was turned (the map then follows the faces).
+    def self.edges_follow?(row,entry)
+      values=entry['values']
+      return false unless %w[principalId secondaryId edgeBindings edgeMap].all? { |key| values.key?(key) } && %w[principalId secondaryId edgeBindings].all? { |key| row[key]==values[key] }
+      return row['edgeMap']==values['edgeMap'] if PROPOSED['orientation'].all? { |key| row[key]==values[key] }
+      row['edgeMap']==remap_edges(values,row,values['edgeMap'],entry['mirrored']==true)
+    end
+    def self.follows?(row,entry,group);group=='edges' ? edges_follow?(row,entry) : same_group?(row,entry['values'],group);end
     # «Más de dos cantos por pieza» (se mantiene): blocks while the edges are still the model's own.
     def self.edge_blockers(draft,row)
       entry=baseline(draft,row['id'])
-      entry && same_group?(row,entry['values'],'edges') ? Array(entry['edgeBlockers']).grep(String) : []
+      entry && edges_follow?(row,entry) ? Array(entry['edgeBlockers']).grep(String) : []
     end
     # Non-blocking notes of the proposal that still apply (their group was not edited by hand).
     def self.notes(draft,row)
       entry=baseline(draft,row['id']);return [] unless entry
-      Array(entry['notes']).select { |note| note.is_a?(Hash) && PROPOSED.key?(note['group']) && same_group?(row,entry['values'],note['group']) }.map { |note| note['text'] }
+      Array(entry['notes']).select { |note| note.is_a?(Hash) && PROPOSED.key?(note['group']) && follows?(row,entry,note['group']) }.map { |note| note['text'] }
     end
     def self.edge_source(draft,row)
       entry=baseline(draft,row['id'])
-      entry && same_group?(row,entry['values'],'edges') ? 'model' : 'manual'
+      entry && edges_follow?(row,entry) ? 'model' : 'manual'
     end
 
     # Punto 10: cruza un borrador guardado con la propuesta nueva por id de fila. Las filas que siguen
@@ -173,7 +195,7 @@ module PlanosSanto
         if stage
           staged[row['id']]=stage
         else
-          plan['proposed'][row['id']]={'values'=>values(row),'edgeBlockers'=>[],'notes'=>[]}
+          plan['proposed'][row['id']]={'values'=>values(row),'mirrored'=>@geometry.fetch(row['id'])['mirrored']==true,'edgeBlockers'=>[],'notes'=>[]}
           results[row['id']]={'status'=>'abstained','notes'=>['Pieza no rectangular: no se propone; excluila o corregila en el modelo.']}
         end
       end
@@ -182,7 +204,7 @@ module PlanosSanto
       plan['rows'].each do |row|
         stage=staged[row['id']];next unless stage
         row.merge!(patch(row,stage,ranking))
-        plan['proposed'][row['id']]={'values'=>values(row),'edgeBlockers'=>stage['blockers'],'notes'=>stage['notes']}
+        plan['proposed'][row['id']]={'values'=>values(row),'mirrored'=>@geometry.fetch(row['id'])['mirrored']==true,'edgeBlockers'=>stage['blockers'],'notes'=>stage['notes']}
         results[row['id']]={'status'=>'proposed','notes'=>stage['notes'].map { |note| note['text'] }}
       end
       rows=plan['rows'].filter_map do |row|

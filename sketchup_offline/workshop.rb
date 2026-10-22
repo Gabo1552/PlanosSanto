@@ -186,7 +186,7 @@ module PlanosSanto
     def save_plan(draft)
       raise ExportError,'Pedido inválido.' unless draft.is_a?(Hash) && draft['rows'].is_a?(Array)
       service=order;current=service.proposal;stored=stored_draft
-      links_changed=stored.is_a?(Hash) && Array(stored['edgeLinks'])!=Array(draft['edgeLinks'])
+      links_changed=Array(stored.is_a?(Hash) ? stored['edgeLinks'] : [])!=Array(draft['edgeLinks'])
       changed=stale?(draft,current) || links_changed || !draft['proposed'].is_a?(Hash)
       built=changed ? build(draft,service) : nil
       draft=built ? built['plan'] : SupplierOrder.normalize(draft)

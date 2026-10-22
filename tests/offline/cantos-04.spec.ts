@@ -36,19 +36,18 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   await boot(page,info.outputDir);
   const generate=page.getByRole('button',{name:'Generar guías (1)',exact:true});await expect(generate).toBeEnabled();await generate.click();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
-  // Library: one board and two edge roles, approved and compatible.
+  // Library: one board and two edge roles with complete fichas (no approval tick since 0.8.16).
   let library:{catalog:{revision:number;items:Item[]}}|undefined;
   for(const [name,kind] of [['Placa cantos','sheet'],['Canto principal','edge'],['Canto secundario','edge']])library=await send('catalog_add',{revision:library?.catalog.revision??0,item:{name,kind}});
   const [sheet,first,second]=library!.catalog.items;
-  Object.assign(sheet,{sku:'TEST-18',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true,compatibleIds:[first.id,second.id]});
-  Object.assign(first,{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22,approved:true});Object.assign(second,{sku:'EDGE-2',supplier:'Prueba',thicknessMm:2,widthMm:22,approved:true});
+  Object.assign(sheet,{sku:'TEST-18',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false});
+  Object.assign(first,{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22});Object.assign(second,{sku:'EDGE-2',supplier:'Prueba',thicknessMm:2,widthMm:22});
   await send('catalog_save',{revision:library!.catalog.revision,items:[sheet,first,second]});
-  // Order draft: each piece with its own asymmetric map, fully reviewed (same rows as cantos_double.rb).
+  // Order draft: each piece with its own asymmetric map, set by hand with no ticks (same rows as cantos_double.rb).
   const {plan}=await send<{plan:{rows:Row[]}}>('order_plan');
   const rows=[...plan.rows].sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true}));expect(rows).toHaveLength(5);
   rows.forEach((row,i)=>Object.assign(row,{detail:fixture.pieces[i].detail,axes:[0,1],frontSign:1,materialId:sheet.id,principalId:first.id,secondaryId:second.id,edgeMap:fixture.pieces[i].edgeMap,
-    grainPolicy:'locked',grainAxis:'none',grainConfirmed:true,dimensionRule:'finished_accepted',orientationConfirmed:true,materialConfirmed:true,dimensionsConfirmed:true,edgesConfirmed:true,
-    edgeResolution:'manual',edgeOverrideReason:'Inspección manual sintética para prueba',reviewNote:'Caso sintético, terminadas verificadas para prueba'}));
+    grainPolicy:'locked',dimensionRule:'finished_accepted'}));
   await send('order_save',{plan});
   // TXT: columns 6-9 are Arr·Aba·Izq·Der over base × height.
   const exported=await send<{directory:string}>('order_export',{plan});
@@ -57,15 +56,15 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   // A4: the printed references (partial route used by the sheet) carry the same map and cut.
   const partial=await send<{references:Record<string,{edgeMap:number[];base:number;height:number}>;pending:string[]}>('order_references_partial');
   expect(partial.pending).toEqual([]);
-  // F-DESP-B wiring: one row back under review prints «pendiente de pedido»; the others keep their order data.
-  const reviewed=rows[4];reviewed.orientationConfirmed=false;await send('order_save',{plan});
+  // F-DESP-B wiring: one row with a physical problem (thickness axis) prints «pendiente de pedido»; the others keep their order data.
+  const reviewed=rows[4];reviewed.axes=[1,2];await send('order_save',{plan});
   await page.keyboard.press('Alt+5');await page.locator('details.save-options summary').click();
   await page.getByLabel('Incluir materiales y cantos del pedido revisado en el PDF').check();
   await expect(page.locator('.a4-order-pill')).toContainText('4 de 5 piezas');await expect(page.locator('.a4-order-pill')).toContainText('1 pendiente');
   // Labels for the same five pieces, from the guides view.
   await page.getByTestId('labels-generate').click();await expect(page.getByTestId('labels-status')).toContainText('5 etiquetas');
   await expect(page.getByTestId('labels-download')).toHaveAttribute('href',/^blob:/);
-  reviewed.orientationConfirmed=true;await send('order_save',{plan});
+  reviewed.axes=[0,1];await send('order_save',{plan});
   // 2D view of the order, piece by piece.
   await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
   await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();

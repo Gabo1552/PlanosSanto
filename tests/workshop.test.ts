@@ -134,6 +134,11 @@ describe('Reglas del pedido a maderera (0.8.16: sin tildes)',()=>{
   expect(restoreProposal(plan,edited,'edges')).toEqual({principalId:'e1',secondaryId:null,edgeMap:[1,1,0,0],edgeBindings:[]});
   expect({...edited,...restoreProposal(plan,edited)}).toEqual(proposed);
   expect(editedGroups({},edited)).toEqual([]);expect(restoreProposal({},edited)).toEqual({});
+  // Girar la vista no convierte los cantos en «a mano»: el mapa sigue a las caras físicas.
+  const model=row('m',{edgeMap:[1,0,2,0]}),planM={proposed:{m:{values:{...model},mirrored:false}}},turned={...model,frontSign:-1,edgeMap:remapEdges(model,{...model,frontSign:-1},model.edgeMap,false)};
+  expect(turned.edgeMap).toEqual([1,0,0,2]);expect(followsModel(planM,turned,'edges')).toBe(true);expect(editedGroups(planM,turned)).toEqual(['orientation']);
+  expect(followsModel(planM,{...turned,edgeMap:[1,0,2,0]},'edges')).toBe(false);
+  expect(restoreProposal(planM,{...turned,edgeMap:[0,0,0,0]},'edges').edgeMap).toEqual([1,0,0,2]);
  });
  it('anuncia el cruce del borrador con la propuesta nueva sin descartarlo',()=>{
   expect(mergeNotice(null)).toBe('');expect(mergeNotice({kept:2,added:0,removed:0})).toBe('');

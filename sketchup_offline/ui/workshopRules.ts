@@ -93,12 +93,20 @@ export function remapEdges(before:View,after:View,edgeMap:number[],mirrored:bool
  return to.map(face=>{const index=from.indexOf(face);return index<0?0:edgeMap[index]??0;});
 }
 // --- Propuesta desde el modelo y línea de base ---------------------------------------
-export type ProposedEntry={values:Partial<OrderRow>;edgeBlockers?:string[];notes?:{group:string;text:string}[]};
+export type ProposedEntry={values:Partial<OrderRow>;mirrored?:boolean;edgeBlockers?:string[];notes?:{group:string;text:string}[]};
 export const PROPOSED_GROUPS:Record<string,(keyof OrderRow)[]>={detail:['detail'],orientation:['axes','frontSign','flipX','flipY'],material:['materialId'],edges:['principalId','secondaryId','edgeMap','edgeBindings'],grain:['grainPolicy'],dimensions:['dimensionRule','cutBase','cutHeight']};
 const same=(a:unknown,b:unknown)=>JSON.stringify(a??null)===JSON.stringify(b??null);
 const baseline=(plan:Pick<OrderPlan,'proposed'>,id:string)=>plan.proposed?.[id];
-/** Igual que OrderProposal.same_group?: la fila conserva lo que propuso el modelo para ese grupo. */
-export function followsModel(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group:string){const entry=baseline(plan,row.id);return !!entry&&PROPOSED_GROUPS[group].every(key=>key in entry.values&&same(row[key],entry.values[key]));}
+const baseView=(entry:ProposedEntry):View=>({axes:entry.values.axes??null,frontSign:entry.values.frontSign??null,flipX:!!entry.values.flipX,flipY:!!entry.values.flipY});
+/** Mapa del modelo expresado en la vista actual de la fila (cada canto en su cara física). */
+const modelMap=(entry:ProposedEntry,row:OrderRow)=>remapEdges(baseView(entry),row,entry.values.edgeMap??[0,0,0,0],!!entry.mirrored);
+/** Igual que OrderProposal.follows?: la fila conserva lo que propuso el modelo para ese grupo. Los cantos siguen al modelo aunque se haya girado la vista. */
+export function followsModel(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group:string){
+ const entry=baseline(plan,row.id);if(!entry)return false;
+ if(group!=='edges')return PROPOSED_GROUPS[group].every(key=>key in entry.values&&same(row[key],entry.values[key]));
+ if(!(['principalId','secondaryId','edgeBindings','edgeMap'] as const).every(key=>key in entry.values)||!(['principalId','secondaryId','edgeBindings'] as const).every(key=>same(row[key],entry.values[key])))return false;
+ return same(row.edgeMap,PROPOSED_GROUPS.orientation.every(key=>same(row[key],entry.values[key]))?entry.values.edgeMap:modelMap(entry,row));
+}
 /** Avisos de la propuesta que siguen vigentes (su grupo no se editó a mano). No bloquean. */
 export function rowNotes(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group?:string){return (baseline(plan,row.id)?.notes||[]).filter(note=>PROPOSED_GROUPS[note.group]&&(!group||note.group===group)&&followsModel(plan,row,note.group)).map(note=>note.text);}
 /** «Más de dos cantos» mientras los cantos sean los del modelo (bloquea, como en Ruby). */
@@ -109,8 +117,14 @@ export function editedGroups(plan:Pick<OrderPlan,'proposed'>,row:OrderRow){retur
 export function restoreProposal(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group?:string):Partial<OrderRow>{
  const entry=baseline(plan,row.id);if(!entry)return {};
  const keys=group?PROPOSED_GROUPS[group]:Object.values(PROPOSED_GROUPS).flat();
- return Object.fromEntries(keys.filter(key=>key in entry.values).map(key=>[key,structuredClone(entry.values[key])]));
+ const patch:Partial<OrderRow>=Object.fromEntries(keys.filter(key=>key in entry.values).map(key=>[key,structuredClone(entry.values[key])]));
+ // Solo los cantos, con la vista cambiada a mano: el mapa del modelo se reordena para esta vista.
+ if(group==='edges'&&'edgeMap' in entry.values)patch.edgeMap=modelMap(entry,row);
+ return patch;
 }
+const stable=(value:unknown):unknown=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value as object).sort().map(key=>[key,stable((value as Record<string,unknown>)[key])])):value;
+/** Mismas filas sin importar el orden de las claves (para saber si el modelo movió la propuesta). */
+export const sameRows=(a:OrderRow[],b:OrderRow[])=>JSON.stringify(stable(a))===JSON.stringify(stable(b));
 export type MergeStats={kept:number;added:number;removed:number;stale?:boolean};
 /** Aviso al cruzar el borrador guardado con una propuesta nueva (punto 10). */
 export function mergeNotice(merge:MergeStats|null|undefined){

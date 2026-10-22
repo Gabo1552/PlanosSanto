@@ -3,7 +3,7 @@ import {request} from './bridge';
 import EdgeReview from './EdgeReview';
 import {orderProjection} from '../../lib/orderPreview';
 import {mm} from '../../lib/model';
-import {applySummary,blockedField,boardOf,catalogComplete,catalogMissing,completeness,detailCodeWarning,edgeAmounts,edgeIncompatibility,edgeTotals,editedGroups,equivalentRows,formatMetres,grainText,linkEdge,materialLabel,mergeNotice,plural,remapEdges,restoreProposal,rotationBlock,rowDimensions,rowNotes,rowThickness,rowWarnings,type ApplyResult,type BlockField,type CopyGroups,type EdgeLink,type MergeStats,type ProposedEntry,type RowField} from './workshopRules';
+import {applySummary,blockedField,boardOf,catalogComplete,catalogMissing,completeness,detailCodeWarning,edgeAmounts,edgeIncompatibility,edgeTotals,editedGroups,equivalentRows,formatMetres,grainText,linkEdge,materialLabel,mergeNotice,plural,remapEdges,restoreProposal,rotationBlock,rowDimensions,rowNotes,rowThickness,rowWarnings,sameRows,type ApplyResult,type BlockField,type CopyGroups,type EdgeLink,type MergeStats,type ProposedEntry,type RowField} from './workshopRules';
 import MaderaProfilePanel,{BudgetView,UsableWarnings} from './MaderaProfilePanel';
 import CatalogV2Tools,{ItemV2Tools,ThicknessOptions} from './CatalogV2Tools';
 import {thicknessMismatch,type Budget,type UsableWarning} from './maderaRules';
@@ -55,7 +55,9 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
  const planRef=useRef<OrderPlan|undefined>(undefined),version=useRef(0),savedVersion=useRef(0),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),inFlight=useRef<Promise<SaveResult|undefined>|null>(null);
  const setPlan=useCallback((next:OrderPlan|undefined)=>{planRef.current=next;setPlanState(next);},[]);
  const mark=useCallback((value:boolean)=>{setDirty(value);onDirtyChange?.(value);void request('workshop_dirty',{value}).catch(()=>{});},[onDirtyChange]);
- const markOrder=useCallback((value:boolean)=>{setOrderDirty(value);onDirtyChange?.(value);void request('workshop_dirty',{value}).catch(()=>{});},[onDirtyChange]);
+ // Only transitions reach the app and Ruby (Ruby blocks painting while the order has unsaved edits).
+ const orderDirtyRef=useRef(false);
+ const markOrder=useCallback((value:boolean)=>{if(orderDirtyRef.current===value)return;orderDirtyRef.current=value;setOrderDirty(value);onDirtyChange?.(value);void request('workshop_dirty',{value}).catch(()=>{});},[onDirtyChange]);
  // Each process names itself in the status line and on the button that started it.
  const run=useCallback(async(operation:()=>Promise<void>,label='Procesando…',action='')=>{setBusy(true);setActivity({label,action});setError('');setNotice('');try{await operation();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);setActivity({label:'',action:''});}},[]);
  const load=useCallback(async()=>{setLibrary(await request<Library>('catalog_load'));},[]);
@@ -87,7 +89,8 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
   try{return await job;}catch(e){setError(`No se pudo guardar el pedido: ${e instanceof Error?e.message:String(e)}`);throw e;}finally{inFlight.current=null;}
  },[setPlan,markOrder]);
  const schedule=useCallback(()=>{version.current++;markOrder(true);if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>{timer.current=undefined;void flush().catch(()=>{});},AUTOSAVE_MS);},[flush,markOrder]);
- useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current);},[]);
+ // Closing the panel some other way (the app changes section) still saves what was pending: nothing is lost.
+ useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current);if(version.current!==savedVersion.current&&planRef.current)void request('order_save',{plan:planRef.current}).catch(()=>{});},[]);
  /** Antes de salir del pedido se guarda lo pendiente. Solo si eso falla se pregunta (ahí sí se perderían datos). */
  const settle=useCallback(async()=>{if(version.current===savedVersion.current)return true;try{await flush();}catch{return window.confirm(discardOrder);}return version.current===savedVersion.current||window.confirm(discardOrder);},[flush]);
  async function close(){if(busy)return;if(dirty&&!window.confirm(discardCatalog))return;if(!(await settle()))return;mark(false);markOrder(false);onClose();}
@@ -116,10 +119,13 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
  const focusIndex=Math.max(0,rows.findIndex(item=>item.id===selectedId));
  const saveLibrary=()=>library&&void run(async()=>{setLibrary(await request<Library>('catalog_save',{revision:library.catalog.revision,items:library.catalog.items}));mark(false);setNotice('Biblioteca guardada con respaldo de la versión anterior.');},'Guardando biblioteca…','catalog_save');
  const blockedItems=audit?.blocked||[],problemCount=blockedItems.reduce((sum,item)=>sum+reasonsOf(item).length,0);
- // Un solo botón: guarda lo pendiente, mira los problemas en vivo y recién ahí pide la carpeta.
+ // Un solo botón: guarda lo pendiente, vuelve a leer el modelo, mira los problemas en vivo y recién ahí pide la carpeta.
  const exportTxt=()=>plan&&void run(async()=>{
-  const saved=await flush();const live=saved?.audit||audit;
+  const saved=await flush();
   if(saved?.changed){setNotice(`${mergeNotice(saved.merge)||'El pedido se actualizó con el modelo.'} Revisalo y volvé a exportar.`);return;}
+  const fresh=await request<PlanResult>('order_plan'),current=planRef.current;
+  if(!current||!sameRows(fresh.plan.rows,current.rows)||fresh.plan.fingerprint!==current.fingerprint){applyPlanResult(fresh);version.current=1;await flush();setNotice('El modelo cambió desde que abriste el pedido (pintura, piezas o biblioteca): el pedido se actualizó y se guardó. Revisalo y volvé a exportar.');return;}
+  setAudit(fresh.audit);const live=fresh.audit;
   if(live?.error)throw new Error(live.error);
   if(live?.blocked.length){requestAnimationFrame(()=>problemsRef.current?.focus());throw new Error(`No se exportó: ${plural(live.blocked.length,'pieza tiene','piezas tienen')} problemas que impiden el pedido. Están en la lista «Problemas del pedido».`);}
   const result=await request<{cancelled?:boolean;directory:string}>('order_export',{plan:planRef.current});
@@ -223,7 +229,7 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
    <div className="workshop-order-actions"><div role="group" aria-label="Pedido" className="workshop-primary-actions"><button className="workshop-primary" disabled={busy} aria-busy={activity.action==='order_export'||undefined} aria-describedby="workshop-problems-summary" onClick={exportTxt}>{label('order_export','Exportar TXT…')}</button></div>
     <div role="group" aria-label="Otras acciones del pedido" className="workshop-secondary-actions"><span className="workshop-save-state" aria-live="polite">{saveState}</span><button disabled={busy} onClick={reset}>{label('order_reset','Volver a proponer todo desde el modelo')}</button></div></div>
    <section ref={problemsRef} tabIndex={-1} className="workshop-blocked" aria-labelledby="workshop-blocked-title"><div className="workshop-blocked-head"><h3 id="workshop-blocked-title">Problemas del pedido</h3>{!!blockedItems.length&&<button disabled={busy} aria-keyshortcuts="Alt+Shift+ArrowDown" onClick={nextBlocked}>Siguiente con problemas<kbd aria-hidden="true">Alt+Shift+↓</kbd></button>}</div>
-    <p id="workshop-problems-summary" className={blockedItems.length||audit?.error?'warning':'workshop-hint'}>{audit?.error?audit.error:blockedItems.length?`${plural(blockedItems.length,'pieza',`piezas`)} con ${plural(problemCount,'problema','problemas')} que impiden exportar.`:'Sin problemas físicos: el pedido se puede exportar.'}{saving||orderDirty?' Actualizando…':''}</p>
+    <p id="workshop-problems-summary" className={blockedItems.length||audit?.error?'warning':'workshop-hint'}>{audit?.error?audit.error:blockedItems.length?`${plural(blockedItems.length,'pieza',`piezas`)} con ${plural(problemCount,'problema','problemas')} que ${problemCount===1?'impide':'impiden'} exportar.`:'Sin problemas físicos: el pedido se puede exportar.'}{saving||orderDirty?' Actualizando…':''}</p>
     {!!blockedItems.length&&<ul aria-label="Piezas con problemas">{blockedItems.map(item=>{const reasons=reasonsOf(item);return <li key={item.id}><div><strong>{item.detail||'Sin detalle'} · {item.id}</strong><ul className="workshop-reasons" aria-label={`Problemas de ${item.detail||item.id}`}>{reasons.map(reason=><li key={reason} className="workshop-reason">{reason}</li>)}</ul></div><div className="workshop-blocked-actions"><button aria-label={`Ir a la pieza ${item.detail} · ${item.id}`} onClick={()=>goTo(item.id,blockedField(reasons[0]))}>Ir a la pieza</button><button disabled={busy} aria-label={`Ver en el modelo ${item.detail} · ${item.id}`} onClick={()=>highlight(item.id)}>Ver en el modelo</button></div></li>;})}</ul>}</section>
    {!!unlinked.length&&<section className="workshop-proposal workshop-links" data-field="links" aria-labelledby="workshop-links-title"><h3 id="workshop-links-title">Cantos pintados sin vínculo</h3>
     <p className="workshop-hint">Los cantos pintados con un material de la biblioteca se reconocen solos. Estos materiales del modelo no tienen ese vínculo: elegí a qué canto de la biblioteca corresponden y las piezas se vuelven a proponer solas.</p>

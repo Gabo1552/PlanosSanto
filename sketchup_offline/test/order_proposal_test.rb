@@ -321,4 +321,17 @@ class OrderProposalTest < Minitest::Test
     assert_equal [{'catalogId'=>@a['id'],'sku'=>'ABS-A','role'=>'principal','metres'=>1.4,'sides'=>2,'pieces'=>1},
                   {'catalogId'=>@b['id'],'sku'=>'PVC-B','role'=>'secondary','metres'=>0.45,'sides'=>1,'pieces'=>1}],totals
   end
+  def test_turning_the_view_keeps_the_edges_on_their_faces_and_still_counts_them_as_the_models
+    piece('1/1',[700,450,18],'+y'=>'edge-a','-x'=>'edge-c')
+    plan=proposed;first=row(plan,'1/1');before=first['edgeMap'].dup
+    turned=first.merge('frontSign'=>-first['frontSign'])
+    turned['edgeMap']=P.remap_edges(first,turned,before,false)
+    assert_equal [before[0],before[1],before[3],before[2]],turned['edgeMap'],'Dar vuelta la cara intercambia izquierda y derecha'
+    plan['rows'][0]=turned
+    assert_equal 'model',P.edge_source(plan,turned);assert_empty @service.validate(plan,collect_errors:true)
+    # Coincide con lo que leería OclReader en la vista nueva.
+    observed=R.projected_edges(@report,turned,@service.proposal['geometry']['1/1'])['sides'].map { |side| side['materialIds'].first }
+    assert_equal turned['edgeMap'].map(&:positive?),observed.map { |id| !id.nil? }
+    turned['edgeMap']=[1,1,1,1];assert_equal 'manual',P.edge_source(plan,turned)
+  end
 end
