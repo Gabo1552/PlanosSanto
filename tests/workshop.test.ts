@@ -132,7 +132,7 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
  it('lleva cada motivo de bloqueo al campo correspondiente',()=>{
   expect(blockedField('Elegí ejes U/V distintos y la cara frontal de la vista 2D.')).toBe('axes');expect(blockedField('Falta confirmar orientación, cantos.')).toBe('checks');
   expect(blockedField('Cantos asimétricos: mantener rota=0 hasta validar la maderera.')).toBe('grain');expect(blockedField('El canto no cubre el espesor de la placa: ancho 15 mm')).toBe('edges');
-  expect(blockedField('La pieza no entra en el formato de placa aprobado: mide 2650 × 600 mm')).toBe('dimensions');expect(blockedField('El espesor no coincide: el eje de espesor mide 18 mm')).toBe('material');
+  expect(blockedField('La pieza no entra en el formato de placa aprobado: mide 2650 × 600 mm')).toBe('dimensions');expect(blockedField('El espesor no coincide: el eje de espesor mide 18 mm')).toBe('material');expect(blockedField('Elegí una placa aprobada de la biblioteca.')).toBe('material');
   expect(blockedField('Completá detalle y justificación de medidas de corte/terminadas.')).toBe('note');expect(blockedField('Indicá por qué se excluye esta pieza.')).toBe('exclude');
   expect(blockedField('Elegí cómo verificaste los cantos: caras observadas o inspección manual documentada.')).toBe('edgeResolution');
   expect(blockedField('El canto secundario (2) no cubre el espesor de la placa: ancho 15 mm y espesor 18 mm.')).toBe('secondaryEdge');expect(blockedField('Confirmá compatibilidad placa/canto principal (1) en la biblioteca.')).toBe('edges');

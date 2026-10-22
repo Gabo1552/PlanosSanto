@@ -17,6 +17,12 @@ describe('Atajos globales del shell',()=>{
   for(const target of [{tagName:'TEXTAREA'},{tagName:'select'},{tagName:'DIV',isContentEditable:true},{tagName:'DIV',getAttribute:(name:string)=>name==='role'?'listbox':null}])expect(shortcutFor({...save,target})).toBeUndefined();
   expect(shortcutFor({...save,target:{tagName:'INPUT',getAttribute:()=>null}})).toBe('save');
  });
+ it('en un campo de una línea actúan Ctrl+S, Ctrl+Shift+E y Alt+1…5; en notas, listas y menús ninguno (contrato de la ayuda)',()=>{
+  const events=[{...base,key:'s',ctrlKey:true},{...base,key:'E',ctrlKey:true,shiftKey:true},{...base,key:'4',code:'Digit4',altKey:true}];
+  const input={tagName:'INPUT',type:'text',getAttribute:()=>null};
+  expect(events.map(event=>shortcutFor({...event,target:input}))).toEqual(['save','export','order']);
+  for(const target of [{tagName:'TEXTAREA'},{tagName:'SELECT'},{tagName:'DIV',getAttribute:(name:string)=>name==='role'?'menu':null}])expect(events.map(event=>shortcutFor({...event,target}))).toEqual([undefined,undefined,undefined]);
+ });
 });
 describe('Ayuda de atajos y recuperación de errores',()=>{
  const base={key:'',ctrlKey:false,shiftKey:false,altKey:false,defaultPrevented:false};
