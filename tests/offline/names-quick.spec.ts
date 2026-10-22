@@ -10,7 +10,8 @@ import {existsSync} from 'node:fs';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={id:string;result:unknown;error:string|null};
 let child:ChildProcessWithoutNullStreams,pending:Map<string,(reply:Reply)=>void>,errors:string[],calls:{action:string;data:Record<string,unknown>}[];
-function raw(message:string):Promise<Reply>{return new Promise(resolve=>{const msg=JSON.parse(message);calls.push(msg);pending.set(msg.id,resolve);child.stdin.write(message+'\n');});}
+// A late page request can arrive after afterEach closed the bridge: leave it unanswered instead of writing to a closed pipe.
+function raw(message:string):Promise<Reply>{return new Promise(resolve=>{const msg=JSON.parse(message);if(child.stdin.writableEnded)return;calls.push(msg);pending.set(msg.id,resolve);child.stdin.write(message+'\n');});}
 async function inspect(){const reply=await raw(JSON.stringify({version:1,id:randomUUID(),action:'__names_inspect',data:{}}));expect(reply.error).toBeNull();return reply.result as {names:Record<string,string>;operations:unknown[][];geometryHash:string;definitions:string[]};}
 async function boot(page:Page,folder:string,selected=true){
  await mkdir(folder,{recursive:true});pending=new Map();errors=[];calls=[];

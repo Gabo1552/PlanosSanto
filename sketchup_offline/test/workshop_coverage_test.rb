@@ -131,6 +131,56 @@ class WorkshopCoverageTest < Minitest::Test
     assert_match(/demasiado grande/,assert_raises(PlanosSanto::ExportError){@workshop.save_plan(huge)}.message);assert_empty @model.operations
   end
 
+  # --- Hito 3: extras del borrador y acciones de propuesta ------------------------
+  def test_plan_carries_draft_extras_and_codes_and_save_plan_validates_them
+    catalog=approved_catalog(second:true);plan=@workshop.plan['plan']
+    assert_equal [[],'none',{}],plan.values_at('edgeLinks','detailCode','codes')
+    plan['edgeLinks']=[{'observedId'=>'material:888','catalogId'=>catalog['items'][1]['id'],'name'=>'Canto de prueba'}];plan['detailCode']='module_piece'
+    @workshop.save_plan(plan);stored=JSON.parse(@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY))
+    refute stored.key?('codes'),'Los códigos se calculan, no se guardan';refute stored.key?('geometry')
+    again=@workshop.plan['plan'];assert_equal plan['edgeLinks'],again['edgeLinks'];assert_equal 'module_piece',again['detailCode']
+    assert_match(/Tabla de vínculos/,assert_raises(PlanosSanto::ExportError){@workshop.save_plan(plan.merge('edgeLinks'=>[{'observedId'=>'x'}]))}.message)
+    assert_match(/código en el detalle/,assert_raises(PlanosSanto::ExportError){@workshop.save_plan(plan.merge('detailCode'=>'sí'))}.message)
+    guide={'version'=>1,'revision'=>1,'selection'=>['1'],'furniture'=>[{'id'=>'1','explosion'=>0,'zoom'=>1,'notes'=>[],
+      'naming'=>{'moduleCode'=>'M02','bases'=>[{'id'=>'1/11','base'=>'Lateral'},{'id'=>'1/13/12','base'=>'Base'}]},
+      'pieces'=>[{'id'=>'1/11','name'=>'Lateral','code'=>'P01'},{'id'=>'1/13/12','name'=>'Base','code'=>'P02'}]}]}
+    @model.set_attribute(PlanosSanto::GuideStore::DICTIONARY,PlanosSanto::GuideStore::KEY,JSON.generate(guide));@session.scan;@session.generate(['1'])
+    assert_equal({'1/11'=>'M02·P01','1/13/12'=>'M02·P02'},@workshop.plan['plan']['codes'])
+    @model.set_attribute(PlanosSanto::GuideStore::DICTIONARY,PlanosSanto::GuideStore::KEY,'{rota')
+    @session.define_singleton_method(:check_current!) { true }
+    assert_equal({},@workshop.plan['plan']['codes'],'Guía dañada: sin códigos, nunca inventados')
+  end
+  def test_detail_code_reaches_the_txt_through_the_workshop_order
+    catalog=approved_catalog;draft=ready_draft(catalog);draft['detailCode']='module_piece'
+    assert_match(/Falta el código módulo·pieza/,assert_raises(PlanosSanto::ExportError){@workshop.check(draft)}.message)
+    @workshop.stub(:codes,{'1/11'=>'M01·P01','1/13/12'=>'M01·P02'}) do
+      result=@workshop.export_order(draft,@dir)
+      details=File.read(File.join(result['directory'],'lote-01.txt'),encoding:'UTF-8').lines.map { |l| l.split("\t")[3] }
+      assert_equal ['M01·P01 Lateral - Blanco','M01·P02 Base'],details.sort
+      manifest=JSON.parse(File.read(File.join(result['directory'],'manifest.json')))
+      assert_equal [{'catalogId'=>catalog['items'][1]['id'],'sku'=>'ABS-22','role'=>'principal','metres'=>1.219,'sides'=>2,'pieces'=>2}],manifest['lots'][0]['edgeTotals']
+    end
+  end
+  def test_propose_confirm_and_apply_return_a_new_unsaved_draft_with_view_data
+    catalog=approved_catalog;plan=@workshop.plan['plan'];fake={'complete'=>true,'pieces'=>[],'materials'=>[]}
+    PlanosSanto::OclReader.stub(:capture,fake) do
+      result=@workshop.propose(plan)
+      assert_equal plan['geometry'].keys.sort,result['plan']['geometry'].keys.sort;assert_equal({},result['plan']['codes'])
+      assert_equal 2,result['proposal']['summary']['proposed'];assert_equal 0,result['proposal']['summary']['bulkReady']
+      row=result['plan']['rows'][0];assert_equal [0,1],row['axes'];assert_equal 'finished_accepted',row['dimensionRule'];refute row['orientationConfirmed']
+      assert result['proposal']['rows'][0]['reasons'].any? { |r| r.include?('Sin placa vinculada') },'Sin recorrido no se adivina la placa'
+      assert_nil @model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY),'Proponer no guarda el borrador'
+      assert_empty @model.operations
+      bulk=@workshop.confirm_bulk(result['plan']);assert_empty bulk['confirmed'];assert_equal 2,bulk['review'].length
+      result['plan']['rows'][0]['materialId']=catalog['items'][0]['id']
+      applied=@workshop.apply_rows(result['plan'],'1/11',['1/13/12'],{'material'=>true,'inventado'=>true,'grain'=>'sí'})
+      assert_equal 1,applied['applied'];assert_equal catalog['items'][0]['id'],applied['plan']['rows'][1]['materialId']
+      assert_match(/destino/,assert_raises(PlanosSanto::ExportError){@workshop.apply_rows(plan,'1/11','1/13/12',{})}.message)
+      assert_match(/Selección/,assert_raises(PlanosSanto::ExportError){@workshop.propose(plan,'1/11')}.message)
+      assert_match(/desactualizado/,assert_raises(PlanosSanto::ExportError){@workshop.confirm_bulk(plan.merge('fingerprint'=>'otro'))}.message)
+    end
+  end
+
   # --- Auditoría, control y lecturas de cantos ----------------------------------
   def test_audit_lists_blocked_and_excluded_rows_and_check_returns_estimate
     catalog=approved_catalog;draft=ready_draft(catalog)

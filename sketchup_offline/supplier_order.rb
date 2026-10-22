@@ -5,10 +5,13 @@ require 'fileutils'
 require 'securerandom'
 require 'time'
 require 'date'
+require_relative 'order_proposal'
 
 module PlanosSanto
   class SupplierOrder
     COLUMNS=%w[cant base altura detalle rota canto_arr canto_aba canto_izq canto_der].freeze
+    # Hito 3: código módulo·pieza por id de fila (F-DESP-C); lo calcula Workshop desde la guía guardada.
+    attr_accessor :detail_codes
     ROW_KEYS=%w[id include excludeReason detail axes flipX flipY frontSign materialId principalId secondaryId edgeMap grainPolicy grainAxis grainConfirmed dimensionRule cutBase cutHeight orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed reviewNote edgeResolution edgeBindings edgeOverrideReason].freeze
     def initialize(document,fingerprint,catalog,edge_review: nil, source_review: nil, material_proposal: nil)
       @document=document;@fingerprint=fingerprint;@catalog=catalog;@nodes={};@edge_review=edge_review;@source_review=source_review;@material_proposal=material_proposal
@@ -49,11 +52,12 @@ module PlanosSanto
           next
         end
         if collect_errors
-          reasons=validate_row(row,collect:true)
+          reasons=validate_row(row,collect:true)+OrderProposal.detail_reasons(draft,row,@detail_codes)
           errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>reasons.first,'reasons'=>reasons} unless reasons.empty?
         else
           begin
             validate_row(row)
+            OrderProposal.detail_reasons(draft,row,@detail_codes).each { |reason| raise ExportError,reason }
           rescue ExportError => error
             # Check/export stop at the first problem: name the piece so the message is actionable.
             raise ExportError,"#{row['detail'].to_s.strip.empty? ? 'Pieza sin detalle' : row['detail']} (#{row['id']}): #{error.message}"
@@ -215,14 +219,14 @@ module PlanosSanto
         'profile'=>draft['profile'],'columns'=>COLUMNS,'purpose'=>'prueba_importacion_proveedor','production_ready'=>false,'lots'=>[],
         'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| {'id'=>row['id'],'reason'=>row['excludeReason']} }}
       batches.each_with_index do |(key,rows),index|
-        grouped=rows.group_by { |row| [*dimensions(row),row['detail'],row['axes'],row['flipX'],row['flipY'],row['frontSign'],geometry(@nodes.fetch(row['id']))['mirrored'],row['edgeMap'],row['grainPolicy'],row['grainAxis'],row['dimensionRule']] }
+        grouped=rows.group_by { |row| [*dimensions(row),OrderProposal.detail_text(draft,row,@detail_codes),row['axes'],row['flipX'],row['flipY'],row['frontSign'],geometry(@nodes.fetch(row['id']))['mirrored'],row['edgeMap'],row['grainPolicy'],row['grainAxis'],row['dimensionRule']] }
         format_number=lambda do |number|
           raise ExportError,'El proveedor admite hasta tres decimales; revisá medidas.' if number.round(3)<=0
           str=format('%.3f',number).sub(/0+\z/,'').sub(/\.\z/,'');draft['profile']['decimal']==',' ? str.tr('.',',') : str
         end
         lines=grouped.values.map do |members|
           row=members.first;base,height=dimensions(row)
-          [members.length,format_number.call(base),format_number.call(height),row['detail'],row['grainPolicy']=='rotate' ? 1 : 0,*row['edgeMap']].join("\t")
+          [members.length,format_number.call(base),format_number.call(height),OrderProposal.detail_text(draft,row,@detail_codes),row['grainPolicy']=='rotate' ? 1 : 0,*row['edgeMap']].join("\t")
         end
         lines.unshift(COLUMNS.join("\t")) if draft['profile']['header']
         content=lines.join("\r\n")+"\r\n";bytes=content.encode(draft['profile']['encoding']=='windows1252' ? 'Windows-1252' : 'UTF-8')
@@ -231,6 +235,7 @@ module PlanosSanto
         manifest['lots'] << {'file'=>filename,'sha256'=>Digest::SHA256.hexdigest(bytes),'material'=>board,'thicknessMm'=>key[1],
           'principal'=>key[2] && material(key[2],'edge'),'secondary'=>key[3] && material(key[3],'edge'),
           'edgeEvidence'=>rows.to_h { |row| [row['id'],row['edgeResolution']=='observed' ? @edge_evidence.fetch(row['id']) : {'mode'=>'manual','reason'=>row['edgeOverrideReason']}] },
+          'edgeTotals'=>OrderProposal.edge_totals(rows,@catalog) { |row| dimensions(row) },
           'sourceRows'=>rows,'physicalIds'=>rows.map { |row| row['id'] },'physicalQuantity'=>rows.length,'textRows'=>grouped.length}
       end
       File.write(File.join(staging,'manifest.json'),JSON.pretty_generate(manifest));raise ExportError,'Ya existe esa exportación; no se reemplazó.' if File.exist?(target);File.rename(staging,target)

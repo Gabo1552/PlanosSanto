@@ -26,7 +26,7 @@ Regla de registro: para cada caso anotar **resultado (OK / FALLA)**, captura y, 
 | a | **4 cantos en 1 clic, con preview previo** | Paleta inmediata › Pintar canto › elegir canto › selector «4». Pasar el cursor sobre un canto de un estante (sin hacer clic). | Antes del clic se ven resaltados **los 4 lados** con el color del canto. Tooltip: «… · 4 cantos · Solo esta (de N)». Un clic pinta los 4. **Ctrl+Z una vez** deshace los 4 juntos. |
 | b | **Todas las iguales (4)** | Pintar pieza › placa B › conmutador «Todas las iguales (4)» (el 4 aparece al apuntar una puerta). Clic en una puerta. | Las 4 puertas quedan pintadas. **Un solo Undo** las revierte a las 4. Ventana › Componentes › En el modelo: **la misma cantidad de definiciones antes y después** (sin «Puerta#1», «#2»…). |
 | c | **Solo esta** | Conmutador en «Solo esta». Apuntar una puerta. Clic. | Antes del clic el tooltip muestra «Solo esta (de 4)» y solo esa puerta se resalta. Después del clic, solo esa cambia y aparece **una** definición nueva (aislada). Un Undo la revierte y desaparece la definición nueva. |
-| d | **Rebaje → prohibido antes del clic** | Modelo B. Pintar canto con «2» o «4». Apuntar la pieza con rebaje. | Cursor **prohibido** y tooltip en rojo con el motivo («Los cuatro lados no son caras físicas únicas…» o equivalente) **antes** de hacer clic. Si se hace clic: no cambia nada, no hay entrada de Undo, nunca pinta a medias. |
+| d | **Rebaje → prohibido antes del clic** | Modelo B. Pintar canto con «2» o «4». Apuntar la pieza con rebaje. | Cursor **prohibido** y tooltip en rojo con el motivo («Un lado no está cubierto por caras planas completas…» o equivalente) **antes** de hacer clic. Si se hace clic: no cambia nada, no hay entrada de Undo, nunca pinta a medias. |
 | e | **Repasar ya pintadas no agrega Undo** | Con las 4 puertas ya en placa B, en «Todas las iguales» y luego en «Solo esta», hacer clic de nuevo en una puerta. | Mensaje «ya tiene este material». Edición › Deshacer sigue mostrando la operación anterior (no hay entradas nuevas). No se crean definiciones. |
 | f | **Tab y Ctrl+Tab sin salir de la herramienta** | Con la herramienta activa: Tab, Tab, Ctrl+Tab ×3, Mayús+Ctrl+Tab. | Tab alterna Pieza ↔ Canto y retoma **el último material de cada modo** (placa B / canto). Ctrl+Tab cicla 1→2→4→1 en canto (Mayús al revés) y el selector de la paleta acompaña. La herramienta **nunca** se desactiva (el ícono sigue presionado, Esc sigue terminando). |
 
@@ -34,7 +34,7 @@ Regla de registro: para cada caso anotar **resultado (OK / FALLA)**, captura y, 
 
 ### PINTURA-01 · cantos 1/2/4
 - 2 cantos: apuntar un lado largo → se resaltan **los dos lados largos opuestos**; apuntar uno corto → los dos cortos.
-- Pieza con un lado partido por una arista (dos caras coplanares): con «1» pinta la cara apuntada; con «2»/«4» queda **bloqueado con motivo** (no se fusionan caras; PINTURA-15 es del Hito 7).
+- Pieza con un lado partido por una arista (dos caras coplanares): desde el pincel avanzado (PINTURA-15) se pinta el lado entero con «1», «2» y «4»; ver la sección «Pincel avanzado». Un **rebaje** (lado que no está cubierto completo) sigue **bloqueado con motivo** con «2»/«4».
 - Pieza rotada, escalada (incluida escala negativa/espejo) y dentro de un grupo anidado: el resaltado coincide con los lados reales.
 - Cerrar y reabrir SketchUp: el selector vuelve con el último valor elegido.
 - Quitar canto con «4»: quita los 4 y restaura la placa en un Undo.
@@ -82,3 +82,70 @@ Regla de registro: para cada caso anotar **resultado (OK / FALLA)**, captura y, 
 - Paleta inmediata en Chromium con un doble de transporte (capturas `artifacts/hito2-paleta-*-SINTETICA.png`).
 
 Nada de lo anterior prueba el render de `draw_text`, el alpha de `drawing_color`, `UI.create_cursor`, el `ModelObserver` real, el foco de teclado ni la latencia en SketchUp.
+
+## 5. Pincel avanzado (Hito 7)
+
+**Estado: PENDIENTE de ejecución en SketchUp 2026 nativo.** Contrato: `docs/hito2-pincel/DISENO_AVANZADO.md`. Todo lo de esta sección se probó solo con dobles de la API (Ruby) y con la paleta en Chromium con un doble de transporte. Usar los modelos A y B de §0. Regla de registro igual a §0. Una falla en cualquier fila marcada **(bloquea)** impide cerrar el entregable correspondiente.
+
+### PINTURA-04 · tira de recientes en la vista
+| # | Pasos | Esperado |
+|---|---|---|
+| R1 **(bloquea)** | Pintar pieza con 3 placas distintas (elegirlas en la paleta), luego Pintar canto con 2 cantos. | Abajo a la izquierda de la vista aparecen los cuadrados de los materiales del modo actual, con su color; el activo con borde grueso. Al pasar a canto (Tab) la tira muestra los cantos. |
+| R2 **(bloquea)** | Clic en un cuadrado de la tira. | Cambia el material activo (barra de estado, tooltip y paleta lo acompañan). **No pinta nada** y Edición › Deshacer no muestra una entrada nueva. El alcance vuelve a «Solo esta». |
+| R3 | Teclas 1–6 con la herramienta activa. | Eligen el reciente N. Anotar si alguna tecla dispara un atajo de SketchUp en vez del reciente (riesgo conocido). |
+| R4 | Escalado de Windows 100 % y 150 %, ventana chica y maximizada. | La tira queda dentro de la vista, no tapa la barra de estado y los cuadrados se ven nítidos (riesgo del plan: `draw2d` y `UI.scale_factor`). |
+| R5 | Cerrar y reabrir SketchUp. | Los recientes se recuerdan (máximo 6 por modo). Un material borrado de la biblioteca o no instalado en el modelo **no aparece** (nunca se instala desde la tira). |
+
+### PINTURA-07 · cuentagotas temporal
+| # | Pasos | Esperado |
+|---|---|---|
+| C1 **(bloquea)** | Con Pintar pieza activo, **sostener Alt** y hacer clic en un canto ya pintado de otra pieza; soltar Alt. | Mientras se sostiene, el cursor cambia al cuentagotas y el tooltip muestra el material de la cara. El clic **no pinta**: toma el canto y el pincel pasa a Pintar canto con ese material. Al soltar Alt vuelve el cursor del pincel. Sin entradas nuevas de Undo. |
+| C2 **(bloquea)** | Windows: sostener y soltar Alt solo, sin clic. | **No se abre el menú de SketchUp** ni se pierde el foco de la vista (riesgo del plan §7). Si se abre, anotarlo y probar la alternativa Mayús en la paleta («Tecla del cuentagotas»). |
+| C3 | Alt + clic en una cara con un material sin vínculo de Planos Santo (p. ej. uno de la paleta nativa). | Mensaje con el motivo; el material activo no cambia. |
+| C4 | Paleta › Tecla del cuentagotas › Mayús. Repetir C1 con Mayús. | Funciona igual; Mayús+Tab sigue alternando el modo. |
+| C5 | Sostener Alt, hacer Alt+Tab a otra ventana y volver. | El pincel no queda trabado en cuentagotas (al volver, el clic pinta; si queda en muestreo, soltar y apretar Alt lo corrige). Anotar el comportamiento. |
+
+### PINTURA-11 · pick en profundidad
+| # | Pasos | Esperado |
+|---|---|---|
+| P1 **(bloquea)** | Apuntar una puerta cerrada que tapa un estante. Apretar ↓. | El resaltado pasa a la pieza de atrás; el tooltip muestra «(2 de N · ↑/↓)» y la paleta «Pieza 2 de N bajo el cursor». ↑ vuelve. |
+| P2 **(bloquea)** | Con la pieza de atrás elegida, clic sin mover el mouse. | Se pinta **la pieza de atrás** y no la puerta. Un Ctrl+Z la deshace. |
+| P3 | Elegir la de atrás con ↓, mover el mouse a otra zona y volver. | La selección vuelve a la pieza de adelante (no queda una profundidad vieja). |
+| P4 | ←/→ con la herramienta activa. | Siguen rotando el material del mismo tipo. |
+
+### PINTURA-13 · menú contextual
+| # | Pasos | Esperado |
+|---|---|---|
+| M1 | Clic derecho sobre una pieza con el pincel activo. | Aparece el menú propio (tomar material, ocultar, renombrar, cantos por clic en modo canto, resaltar lo que falta, transparencia) y el pincel **sigue activo** al cerrarlo. Abrirlo no crea entradas de Undo. |
+| M2 **(bloquea)** | «Ocultar esta pieza», luego Ctrl+Z. | La pieza se oculta en **una** entrada de Undo; Ctrl+Z la vuelve a mostrar. La paleta avisa análisis desactualizado. |
+| M3 | Ocultar 2 piezas y elegir «Mostrar las piezas ocultadas desde el pincel». | Vuelven ambas en una sola entrada de Undo. |
+| M4 **(bloquea)** | «Renombrar pieza…», escribir un nombre, Aceptar; repetir y Cancelar. | Aceptar renombra la instancia (Entity Info) en un Undo; Cancelar o el mismo nombre no crean entrada. En una pieza **bloqueada**, renombrar y ocultar se rechazan con motivo. |
+| M5 | En una copia de un componente compartido, renombrar. | Solo cambia el nombre de esa instancia (no la definición ni las otras copias). |
+
+### F-PINT-C · resaltar lo que falta pintar
+| # | Pasos | Esperado |
+|---|---|---|
+| F1 **(bloquea)** | Modelo B. Paleta › «Resaltar lo que falta» (o menú contextual). | Las piezas **sin placa** se ven en rojo translúcido; la paleta muestra «Sin placa: N piezas» con N igual al conteo manual. |
+| F2 | Pintar la placa de una de ellas. | Deja de verse en rojo en el mismo clic (sin reabrir) y N baja en 1. Ctrl+Z la vuelve a marcar. |
+| F3 | Apuntar piezas con el resaltado activo. | 3.ª línea del tooltip: «Falta: placa · cantos k/4» o «Completa: placa · cantos 4/4», coherente con lo que se ve. |
+| F4 | Modelo C (500 piezas) con el resaltado activo: orbitar y mover el mouse 10 s. | SketchUp no se traba; anotar si aparece «N+» (tope de evaluación). |
+
+### PINTURA-14 · transparencia
+| # | Pasos | Esperado |
+|---|---|---|
+| T1 | Paleta › «Transparencia» y luego desde el menú contextual. | Alterna rayos X (Ventana › Estilos › Rayos X acompaña). **No crea entradas de Undo**, no detiene el pincel ni marca el análisis desactualizado. |
+
+### PINTURA-15 · varias caras por lado
+| # | Pasos | Esperado |
+|---|---|---|
+| L1 **(bloquea)** | Modelo B, pieza con un lado partido por una arista (dos caras coplanares que cubren el lado). Pintar canto con «1», «2» y «4». | El preview resalta **el lado entero** (las dos caras) y el clic pinta todas en **un** Undo. |
+| L2 **(bloquea)** | Pieza con **rebaje** (el lado no llega al borde completo). «2» y «4». | Bloqueado antes del clic con el motivo «Un lado no está cubierto por caras planas completas…»; el clic no pinta nada ni crea Undo. Con «1» se puede pintar cara por cara. |
+| L3 | Pieza con una cara ancha partida por una línea. Pintar pieza. | Pinta todas las caras anchas en un Undo; los cantos quedan intactos. |
+| L4 | Repetir L1 en una pieza escalada (no uniforme) y en una copia de componente con «Solo esta». | Mismo resultado; «Solo esta» aísla solo esa copia. |
+
+### Qué se validó solo con dobles (no cuenta como aceptación)
+- Cobertura de lados por área, expansión de caras y rechazos sobre geometría sintética.
+- Tira de recientes (`draw2d` sobre una vista doble), cuentagotas con teclas simuladas, pila de picks simulada, menú doble, `rendering_options` como Hash y `UI.inputbox` simulado.
+- Controlador con doble de herramienta y preferencias en memoria; paleta en Chromium con doble de transporte.
+
+Nada de esto prueba el render de `draw2d`/`draw_text` en HiDPI, el comportamiento real de Alt en Windows, el orden real de `PickHelper` en profundidad, el menú contextual nativo ni el modo rayos X real.

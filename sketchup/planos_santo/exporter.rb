@@ -13,14 +13,20 @@ module PlanosSanto
     MM = 25.4
     MAX_VERTICES = 200_000
     MAX_TRIANGLES = 200_000
+    OCL_DICTIONARY = 'ladb_opencutlist'
+    OCL_HARDWARE = '5'
+    HARDWARE_WARNING = 'Herraje (material de tipo herraje en OpenCutList): no se tesela ni entra en el despiece.'
     attr_reader :model
 
-    def initialize(model)
+    # cache: false keeps the uncached path (ARQ-01 equivalence test only).
+    def initialize(model, cache: true)
       @model = model
+      @cache = cache
       @vertices = 0
       @triangles = 0
       @nodes = 0
       @warnings = []
+      reset_caches
     end
 
     def containers(entities)
@@ -94,19 +100,91 @@ module PlanosSanto
           materials << { 'front' => material(face.material || inherited_material), 'back' => material(face.back_material || inherited_material) }
         end
       end
-      @vertices += vertices.length
-      @triangles += triangles.length
-      raise ExportError, 'El modelo supera 200.000 vértices o triángulos.' if @vertices > MAX_VERTICES || @triangles > MAX_TRIANGLES
+      count_geometry(vertices.length, triangles.length)
       { 'vertices' => vertices, 'triangles' => triangles, 'faceMaterials' => materials }
     end
 
+    def count_geometry(vertices, triangles)
+      @vertices += vertices
+      @triangles += triangles
+      raise ExportError, 'El modelo supera 200.000 vértices o triángulos.' if @vertices > MAX_VERTICES || @triangles > MAX_TRIANGLES
+    end
+
+    # ARQ-01 (etapa S): the local mesh depends only on the definition's faces and
+    # on the material each face inherits, never on the instance transform. Every
+    # occurrence of a (definition, inherited material) pair reuses one mesh, and
+    # still counts its geometry toward the limits as if it had been tessellated.
+    # Errors are replayed too, so the result is identical with or without cache.
+    def cached_mesh(definition, faces, inherited_material)
+      return mesh_for(faces, inherited_material) unless @cache
+      key = [identity(definition), identity(inherited_material)]
+      entry = @meshes[key]
+      if entry.nil?
+        vertices = @vertices; triangles = @triangles
+        begin
+          mesh = mesh_for(faces, inherited_material)
+        rescue ExportError => e
+          @meshes[key] = [:error, e.message] unless e.message.include?('supera')
+          raise
+        end
+        @meshes[key] = [:mesh, mesh, @vertices - vertices, @triangles - triangles]
+        return mesh
+      end
+      raise ExportError, entry[1] if entry[0] == :error
+      count_geometry(entry[2], entry[3])
+      entry[1]
+    end
+
+    # SketchUp keeps entityID stable and unique within the session; doubles
+    # without it fall back to Ruby identity, as the recursion guard in walk does.
+    def identity(entity)
+      return nil if entity.nil?
+      entity.respond_to?(:entityID) ? [:entity, entity.entityID] : [:object, entity.object_id]
+    end
+
+    def reset_caches
+      @meshes = {}
+      @shapes = {}.compare_by_identity
+      @hardware = {}.compare_by_identity
+    end
+
+    def hardware_material?(material)
+      return false if material.nil?
+      return @hardware[material] if @hardware.key?(material)
+      @hardware[material] = material.respond_to?(:get_attribute) && material.get_attribute(OCL_DICTIONARY, 'type', nil).to_s == OCL_HARDWARE
+    end
+
+    # OpenCutList hardware is never a cut piece. As in OCL, a node is hardware
+    # when every own face's effective material (face or inherited) is an OCL
+    # hardware material; its faces are not tessellated. Children are still
+    # walked and decided by their own faces, so a board painted as a sheet
+    # inside a hardware-painted container is never dropped.
+    def hardware?(faces, own_material)
+      !faces.empty? && faces.all? { |face| hardware_material?(face.material || own_material) }
+    end
+
+    # Bounds, closed-edge check and volume only read the local mesh: one per mesh.
+    def local_shape(mesh)
+      return @shapes[mesh] if @cache && @shapes.key?(mesh)
+      shape = compute_local_shape(mesh)
+      @shapes[mesh] = shape if @cache
+      shape
+    end
+
     def bounds_and_shape(mesh, transform)
+      # Transform errors first, as before the shape cache existed.
+      scales = axis_scales(transform)
+      shape = local_shape(mesh)
+      min = shape[:min].dup; max = shape[:max].dup
+      dimensions = 3.times.map { |i| (max[i] - min[i]) * scales[i] }.sort.reverse
+      raise ExportError, 'Dimensiones fuera de rango (0,01–100.000 mm).' if dimensions.any? { |d| d < 0.01 || d > 100_000 }
+      { 'localBounds' => { 'min' => min, 'max' => max }, 'dimensionsMm' => dimensions, 'rectangular' => shape[:rectangular] }
+    end
+
+    def compute_local_shape(mesh)
       vertices = mesh.fetch('vertices')
       min = 3.times.map { |i| vertices.map { |v| v[i] }.min }
       max = 3.times.map { |i| vertices.map { |v| v[i] }.max }
-      scales = axis_scales(transform)
-      dimensions = 3.times.map { |i| (max[i] - min[i]) * scales[i] }.sort.reverse
-      raise ExportError, 'Dimensiones fuera de rango (0,01–100.000 mm).' if dimensions.any? { |d| d < 0.01 || d > 100_000 }
       edges = Hash.new(0)
       volume = 0.0
       planar = true
@@ -118,11 +196,12 @@ module PlanosSanto
       end
       box_volume = 3.times.map { |i| max[i] - min[i] }.inject(:*)
       rectangular = planar && edges.values.all? { |n| n == 2 } && (volume.abs-box_volume).abs <= [0.01, box_volume*0.001].max
-      { 'localBounds' => { 'min' => min, 'max' => max }, 'dimensionsMm' => dimensions, 'rectangular' => rectangular }
+      { min: min.freeze, max: max.freeze, rectangular: rectangular }
     end
 
     def tree
       @vertices = 0; @triangles = 0; @nodes = 0; @warnings = []
+      reset_caches
       loose = model.entities.count { |e| e.is_a?(Sketchup::Face) }
       @warnings << "Hay #{loose} caras sueltas en la raíz, fuera de grupos/componentes. No se exportan como muebles." if loose.positive?
       roots = containers(model.entities).map { |e| walk(e, [], Geom::Transformation.new, true, nil, []) }
@@ -149,17 +228,20 @@ module PlanosSanto
       own_material = entity.material || inherited_material
       source = entities_of(entity)
       faces = source.select { |e| e.is_a?(Sketchup::Face) }
+      hardware = hardware?(faces, own_material)
+      faces = [] if hardware
       children = containers(source).map { |child| walk(child, route, world, effective, own_material, stack + [definition.object_id]) }
       original = entity.name.to_s
       def_name = definition.name.to_s
       name = original.empty? ? def_name : original
       warnings = []
       warnings << 'Instancia sin nombre: se usa el ID.' if original.empty? && def_name.empty?
+      warnings << HARDWARE_WARNING if hardware
       warnings << 'Geometría oculta incluida; revisar antes de enviar.' unless effective
       warnings << 'Grupo con caras propias y subgrupos: revisar qué se considera pieza.' if !faces.empty? && !children.empty?
       mesh = nil; errors = []
       begin
-        mesh = mesh_for(faces, own_material) unless faces.empty?
+        mesh = cached_mesh(definition, faces, own_material) unless faces.empty?
       rescue ExportError => e
         raise if e.message.include?('supera')
         errors << e.message
