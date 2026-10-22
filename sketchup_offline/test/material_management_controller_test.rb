@@ -106,7 +106,8 @@ class MaterialManagementControllerTest < Minitest::Test
     @controller.instance_variable_set(:@photo_material,service)
     assert dispatch('material_texture_preview','catalogId'=>'x','rotation'=>90)['noChanges']
     applied=dispatch('material_texture_apply','catalogId'=>'x','confirmed'=>true)
-    assert applied.key?('scan')
+    # ARQ-02 (Hito 6): un cambio de material marca el análisis como desactualizado; ya no reanaliza solo.
+    assert applied['stale'];refute applied.key?('scan')
     assert_equal %i[preview apply],calls.map(&:first)
     assert_equal ['material_texture_apply'],@notices
   end
