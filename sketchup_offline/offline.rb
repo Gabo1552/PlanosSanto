@@ -316,7 +316,11 @@ module PlanosSanto
     # model context like the palette does; an existing session is never replaced.
     def ensure_editor_context!
       observe_context
-      return if @session
+      if @session
+        # The palette may have closed alone and detached the watch (QA integración).
+        watch_model! if !@context_invalid && Sketchup.active_model.equal?(@model)
+        return
+      end
       model=Sketchup.active_model
       return unless model
       @model=model;@context_invalid=false
@@ -1119,6 +1123,10 @@ module PlanosSanto
         @session=NativeSession.new(@model)
         @naming=nil
         @paint=nil
+        # QA integración: the Tool commits outside handle(), so ModelWatch sees
+        # it. Mark the own write now: the debounced check then skips the walk
+        # and the banner says «Pintaste…», not «El modelo cambió en SketchUp».
+        mark_stale('paint') unless @analysis_stale && @analysis_reason=='paint'
       end
       begin
       [@dialog,@palette_dialog].compact.uniq.each { |window| emit_to(window,'planos-santo-smart-paint',smart_state) }
