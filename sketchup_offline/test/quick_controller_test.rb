@@ -152,11 +152,11 @@ class QuickControllerTest < Minitest::Test
     @controller.instance_variable_set(:@dirty,true)
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('smart_sample_start',{'side'=>'front'}) }
   end
-  def test_stopping_painted_tool_refreshes_scan_for_navigation_without_generating_or_saving
+  def test_stopping_painted_tool_marks_stale_for_navigation_without_rescanning_generating_or_saving
     @controller.show;ready;start
     @tool.args[:on_event].call('changed'=>true,'queuedCount'=>1)
     result=@controller.quick_action('guides')
-    assert result['scan'];assert_nil @controller.instance_variable_get(:@session).document
+    assert result['stale'];refute result.key?('scan');assert_nil @controller.instance_variable_get(:@session).document
     assert_equal 'guides',result['action'];assert_match(/canceló/,result['message']);assert_empty @model.operations
   end
   def test_ready_requires_a_current_scan_and_unknown_action_does_not_open_a_window

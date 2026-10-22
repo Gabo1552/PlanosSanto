@@ -19,6 +19,7 @@ require_relative 'skm_import'
 require_relative 'piece_highlight_tool'
 require_relative 'photo_material'
 require_relative 'paint_materials'
+require_relative 'model_watch'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -47,11 +48,43 @@ module PlanosSanto
         return
       end
       @context_invalid=true if replaced && @model.equal?(model)
+      unwatch_model!
       stop_smart_tool(refresh:false)
       @quick_intent=nil;@palette_intent=nil
       @photo_material=nil; @photo_preview_active=false
       smart_event('active'=>false,'queuedCount'=>0,'contextChanged'=>true,
                   'error'=>'Cambió el modelo activo. Volvé a analizar antes de continuar.')
+    end
+
+    # ARQ-03: one ModelWatch for the model of the open windows. Observers only
+    # note the kind of change; the debounced flush runs here, outside callbacks.
+    def watch_model!
+      return @model_watch if @model_watch && @model_watch.model.equal?(@model) && @model_watch.attached?
+      unwatch_model!
+      return nil unless @model
+      @model_watch=ModelWatch.new(@model,on_change:lambda { |kinds| model_watch_changed(kinds) }).attach
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo observar el modelo: #{error.class}")
+      @model_watch=nil
+    end
+
+    def unwatch_model!
+      watch=@model_watch;@model_watch=nil
+      watch&.detach
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo dejar de observar el modelo: #{error.class}")
+    end
+
+    # Transactions opened while serving a window request belong to Planos Santo.
+    def without_model_watch(&block)
+      @model_watch ? @model_watch.suppress(&block) : yield
+    end
+
+    def model_watch_changed(kinds)
+      return unless @model && Sketchup.active_model.equal?(@model) && !@context_invalid
+      # MATERIALES-12: native browser edits refresh both palettes (cheap reread).
+      notify_material_library_changed('model_watch') if kinds.include?('materials')
+      check_analysis if kinds.include?('model') || kinds.include?('materials')
     end
 
     def quick_block_reason(action)
@@ -93,7 +126,7 @@ module PlanosSanto
               'selectionPaths'=>quick_selection_paths,
               'message'=>toggle ? 'Herramienta detenida; no se aplicaron las caras pendientes.' : queued>0 ? 'Se canceló la selección pendiente al cambiar de herramienta.' : %w[sheet edge remove_edge].include?(action) ? 'Elegí un material de la paleta para pintar.' : action=='sample' ? 'Cuentagotas de solo lectura. Hacé clic en una cara para tomar su material.' : action=='order' ? 'Revisá materiales, dimensiones y cantos antes de preparar el pedido.' : ''}
       intent['destination']=destination if destination
-      intent.merge!(stopped.slice('scan','scanRequired','refreshWarning'))
+      intent.merge!(stopped.slice('scan','scanRequired','refreshWarning','stale'))
       if %w[sheet edge remove_edge sample].include?(action)
         ensure_palette_context!
         @palette_intent=intent
@@ -161,6 +194,7 @@ module PlanosSanto
         unless @palette_dialog
           @skm_import=nil;@skm_preview_active=false;@photo_material=nil;@photo_preview_active=false
           stop_smart_tool(refresh:false);@session=nil
+          unwatch_model!;forget_analysis!
         end
       end
       @dialog.show
@@ -179,6 +213,7 @@ module PlanosSanto
         @context_invalid=false
         @session=NativeSession.new(@model)
       end
+      watch_model!
       clean_for_paint!
     end
 
@@ -199,6 +234,7 @@ module PlanosSanto
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
         @photo_material=nil;@photo_preview_active=false
         stop_smart_tool(refresh:false)
+        unwatch_model! unless @dialog
       end
       window.show
       window.set_size(680,320) if window.respond_to?(:set_size)
@@ -305,7 +341,7 @@ module PlanosSanto
       @busy = true
       @request_id = id
       begin
-        result = dispatch(msg['action'], data)
+        result = without_model_watch { dispatch(msg['action'], data) }
         reply(id, result: result)
         if msg['action']=='save' && result['closeAfterSave']==true && @dialog
           dialog=@dialog; session=@session
@@ -457,6 +493,8 @@ module PlanosSanto
         @photo_material=nil; @photo_preview_active=false
         result = @session.scan
         @dirty = false
+        watch_model!
+        mark_fresh!
         result
       when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_edges','order_audit','ocl_open'
         active!
@@ -556,7 +594,7 @@ module PlanosSanto
         refresh_after_material_change(library.install(data,path:path))
       when 'piece_highlight'
         active!
-        raise ExportError,'Detené Pintura Inteligente y actualizá el análisis antes de resaltar.' if @smart_changed
+        raise ExportError,'Detené Pintura Inteligente y actualizá el análisis antes de resaltar.' if @smart_changed || @analysis_stale
         stop_smart_tool(refresh:false)
         generation=@tool_generation || 0
         @smart_state={'active'=>false,'mode'=>'highlight','changed'=>false,'queuedCount'=>0,'message'=>''}
@@ -712,12 +750,10 @@ module PlanosSanto
         else
           result = @naming.apply(data)
           unless result['noChanges']
-            begin
-              result['scan'] = @session.scan
-            rescue StandardError => e
-              @session = NativeSession.new(@model)
-              result['refreshWarning'] = "Nombres aplicados. Guardá el SKP con Ctrl+S. No se pudieron releer las guías: #{e.message}. Volvé a analizar."
-            end
+            @session = NativeSession.new(@model)
+            @naming = nil
+            mark_stale('names')
+            result['stale'] = true
           end
           result
         end
@@ -741,6 +777,7 @@ module PlanosSanto
             end
           end
         end
+        rebaseline_analysis!
         { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
       when 'pdf'
         active!
@@ -821,10 +858,11 @@ module PlanosSanto
         @session=NativeSession.new(@model)
         @naming=nil
         @paint=nil
+        @model_watch&.acknowledge
       end
       begin
       [@dialog,@palette_dialog].compact.uniq.each { |window| emit_to(window,'planos-santo-smart-paint',smart_state) }
-      emit_to(@dialog,'planos-santo-document-invalidated',{'scanRequired'=>true}) if event['changed']==true
+      mark_stale('paint') if event['changed']==true
       rescue StandardError => error
         warn("Planos Santo: no se pudo actualizar la paleta: #{error.class}")
       end
@@ -845,19 +883,14 @@ module PlanosSanto
       end
       @tool_generation=(@tool_generation || 0)+1
       @smart_state=(@smart_state || {}).merge('active'=>false,'queuedCount'=>0,'hover'=>nil,'sample'=>nil)
+      # ARQ-02: never rescan here. The session was already invalidated by the
+      # change; the editor shows "Análisis desactualizado · Reanalizar".
+      stale=refresh && @smart_changed
+      @smart_changed=false if stale
       result={'toolState'=>smart_state}
-      if refresh && @smart_changed
-        if @session && Sketchup.active_model.equal?(@model)
-          begin
-            result['scan']=@session.scan
-            @smart_changed=false
-          rescue StandardError => error
-            result['refreshWarning']="Cambios aplicados. Volvé a analizar: #{error.message}"
-            result['scanRequired']=true
-          end
-        else
-          result['scanRequired']=true
-        end
+      if stale
+        result['stale']=true
+        mark_stale('paint')
       end
       result
     end
@@ -867,17 +900,71 @@ module PlanosSanto
       raise ExportError,'Guardá los cambios de biblioteca o pedido antes de pintar o vincular materiales.' if @workshop_dirty
     end
 
+    # ARQ-02: a material write invalidates the analysis instead of rescanning.
     def refresh_after_material_change(result)
       return result if result['noChanges']==true
       @naming=nil
       @paint=nil
-      begin
-        result['scan']=@session.scan
-      rescue StandardError => error
-        @session=NativeSession.new(@model)
-        result['refreshWarning']="Material aplicado. Guardá el SKP con Ctrl+S. No se pudo actualizar el análisis: #{error.message}. Volvé a analizar antes de continuar."
+      @session=NativeSession.new(@model)
+      mark_stale('material')
+      result.merge('stale'=>true)
+    end
+
+    ANALYSIS_REASONS={
+      'paint'=>'Pintaste desde Planos Santo.','material'=>'Cambió un material del modelo.',
+      'names'=>'Se aplicaron nombres en SketchUp.','model'=>'El modelo cambió en SketchUp (edición, Deshacer o Rehacer).'
+    }.freeze
+
+    def analysis_state
+      {'stale'=>@analysis_stale==true,'reason'=>@analysis_stale ? ANALYSIS_REASONS[@analysis_reason] : nil,'source'=>@analysis_reason}
+    end
+
+    # Only an editor that analyzed this model shows the banner.
+    def mark_stale(reason)
+      return unless @analysis_session
+      @analysis_stale=true;@analysis_reason=reason
+      publish_analysis_state
+    end
+
+    def mark_fresh!
+      @analysis_session=@session;@analysis_stale=false;@analysis_reason=nil
+      @analysis_fingerprint=safe_fingerprint
+    end
+
+    def forget_analysis!
+      @analysis_session=nil;@analysis_fingerprint=nil;@analysis_stale=false;@analysis_reason=nil
+    end
+
+    # Own writes that keep the analysis valid (saving the guide) re-baseline.
+    def rebaseline_analysis!
+      @analysis_fingerprint=safe_fingerprint if @analysis_session && @analysis_session.equal?(@session) && !@analysis_stale
+    end
+
+    # Runs from the debounced timer, never from an observer callback.
+    def check_analysis
+      return unless @analysis_session && @analysis_fingerprint && @dialog
+      current=safe_fingerprint
+      return unless current
+      if current!=@analysis_fingerprint
+        mark_stale('model') unless @analysis_stale
+      elsif @analysis_stale && @analysis_session.equal?(@session)
+        # Undo back to the analyzed state with the same session: fresh again.
+        @analysis_stale=false;@analysis_reason=nil
+        publish_analysis_state
       end
-      result
+    end
+
+    def safe_fingerprint
+      ModelWatch.fingerprint(@model)
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo calcular la huella del modelo: #{error.class}")
+      nil
+    end
+
+    def publish_analysis_state
+      emit_to(@dialog,'planos-santo-analysis-state',analysis_state)
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo avisar el estado del análisis: #{error.class}")
     end
 
     def read_materials

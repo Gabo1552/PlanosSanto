@@ -106,7 +106,7 @@ class SmartControllerTest < Minitest::Test
     end
     assert_empty @selections;assert_empty @model.operations
   end
-  def test_changes_invalidate_session_immediately_and_stop_returns_saved_guide_scan
+  def test_changes_invalidate_session_immediately_and_stop_marks_analysis_stale
     @controller.dispatch('generate',{'ids'=>['1']})
     original=@controller.instance_variable_get(:@session)
     start;@tool.changed
@@ -114,7 +114,7 @@ class SmartControllerTest < Minitest::Test
     refute_same original,session;assert_nil session.document
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('generate',{'ids'=>['1']}) }
     result=@controller.dispatch('smart_tool_stop',{})
-    assert result['scan'];assert result['toolState']['changed'];refute result['toolState']['active']
+    assert result['stale'];refute result.key?('scan');refute result['toolState']['changed'];refute result['toolState']['active']
     assert_equal false,@controller.dispatch('smart_tool_status',{})['toolState']['changed']
     assert_nil @selections.last;assert_empty @model.operations
   end
@@ -137,7 +137,7 @@ class SmartControllerTest < Minitest::Test
     @tool.changed
     assert @controller.dispatch('smart_tool_status',{})['toolState']['changed']
     result=@controller.dispatch('smart_tool_stop',{})
-    assert result['scan'];refute result['toolState']['active']
+    assert result['stale'];refute result.key?('scan');refute result['toolState']['active']
     assert_nil @selections.last
   end
   def test_compact_palette_can_resize_below_old_editor_minimum_and_restore
