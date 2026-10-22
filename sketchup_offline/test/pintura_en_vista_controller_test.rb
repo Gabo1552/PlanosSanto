@@ -166,6 +166,15 @@ class PinturaEnVistaControllerTest < Minitest::Test
     assert_equal 'edge',options['mode'];assert_equal 'canto',options['catalogId'];assert_equal 'uuid-canto',options['materialUuid']
   end
 
+  # 0.8.17: un material de la bandeja todavía sin vínculo se vincula solo (como al abrir Materiales) y pasa al pincel.
+  def test_an_unbound_tray_material_links_itself_and_becomes_the_brush_material
+    paint('sheet');loose=@natives[2]
+    linker=Object.new;linker.define_singleton_method(:auto_link!) { loose.bound={'uuid'=>'uuid-suelto','catalogId'=>'placa','kind'=>'sheet'};{'changed'=>1} }
+    options=PlanosSanto::MaterialLibrary.stub(:new,linker) { with_tool { tool.args[:native_material].call(loose) } }
+    assert_equal 'sheet',options['mode'];assert_equal 'placa',options['catalogId']
+    assert_equal 0,UI.vista_dialogs
+  end
+
   def test_an_unbound_material_from_the_tray_explains_why_it_cannot_be_used
     paint('sheet')
     error=assert_raises(PlanosSanto::ExportError) { with_tool { tool.args[:native_material].call(@natives[2]) } }

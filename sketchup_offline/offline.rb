@@ -1416,6 +1416,21 @@ module PlanosSanto
       name=(material.respond_to?(:display_name) ? material.display_name : material.name).to_s
       observed=MaterialResolver.observe_binding(material)
       binding=observed['binding']
+      # 0.8.17: a tray material not linked yet links itself (same rules as opening
+      # Materiales: own attribute, unique name, repaired link) before giving up.
+      unless observed['status']=='valid' && binding.is_a?(Hash) && binding['catalogId'].is_a?(String)
+        begin
+          directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+          linked=MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory).auto_link!
+          if linked['changed'].to_i>0
+            notify_material_library_changed('auto_link')
+            observed=MaterialResolver.observe_binding(material);binding=observed['binding']
+          end
+        rescue StandardError => error
+          # A failed automatic link never breaks the brush: the reason below explains it.
+          warn("Planos Santo: vinculación automática desde la bandeja: #{error.class}: #{error.message}") unless error.is_a?(ExportError)
+        end
+      end
       unless observed['status']=='valid' && binding.is_a?(Hash) && binding['catalogId'].is_a?(String)
         raise ExportError,"«#{name}» tiene un vínculo dañado con la biblioteca; revisalo en Materiales." if observed['status']=='invalid'
         raise ExportError,"«#{name}» no está en la biblioteca de Planos Santo; elegí una muestra de la tira o agregalo en Materiales."
