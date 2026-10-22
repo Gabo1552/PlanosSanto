@@ -52,7 +52,7 @@ async function boot(page:Page,folder:string,options:{conflict?:boolean;badThumbn
  await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
  await expect(page.getByRole('heading',{name:'Materiales del taller',exact:true})).toBeVisible();
 }
-async function preview(page:Page){await page.getByRole('button',{name:'Importar biblioteca',exact:true}).click();await page.getByRole('button',{name:'Desde ZIP o archivo SKM',exact:true}).click();await expect(page.getByRole('dialog',{name:'Revisar importación de materiales'})).toBeVisible();}
+async function preview(page:Page){await page.getByRole('button',{name:'Importar',exact:true}).click();await page.getByRole('button',{name:'SKM: ZIP o archivo .skm…',exact:true}).click();await expect(page.getByRole('dialog',{name:'Revisar importación de materiales'})).toBeVisible();}
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
 test('35 candidatos con miniaturas se importan sin aprobar; repetir detecta duplicados y no toca el modelo',async({page},info)=>{
@@ -62,7 +62,7 @@ test('35 candidatos con miniaturas se importan sin aprobar; repetir detecta dupl
  await modal.getByRole('button',{name:'Importar 35 materiales',exact:true}).click();await expect(modal).toHaveCount(0);
  await expect(page.getByRole('article',{name:/Material /})).toHaveCount(35);expect(catalog.items.every(item=>!item.approved&&item.kind==='unknown'&&item.thicknessMm===null&&item.grain===null)).toBe(true);
  const forbidden=['catalog_install','paint_apply','smart_tool_start','skm_install','save','pdf','order_export'];expect(calls.some(call=>forbidden.includes(call.action))).toBe(false);
- await page.getByRole('searchbox',{name:'Buscar materiales del taller'}).fill('Catno QA 13');await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toHaveCount(1);await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toContainText('Tipo pendiente');
+ await page.getByRole('searchbox',{name:'Buscar materiales del taller'}).fill('Catno QA 13');await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toHaveCount(1);await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toContainText('Sin tipo');
  await preview(page);await expect(modal).toContainText('35 duplicados');await expect(modal.getByRole('button',{name:'Importar 0 materiales',exact:true})).toBeDisabled();
  await modal.getByRole('button',{name:'Cancelar importación',exact:true}).click();expect(catalog.items).toHaveLength(35);expect(calls.filter(call=>call.action==='skm_commit_typed')).toHaveLength(1);
 });
@@ -72,7 +72,7 @@ test('conflicto requiere un nombre explícito o excluir la fila; Escape cancela 
  await modal.getByRole('checkbox',{name:'Importar QA001.skm',exact:true}).check();await expect(modal.getByRole('button',{name:'Importar 35 materiales',exact:true})).toBeDisabled();
  await modal.getByRole('textbox',{name:'Resolver nombre QA001.skm',exact:true}).fill('Material QA 01 alternativa');await expect(modal.getByRole('button',{name:'Importar 35 materiales',exact:true})).toBeEnabled();
  await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(catalog.items).toHaveLength(1);expect(calls.filter(call=>call.action==='skm_commit_typed')).toHaveLength(0);expect(calls.some(call=>call.action==='skm_cancel')).toBe(true);
- await expect(page.getByRole('button',{name:'Importar biblioteca',exact:true})).toBeFocused();
+ await expect(page.getByRole('button',{name:'Importar',exact:true})).toBeFocused();
 });
 
 test('miniatura externa se sustituye por placeholder y favorito persiste sin alterar aprobación',async({page},info)=>{
@@ -85,14 +85,14 @@ test('miniatura externa se sustituye por placeholder y favorito persiste sin alt
 });
 
 test('archivo malformado informa recuperación y no sustituye la biblioteca ni abre importación',async({page},info)=>{
- await boot(page,info.outputDir,{malformed:true});await page.getByRole('button',{name:'Importar biblioteca',exact:true}).click();await page.getByRole('button',{name:'Desde ZIP o archivo SKM',exact:true}).click();
+ await boot(page,info.outputDir,{malformed:true});await page.getByRole('button',{name:'Importar',exact:true}).click();await page.getByRole('button',{name:'SKM: ZIP o archivo .skm…',exact:true}).click();
  await expect(page.getByRole('alert')).toContainText('El archivo no es un ZIP válido');await expect(page.getByRole('dialog',{name:'Revisar importación de materiales'})).toHaveCount(0);expect(catalog.items).toHaveLength(0);expect(calls.some(call=>call.action==='skm_commit_typed')).toBe(false);
 });
 
 
 test('un SKM se carga en el modelo con un clic, sin confirmación: no pinta nada y Ctrl+Z lo deshace',async({page},info)=>{
  await boot(page,info.outputDir,{approved:true});const card=page.getByRole('article',{name:'Material Material QA 01',exact:true});await card.getByRole('button',{name:/Material QA 01/}).first().click();
- const details=page.getByRole('complementary',{name:'Material seleccionado'});
+ const details=page.getByRole('dialog',{name:'Propiedades del material «Material QA 01»',exact:true});await details.getByRole('tab',{name:'Textura',exact:true}).click();
  await expect(details.getByText('No pinta piezas ni modifica el archivo original; Ctrl+Z en SketchUp lo deshace.',{exact:true})).toBeVisible();
  await details.getByRole('button',{name:'Cargar SKM en este modelo',exact:true}).click();await expect(page.getByText('SKM cargado en el modelo.',{exact:false})).toBeVisible();
  await expect(details.getByRole('button',{name:'Sí, cargar SKM'})).toHaveCount(0);

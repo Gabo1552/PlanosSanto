@@ -166,6 +166,15 @@ class PinturaEnVistaControllerTest < Minitest::Test
     assert_equal 'edge',options['mode'];assert_equal 'canto',options['catalogId'];assert_equal 'uuid-canto',options['materialUuid']
   end
 
+  # 0.8.17: un material de la bandeja todavía sin vínculo se vincula solo (como al abrir Materiales) y pasa al pincel.
+  def test_an_unbound_tray_material_links_itself_and_becomes_the_brush_material
+    paint('sheet');loose=@natives[2]
+    linker=Object.new;linker.define_singleton_method(:auto_link!) { loose.bound={'uuid'=>'uuid-suelto','catalogId'=>'placa','kind'=>'sheet'};{'changed'=>1} }
+    options=PlanosSanto::MaterialLibrary.stub(:new,linker) { with_tool { tool.args[:native_material].call(loose) } }
+    assert_equal 'sheet',options['mode'];assert_equal 'placa',options['catalogId']
+    assert_equal 0,UI.vista_dialogs
+  end
+
   def test_an_unbound_material_from_the_tray_explains_why_it_cannot_be_used
     paint('sheet')
     error=assert_raises(PlanosSanto::ExportError) { with_tool { tool.args[:native_material].call(@natives[2]) } }
@@ -180,7 +189,11 @@ class PinturaEnVistaControllerTest < Minitest::Test
     assert_equal true,result['toolState']['active']
     with_tool { tool.args[:guard].call } # the in-view guard does not ask for the guide
     @controller.instance_variable_set(:@workshop_dirty,true)
-    assert_raises(PlanosSanto::ExportError) { with_tool { tool.args[:guard].call } }
+    # 0.8.17 (cortes): the guard runs on every mouse move; an unsaved library
+    # edit no longer freezes a running brush. Installing from the strip still waits.
+    with_tool { tool.args[:guard].call }
+    error=assert_raises(PlanosSanto::ExportError) { with_tool { tool.args[:pick_material].call('nueva','sheet') } }
+    assert_match(/biblioteca o pedido antes de instalar/,error.message);assert_includes @installable,'nueva'
     assert_match(/biblioteca o pedido/,@controller.paint_block_reason('sheet'))
     assert_equal 1,@controller.paint_validation('sheet') # MF_GRAYED
   end
@@ -211,5 +224,115 @@ class PinturaEnVistaControllerTest < Minitest::Test
     with_tool { @controller.open_paint_palette }
     assert_equal 1,UI.vista_dialogs
     refute_nil @controller.instance_variable_get(:@palette_dialog)
+  end
+
+  # ---- 0.8.17 · punto 1 (placa → canto): the cause lives in the controller.
+  def test_cause_tab_callback_refuses_a_remembered_edge_that_is_not_ready_in_this_model
+    write_prefs('lastMaterials'=>{'sheet'=>'placa','edge'=>'nueva'})
+    paint('sheet')
+    error=assert_raises(PlanosSanto::ExportError) { with_tool { tool.args[:switch_mode].call('edge') } }
+    assert_equal 'Se instala al elegirlo.',error.message
+    assert_includes @installable,'nueva','Tab nunca instala'
+  end
+
+  # Same flow with the REAL SmartPaintTool: Tab and the «Pintar cantos» tab reach edge.
+  def with_real_tool
+    binding_of=lambda { |material| material.respond_to?(:bound) && material.bound ? {'status'=>'valid','binding'=>material.bound} : {'status'=>'absent'} }
+    service=Object.new;service.define_singleton_method(:cancel) { nil }
+    PlanosSanto::PaintMaterials.stub(:new,@paint) do
+      PlanosSanto::SmartPaint.stub(:new,service) do
+        PlanosSanto::CatalogStore.stub(:new,@catalog) do
+          PlanosSanto::MaterialResolver.stub(:observe_binding,binding_of) { yield }
+        end
+      end
+    end
+  end
+  def test_with_the_real_brush_tab_from_sheet_reaches_edge_and_shows_the_edges
+    write_prefs('lastMaterials'=>{'sheet'=>'placa','edge'=>'nueva'})
+    with_real_tool { @controller.paint_in_view('sheet') }
+    real=tool;assert_instance_of PlanosSanto::SmartPaintTool,real
+    assert_equal 'uuid-placa',real.status['options']['materialUuid']
+    with_real_tool { real.onKeyDown(9,1,0,nil) }
+    assert_equal 'edge',real.status['mode'];assert_nil real.status['options']['materialUuid']
+    assert_equal %w[canto],real.instance_variable_get(:@strip_rows).map { |row| row['catalogId'] }
+    assert_equal true,@controller.smart_state['active'];assert_equal 'edge',@controller.smart_state['mode']
+    with_real_tool { real.choose_recent(0) }
+    assert_equal 'uuid-canto',real.status['options']['materialUuid']
+    assert_empty @prepared.select { |id,| id=='nueva' }
+  end
+
+  # ---- 0.8.17 · punto 2: actions that answered «Detené Pintura Inteligente…»
+  # now stop the brush by themselves and go on.
+  def session_double
+    session=Object.new
+    session.define_singleton_method(:scan) { {'tree'=>{'roots'=>[]}} }
+    session.define_singleton_method(:generate) { |ids| {'generated'=>ids} }
+    session.define_singleton_method(:save) { |_furniture,_revision,**_options| {'saved'=>true} }
+    session.define_singleton_method(:fingerprint) { 'f' }
+    session.define_singleton_method(:document) { {} }
+    session.define_singleton_method(:skipped_names) { [] }
+    session
+  end
+  def test_saving_the_guide_stops_the_brush_by_itself_and_saves
+    paint('sheet');brush=tool
+    @controller.instance_variable_set(:@session,session_double)
+    @model.define_singleton_method(:path) { '' } unless @model.respond_to?(:path)
+    result=with_tool { @controller.dispatch('save',{'furniture'=>[],'revision'=>1}) }
+    assert_equal({'saved'=>true},result['guide'])
+    assert_equal 1,brush.stops;assert_equal false,@controller.smart_state['active']
+    assert_match(/Pintura detenida/,Sketchup.vista_status.last)
+  end
+  def test_library_changes_stop_the_brush_by_themselves_and_go_on
+    workshop=Object.new
+    workshop.define_singleton_method(:save_catalog) { |_items,_revision| {'catalog'=>{'items'=>[]}} }
+    workshop.define_singleton_method(:add_variant) { |_id,_mm,_revision,name:nil| {'catalog'=>{'items'=>[]}} }
+    library=Object.new;library.define_singleton_method(:archive_items) { |_data| {'archived'=>['x']} }
+    {'catalog_save'=>{'items'=>[],'revision'=>1},'catalog_variant'=>{'id'=>'placa','thicknessMm'=>18,'revision'=>1},'material_archive'=>{'catalogIds'=>['x'],'archive'=>true}}.each do |action,data|
+      paint('sheet');brush=tool
+      result=PlanosSanto::Workshop.stub(:new,workshop) do
+        @controller.stub(:management_library,library) { with_tool { @controller.dispatch(action,data) } }
+      end
+      refute result.key?('error'),action
+      assert_equal 1,brush.stops,"#{action} detiene el pincel solo"
+      assert_equal false,@controller.smart_state['active']
+    end
+  end
+  def test_highlight_stops_the_brush_and_no_longer_asks_to_stop_it_or_reanalyze
+    paint('sheet');brush=tool
+    @controller.instance_variable_set(:@smart_changed,true);@controller.instance_variable_set(:@analysis_stale,true)
+    highlight=VistaToolDouble.new(@model,options:{'mode'=>'highlight'},on_event:lambda { |_event| })
+    result=PlanosSanto::PieceHighlightTool.stub(:new,highlight) { with_tool { @controller.dispatch('piece_highlight',{'pieceId'=>'1/11'}) } }
+    assert_equal 'highlight',result['toolState']['mode'];assert_equal 1,brush.stops
+    assert_same highlight,tool
+  end
+
+  # ---- 0.8.17 · punto 3 (cortes): what used to stop the brush by itself.
+  def test_the_automatic_reanalysis_after_a_click_keeps_the_brush_painting
+    paint('sheet');brush=tool
+    PlanosSanto::NativeSession.stub(:new,session_double) { with_tool { @controller.dispatch('scan',{}) } }
+    assert_equal 0,brush.stops,'App.tsx reanaliza 1,2 s después de cada clic: el pincel sigue'
+    assert_equal true,@controller.smart_state['active'];assert_same brush,@controller.instance_variable_get(:@smart_tool)
+    with_tool { brush.args[:guard].call }
+    # The automatic refresh then regenerates the open guides: read-only, the brush keeps painting.
+    assert_equal({'generated'=>['1']},with_tool { @controller.dispatch('generate',{'ids'=>['1']}) })
+    assert_equal 0,brush.stops
+  end
+  def test_a_reanalysis_of_another_model_still_stops_the_brush
+    paint('sheet');brush=tool
+    other=NamesFixture.model;natives=@natives;other.define_singleton_method(:materials) { natives }
+    other.define_singleton_method(:select_tool) { |_tool| }
+    Sketchup.vista_model=other
+    PlanosSanto::NativeSession.stub(:new,session_double) { with_tool { @controller.dispatch('scan',{}) } }
+    assert_equal 1,brush.stops
+  end
+  def test_closing_the_main_window_or_the_palette_keeps_the_brush_of_the_toolbar
+    paint('sheet');brush=tool
+    with_tool { @controller.show }
+    with_tool { @controller.instance_variable_get(:@dialog).close }
+    assert_equal 0,brush.stops;refute_nil @controller.instance_variable_get(:@session)
+    with_tool { brush.args[:guard].call } # still paints: the session was kept
+    with_tool { @controller.open_paint_palette }
+    with_tool { @controller.instance_variable_get(:@palette_dialog).close }
+    assert_equal 0,brush.stops;assert_equal true,@controller.smart_state['active']
   end
 end

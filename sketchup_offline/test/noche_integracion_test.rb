@@ -181,14 +181,17 @@ class NocheIntegracionTest < Minitest::Test
     assert_equal %w[material_duplicate],@dialog.events('planos-santo-material-library-changed').map { |event| event['action'] }
   end
 
-  # Hito 7 × Hito 2: the library refuses mutations while the pincel paints,
-  # but the read-only focus request after starting it still answers.
-  def test_material_mutations_wait_for_the_pincel_but_viewport_focus_answers
+  # Hito 7 × Hito 2 · 0.8.17: a read-only focus request leaves the pincel
+  # painting; a library mutation stops it by itself (no «Detené Pintura
+  # Inteligente…») and goes on with its own validation.
+  def test_material_mutations_stop_the_pincel_by_themselves_and_viewport_focus_answers
     editor!;palette!;start_tool(@palette)
-    assert_match(/Detené Pintura Inteligente/,request('material_archive',{'catalogIds'=>['x']},@palette)['error'])
     assert_equal({'focused'=>true,'method'=>'Sketchup.focus'},request('viewport_focus',{},@palette)['result'])
     assert_equal 1,Sketchup.noche_focus
     assert_equal true,@controller.send(:smart_state)['active']
+    error=request('material_archive',{'catalogIds'=>['x']},@palette)['error']
+    refute_match(/Detené/,error.to_s);assert_equal 'Indicá si archivar o restaurar.',error
+    assert_equal false,@controller.send(:smart_state)['active']
   end
 
   # F-ARQ-A × Hito 7: a large reply of a user-dialog material action travels

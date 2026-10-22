@@ -25,8 +25,9 @@ module PlanosSanto
       catalog = @catalog.read
       duplicates = @library.duplicate_uuids
       bound = bound_materials
+      pending = pending_links(catalog)
       catalog['items'].select { |item| %w[sheet edge].include?(item['kind']) }.to_h do |item|
-        [item['id'], state_for(item, catalog, bound[item['id']] || [], duplicates)]
+        [item['id'], state_for(item, catalog, bound[item['id']] || [], duplicates, pending)]
       end
     end
 
@@ -34,7 +35,7 @@ module PlanosSanto
     def state(catalog_id)
       catalog = @catalog.read
       item = catalog['items'].find { |row| row['id'] == catalog_id && %w[sheet edge].include?(row['kind']) }
-      item && state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids)
+      item && state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids, pending_links(catalog))
     end
 
     # Returns {'catalogId','materialUuid','materialId','installed','message'}.
@@ -49,7 +50,15 @@ module PlanosSanto
       unless item['kind'] == kind
         raise ExportError, "«#{item['name']}» es #{item['kind'] == 'edge' ? 'un canto; usá Pintar canto' : 'una placa; usá Pintar pieza'}."
       end
-      state = state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids)
+      state = state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids, pending_links(catalog))
+      linked = false
+      if state['autoLink']
+        # 0.8.17: choosing the material is enough; its link resolves itself first.
+        linked = @library.auto_link!['changed'].to_i.positive?
+        catalog = @catalog.read
+        item = catalog['items'].find { |row| row['id'] == catalog_id } || item
+        state = state_for(item, catalog, bound_materials[item['id']] || [], @library.duplicate_uuids, {})
+      end
       case state['state']
       when 'ready'
         # Integrity at selection time (0.8.8 security review): if the library still
@@ -59,7 +68,8 @@ module PlanosSanto
           raise ExportError, "El archivo de textura de «#{item['name']}» en la biblioteca fue alterado o está dañado (no coincide su huella). Restaurá la copia de seguridad antes de pintar."
         end
         { 'catalogId' => item['id'], 'materialUuid' => state['materialUuid'], 'materialId' => state['materialId'],
-          'installed' => false, 'message' => "Material activo: #{item['name']}." }
+          'installed' => linked, 'linked' => linked,
+          'message' => linked ? "«#{item['name']}» se vinculó sola con su material del modelo. Hacé clic en las piezas para pintar." : "Material activo: #{item['name']}." }
       when 'installable'
         install(item, catalog)
       else
@@ -107,8 +117,21 @@ module PlanosSanto
       end
     end
 
-    def state_for(item, catalog, bound, duplicates)
+    # catalogId => model material that #auto_link! would link or repair for that ficha.
+    def pending_links(catalog)
+      @library.link_plan(catalog)['actions'].each_with_object({}) do |action, map|
+        map[action['item']['id']] ||= @library.display_name(action['material']) if action['item']
+      end
+    rescue ExportError
+      {}
+    end
+
+    def state_for(item, catalog, bound, duplicates, pending = {})
       name = item['name']
+      if pending.key?(item['id']) && bound.none? { |material| @library.binding_issues(material, catalog, duplicates).empty? }
+        return { 'state' => 'installable', 'autoLink' => true,
+                 'message' => "«#{name}» se vincula sola con «#{pending[item['id']]}» del modelo al elegirla." }
+      end
       unless bound.empty?
         with_issues = bound.map { |material| [material, @library.binding_issues(material, catalog, duplicates)] }
         valid = with_issues.select { |_material, issues| issues.empty? }.map(&:first)

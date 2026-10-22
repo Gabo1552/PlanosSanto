@@ -96,7 +96,7 @@ class CatalogV2ActionsTest < Minitest::Test
 
   def test_catalog_load_reports_pending_migration
     File.write(File.join(@dir,'catalog.json'),JSON.generate('schema'=>1,'revision'=>0,'items'=>[]))
-    assert_equal({'from'=>1,'to'=>2,'pending'=>true},dispatch('catalog_load')['migration'])
+    assert_equal({'from'=>1,'to'=>3,'pending'=>true},dispatch('catalog_load')['migration'])
     dispatch('catalog_save',{'items'=>[],'revision'=>0})
     assert_nil dispatch('catalog_load')['migration']
   end

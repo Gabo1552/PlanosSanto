@@ -255,8 +255,11 @@ module PlanosSanto
         @dirty=false;@workshop_dirty=false
         unless @palette_dialog
           @skm_import=nil;@skm_preview_active=false;@photo_material=nil;@photo_preview_active=false
-          stop_smart_tool(refresh:false);@session=nil
-          unwatch_model!
+          # 0.8.17 (cortes): the brush of the toolbar does not depend on this window.
+          unless in_view_brush?
+            stop_smart_tool(refresh:false);@session=nil
+            unwatch_model!
+          end
         end
         forget_analysis! # the analysis state belongs to the editor window
       end
@@ -400,8 +403,8 @@ module PlanosSanto
         next unless @palette_dialog.equal?(window)
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
         @photo_material=nil;@photo_preview_active=false
-        stop_smart_tool(refresh:false)
-        unwatch_model! unless @dialog
+        stop_smart_tool(refresh:false) unless in_view_brush?
+        unwatch_model! unless @dialog || in_view_brush?
       end
       window.show
     end
@@ -487,13 +490,14 @@ module PlanosSanto
       if in_view
         # Pintura en vista: the strip lists the library and the Materials tray chooses too.
         advanced.merge!(swatches:lambda { |mode| generation==(@tool_generation || 0) ? smart_swatches(mode) : [] },
-          pick_material:lambda { |catalog_id,mode| tool_guard!(generation,true);smart_pick_material(catalog_id,mode) },
+          pick_material:lambda { |catalog_id,mode| tool_guard!(generation,true,install:true);smart_pick_material(catalog_id,mode) },
           native_material:lambda { |material| tool_guard!(generation,true);smart_native_material(material) })
       end
       @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
         guard:lambda { tool_guard!(generation,in_view) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
         remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
         switch_mode:lambda { |mode| tool_guard!(generation,in_view);smart_switch_mode(mode) },timing:smart_timing,**advanced)
+      @smart_in_view=in_view
       begin
         @model.select_tool(@smart_tool)
         @smart_state['active']=true
@@ -669,7 +673,9 @@ module PlanosSanto
       active!
       directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
       catalog=CatalogStore.new(directory:directory)
-      native=MaterialLibrary.new(@model,catalog:catalog,directory:directory).status
+      library=MaterialLibrary.new(@model,catalog:catalog,directory:directory)
+      linked=auto_link_materials(library)
+      native=library.status
       photos=photo_material.thumbnails
       status=skm_importer.status
       status['rows'].each { |row| row['thumbnail']=photos[row['catalogId']] if photos[row['catalogId']] }
@@ -680,7 +686,25 @@ module PlanosSanto
         row['thumbnail']=photos[item['id']]
         row['designReady']=MaterialPolicy.paintable?(item,directory:directory)
       end
-      status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'])
+      status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'],
+        'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all)
+    end
+
+    # 0.8.17: loading the library resolves the ficha ↔ model material links by
+    # itself (one undoable operation, only when something changes). Never while
+    # painting or with unsaved guide/order edits; a busy library just waits for
+    # the next load. Errors never block the library listing.
+    def auto_link_materials(library)
+      return {'changed'=>0,'deferred'=>true} if @dirty || @workshop_dirty || (@smart_state && @smart_state['active'] && @smart_state['mode']!='highlight')
+      result=library.auto_link!
+      if result['changed'].to_i>0
+        refresh_after_material_change(result)
+        notify_material_library_changed('auto_link')
+      end
+      result.slice('changed','linked')
+    rescue StandardError => error
+      warn("Planos Santo: vinculación automática pospuesta: #{error.class}: #{error.message}") unless error.is_a?(ExportError)
+      {'changed'=>0,'error'=>error.message}
     end
 
     def photo_material
@@ -699,7 +723,7 @@ module PlanosSanto
     MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
       catalog_bind catalog_install skm_commit skm_install material_photo_create
       material_photo_install smart_assign_color smart_material_prepare smart_quick_start
-      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync].freeze
+      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync material_link_resolve].freeze
     def dispatch(action, data)
       result=dispatch_action(action,data)
       if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
@@ -724,9 +748,9 @@ module PlanosSanto
 
     def dispatch_action(action, data)
       stop_smart_tool(refresh:false) if @smart_state && @smart_state['active'] && @smart_state['mode']=='highlight' && %w[generate save pdf names_apply names_preview].include?(action)
-      if @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight' && %w[material_photo_pick material_photo_create material_photo_install skm_preview skm_commit skm_install generate save pdf names_apply names_preview catalog_save catalog_add catalog_import catalog_import_model catalog_bind catalog_install order_save order_export paint_preview paint_apply].include?(action)
-        raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.'
-      end
+      # 0.8.17 (punto 2 de Gabriel): these used to answer «Detené Pintura
+      # Inteligente…». Now the brush stops by itself and the action goes on.
+      stop_brush_for!(action) if BRUSH_STOPPING_ACTIONS.include?(action)
       case action
       when *MATERIAL_MANAGEMENT_ACTIONS
         material_management(action,data)
@@ -735,7 +759,7 @@ module PlanosSanto
         @palette_ready=true
         {'ready'=>true,'intent'=>@palette_intent,'toolState'=>smart_state}
       when 'palette_close'
-        stop_smart_tool(refresh:false)
+        stop_smart_tool(refresh:false) unless in_view_brush?
         @palette_dialog&.close
         {'closed'=>true}
       when 'palette_manage'
@@ -785,7 +809,10 @@ module PlanosSanto
         @ui_ready=true
         {'ready'=>true,'intent'=>@quick_intent}
       when 'scan'
-        stop_smart_tool(refresh:false)
+        # 0.8.17 (cortes): App.tsx reanalyzes by itself 1.2 s after each click of
+        # the brush. That scan used to stop the brush: painting «se detenía de vez
+        # en cuando». A brush painting this same model keeps working.
+        stop_smart_tool(refresh:false) unless brush_running? && Sketchup.active_model.equal?(@model)
         @smart_changed=false
         @smart_state=(@smart_state || {}).merge('contextChanged'=>false,'contextRestored'=>false,'error'=>nil)
         @model = Sketchup.active_model
@@ -846,7 +873,7 @@ module PlanosSanto
       when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','skm_commit_typed'
         active!
         mutating=%w[maderera_profile_save maderera_profile_approve maderera_profile_activate catalog_add_preset catalog_variant skm_commit_typed].include?(action)
-        raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.' if mutating && @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
+        stop_brush_for!(action) if mutating
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
         result=case action
@@ -929,7 +956,9 @@ module PlanosSanto
         refresh_after_material_change(library.install(data,path:path))
       when 'piece_highlight'
         active!
-        raise ExportError,'Detené Pintura Inteligente y actualizá el análisis antes de resaltar.' if @smart_changed || @analysis_stale
+        # 0.8.17: no «Detené…» and no wait for the analysis: the brush stops by
+        # itself and a path that changed is refused by the highlight tool itself.
+        stop_brush_for!(action)
         stop_smart_tool(refresh:false)
         generation=@tool_generation || 0
         @smart_state={'active'=>false,'mode'=>'highlight','changed'=>false,'queuedCount'=>0,'message'=>''}
@@ -1003,7 +1032,9 @@ module PlanosSanto
         end
         stopped.merge('toolState'=>smart_state)
       when 'smart_tool_status'
-        (@smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
+        # A brush that SketchUp just swapped for its Paint Bucket (tray choice) comes back by itself.
+        returning=@smart_tool.respond_to?(:tray_grace?) && @smart_tool.tray_grace?
+        (@smart_state && !@smart_state['active'] && @smart_changed && !returning ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
       when 'smart_tool_stop'
         stop_smart_tool
       # Hito 7: opciones de vista del pincel inmediato. No detienen la herramienta,
@@ -1385,6 +1416,21 @@ module PlanosSanto
       name=(material.respond_to?(:display_name) ? material.display_name : material.name).to_s
       observed=MaterialResolver.observe_binding(material)
       binding=observed['binding']
+      # 0.8.17: a tray material not linked yet links itself (same rules as opening
+      # Materiales: own attribute, unique name, repaired link) before giving up.
+      unless observed['status']=='valid' && binding.is_a?(Hash) && binding['catalogId'].is_a?(String)
+        begin
+          directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+          linked=MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory).auto_link!
+          if linked['changed'].to_i>0
+            notify_material_library_changed('auto_link')
+            observed=MaterialResolver.observe_binding(material);binding=observed['binding']
+          end
+        rescue StandardError => error
+          # A failed automatic link never breaks the brush: the reason below explains it.
+          warn("Planos Santo: vinculación automática desde la bandeja: #{error.class}: #{error.message}") unless error.is_a?(ExportError)
+        end
+      end
       unless observed['status']=='valid' && binding.is_a?(Hash) && binding['catalogId'].is_a?(String)
         raise ExportError,"«#{name}» tiene un vínculo dañado con la biblioteca; revisalo en Materiales." if observed['status']=='invalid'
         raise ExportError,"«#{name}» no está en la biblioteca de Planos Santo; elegí una muestra de la tira o agregalo en Materiales."
@@ -1452,16 +1498,45 @@ module PlanosSanto
     end
 
     # in_view: the toolbar brush never waits for the guide to be saved.
-    def tool_guard!(generation,in_view=false)
+    # 0.8.17 (cortes): nor for open library/order edits while it only paints
+    # with a material already in the model (the guard runs on every mouse move,
+    # so an unsaved library edit froze the brush). Installing a material from
+    # the strip (install:true) writes the library and still waits for them.
+    def tool_guard!(generation,in_view=false,install:false)
       raise ExportError,'La herramienta se canceló. Volvé a activarla desde la paleta.' unless generation==(@tool_generation || 0)
       active!
       return clean_for_paint! unless in_view
-      raise ExportError,'Guardá los cambios de biblioteca o pedido antes de pintar.' if @workshop_dirty
+      raise ExportError,'Guardá los cambios de biblioteca o pedido antes de instalar un material.' if install && @workshop_dirty
+    end
+
+    # The immediate brush (toolbar or palette) is painting right now.
+    def brush_running?
+      smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? && !(defined?(PieceHighlightTool) && @smart_tool.is_a?(PieceHighlightTool))
+    rescue StandardError
+      false
+    end
+
+    def in_view_brush?
+      @smart_in_view==true && brush_running?
+    end
+
+    # Actions that write the model or the library: the brush stops by itself
+    # (0.8.17). Read-only ones (generate, pdf, names_preview) keep it painting,
+    # so the automatic refresh of the guides after a click never stops it.
+    BRUSH_STOPPING_ACTIONS=%w[material_photo_pick material_photo_create material_photo_install skm_preview skm_commit skm_install
+      save names_apply catalog_save catalog_add catalog_import catalog_import_model catalog_bind catalog_install order_save
+      order_export paint_preview paint_apply].freeze
+    def stop_brush_for!(action)
+      return nil unless @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
+      result=stop_smart_tool
+      paint_status('Pintura detenida para continuar con lo que pediste. Volvé a tocar Pintar cuando quieras.')
+      warn("Planos Santo: pincel detenido automáticamente para #{action}.") if $VERBOSE
+      result
     end
 
     def stop_smart_tool(refresh:true)
       tool=@smart_tool
-      @smart_tool=nil
+      @smart_tool=nil;@smart_in_view=false
       if tool
         tool.stop
         @model.select_tool(nil) if @model && Sketchup.active_model.equal?(@model)
@@ -1485,7 +1560,7 @@ module PlanosSanto
     # the smart paint tool; mutations are refused while it is active.
     MATERIAL_MANAGEMENT_ACTIONS=%w[material_extras material_duplicate material_archive
       material_package_export material_package_preview material_package_commit material_package_cancel
-      material_texture_preview material_texture_apply material_ocl_sync viewport_focus].freeze
+      material_texture_preview material_texture_apply material_ocl_sync material_link_resolve viewport_focus].freeze
     MATERIAL_MANAGEMENT_READONLY=%w[material_extras material_package_cancel viewport_focus].freeze
     def material_management_directory
       ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
@@ -1501,9 +1576,7 @@ module PlanosSanto
     end
     def material_management(action,data)
       raise ExportError,'Datos de la acción inválidos.' unless data.is_a?(Hash)
-      if !MATERIAL_MANAGEMENT_READONLY.include?(action) && @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
-        raise ExportError,'Detené Pintura Inteligente antes de cambiar la biblioteca.'
-      end
+      stop_brush_for!(action) unless MATERIAL_MANAGEMENT_READONLY.include?(action)
       case action
       when 'viewport_focus'
         # Best effort (MATERIALES-19): Sketchup.focus exists only in recent APIs.
@@ -1548,6 +1621,10 @@ module PlanosSanto
         clean_for_paint! unless data['dryRun']==true
         result=management_library.ocl_sync(data)
         result['changed'].to_i>0 ? refresh_after_material_change(result) : result
+      when 'material_link_resolve'
+        # 0.8.17: the one click left for a real ambiguity (two fichas with the same name).
+        active!;clean_for_paint!
+        refresh_after_material_change(management_library.resolve_link(data))
       when 'material_texture_preview'
         active!
         photo_material.texture_preview(data)

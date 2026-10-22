@@ -38,7 +38,7 @@ const catalog:Catalog={schema:2,revision:4,items:[]};
 test.afterEach(()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
 test('vista previa SKM: tipo por fila prellenado, tipo en lote para los seleccionados y espesor sugerido editable',async({page},info)=>{
- await boot(page,info.outputDir);await page.getByRole('button',{name:'Importar biblioteca',exact:true}).click();await page.getByRole('button',{name:'Desde ZIP o archivo SKM',exact:true}).click();
+ await boot(page,info.outputDir);await page.getByRole('button',{name:'Importar',exact:true}).click();await page.getByRole('button',{name:'SKM: ZIP o archivo .skm…',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Revisar importación de materiales'});await expect(modal).toBeVisible();
  await expect(modal.getByLabel('Tipo de Melamina Blanca 18mm.skm')).toHaveValue('sheet');await expect(modal.getByLabel('Tipo de Canto Blanco 0.45.skm')).toHaveValue('edge');await expect(modal.getByLabel('Tipo de Textura libre.skm')).toHaveValue('unknown');
  await modal.getByLabel('Tipo de Textura libre.skm').selectOption('veneer');await expect(modal.getByLabel('Tipo de Textura libre.skm')).toHaveValue('veneer');

@@ -183,10 +183,26 @@ class PaintReadyTest < Minitest::Test
   end
 
   # C5: escala verificada modificada en el editor de SketchUp.
-  def test_scale_edited_in_sketchup_is_reported_as_texture_mismatch
+  # 0.8.17: la foto de la biblioteca se reinstala sola en el mismo material al elegirlo (Ctrl+Z la deshace).
+  def test_scale_edited_in_sketchup_is_reinstalled_when_chosen
+    created=create_photo(@first_photo,'Escala.jpg',PhotoFixture.jpeg,'textureWidthMm'=>2750,'textureHeightMm'=>1830)
+    service.prepare(created['catalogId'],'sheet')
+    material=@model.materials.last
+    material.texture.width=10.0
+    state=service.states[created['catalogId']]
+    assert_equal 'installable',state['state'];assert state['autoLink'];assert_match(/se vincula sola/,state['message'])
+    count=@model.materials.length
+    prepared=service.prepare(created['catalogId'],'sheet')
+    assert prepared['linked'];assert_equal count,@model.materials.length,'Se repara el mismo material; no se crea otro'
+    assert_in_delta 2750,material.texture.width*25.4,0.1
+    assert_equal 'ready',service.states[created['catalogId']]['state']
+  end
+  # Sin la foto en esta PC no se puede reinstalar: queda el aviso de textura, no de vinculación.
+  def test_scale_edited_without_library_photo_stays_as_texture_mismatch
     created=create_photo(@first_photo,'Escala.jpg',PhotoFixture.jpeg,'textureWidthMm'=>2750,'textureHeightMm'=>1830)
     service.prepare(created['catalogId'],'sheet')
     @model.materials.last.texture.width=10.0
+    FileUtils.rm_rf(File.join(@directory,'photo-assets'))
     state=service.states[created['catalogId']]
     assert_equal 'texture_mismatch',state['state'];assert_match(/escala|tamaño/,state['message'])
   end

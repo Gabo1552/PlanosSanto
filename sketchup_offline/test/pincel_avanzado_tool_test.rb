@@ -59,6 +59,10 @@ class PavView < PavPlainView
   def line_width=(value);@widths << value;end
   def draw2d(mode,points);@draws2d << [mode,points.map { |p| p.to_a.first(2) },drawing_color,@widths.last];end
 end
+class PavWideView < PavView
+  def vpheight;900;end
+  def vpwidth;1600;end
+end
 class PavMenu
   attr_reader :items,:separators,:validations
   def initialize;@items=[];@separators=0;@validations={};end
@@ -545,60 +549,195 @@ class PinturaEnVistaToolTest < Minitest::Test
       switch_mode:lambda { |mode| test.switched(mode) })
   end
   def picked(id,mode);@picked << [id,mode];tool_options(mode,'catalogId'=>id,'materialUuid'=>'nueva-uuid');end
-  def switched(mode);@switches << mode;@switch_to;end
+  def switched(mode)
+    @switches << mode
+    raise PlanosSanto::ExportError,@switch_refusal if @switch_refusal
+    @switch_to
+  end
   def native(material)
     raise PlanosSanto::ExportError,"«#{material.display_name}» no está en la biblioteca de Planos Santo." unless [@sheet,@edge].include?(material)
     tool_options(material.equal?(@edge) ? 'edge' : 'sheet')
   end
-  def square(index);[12+index*62+28,600-12-28];end
-  # scale 2: Pieza 12..140, Canto 148..276, 1/2/4 at 284, 348, 412 (56 px), y 12..60.
-  BAR={'sheet'=>[76,36],'edge'=>[212,36],'count1'=>[312,36],'count2'=>[376,36],'count4'=>[440,36]}.freeze
   def blank(mode='sheet');tool_options(mode,'catalogId'=>nil,'materialUuid'=>nil).reject { |_,value| value.nil? };end
+  # 0.8.17: the in-view interface is laid out by the tool; tests click on the
+  # centre of the item the tool itself reports (scale 2, PavWideView 1600x900).
+  def layout;@tool.ui_layout(@view);end
+  def item(kind,key);layout[:items].find { |k,name,| k==kind && name==key };end
+  def center(kind,key)
+    found=item(kind,key) or flunk("no hay #{kind} #{key.inspect} en la vista")
+    left,top,right,bottom=found[2];[(left+right)/2,(top+bottom)/2]
+  end
+  def click_ui(kind,key);@tool.onLButtonDown(0,*center(kind,key),@view);end
+  def quads_at(top);@view.draws2d.select { |mode,points| mode==7 && points.first[1].round==top.round };end
+  def wide!;@view=PavWideView.new(@picker);end
+  # The real controller refuses a remembered material that is not ready in this
+  # model (PaintMaterials#state 'installable' -> ExportError with its message).
+  NOT_READY='«Canto Roble» todavía no está en este modelo; se instala automáticamente al elegirlo.'
 
   def test_strip_lists_recents_then_library_swatches_and_marks_the_installable_ones
-    build_vista(tool_options('sheet'))
+    build_vista(tool_options('sheet'));wide!
     rows=@tool.instance_variable_get(:@strip_rows)
     assert_equal [binding_of(@sheet)['catalogId'],OTHER['catalogId'],NUEVA['catalogId']],rows.map { |row| row['catalogId'] }
     assert_equal %w[ready ready installable],rows.map { |row| row['state'] }
     @tool.draw(@view)
-    strip=@view.draws2d.select { |mode,points| mode==7 && points.first[1].round==532 }
-    assert_equal 3,strip.length
-    assert(@view.draws2d.any? { |mode,points| mode==1 && points.map { |p| p.map(&:round) }==[[136,588],[192,532]] },'diagonal on the installable square')
-    assert(@view.texts.any? { |_,text,| text=='Materiales · clic para elegir (1–6 recientes)' })
-    @tool.onMouseMove(0,*square(2),@view)
+    # Bottom strip: dark band 72 px high (36 at scale 1), «Ningún material» and one wide cell per material.
+    assert_equal [[0,828],[1600,828],[1600,900],[0,900]],quads_at(828).first[1].map { |p| p.map(&:round) }
+    assert_equal PlanosSanto::SmartPaintTool::BAND,quads_at(828).first[2].to_a.first(3)
+    cells=layout[:items].select { |kind,| kind==:cell }
+    assert_equal [0,1,2],cells.map { |_,index,| index }
+    assert_equal 414,(cells[0][2][2]-cells[0][2][0]).round,'420 px por celda menos la separación'
+    assert_equal [:none,'none'],layout[:items].find { |kind,| kind==:none }.first(2)
+    assert(@view.texts.any? { |_,text,| text=='Ningún material' })
+    assert(@view.texts.any? { |_,text,| text=='Roble nuevo' })
+    # Active cell: orange border 3 px; the installable one has a corner mark (a triangle).
+    active=@view.draws2d.find { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[1].round==834 }
+    refute_nil active,'borde naranja en la celda activa'
+    assert_equal cells[0][2][0].round,active[1].first[0].round
+    assert(@view.draws2d.any? { |mode,points| mode==4 && points.length==3 && points.first[1].round==834 && points.first[0].round>cells[2][2][0] })
+    @tool.onMouseMove(0,*center(:cell,2),@view)
     assert_match(/Roble nuevo\. Clic para usarlo \(se instala en el modelo\); no pinta\./,@events.last['message'])
     assert_equal 2,@events.last['recents'].length,'status still reports only the recents'
   end
 
   def test_clicking_an_installable_swatch_asks_the_controller_to_install_it_and_never_paints
-    build_vista(tool_options('sheet'));stack!(entry(@doors[0]))
-    @tool.onLButtonDown(0,*square(2),@view)
+    build_vista(tool_options('sheet'));wide!;stack!(entry(@doors[0]))
+    click_ui(:cell,2)
     assert_equal [[NUEVA['catalogId'],'sheet']],@picked;assert_empty @selected
     assert_equal 'nueva-uuid',@tool.status['options']['materialUuid']
     assert_empty @model.operations
-    @tool.onLButtonDown(0,*square(1),@view)
+    click_ui(:cell,1)
     assert_equal [[OTHER['catalogId'],'sheet']],@selected,'a ready swatch is selected without installing'
   end
 
-  def test_mode_bar_is_drawn_and_switches_mode_and_edge_count_without_picking_pieces
-    build_vista(tool_options('sheet'));stack!(entry(@doors[0]))
+  def test_top_bar_has_the_three_tabs_with_the_active_one_in_orange_and_switches_without_picking
+    build_vista(tool_options('sheet'));wide!;stack!(entry(@doors[0]))
     @tool.draw(@view)
-    bar=@view.draws2d.select { |mode,points| mode==7 && points.first[1].round==12 }
-    assert_equal [[12,12],[140,12],[140,60],[12,60]],bar.first[1].map { |p| p.map(&:round) }
-    assert_equal 2,bar.length;assert_equal [25,72,61],bar.first[2].to_a.first(3) # Pieza active
-    assert(@view.texts.any? { |_,text,| text=='Canto' })
+    assert_equal [[0,0],[1600,0],[1600,60],[0,60]],quads_at(0).first[1].map { |p| p.map(&:round) },'barra superior: 60 px a escala 2'
+    tabs=layout[:items].select { |kind,| kind==:tab }
+    assert_equal [['sheet','Pintar piezas'],['edge','Pintar cantos'],['remove_edge','Quitar canto']],tabs.map { |_,key,_,label| [key,label] }
+    orange=@view.draws2d.select { |mode,_points,color| mode==7 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE }
+    assert_equal 1,orange.length;assert_equal tabs[0][2][0].round,orange.first[1].first[0].round
+    assert(@view.texts.any? { |_,text,| text=='PINTAR' });assert(@view.texts.any? { |_,text,| text=='Tab cambia · Esc termina' })
+    assert_nil layout[:bands][:sub],'en Pintar piezas no hay 1 · 2 · 4'
     picks=@picker.picks
-    @tool.onMouseMove(0,*BAR['edge'],@view)
-    assert_equal picks,@picker.picks;assert_match(/Canto: pinta los cantos/,@events.last['message'])
-    @tool.onLButtonDown(0,*BAR['edge'],@view)
+    @tool.onMouseMove(0,*center(:tab,'edge'),@view)
+    assert_equal picks,@picker.picks;assert_match(/Pintar cantos: pinta los cantos/,@events.last['message'])
+    click_ui(:tab,'edge')
     assert_equal ['edge'],@switches;assert_equal 'edge',@tool.status['mode']
     assert_nil @tool.status['options']['materialUuid'];assert_match(/Elegí un material/,@events.last['message'])
     assert_equal ['edge'],@recent_calls.drop(1),'the strip follows the new mode'
-    @tool.onLButtonDown(0,*BAR['count4'],@view)
+    # Edge mode: a light band «Cantos por clic 1 2 4» under the tabs.
+    assert_equal [0,60,1600,112],layout[:bands][:sub].map(&:round)
+    click_ui(:count,'count4')
     assert_equal 4,@tool.status['options']['edgeCount'];assert_equal 4,@remembered.last['edgeCount']
-    @tool.onLButtonDown(0,*BAR['edge'],@view)
+    @view.draws2d.clear;@tool.draw(@view)
+    four=item(:count,'count4')[2]
+    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==2 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0].round==four[0].round })
+    click_ui(:tab,'edge')
     assert_match(/ya está activo/,@events.last['message'])
     assert_equal picks,@picker.picks;assert_empty @model.operations
+  end
+
+  # Gabriel 0.8.16, punto 1: «No funciona el cambio de pintar placa a pintar
+  # canto, no te deja seleccionarla ni hacer tab lo cambia. Desde placa a canto.»
+  # Cause: the controller refuses the remembered edge when it is not ready in
+  # this model and the tool used to cancel the switch («No se cambió de modo»).
+  def test_tab_from_sheet_reaches_edge_even_when_the_remembered_edge_is_not_ready
+    build_vista(tool_options('sheet'));@switch_refusal=NOT_READY
+    @tool.onKeyDown(9,1,0,@view)
+    assert_equal ['edge'],@switches
+    assert_equal 'edge',@tool.status['mode'],'Tab cambia a canto aunque el último canto no esté en el modelo'
+    assert_nil @tool.status['options']['materialUuid']
+    assert_nil @events.last['error']
+    assert_match(/Pintar canto\. Elegí un material.*no está listo en este modelo: «Canto Roble» todavía no está/,@events.last['message'])
+    assert_equal [binding_of(@edge)['catalogId']],@tool.instance_variable_get(:@strip_rows).map { |row| row['catalogId'] },'la tira muestra los cantos para elegir'
+    @tool.onKeyDown(9,1,0,@view)
+    assert_equal 'sheet',@tool.status['mode'],'y Tab vuelve a placa'
+  end
+
+  def test_clicking_pintar_cantos_reaches_edge_even_when_the_remembered_edge_is_not_ready
+    build_vista(tool_options('sheet'));wide!;@switch_refusal=NOT_READY;stack!(entry(@doors[0]))
+    picks=@picker.picks
+    click_ui(:tab,'edge')
+    assert_equal 'edge',@tool.status['mode'];assert_equal picks,@picker.picks
+    click_ui(:cell,0)
+    assert_equal [[binding_of(@edge)['catalogId'],'edge']],@selected.last(1)
+    assert_equal binding_of(@edge)['uuid'],@tool.status['options']['materialUuid']
+  end
+
+  def test_the_palette_brush_still_refuses_a_tab_without_a_ready_material
+    build_tool(tool_options('sheet'),switch_mode:lambda { |_mode| raise PlanosSanto::ExportError,NOT_READY })
+    @tool.onKeyDown(9,1,0,@view)
+    assert_equal 'sheet',@tool.status['mode'];assert_equal NOT_READY,@events.last['error']
+  end
+
+  def test_quitar_canto_tab_needs_no_material_shows_1_2_4_and_hides_the_strip
+    build_vista(tool_options('sheet'));wide!
+    click_ui(:tab,'remove_edge')
+    assert_equal 'remove_edge',@tool.status['mode'];assert_equal [],@switches,'quitar canto no pide material al controlador'
+    options=@tool.status['options'];assert_nil options['materialUuid'];assert_equal false,options['immediatePiece'];assert_equal 'face',options['paintScope']
+    refute_nil item(:count,'count1');assert_nil layout[:bands][:strip];assert_nil item(:none,'none')
+    assert_match(/Quitar canto\. Hacé clic en el canto/,@events.last['message'])
+    @tool.onKeyDown(9,1,0,@view);assert_equal 'sheet',@tool.status['mode']
+  end
+
+  def test_tabs_and_cells_win_over_the_model_and_empty_band_parts_never_paint
+    build_vista(tool_options('sheet'));wide!;stack!(entry(@doors[0]))
+    picks=@picker.picks;undo=@model.undo_states.length
+    @tool.onLButtonDown(0,1580,30,@view) # the hint area of the top band
+    @tool.onLButtonDown(0,1590,880,@view) # strip right of the cells
+    @tool.onMouseMove(0,1580,30,@view)
+    assert_match(/Barra del pincel/,@events.last['message'])
+    assert_equal picks,@picker.picks;assert_empty @model.operations;assert_equal undo,@model.undo_states.length
+    assert faces_of(@doors[0]).drop(2).none? { |face| face.material }
+    @tool.onLButtonDown(0,800,450,@view) # the model: picked as always
+    assert_operator @picker.picks,:>,picks
+  end
+
+  def test_ningun_material_clears_the_brush_material_without_writing
+    build_vista(tool_options('sheet'));wide!
+    click_ui(:none,'none')
+    assert_nil @tool.status['options']['materialUuid'];assert_equal 'sheet',@tool.status['mode']
+    assert_match(/Sin material\. Elegí un material/,@events.last['message'])
+    @view.draws2d.clear;@tool.draw(@view)
+    none=item(:none,'none')[2]
+    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0].round==none[0].round })
+    assert_empty @model.operations
+  end
+
+  def test_many_materials_page_with_arrows_and_small_views_keep_the_tabs_inside
+    build_vista(tool_options('sheet')) # 800 px wide at scale 2: two cells per page
+    cells=layout[:items].select { |kind,| kind==:cell }.map { |_,index,| index }
+    assert_equal [0,1],cells;refute_nil item(:nav,'next');assert_nil item(:nav,'prev')
+    click_ui(:nav,'next')
+    assert_equal [2],layout[:items].select { |kind,| kind==:cell }.map { |_,index,| index }
+    refute_nil item(:nav,'prev')
+    click_ui(:cell,2);assert_equal [[NUEVA['catalogId'],'sheet']],@picked
+    tabs=layout[:items].select { |kind,| kind==:tab }.map { |_,_,rect,| rect }
+    assert tabs.all? { |left,_,right,| left>=0 && right<=800 },'las pestañas no desbordan la vista'
+    assert_nil layout[:bands][:title],'sin lugar, el título se omite'
+  end
+
+  def test_swatch_text_keeps_contrast_and_long_names_are_shortened
+    tool=build_vista(tool_options('sheet'))
+    assert_equal [255,255,255],tool.contrast([40,30,20]);assert_equal PlanosSanto::SmartPaintTool::DARK_TEXT,tool.contrast([240,240,235])
+    assert_equal 'Melamina B…',tool.fit_text(@view,'Melamina Blanca Texturada',150)
+    assert_equal 'Corto',tool.fit_text(@view,'Corto',150)
+  end
+
+  def test_the_bars_follow_ui_scale_factor
+    build_vista(tool_options('edge'));wide!
+    assert_equal [0,0,1600,60],layout[:bands][:top].map(&:round)
+    assert_equal 48,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
+    UI.singleton_class.send(:alias_method,:pav_scale_was,:scale_factor)
+    UI.define_singleton_method(:scale_factor) { 1.0 }
+    begin
+      assert_equal [0,0,1600,30],layout[:bands][:top].map(&:round)
+      assert_equal [0,864,1600,900],layout[:bands][:strip].map(&:round)
+      assert_equal 24,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
+    ensure
+      UI.singleton_class.send(:alias_method,:scale_factor,:pav_scale_was)
+    end
   end
 
   def test_a_click_on_the_model_without_material_explains_how_to_choose_one_and_does_not_paint
@@ -619,7 +758,7 @@ class PinturaEnVistaToolTest < Minitest::Test
     @tray.observers.first.onMaterialSetCurrent(@tray,loose)
     assert_match(/«Pintura suelta» no está en la biblioteca/,@events.last['error'])
     assert_equal binding_of(@edge)['uuid'],@tool.status['options']['materialUuid'],'an unusable material keeps the current one'
-    @tool.deactivate(@view);assert_empty @tray.observers
+    @tool.stop(@view);assert_empty @tray.observers
   end
 
   def test_tab_without_a_remembered_material_switches_mode_in_the_view
@@ -632,6 +771,120 @@ class PinturaEnVistaToolTest < Minitest::Test
   def test_the_palette_brush_keeps_its_old_strip_and_tray_behaviour
     build_tool(tool_options('sheet'))
     assert_equal 2,@tool.instance_variable_get(:@strip_rows).length;assert_nil @tray.observers
-    @tool.draw(@view);refute(@view.draws2d.any? { |mode,points| mode==7 && points.first[1].round==12 })
+    @tool.draw(@view);refute(@view.draws2d.any? { |mode,points| mode==7 && [0,12].include?(points.first[1].round) },'sin barra de pestañas en la paleta')
+    assert_nil @tool.ui_layout(@view)
+  end
+
+  # ---- 0.8.17 (punto 3, cortes): SketchUp's Materials tray selects its own
+  # Paint Bucket, which deactivates the brush. A usable tray choice brings the
+  # brush back by itself; Esc or an unusable material never does.
+  def with_timers
+    timers=[]
+    UI.singleton_class.send(:alias_method,:pav_timer_was,:start_timer)
+    UI.define_singleton_method(:start_timer) { |delay,_repeat=false,&block| timers << [delay,block];timers.length }
+    yield timers
+  ensure
+    UI.singleton_class.send(:alias_method,:start_timer,:pav_timer_was)
+  end
+  def run_now(timers)
+    due=timers.select { |delay,| delay.zero? };timers.reject! { |delay,| delay.zero? }
+    due.each { |_,block| block.call }
+  end
+  def selections!
+    @now=10.0;@tool.instance_variable_set(:@clock,lambda { @now })
+    selected=@tool_selections=[]
+    @model.define_singleton_method(:select_tool) { |tool| selected << tool;tool&.activate }
+  end
+
+  def test_a_tray_choice_followed_by_the_paint_bucket_selects_the_brush_again
+    build_vista(blank('sheet'));selections!
+    with_timers do |timers|
+      @tray.observers.first.onMaterialSetCurrent(@tray,@edge) # the tray first
+      @now+=0.05;@tool.deactivate(@view)                      # then SketchUp's Paint Bucket
+      assert_equal false,@tool.status['active'];assert_match(/vuelve a activarse/,@events.last['message'])
+      run_now(timers)
+      assert_equal [@tool],@tool_selections;assert_equal true,@tool.status['active']
+      assert_equal 'edge',@tool.status['mode'];assert_equal binding_of(@edge)['uuid'],@tool.status['options']['materialUuid']
+      assert_equal 1,@tray.observers.length,'one observer, never duplicated'
+    end
+  end
+
+  def test_a_tray_choice_that_arrives_after_the_deactivation_also_brings_the_brush_back
+    build_vista(blank('sheet'));selections!
+    with_timers do |timers|
+      @tool.deactivate(@view)
+      assert_equal 1,@tray.observers.length,'the tray observer outlives the deactivation for a moment'
+      @now+=0.3;@tray.observers.first.onMaterialSetCurrent(@tray,@sheet)
+      run_now(timers)
+      assert_equal [@tool],@tool_selections;assert_equal binding_of(@sheet)['uuid'],@tool.status['options']['materialUuid']
+    end
+  end
+
+  def test_after_the_grace_or_with_an_unusable_material_the_other_tool_stays
+    build_vista(blank('sheet'));selections!
+    with_timers do |timers|
+      @tool.deactivate(@view)
+      loose=PavMaterial.new(993,'Pintura suelta',Sketchup::Color.new(1,1,1),1,nil)
+      @now+=0.2;@tray.observers.first.onMaterialSetCurrent(@tray,loose)
+      assert_match(/no está en la biblioteca/,@events.last['error'])
+      @now+=5;@tray.observers.first.onMaterialSetCurrent(@tray,@edge)
+      run_now(timers)
+      assert_empty @tool_selections;assert_equal false,@tool.status['active']
+      grace=timers.find { |delay,| delay==PlanosSanto::SmartPaintTool::TRAY_GRACE }
+      grace[1].call;assert_empty @tray.observers,'the observer leaves after the grace'
+    end
+  end
+
+  def test_escape_stops_for_good_even_with_a_tray_choice_right_after
+    build_vista(blank('sheet'));selections!
+    with_timers do |timers|
+      @tray.observers.first.onMaterialSetCurrent(@tray,@edge)
+      @tool.onCancel(0,@view)
+      assert_equal [nil],@tool_selections;assert_empty @tray.observers
+      @tool.deactivate(@view);run_now(timers)
+      assert_equal [nil],@tool_selections,'Esc nunca vuelve a seleccionar el pincel'
+    end
+  end
+
+  # ---- 0.8.17 (punto 3, cortes): no exception of a Tool callback reaches SketchUp.
+  class PavBrokenView < PavView
+    def vpwidth;1600;end
+    def vpheight;900;end
+    def draw2d(*_args);raise TypeError,'draw2d roto';end
+    def draw(*_args);raise TypeError,'draw roto';end
+  end
+  def test_a_failing_draw_never_reaches_sketchup_and_is_reported_in_the_status_bar
+    build_vista(tool_options('sheet'));hover_on(@doors[0])
+    Sketchup.pav_status_texts=[]
+    @tool.draw(PavBrokenView.new(@picker))
+    assert_match(/Pincel: falló draw.*TypeError.*sigue activa/,Sketchup.pav_status_texts.last)
+    assert_equal true,@tool.status['active']
+  end
+
+  def test_errors_inside_callbacks_are_contained_and_the_tool_stays_active
+    build_vista(tool_options('sheet'));wide!;Sketchup.pav_status_texts=[]
+    @tool.instance_variable_set(:@on_event,lambda { |_event| raise IOError,'ventana cerrada' })
+    hover_on(@doors[0])
+    @tool.onLButtonDown(0,800,450,@view)
+    assert_equal true,@tool.onKeyDown(9,1,0,@view)
+    @tool.onMouseMove(0,*center(:tab,'edge'),@view)
+    @tool.draw(@view)
+    assert_equal true,@tool.instance_variable_get(:@active)
+    assert_match(/Pincel: falló on(MouseMove|LButtonDown|KeyDown) \(IOError\)/,Sketchup.pav_status_texts.last)
+  end
+
+  def test_the_wrapped_callbacks_keep_the_arity_sketchup_expects
+    klass=PlanosSanto::SmartPaintTool
+    {activate:0,deactivate:1,suspend:1,resume:1,onMouseMove:4,onLButtonDown:4,onKeyDown:4,onKeyUp:4,onCancel:2,draw:1,onSetCursor:0,getMenu:-2}.each do |name,arity|
+      assert_equal arity,klass.instance_method(name).arity,name.to_s
+    end
+    assert_equal 1,klass.ancestors.count { |mod| mod.is_a?(Module) && !mod.is_a?(Class) && mod.instance_methods(false).include?(:draw) },'un solo envoltorio'
+  end
+
+  def test_escape_deselects_the_tool_even_if_stopping_fails
+    build_vista(tool_options('sheet'));selections!
+    @tool.instance_variable_set(:@on_event,lambda { |_event| raise IOError,'ventana cerrada' })
+    @tool.onCancel(0,@view)
+    assert_equal [nil],@tool_selections
   end
 end
