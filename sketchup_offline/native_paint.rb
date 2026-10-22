@@ -124,8 +124,8 @@ module PlanosSanto
         raise ExportError,'La selección contiene una cara amplia o ambigua; elegí solamente caras de canto.' unless planar
       end
     end
-    # Local axes are explicitly chosen by the operator. Cardinal expansion is
-    # allowed only when each physical boundary has one unambiguous planar face.
+    # Local axes are explicitly chosen by the operator. Each physical boundary
+    # groups the faces lying entirely on its plane (PINTURA-15).
     def boundary_frame(node,data)
       axes=data['axes']
       valid=axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
@@ -173,15 +173,16 @@ module PlanosSanto
         count=data.fetch('edgeCount',1)
         raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' unless count.is_a?(Integer) && [1,2,4].include?(count)
         validate_edge!(node,selected,data)
-        return selected if count==1
+        # PINTURA-15: a side may be several coplanar faces on its boundary
+        # plane (rectangular piece only); the side is always painted whole.
         frame=boundary_frame(node,data);groups=frame[:groups]
         keys=frame[:axes].flat_map { |axis| [[axis,'min'],[axis,'max']] }
-        raise ExportError,'Los cuatro lados no son caras físicas únicas. Revisá la pieza manualmente.' unless keys.all? { |key| groups[key].length==1 }
-        return keys.map { |key| groups[key].first } if count==4
+        raise ExportError,'Un lado de la pieza no tiene caras sobre su borde. Revisá la pieza manualmente.' unless keys.all? { |key| !groups[key].empty? }
+        return keys.flat_map { |key| groups[key] }.uniq if count==4
         selected.flat_map do |face|
           key=keys.find { |entry| groups[entry].include?(face) }
           raise ExportError,'El lado señalado no pertenece al marco local de cantos.' unless key
-          [groups[[key[0],'min']].first,groups[[key[0],'max']].first]
+          count==1 ? groups[key] : groups[[key[0],'min']]+groups[[key[0],'max']]
         end.uniq
       elsif data['mode']=='sheet'
         scope=data.fetch('paintScope','face')
