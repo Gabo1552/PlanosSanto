@@ -145,8 +145,9 @@ class Hito6ControllerTest < Minitest::Test
     assert_equal 1,Hito6ScanCounter.count
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('generate',{'ids'=>['1']}) }
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('piece_highlight',{'pieceId'=>'1/11'}) }
-    # Undo after an own write keeps the banner: the analyzed session was replaced.
-    @controller.model_watch_changed(['model'])
+    # Undo after an own write keeps the banner: the analyzed session was replaced,
+    # so the debounced check does not even walk the model again.
+    PlanosSanto::ModelWatch.stub(:fingerprint,->(_model) { raise 'no debe recorrer el modelo' }) { @controller.model_watch_changed(['model']) }
     assert_equal true,stale_events.last['stale']
     @controller.dispatch('scan',{})
     assert_equal false,@controller.send(:analysis_state)['stale'];assert_equal 2,Hito6ScanCounter.count

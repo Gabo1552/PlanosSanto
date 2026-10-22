@@ -1110,6 +1110,9 @@ module PlanosSanto
     # Runs from the debounced timer, never from an observer callback.
     def check_analysis
       return unless @analysis_session && @analysis_fingerprint && @dialog
+      # Already stale and the analyzed session was replaced (own write): it can
+      # only become fresh by reanalyzing, so skip the walk (painting bursts).
+      return if @analysis_stale && !@analysis_session.equal?(@session)
       current=safe_fingerprint
       return unless current
       if current!=@analysis_fingerprint
