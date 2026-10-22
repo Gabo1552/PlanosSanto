@@ -1,3 +1,19 @@
+# Entrega 0.8.12 — 0.8.11 + Hito 3 completo, cierre del Hito 4 y orden del repositorio, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.12-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.11 suma:
+- Hito 3: correcciones de la revisión de la interfaz.
+- Hito 4: cierre de la revisión y checklist nativo (H4-1 a H4-15).
+- Hito 5: referencias parciales que no dependen del perfil del TXT.
+- Hito 6: huella del inventario por definición. En el banco simulado, el clic en modo Cara o lote baja de 434 a 93 ms.
+- Hito 7: fichas archivadas fuera de la paleta.
+- Accesibilidad de la biblioteca de materiales (axe sin exclusiones).
+- Sugerencia «Listón» para listones comunes.
+- Orden del repositorio.
+
+`PlanosSanto-0.8.12-Validacion-Local.zip` trae el anexo 0.8.12, la guía 0.8.11, el verificador (ahora espera la 0.8.12) y los checklists de cada hito. No se instala. Todo se probó con dobles de la API, no en SketchUp. Producción no aprobada.
+
+---
+
 # Entrega 0.8.11 — candidata noche (Hitos 1 a 7), PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.11-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.10 suma:
