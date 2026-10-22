@@ -1,22 +1,35 @@
-// Vista «Piezas»: lógica pura de filtros, secciones y totales sobre la respuesta de la acción Ruby `cutlist`.
+// Vista «Piezas»: lógica pura del listado (resumen por material, secciones de placas y de cantos,
+// textos de celda, opciones y CSV) sobre la respuesta de la acción Ruby `cutlist`.
 // Sin React ni puente: la prueba vitest la ejercita directamente.
 
 export type CutlistSide='arr'|'aba'|'izq'|'der';
 export type CutlistEdgeStatus='catalog'|'observed'|'none'|'unknown';
-export type CutlistEdge={side:CutlistSide;status:CutlistEdgeStatus;lengthMm:number;catalogId?:string;sku?:string|null;name?:string;observedIds?:string[]};
+export type CutlistEdge={side:CutlistSide;status:CutlistEdgeStatus;lengthMm:number;catalogId?:string;sku?:string|null;name?:string;observedIds?:string[];edgeKey?:string};
+/** Tira de canto de un lado: largo del lado, ancho de la ficha (o el espesor de la pieza, aproximado). */
+export type CutlistStrip={side:CutlistSide;label:string;edgeKey:string;lengthMm:number;widthMm:number;widthApprox:boolean;approximate:boolean};
 export type CutlistMaterial={source:'catalog'|'model'|'mixed';name:string;catalogId?:string;sku?:string|null;thicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null;observedId?:string;observedIds?:string[];category?:string;linked?:boolean};
 export type CutlistGrain='length'|'width'|'none'|null;
 export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];name:string;furnitureId:string;furnitureName:string;quantity:number;
-  lengthMm:number;widthMm:number;thicknessMm:number;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];grain:CutlistGrain;notes:string[]};
-export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;catalogThicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null};
-export type CutlistData={schema:1;complete:boolean;readOnly:boolean;furniture:{id:string;name:string}[];sections:CutlistSectionInfo[];pieces:CutlistPiece[]};
+  lengthMm:number;widthMm:number;thicknessMm:number;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
+export type SheetTotals={pieces:number;lengthM:number;areaM2:number;volumeM3:number};
+export type EdgeTotals={strips:number;lengthM:number;areaM2:number;volumeM3:number|null};
+export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';kind:'sheet'|'unknown';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;
+  catalogThicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null;colorRgb?:number[]|null;missing:string[];totals?:SheetTotals};
+export type CutlistEdgeSectionInfo={key:string;source:'catalog'|'model';kind:'edge';name:string;sku?:string|null;catalogId?:string|null;observedIds?:string[];
+  thicknessMm:number|null;widthMm:number|null;colorRgb?:number[]|null;missing:string[];widthApprox?:boolean;totals?:EdgeTotals};
+export type CutlistData={schema:1;complete:boolean;readOnly:boolean;modelName:string;unit:'mm';furniture:{id:string;name:string}[];
+  sections:CutlistSectionInfo[];edgeSections:CutlistEdgeSectionInfo[];pieces:CutlistPiece[]};
 export type CutlistFilter={furnitureId?:string;query?:string};
-export type EdgeTotal={key:string;label:string;name:string;linked:boolean;metres:number};
-export type SectionTotals={rows:number;pieces:number;areaM2:number;edges:EdgeTotal[]};
-export type CutlistSection={info:CutlistSectionInfo;pieces:CutlistPiece[];totals:SectionTotals};
+export type CutlistSection={info:CutlistSectionInfo;pieces:CutlistPiece[];totals:SheetTotals};
+export type StripRow={key:string;letter:string;piece:CutlistPiece;strip:CutlistStrip};
+export type CutlistEdgeSection={info:CutlistEdgeSectionInfo;rows:StripRow[];totals:EdgeTotals};
+export type SummaryKind='sheet'|'edge'|'unknown';
+/** Fila de la tabla resumen: una por sección de placa, de canto o sin tipo, con sus Σ. */
+export type SummaryRow={key:string;kind:SummaryKind;name:string;thicknessMm:number|null;widthMm:number|null;widthApprox:boolean;color:string|null;
+  warnings:string[];catalogId:string|null;count:number;lengthM:number;areaM2:number|null;volumeM3:number|null};
 
 export const SIDES:CutlistSide[]=['arr','aba','izq','der'];
-export const SIDE_LABELS:Record<CutlistSide,string>={arr:'Arriba',aba:'Abajo',izq:'Izquierda',der:'Derecha'};
+export const KIND_LABELS:Record<SummaryKind,string>={sheet:'Placa',edge:'Canto',unknown:'Sin tipo definido'};
 
 const fold=(text:string)=>text.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
 const round=(value:number,digits:number)=>{const factor=10**digits;return Math.round(value*factor)/factor;};
@@ -28,46 +41,28 @@ export function filterPieces(pieces:CutlistPiece[],filter:CutlistFilter={}):Cutl
     &&(!query||[piece.name,piece.code,...piece.codes].some(text=>fold(text).includes(query))));
 }
 
-/** Clave estable de un canto para sumar metros: la ficha si existe; si no, los materiales observados. */
-export function edgeKey(edge:CutlistEdge):string|undefined{
-  if(edge.status==='catalog'&&edge.catalogId)return `catalog:${edge.catalogId}`;
-  if(edge.status==='observed'&&edge.observedIds?.length)return `model:${[...edge.observedIds].sort().join(',')}`;
-  return undefined;
+/** Σ de placas con las mismas cuentas que Ruby (Cutlist.sheet_totals): medidas finales × cantidad. Ruby redondea su
+ * contrato a milésimas; acá se guarda la precisión para no redondear dos veces al mostrar. */
+export function sheetTotals(pieces:CutlistPiece[]):SheetTotals{
+  const sum=(value:(piece:CutlistPiece)=>number)=>pieces.reduce((total,piece)=>total+value(piece)*piece.quantity,0);
+  return {pieces:sum(()=>1),lengthM:round(sum(p=>p.lengthMm)/1000,6),areaM2:round(sum(p=>p.lengthMm*p.widthMm)/1e6,6),volumeM3:round(sum(p=>p.lengthMm*p.widthMm*p.thicknessMm)/1e9,9)};
 }
 
-/** Texto del chip: el SKU (o el nombre) recortado; «—» si el lado no tiene canto. */
-export function edgeLabel(edge:CutlistEdge,max=10):string{
-  if(edge.status==='none'||edge.status==='unknown')return '—';
-  const text=(edge.status==='catalog'&&edge.sku?edge.sku:edge.name||edge.sku||'').trim();
-  if(!text)return '—';
-  return text.length>max?`${text.slice(0,max-1).trimEnd()}…`:text;
+/** Σ de un canto (Cutlist.edge_sections): tiras, metros, m² con el ancho de cada tira y m³ si la ficha tiene espesor. */
+export function edgeTotals(rows:StripRow[],thicknessMm:number|null):EdgeTotals{
+  const area=rows.reduce((total,{piece,strip})=>total+strip.lengthMm*strip.widthMm*piece.quantity,0);
+  return {strips:rows.reduce((total,{piece})=>total+piece.quantity,0),lengthM:round(rows.reduce((total,{piece,strip})=>total+strip.lengthMm*piece.quantity,0)/1000,6),
+    areaM2:round(area/1e6,6),volumeM3:thicknessMm==null?null:round(area*thicknessMm/1e9,9)};
 }
 
-export function edgeDescription(edge:CutlistEdge):string{
-  const side=SIDE_LABELS[edge.side];
-  if(edge.status==='catalog')return `${side}: ${edge.name||edge.sku}${edge.sku?` (${edge.sku})`:''}`;
-  if(edge.status==='observed')return `${side}: ${edge.name} — pintado en el modelo, sin ficha de biblioteca`;
-  if(edge.status==='none')return `${side}: sin canto`;
-  return `${side}: sin canto observado (lado sin verificar)`;
+/** Letras de fila como en una lista de corte: A…Z, AA, AB… */
+export function rowLetter(index:number):string{
+  let text='',value=index+1;
+  while(value>0){const rest=(value-1)%26;text=String.fromCharCode(65+rest)+text;value=Math.floor((value-1)/26);}
+  return text;
 }
 
-/** Metros de canto por canto de un grupo de filas: largo del lado × cantidad. */
-export function edgeTotals(pieces:CutlistPiece[]):EdgeTotal[]{
-  const totals=new Map<string,EdgeTotal>();
-  for(const piece of pieces)for(const edge of piece.edges){
-    const key=edgeKey(edge);if(!key)continue;
-    const entry=totals.get(key)||{key,label:edge.status==='catalog'&&edge.sku?edge.sku:edge.name||edge.sku||'',name:edge.name||edge.sku||'',linked:edge.status==='catalog',metres:0};
-    entry.metres+=edge.lengthMm*piece.quantity/1000;totals.set(key,entry);
-  }
-  return [...totals.values()].map(entry=>({...entry,metres:round(entry.metres,2)})).sort((a,b)=>Number(b.linked)-Number(a.linked)||a.label.localeCompare(b.label,'es'));
-}
-
-export function sectionTotals(pieces:CutlistPiece[]):SectionTotals{
-  return {rows:pieces.length,pieces:pieces.reduce((sum,piece)=>sum+piece.quantity,0),
-    areaM2:round(pieces.reduce((sum,piece)=>sum+piece.lengthMm*piece.widthMm*piece.quantity/1e6,0),3),edges:edgeTotals(pieces)};
-}
-
-/** Secciones con filas visibles, en el orden que manda Ruby (fichas, modelo, mezcla, «Sin material»). */
+/** Secciones de placas con filas visibles, en el orden que manda Ruby (fichas, modelo, mezcla, «Sin material»). */
 export function buildSections(data:CutlistData,filter:CutlistFilter={}):CutlistSection[]{
   const visible=filterPieces(data.pieces,filter);
   const bySection=new Map<string,CutlistPiece[]>();
@@ -75,33 +70,106 @@ export function buildSections(data:CutlistData,filter:CutlistFilter={}):CutlistS
   const known=new Set(data.sections.map(section=>section.key));
   // Una pieza con una sección que Ruby no listó no se pierde: va al final con lo que se sabe de ella.
   const orphans=[...bySection.keys()].filter(key=>!known.has(key)).map(key=>{const piece=bySection.get(key)![0];
-    return {key,source:piece.material?.source||'none',name:piece.material?.name||'Sin material',thicknessMm:piece.thicknessMm} as CutlistSectionInfo;});
-  return [...data.sections,...orphans].filter(info=>bySection.has(info.key)).map(info=>{const pieces=bySection.get(info.key)!;return {info,pieces,totals:sectionTotals(pieces)};});
+    return {key,source:piece.material?.source||'none',kind:'unknown',name:piece.material?.name||'Sin material',thicknessMm:piece.thicknessMm,missing:[]} as CutlistSectionInfo;});
+  return [...data.sections,...orphans].filter(info=>bySection.has(info.key)).map(info=>{const pieces=bySection.get(info.key)!;return {info,pieces,totals:sheetTotals(pieces)};});
 }
 
-export function grandTotals(sections:CutlistSection[]):{sections:number;rows:number;pieces:number;areaM2:number;edgeMetres:number}{
-  return {sections:sections.length,rows:sections.reduce((sum,s)=>sum+s.totals.rows,0),pieces:sections.reduce((sum,s)=>sum+s.totals.pieces,0),
-    areaM2:round(sections.reduce((sum,s)=>sum+s.totals.areaM2,0),3),edgeMetres:round(sections.reduce((sum,s)=>sum+s.totals.edges.reduce((acc,e)=>acc+e.metres,0),0),2)};
+/** Una sección por canto con una fila por tira (pieza × lado), en el orden de las piezas. */
+export function buildEdgeSections(data:CutlistData,filter:CutlistFilter={}):CutlistEdgeSection[]{
+  const visible=filterPieces(data.pieces,filter);
+  const byKey=new Map<string,{piece:CutlistPiece;strip:CutlistStrip}[]>();
+  for(const piece of visible)for(const side of SIDES)for(const strip of (piece.strips||[]).filter(item=>item.side===side)){
+    const list=byKey.get(strip.edgeKey)||[];list.push({piece,strip});byKey.set(strip.edgeKey,list);
+  }
+  const known=new Set((data.edgeSections||[]).map(section=>section.key));
+  const orphans=[...byKey.keys()].filter(key=>!known.has(key)).map(key=>{const {piece,strip}=byKey.get(key)![0];const edge=piece.edges.find(item=>item.side===strip.side);
+    return {key,source:key.startsWith('catalog:')?'catalog':'model',kind:'edge',name:edge?.name||edge?.sku||'Canto',thicknessMm:null,widthMm:null,missing:['ficha']} as CutlistEdgeSectionInfo;});
+  return [...(data.edgeSections||[]),...orphans].filter(info=>byKey.has(info.key)).map(info=>{
+    const rows=byKey.get(info.key)!.map((entry,index)=>({key:`${entry.piece.id}:${entry.strip.side}`,letter:rowLetter(index),...entry}));
+    return {info,rows,totals:edgeTotals(rows,info.thicknessMm)};
+  });
+}
+
+const MISSING:Record<string,string>={ficha:'Sin ficha en la biblioteca',SKU:'SKU no definido',espesor:'Espesor no definido',largo:'Largo no definido',ancho:'Ancho no definido',veta:'Veta no definida',tipo:'Tipo no definido'};
+/** Avisos rojos de la fila: lo que le falta a la ficha (CatalogStore.missing). */
+export const missingLabels=(missing:string[]|undefined)=>(missing||[]).map(key=>MISSING[key]||`${key[0]?.toUpperCase()||''}${key.slice(1)} no definido`);
+
+export const hexColor=(color?:number[]|null)=>color?.length===3&&color.every(value=>Number.isInteger(value)&&value>=0&&value<=255)?`#${color.map(value=>value.toString(16).padStart(2,'0')).join('')}`:null;
+
+/** Tabla resumen: placas, después cantos y al final lo que no tiene tipo («?»), como en el listado. */
+export function summaryRows(sections:CutlistSection[],edges:CutlistEdgeSection[]):SummaryRow[]{
+  const sheet=(section:CutlistSection):SummaryRow=>{const {info,totals}=section;const known=info.kind==='sheet';
+    return {key:info.key,kind:known?'sheet':'unknown',name:info.name,thicknessMm:info.thicknessMm,widthMm:null,widthApprox:false,color:hexColor(info.colorRgb),
+      warnings:missingLabels(info.missing),catalogId:info.catalogId||null,count:totals.pieces,lengthM:totals.lengthM,areaM2:known?totals.areaM2:null,volumeM3:known?totals.volumeM3:null};};
+  // Sin ancho en la ficha se muestra el de las tiras (espesor de la pieza) si es uno solo, marcado como aproximado.
+  const uniform=(rows:StripRow[])=>{const widths=[...new Set(rows.map(row=>row.strip.widthMm))];return widths.length===1?widths[0]:null;};
+  const edge=({info,rows,totals}:CutlistEdgeSection):SummaryRow=>({key:info.key,kind:'edge',name:info.name,thicknessMm:info.thicknessMm,widthMm:info.widthMm??uniform(rows),widthApprox:info.widthMm==null,
+    color:hexColor(info.colorRgb),warnings:missingLabels(info.missing),catalogId:info.catalogId||null,count:totals.strips,lengthM:totals.lengthM,areaM2:totals.areaM2,volumeM3:totals.volumeM3});
+  return [...sections.filter(s=>s.info.kind==='sheet').map(sheet),...edges.map(edge),...sections.filter(s=>s.info.kind!=='sheet').map(sheet)];
 }
 
 /** Códigos agrupados: «M01·P01» o «M01·P01, P02» (el prefijo del módulo se muestra una vez). */
 export function codeText(piece:CutlistPiece,max=3):string{
   const codes=piece.codes.length?piece.codes:piece.code?[piece.code]:[];
-  if(!codes.length)return '—';
+  if(!codes.length)return '';
   const prefix=codes[0].includes('·')?codes[0].slice(0,codes[0].indexOf('·')+1):'';
   const shown=codes.slice(0,max).map((code,index)=>index>0&&prefix&&code.startsWith(prefix)?code.slice(prefix.length):code);
   return shown.join(', ')+(codes.length>max?` +${codes.length-max}`:'');
 }
 
-const number=new Intl.NumberFormat('es-AR',{maximumFractionDigits:2});
-const area=new Intl.NumberFormat('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const number=new Intl.NumberFormat('es-AR',{maximumFractionDigits:2,useGrouping:false});
+const two=new Intl.NumberFormat('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const three=new Intl.NumberFormat('es-AR',{minimumFractionDigits:3,maximumFractionDigits:3});
 export const formatMm=(value:number)=>number.format(value);
-export const formatM2=(value:number)=>area.format(value);
-export const formatMetres=(value:number)=>area.format(value);
-export function grainSymbol(grain:CutlistGrain):{symbol:string;label:string}{
-  if(grain==='length')return {symbol:'↔',label:'Veta a lo largo'};
-  if(grain==='width')return {symbol:'↕',label:'Veta a lo ancho'};
-  if(grain==='none')return {symbol:'—',label:'Sin veta'};
-  return {symbol:'—',label:'Veta sin definir en la ficha'};
+export const formatMetres=(value:number)=>`${two.format(value)} m`;
+export const formatM2=(value:number)=>`${two.format(value)} m²`;
+export const formatM3=(value:number)=>`${three.format(value)} m³`;
+/** Medida final en mm; «~» delante si sale de la caja de una pieza no rectangular. */
+export const finalMm=(value:number,approximate=false)=>`${approximate?'~ ':''}${formatMm(value)} mm`;
+export const dimensions=(piece:CutlistPiece)=>`${formatMm(piece.lengthMm)} × ${formatMm(piece.widthMm)} × ${formatMm(piece.thicknessMm)}`;
+
+/** Detalle chico de la designación: códigos, mueble, medidas y material. */
+export function designationDetail(piece:CutlistPiece,info?:{name:string}):string{
+  return [codeText(piece),piece.furnitureName,dimensions(piece),info?.name||piece.material?.name||'Sin material'].filter(Boolean).join(' · ');
 }
-export function sectionTitle(info:CutlistSectionInfo):string{return `${info.name} · ${formatMm(info.thicknessMm)} mm`;}
+export const stripDesignation=(piece:CutlistPiece,strip:CutlistStrip)=>`${piece.name} – ${strip.label}`;
+
+/** Título de la sección de placa: «Nombre / 18 mm». */
+export const sectionTitle=(info:{name:string;thicknessMm:number|null})=>info.thicknessMm==null?info.name:`${info.name} / ${formatMm(info.thicknessMm)} mm`;
+/** Nota de fibra de la ficha: solo para placas con veta. */
+export function grainNote(info:CutlistSectionInfo,pieces:CutlistPiece[]):string|undefined{
+  if(info.grain!==true)return undefined;
+  return pieces.some(piece=>piece.grain==='width')?'La fibra sigue la longitud, salvo donde se indica':'La fibra sigue la longitud';
+}
+
+// Opciones de la vista (por usuario, en el navegador): columnas del resumen y detalle de la designación.
+export type CutlistOptions={length:boolean;area:boolean;volume:boolean;detail:boolean};
+export const DEFAULT_OPTIONS:CutlistOptions={length:true,area:true,volume:true,detail:true};
+export function parseOptions(raw:string|null|undefined):CutlistOptions{
+  try{
+    const value=raw?JSON.parse(raw):null;if(!value||typeof value!=='object')return {...DEFAULT_OPTIONS};
+    return Object.fromEntries(Object.entries(DEFAULT_OPTIONS).map(([key,fallback])=>[key,typeof value[key]==='boolean'?value[key]:fallback])) as CutlistOptions;
+  }catch{return {...DEFAULT_OPTIONS};}
+}
+
+// CSV para planilla: separador «;» y coma decimal (Excel en español), CRLF y texto protegido contra fórmulas.
+const csvNumber=new Intl.NumberFormat('es-AR',{maximumFractionDigits:3,useGrouping:false});
+function csvCell(value:string|number|null|undefined):string{
+  if(value==null)return '';
+  if(typeof value==='number')return csvNumber.format(value);
+  const text=/^[=+\-@\t\r]/.test(value)?`'${value}`:value;
+  return /[;"\r\n]/.test(text)?`"${text.replace(/"/g,'""')}"`:text;
+}
+export const CSV_HEADER=['Tipo','Material','Espesor material (mm)','No.','Designación','Mueble','Código','Cant.','L (mm)','A (mm)','E (mm)','Aproximada','Aviso de la ficha'];
+/** CSV de lo que se ve: una fila por pieza de cada placa y una por tira de cada canto. */
+export function cutlistCsv(sections:CutlistSection[],edges:CutlistEdgeSection[]):string{
+  const lines:(string|number|null)[][]=[CSV_HEADER];
+  const sheets=[...sections.filter(s=>s.info.kind==='sheet'),...sections.filter(s=>s.info.kind!=='sheet')];
+  for(const {info,pieces} of sheets){const warning=missingLabels(info.missing).join(', ');
+    pieces.forEach((piece,index)=>lines.push([info.kind==='sheet'?'Placa':'Sin tipo',info.name,info.thicknessMm,rowLetter(index),piece.name,piece.furnitureName,codeText(piece,99),piece.quantity,
+      piece.lengthMm,piece.widthMm,piece.thicknessMm,piece.rectangular?'No':'Sí',warning]));}
+  for(const {info,rows} of edges){const warning=missingLabels(info.missing).join(', ');
+    for(const {letter,piece,strip} of rows)lines.push(['Canto',info.name,info.thicknessMm,letter,stripDesignation(piece,strip),piece.furnitureName,codeText(piece,99),piece.quantity,
+      strip.lengthMm,strip.widthMm,info.thicknessMm,strip.approximate||strip.widthApprox?'Sí':'No',warning]);}
+  return lines.map(line=>line.map(csvCell).join(';')).join('\r\n')+'\r\n';
+}

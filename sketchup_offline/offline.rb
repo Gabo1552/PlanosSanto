@@ -869,6 +869,13 @@ module PlanosSanto
         # Vista «Piezas»: solo lectura, no escribe el modelo ni el pedido.
         active!
         Cutlist.for_model(@model,@session,directory:ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory)
+      when 'cutlist_csv'
+        # «Exportar» de Piezas: la UI arma el CSV de lo que se ve; acá solo se elige el archivo y se escribe.
+        active!
+        text=data.fetch('csv')
+        raise ExportError,'CSV de piezas inválido.' unless text.is_a?(String) && text.bytesize.between?(1,Cutlist::CSV_MAX_BYTES)
+        target=with_user_dialog { UI.savepanel('Exportar piezas CSV',nil,Cutlist.csv_file_name(data['modelName'])) }
+        target ? Cutlist.write_csv(text,target) : {'cancelled'=>true}
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
       when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','skm_commit_typed'
         active!

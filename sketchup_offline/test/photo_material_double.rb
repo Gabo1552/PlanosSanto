@@ -24,8 +24,8 @@ module PhotoFixture
     def size;File.size(filename);end
   end
   class Material < Sketchup::Material
-    attr_reader :attributes,:thumbnail_calls,:color_writes
-    attr_accessor :save_failure,:thumbnail_failure,:texture_failure
+    attr_reader :attributes,:thumbnail_calls,:color_writes,:thumbnail_sizes
+    attr_accessor :save_failure,:thumbnail_failure,:texture_failure,:thumbnail_max
     def initialize(id,name)
       super(id,name,Sketchup::Color.new(112,86,41),1,nil)
       @attributes={};@thumbnail_calls=0;@color_writes=0
@@ -41,8 +41,10 @@ module PhotoFixture
     def color=(value);@color_writes+=1;super(value);end
     def write_thumbnail(path,size)
       @thumbnail_calls+=1;return false if thumbnail_failure
-      raise 'Invalid size' unless size==256
-      File.binwrite(path,PhotoFixture.png);true
+      (@thumbnail_sizes||=[]) << size
+      raise 'Invalid size' unless [256,512].include?(size)
+      raise ArgumentError,'size out of range' if thumbnail_max && size>thumbnail_max
+      File.binwrite(path,PhotoFixture.png(size,size));true
     end
     def save_as(path)
       return false if save_failure

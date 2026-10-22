@@ -20,7 +20,7 @@ module PhotoFixture
   end
   class Material
     def write_thumbnail(path,size)
-      @thumbnail_calls+=1;raise 'Invalid thumbnail size' unless size==256
+      @thumbnail_calls+=1;raise 'Invalid thumbnail size' unless [256,512].include?(size)
       File.binwrite(path,File.binread(texture.filename));true
     end
   end

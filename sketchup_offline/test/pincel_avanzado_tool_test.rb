@@ -589,11 +589,15 @@ class PinturaEnVistaToolTest < Minitest::Test
     assert_equal [:none,'none'],layout[:items].find { |kind,| kind==:none }.first(2)
     assert(@view.texts.any? { |_,text,| text=='Ningún material' })
     assert(@view.texts.any? { |_,text,| text=='Roble nuevo' })
-    # Active cell: orange border 3 px; the installable one has a corner mark (a triangle).
-    active=@view.draws2d.find { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[1].round==834 }
+    # Active cell: orange border 3 px, drawn 1.5 px inside the cell (pixel
+    # centres, 0.8.18); the installable one has a corner mark (a white square quad).
+    active=@view.draws2d.find { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[1]==835.5 }
     refute_nil active,'borde naranja en la celda activa'
-    assert_equal cells[0][2][0].round,active[1].first[0].round
-    assert(@view.draws2d.any? { |mode,points| mode==4 && points.length==3 && points.first[1].round==834 && points.first[0].round>cells[2][2][0] })
+    assert_equal cells[0][2][0]+1.5,active[1].first[0]
+    mark=@view.draws2d.find { |mode,points,color| mode==7 && points.first[1]==834 && points.first[0]>cells[2][2][0] && color.to_a.first(3)==[255,255,255] }
+    refute_nil mark,'marca de esquina «se instala al elegirlo»'
+    assert_equal [[cells[2][2][2]-20,834],[cells[2][2][2],834],[cells[2][2][2],854],[cells[2][2][2]-20,854]],mark[1],'20 px a escala 2'
+    refute(@view.draws2d.any? { |mode,| mode==4 },'sin triángulos en la barra ni en la tira')
     @tool.onMouseMove(0,*center(:cell,2),@view)
     assert_match(/Roble nuevo\. Clic para usarlo \(se instala en el modelo\); no pinta\./,@events.last['message'])
     assert_equal 2,@events.last['recents'].length,'status still reports only the recents'
@@ -632,7 +636,7 @@ class PinturaEnVistaToolTest < Minitest::Test
     assert_equal 4,@tool.status['options']['edgeCount'];assert_equal 4,@remembered.last['edgeCount']
     @view.draws2d.clear;@tool.draw(@view)
     four=item(:count,'count4')[2]
-    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==2 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0].round==four[0].round })
+    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==2 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0]==four[0]+1 })
     click_ui(:tab,'edge')
     assert_match(/ya está activo/,@events.last['message'])
     assert_equal picks,@picker.picks;assert_empty @model.operations
@@ -701,7 +705,7 @@ class PinturaEnVistaToolTest < Minitest::Test
     assert_match(/Sin material\. Elegí un material/,@events.last['message'])
     @view.draws2d.clear;@tool.draw(@view)
     none=item(:none,'none')[2]
-    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0].round==none[0].round })
+    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0]==none[0]+1.5 })
     assert_empty @model.operations
   end
 
@@ -737,6 +741,114 @@ class PinturaEnVistaToolTest < Minitest::Test
       assert_equal 24,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
     ensure
       UI.singleton_class.send(:alias_method,:scale_factor,:pav_scale_was)
+    end
+  end
+
+  # ---- 0.8.18 (calidad visual, Gabriel: «que no sea tan pixelado»). A fill on
+  # fractional corners or a 1 px line on a pixel edge is smeared over two
+  # half-lit rows; text sized for 100 % looks tiny and soft at 125-150 %.
+  def with_scale(value)
+    UI.singleton_class.send(:alias_method,:pav_sharp_scale_was,:scale_factor)
+    UI.define_singleton_method(:scale_factor) { value }
+    yield
+  ensure
+    UI.singleton_class.send(:alias_method,:scale_factor,:pav_sharp_scale_was)
+  end
+  def with_text_constants
+    added=%i[TextAlignLeft TextAlignCenter TextVerticalAlignCenter].each_with_index.reject { |name,_| Object.const_defined?(name) }
+    added.each { |name,value| Object.const_set(name,value) }
+    yield
+  ensure
+    added.each { |name,_| Object.send(:remove_const,name) }
+  end
+  def whole?(value);(value-value.round).abs<1e-9;end
+  def pixel_centre_or_edge?(value);whole?(value*2);end
+  def assert_sharp_drawing(context)
+    refute_empty @view.draws2d
+    @view.draws2d.each do |mode,points,_color,width|
+      points.flatten.each do |value|
+        if mode==7 then assert whole?(value),"#{context}: relleno en #{value} (no es un píxel entero)"
+        else
+          assert pixel_centre_or_edge?(value),"#{context}: línea en #{value}"
+          if mode==2 && width.to_i.odd? then assert whole?(value-0.5),"#{context}: borde de #{width} px fuera del centro del píxel (#{value})"
+          elsif mode==2 then assert whole?(value),"#{context}: borde de #{width} px fuera del borde del píxel (#{value})"
+          end
+        end
+      end
+    end
+    refute(@view.draws2d.any? { |mode,| mode==4 },"#{context}: sin triángulos (diagonales con antialias)")
+    @view.texts.each { |point,text,| assert point.first(2).all? { |value| whole?(value) },"#{context}: texto «#{text}» en #{point.inspect}" }
+  end
+  def test_bars_strip_and_texts_land_on_whole_pixels_at_fractional_scales
+    [1.25,1.5,1.75].each do |scale|
+      with_scale(scale) do
+        %w[sheet edge remove_edge].each do |mode|
+          build_vista(tool_options(mode));wide!;stack!(entry(@doors[0]))
+          @tool.onMouseMove(0,*center(:tab,'edge'),@view) # tooltip too
+          @tool.draw(@view)
+          assert_sharp_drawing("#{mode} a #{scale}")
+          layout[:items].each { |_,_,rect,| assert rect.all? { |value| value.is_a?(Integer) },"rectángulo #{rect.inspect}" }
+          %i[top sub strip].each { |band| assert(layout[:bands][band].all? { |value| value.is_a?(Integer) }) if layout[:bands][band] }
+        end
+      end
+    end
+  end
+  def test_neighbouring_tabs_and_cells_share_their_whole_pixel_edge
+    with_scale(1.25) do
+      build_vista(tool_options('sheet'));wide!
+      tabs=layout[:items].select { |kind,| kind==:tab }.map { |_,_,rect,| rect }
+      tabs.each_cons(2) { |a,b| assert_equal a[2],b[0],'sin hueco ni superposición entre pestañas' }
+      cells=layout[:items].select { |kind,| kind==:cell }.map { |_,_,rect,| rect }
+      assert_operator cells.length,:>=,2
+      widths=cells.map { |left,_,right,| right-left };assert_operator widths.max-widths.min,:<=,1
+    end
+  end
+  def test_the_palette_strip_and_tooltip_are_on_whole_pixels_too
+    with_scale(1.25) do
+      build_tool(tool_options('sheet'));hover_on(@doors[0],x:401,y:299);@tool.draw(@view)
+      assert_sharp_drawing('tira de la paleta')
+      assert(@view.texts.any? { |_,text,| text=='Recientes · clic o 1–6' })
+    end
+  end
+  def test_text_size_follows_ui_scale_factor_and_uses_a_readable_font
+    { 1.0=>[10,11],1.25=>[13,14],1.5=>[15,17],2.0=>[20,22] }.each do |scale,(label,tooltip)|
+      with_scale(scale) do
+        build_vista(tool_options('edge'));wide!;stack!(entry(@doors[0]))
+        @tool.onMouseMove(0,*center(:count,'count1'),@view);@tool.draw(@view)
+        sizes=@view.texts.to_h { |_,text,options| [text,options[:size]] }
+        assert_equal label,sizes['Cantos por clic'],"etiquetas a escala #{scale}"
+        assert_equal label,sizes['Pintar piezas'];assert_equal label,sizes['PINTAR']
+        assert_equal tooltip,sizes[@tool.bar_hint('count1')],"globo a escala #{scale}"
+        assert @view.texts.all? { |_,_,options| options[:size].is_a?(Integer) }
+      end
+    end
+    Sketchup.singleton_class.send(:define_method,:platform) { :platform_win }
+    begin
+      build_vista(tool_options('sheet'));wide!;@tool.draw(@view)
+      assert @view.texts.all? { |_,_,options| options[:font]=='Segoe UI' },'Windows: fuente de la interfaz del sistema'
+    ensure
+      Sketchup.singleton_class.send(:remove_method,:platform)
+    end
+  end
+  class BoundsView < PavWideView
+    Bounds=Struct.new(:width,:height)
+    attr_reader :measured
+    def text_bounds(_point,text,options);(@measured||=[]) << [text,options];Bounds.new(text.length*options[:size]*0.55,options[:size]*1.3);end
+  end
+  def test_centred_labels_use_text_bounds_and_start_on_a_whole_pixel
+    with_text_constants do
+      with_scale(1.25) do
+        build_vista(tool_options('edge'));@view=BoundsView.new(@picker);@tool.draw(@view)
+        tab=item(:tab,'sheet');left,top,right,bottom=tab[2]
+        drawn=@view.texts.find { |_,text,| text=='Pintar piezas' }
+        refute_nil drawn
+        point,_,options=drawn
+        width='Pintar piezas'.length*13*0.55
+        assert_equal [((left+right)/2-width/2.0).round,(top+bottom)/2],point.first(2)
+        assert_equal TextAlignLeft,options[:align];assert_equal TextVerticalAlignCenter,options[:vertical_align]
+        assert(@view.measured.any? { |text,measured| text=='Pintar piezas' && measured[:size]==13 },'se mide con la misma fuente que se dibuja')
+        assert_sharp_drawing('con text_bounds')
+      end
     end
   end
 

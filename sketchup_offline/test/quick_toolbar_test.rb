@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 # Unit tests with native API doubles only; never opens SketchUp.
 require 'minitest/autorun'
+require 'minitest/mock'
 require 'digest'
 MF_UNCHECKED=0
 MF_GRAYED=1
@@ -194,6 +195,33 @@ class QuickToolbarTest < Minitest::Test
       end
     end
     assert_equal 18,payloads.uniq.length
+  end
+  # 0.8.18 (calidad visual): Windows takes the vector icon (sharp at 125-200 %);
+  # macOS and an installation without the SVG keep the PNGs.
+  def test_windows_uses_the_vector_icon_and_keeps_the_png_fallback
+    Sketchup.singleton_class.send(:define_method,:platform) { :platform_win }
+    begin
+      registry=install
+      registry[:commands].each do |key,command|
+        assert_equal ["#{key}.svg","#{key}.svg"],[File.basename(command.small_icon),File.basename(command.large_icon)]
+        svg=File.read(command.small_icon,encoding:'UTF-8')
+        assert svg.start_with?('<?xml'),key;assert_includes svg,'viewBox="0 0 24 24"'
+        refute_match(/<(?:script|style|text|image|filter)\b/,svg,'SVG simple: solo formas')
+        %w[24 32].each { |size| assert File.file?(File.join(File.dirname(command.small_icon),"#{key}-#{size}.png")) }
+      end
+      original=File.method(:file?)
+      File.stub(:file?,lambda { |path| path.to_s.end_with?('.svg') ? false : original.call(path) }) do
+        assert_equal 'sheet-32.png',File.basename(PlanosSanto::QuickToolbar.icon('sheet',32)),'sin el SVG vuelve al PNG'
+      end
+    ensure
+      Sketchup.singleton_class.send(:remove_method,:platform)
+    end
+    Sketchup.singleton_class.send(:define_method,:platform) { :platform_osx }
+    begin
+      assert_equal 'sheet-24.png',File.basename(PlanosSanto::QuickToolbar.icon('sheet',24)),'macOS usa PNG (SVG no, PDF sí)'
+    ensure
+      Sketchup.singleton_class.send(:remove_method,:platform)
+    end
   end
   def test_existing_diagnostic_and_open_skp_actions_are_preserved
     registry=install

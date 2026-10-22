@@ -11,8 +11,10 @@ module OclReadFixture
   end
   module MaterialApi
     attr_accessor :ocl_attributes
+    # Vínculo Planos Santo simulado (JSON), solo para pruebas que lo fijan a mano; por defecto no hay.
+    attr_accessor :planos_binding
     def get_attribute(dictionary,key,default=nil)
-      return default if dictionary == 'PlanosSantoMaterial'
+      return (key=='binding_v1' && @planos_binding) || default if dictionary == 'PlanosSantoMaterial'
       raise 'Wrong dictionary' unless dictionary=='ladb_opencutlist'
       (@ocl_attributes||{}).fetch(key,default)
     end

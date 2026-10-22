@@ -1,3 +1,15 @@
+# Entrega 0.8.18 — listado de piezas y nitidez, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.18-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, respaldar `%LOCALAPPDATA%\PlanosSanto\` y comprobar el `.sha256`. Sobre la 0.8.17:
+- Pestaña «Piezas» al estilo «Listado de partes»: resumen por material con Σ longitud, área y volumen, secciones de placa y de canto, avisos en rojo, Exportar CSV e Imprimir.
+- Miniaturas de materiales a 512 px con promedio de área (antes 256 px por vecino más cercano).
+- Barra y tira de pintura en la vista alineadas a píxel y con texto escalado.
+- Íconos de la barra en SVG.
+
+Validar con `docs/validacion-0818/ENCARGO_SESION_LOCAL_0818.md`. Producción no aprobada.
+
+---
+
 # Entrega 0.8.17 — pintura y materiales como OpenCutList, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.17-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, **respaldar `%LOCALAPPDATA%\PlanosSanto\` (la biblioteca migra a v3)** y comprobar el `.sha256`. Sobre la 0.8.16:

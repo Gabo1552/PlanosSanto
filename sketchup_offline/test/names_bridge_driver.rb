@@ -28,6 +28,7 @@ module UI
   def self.savepanel(title, *_args)
     return File.join(ARGV.fetch(0), 'materiales-cantos.json') if title.include?('materiales') && ARGV[1]=='materials'
     return File.join(ARGV.fetch(0),'biblioteca-exportada.json') if title.include?('biblioteca')
+    return File.join(ARGV.fetch(0),'piezas-exportadas') if title.include?('CSV')
     title.include?('PDF') ? File.join(ARGV.fetch(0), 'PlanosSanto-A4.pdf') : nil
   end
   def self.openpanel(*_args);File.join(ARGV.fetch(0),'candidatos.json');end
@@ -73,6 +74,11 @@ STDIN.each_line do |line|
     # Punto 20: a locked piece is skipped on save with a notice on its row.
     id=msg.fetch('data',{}).fetch('persistentId').to_s
     model.all_instances.find { |e| e.persistent_id.to_s==id }.locked_for_names=true;controller.reply(msg['id'],result:true)
+  when '__bind_material'
+    # Vista «Piezas»: vincula un material del doble con una ficha de la biblioteca de prueba (sin UI de pintado).
+    data=msg.fetch('data');item=PlanosSanto::CatalogStore.new(directory:ENV.fetch('PLANOS_SANTO_DATA_DIR')).read['items'].find { |row| row['id']==data.fetch('catalogId') }
+    material=model.materials.find { |m| m.display_name==data.fetch('materialName') }
+    material.planos_binding=JSON.generate(PlanosSanto::MaterialResolver.binding_for(item));controller.reply(msg['id'],result:true)
   when '__names_geometry'
     model.entities[0].transformation=Geom::Transformation.translation(3,2,1);controller.reply(msg['id'],result:true)
   else

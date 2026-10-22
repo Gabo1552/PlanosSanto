@@ -12,8 +12,18 @@ module PlanosSanto
     MAX_PIXELS=16_000_000
     MAX_DIMENSION=16_384
     MAX_DECODED_BYTES=MAX_PIXELS*4+MAX_DIMENSION*3
-    MAX_THUMBNAIL=512*1024
-    THUMBNAIL_BUDGET=8*1024*1024
+    # 0.8.18 (calidad visual): previews and material thumbnails are 512 px on
+    # their longest side (the largest library tile is ~314 CSS px, so 512 covers
+    # it at 150 % and almost at 200 % scaling). Byte limit: a 512×512 RGBA PNG
+    # that does not compress at all (512*512*4 + one filter byte per row) plus
+    # 64 KiB for zlib/chunk headers = 1_114_624 bytes (it was 512 KiB for 256 px).
+    THUMBNAIL_SIDE=512
+    LEGACY_THUMBNAIL_SIDE=256
+    MAX_THUMBNAIL=THUMBNAIL_SIDE*THUMBNAIL_SIDE*4+THUMBNAIL_SIDE+64*1024
+    # Base64 data URIs sent to the library in one load (was 8 MiB): a typical
+    # 512 px wood photo is 0.4-0.7 MB as PNG (0.55-0.95 MB in Base64), so 24 MiB
+    # keeps ~25-40 photo thumbnails; the rest show the placeholder, as before.
+    THUMBNAIL_BUDGET=24*1024*1024
     PHOTO_KEY='photo_v1'
     def initialize(model,catalog:,directory:CatalogStore.default_directory,guard:nil)
       @model=model;@catalog=catalog;@directory=directory;@guard=guard;@pending=nil
@@ -81,22 +91,72 @@ module PlanosSanto
         yield file.path
       end
     end
-    # ImageRep has no resize (API 2018-2026: data/set_data/save_file only). The
-    # preview is a nearest-neighbour sample of the already validated pixels,
-    # kept in native byte order (BGR(A) on Windows) and rows padded to 4 bytes.
+    # ImageRep has no resize (API 2018-2026: data/set_data/save_file only), so
+    # the preview is reduced here from the already validated pixels with an
+    # area average (box filter), not a nearest-neighbour sample (0.8.17 and
+    # before, which aliased fine grain and looked pixelated). Each output pixel
+    # is the mean of a step×step block, step = the reduction ratio rounded to an
+    # integer, starting where that pixel falls in the source. Every byte is
+    # averaged on its own, so the native order (BGR(A) on Windows) is kept, and
+    # rows are padded to 4 bytes.
+    # Speed (16 MP in a few hundred ms, pure Ruby): a source row becomes one
+    # Integer with a lane of bits_per_pixel bits per pixel and channel. Adding
+    # rows, sliding the block (one multiplication) and dividing (multiply by a
+    # reciprocal and shift) are then a few big-integer operations in C per row,
+    # never one Ruby operation per pixel. The reciprocal rounds down: exact to
+    # ±1 level for blocks up to 16 px (24 bits) or 256 px (32 bits); a larger
+    # block (only 24-bit sources over 8192 px) may read up to 4 levels darker.
     def thumbnail_rep(rep,width,height)
-      bytes=rep.bits_per_pixel/8;source=rep.data;stride=rep.width*bytes+rep.row_padding
-      padding=(4-(width*bytes)%4)%4;columns=Array.new(width) { |x| (x*rep.width/width)*bytes }
+      bytes=rep.bits_per_pixel/8;source=rep.data;source_width=rep.width;source_height=rep.height
+      stride=source_width*bytes+rep.row_padding;row_bytes=source_width*bytes;lane=bytes*8
+      step=[(source_width.to_f/width).round,(source_height.to_f/height).round].min;step=1 if step<1
+      step-=1 while step>1 && step*step*255>=(1<<lane) # a block sum must fit its lane
+      shift=lane-8;reciprocal=(1<<shift)/(step*step)
+      low_byte=lanes(("\xFF".b+"\x00".b*(bytes-1))*source_width)
+      half=lanes(("\x01".b+"\x00".b*(bytes-1))*source_width)<<(shift-1)
+      # sum*kernel: in each lane, the sum of the step pixels that end there, times the reciprocal.
+      kernel=(0...step).sum { |index| reciprocal<<(index*lane) }
+      # Big-endian hex of the averaged row; output pixels taken right to left.
+      gather=(0...width).reverse_each.map do |x|
+        last=[x*source_width/width,source_width-step].min+step-1
+        "@#{(source_width-1-last)*bytes*2}a#{bytes*2}"
+      end.join
+      padding=(4-(width*bytes)%4)%4;zero="\x00".b*padding;digits=row_bytes*2;row_mask=(1<<(row_bytes*8))-1
       pixels=String.new(capacity:(width*bytes+padding)*height,encoding:Encoding::BINARY)
+      channels={} # source row -> its bytes split by channel, reused by overlapping blocks
       height.times do |y|
-        row=(y*rep.height/height)*stride
-        columns.each { |x| pixels << source.byteslice(row+x,bytes) }
-        pixels << ("\x00".b*padding)
+        top=[y*source_height/height,source_height-step].min
+        channels.delete_if { |row,_| row<top }
+        sums=Array.new(bytes,0)
+        step.times do |offset|
+          split=channels[top+offset]||=begin
+            value=lanes(source.byteslice((top+offset)*stride,row_bytes))
+            Array.new(bytes) { |channel| (value>>(8*channel))&low_byte }
+          end
+          bytes.times { |channel| sums[channel]+=split[channel] }
+        end
+        averaged=0
+        sums.each_with_index { |sum,channel| averaged|=(((sum*kernel+half)>>shift)&low_byte)<<(8*channel) }
+        hex=(averaged&row_mask).to_s(16).rjust(digits,'0')
+        pixels << [hex.unpack(gather).join].pack('H*').reverse << zero
       end
       Sketchup::ImageRep.new.set_data(width,height,rep.bits_per_pixel,padding,pixels)
     end
+    # Little-endian bytes -> Integer, through the documented Marshal layout of
+    # an Integer ("\x04\x08l+", length in 16-bit words, digits): a plain copy in
+    # C. The header is fixed here and the bytes are only pixel values, so
+    # nothing but an Integer can come out.
+    def lanes(bytes)
+      bytes+="\x00".b if bytes.bytesize.odd?
+      words=bytes.bytesize/2
+      length=words<=122 ? [words+5].pack('C') : [words].pack('V').sub(/\x00+\z/n,'').then { |digits| [digits.bytesize].pack('C')+digits }
+      value=Marshal.load("\x04\x08l+".b+length+bytes)
+      raise ExportError,'No se pudo generar la vista previa de la imagen.' unless value.is_a?(Integer)
+      value
+    end
     def image_preview(rep)
-      ratio=[256.0/rep.width,256.0/rep.height,1.0].min
+      side=THUMBNAIL_SIDE.to_f
+      ratio=[side/rep.width,side/rep.height,1.0].min
       width=[(rep.width*ratio).round,1].max;height=[(rep.height*ratio).round,1].max
       if [width,height]!=[rep.width,rep.height]
         rep=thumbnail_rep(rep,width,height)
@@ -107,7 +167,7 @@ module PlanosSanto
         raise ExportError,'No se pudo generar la vista previa de la imagen.' if rep.save_file(path)==false || !File.file?(path)
         bytes=File.binread(path,MAX_THUMBNAIL+1)
         raise ExportError,'La vista previa supera el tamaño permitido.' if bytes.bytesize>MAX_THUMBNAIL
-        info=image_info(bytes);reject_image! unless info['format']=='png' && info['widthPx']<=256 && info['heightPx']<=256
+        info=image_info(bytes);reject_image! unless info['format']=='png' && info['widthPx']<=THUMBNAIL_SIDE && info['heightPx']<=THUMBNAIL_SIDE
         'data:image/png;base64,'+Base64.strict_encode64(bytes)
       end
     end
@@ -164,11 +224,20 @@ module PlanosSanto
       raise ExportError,'Esta instalación no permite generar miniaturas del material real.' unless material.respond_to?(:write_thumbnail)
       Tempfile.create(['.planos-material-thumb-','.png']) do |file|
         path=file.path;file.close
-        raise ExportError,'No se pudo generar la miniatura del material real.' if material.write_thumbnail(path,256)==false || !File.file?(path)
+        # 512 px for sharp tiles; 256 px (0.8.17) only if SketchUp refuses the larger size.
+        written=[THUMBNAIL_SIDE,LEGACY_THUMBNAIL_SIDE].any? do |side|
+          File.binwrite(path,''.b)
+          begin
+            material.write_thumbnail(path,side)!=false && File.size?(path)
+          rescue StandardError # e.g. a size this SketchUp does not accept: try the next one
+            false
+          end
+        end
+        raise ExportError,'No se pudo generar la miniatura del material real.' unless written
         bytes=File.binread(path,MAX_THUMBNAIL+1)
         raise ExportError,'La miniatura del material supera el tamaño permitido.' if bytes.bytesize>MAX_THUMBNAIL
         info=image_info(bytes)
-        reject_image! unless info['format']=='png' && info['widthPx']<=512 && info['heightPx']<=512
+        reject_image! unless info['format']=='png' && info['widthPx']<=THUMBNAIL_SIDE && info['heightPx']<=THUMBNAIL_SIDE
         load_image(path,expected:info)
         bytes
       end
@@ -493,7 +562,7 @@ module PlanosSanto
         bytes=File.binread(path,MAX_THUMBNAIL+1)
         next unless Digest::SHA256.hexdigest(bytes)==File.basename(path,'.png')
         begin
-          info=image_info(bytes);next unless info['format']=='png' && info['widthPx']<=512 && info['heightPx']<=512
+          info=image_info(bytes);next unless info['format']=='png' && info['widthPx']<=THUMBNAIL_SIDE && info['heightPx']<=THUMBNAIL_SIDE
         rescue ExportError
           next
         end
