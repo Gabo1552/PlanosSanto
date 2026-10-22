@@ -118,6 +118,7 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
  it('avisa si el código módulo·pieza falta o lleva el detalle a más de 80 caracteres',()=>{
   expect(detailCodeWarning('Lateral','M03·P07','none')).toBeNull();expect(detailCodeWarning('Lateral',undefined,undefined)).toBeNull();
   expect(detailCodeWarning('Lateral','M03·P07','module_piece')).toBeNull();expect(detailCodeWarning('Lateral',undefined,'module_piece')).toContain('Falta el código módulo·pieza');
+  expect(detailCodeWarning('Lateral','','module_piece')).toBe('El código módulo·pieza se repite en otro mueble: corregí el módulo en la guía para que cada mueble tenga el suyo.');expect(detailCodeWarning('Lateral','','none')).toBeNull();
   expect(detailCodeWarning('x'.repeat(72),'M03·P07','module_piece')).toBeNull();
   expect(detailCodeWarning('x'.repeat(73),'M03·P07','module_piece')).toBe('Con el código M03·P07 el detalle ocupa 81 caracteres y el máximo es 80: acortalo 1 carácter.');
   expect(detailCodeWarning('ñ'.repeat(75),'M03·P07','module_piece')).toContain('ocupa 83 caracteres');expect(detailCodeWarning('ñ'.repeat(75),'M03·P07','module_piece')).toContain('acortalo 3 caracteres');
@@ -132,10 +133,13 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
  it('lleva cada motivo de bloqueo al campo correspondiente',()=>{
   expect(blockedField('Elegí ejes U/V distintos y la cara frontal de la vista 2D.')).toBe('axes');expect(blockedField('Falta confirmar orientación, cantos.')).toBe('checks');
   expect(blockedField('Cantos asimétricos: mantener rota=0 hasta validar la maderera.')).toBe('grain');expect(blockedField('El canto no cubre el espesor de la placa: ancho 15 mm')).toBe('edges');
-  expect(blockedField('La pieza no entra en el formato de placa aprobado: mide 2650 × 600 mm')).toBe('dimensions');expect(blockedField('El espesor no coincide: el eje de espesor mide 18 mm')).toBe('material');
+  expect(blockedField('La pieza no entra en el formato de placa aprobado: mide 2650 × 600 mm')).toBe('dimensions');expect(blockedField('El espesor no coincide: el eje de espesor mide 18 mm')).toBe('material');expect(blockedField('Elegí una placa aprobada de la biblioteca.')).toBe('material');
   expect(blockedField('Completá detalle y justificación de medidas de corte/terminadas.')).toBe('note');expect(blockedField('Indicá por qué se excluye esta pieza.')).toBe('exclude');
   expect(blockedField('Elegí cómo verificaste los cantos: caras observadas o inspección manual documentada.')).toBe('edgeResolution');
   expect(blockedField('El canto secundario (2) no cubre el espesor de la placa: ancho 15 mm y espesor 18 mm.')).toBe('secondaryEdge');expect(blockedField('Confirmá compatibilidad placa/canto principal (1) en la biblioteca.')).toBe('edges');
-  expect(blockedField('Elegí un canto secundario (2) aprobado de la biblioteca.')).toBe('secondaryEdge');expect(blockedField('Geometría no rectangular: verificala o excluila explícitamente.')).toBe('include');
+  expect(blockedField('Elegí un canto secundario (2) aprobado de la biblioteca.')).toBe('secondaryEdge');
+  expect(blockedField('El detalle con código M03·P07 supera 80 caracteres.')).toBe('detail');expect(blockedField('Falta el código módulo·pieza: completá módulo y código de pieza en la guía.')).toBe('detail');
+  expect(blockedField('El código módulo·pieza se repite en otro mueble: corregí el módulo en la guía para que cada mueble tenga el suyo.')).toBe('detail');
+  expect(blockedField('Vinculá «Canto de prueba» con un canto en «Vínculos de cantos del borrador».')).toBe('links');expect(blockedField('Geometría no rectangular: verificala o excluila explícitamente.')).toBe('include');
  });
 });

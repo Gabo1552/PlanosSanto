@@ -248,6 +248,15 @@ class PavEyedropperTest < Minitest::Test
     assert_equal [[EDGE['id'],'edge']],@selected;assert_equal 'edge',@tool.status['mode']
     assert_empty @model.operations;assert_equal undo,@model.undo_states.length
   end
+  def test_sampling_from_remove_edge_names_the_new_mode_and_shift_tab_is_not_a_sample
+    @board.entities[2].material=@edge
+    build_tool(tool_options('remove_edge','edgeCount'=>1,'catalogId'=>nil,'materialUuid'=>nil))
+    @tool.onKeyDown(18,1,0,@view);click_on(@doors[0],2)
+    assert_equal 'edge',@tool.status['mode'];assert_match(/Modo: Pintar canto\./,@events.last['message']);assert_empty @model.operations
+    build_tool(tool_options('sheet'),eyedropper_key:'shift',switch_mode:lambda { |_mode| nil })
+    @tool.onKeyDown(16,1,PlanosSanto::SmartPaintTool::SHIFT_MASK,@view);assert @tool.status['sampling']
+    @tool.onKeyDown(9,1,PlanosSanto::SmartPaintTool::SHIFT_MASK,@view);refute @tool.status['sampling']
+  end
   def test_sampling_a_sheet_from_the_broad_face
     build_tool(tool_options('edge'))
     @tool.onKeyDown(18,1,0,@view);click_on(@doors[1],0)

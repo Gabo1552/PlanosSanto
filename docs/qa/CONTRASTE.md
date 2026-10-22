@@ -17,7 +17,7 @@ Fórmula: luminancia relativa sRGB de WCAG, `(L1 + 0,05) / (L2 + 0,05)`. Los fon
 
 1. **Estático**: extracción de cada regla con `color`, `background`, `outline` o `border` de ambos CSS y cálculo del ratio contra su fondo declarado o el del contenedor (`#FFFFFF` paneles, `#F6F5F0` lienzo del shell, `#19483D` riel y encabezado de tabla).
 2. **Medido**: recorrido en Chromium de todos los nodos con texto visible en Inicio, Materiales, Maderera, Muebles (con y sin advertencias), Planos A4, aviso de error, confirmación y ayuda; color y fondo efectivos por nodo.
-3. **axe-core 4.14** (reglas `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`) en esas mismas vistas. Queda automatizado en `tests/offline/n2-shell.spec.ts`.
+3. **axe-core 4.14** (devDependency directa) (reglas `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`) en esas mismas vistas. Queda automatizado en `tests/offline/n2-shell.spec.ts`.
 
 ## Correcciones
 
@@ -99,12 +99,12 @@ Nota: dentro de `.ux-shell` los bordes de campos ya los fija `.ux-shell input…
 |---|---|---|
 | Muebles, Planos A4, aviso de error, confirmación, ayuda | `color-contrast` en `.notes-panel h2>span` (3,87) | 0 |
 | Inicio, Maderera, Planos A4 vacío | 0 | 0 |
-| Materiales | 2 hallazgos en `MaterialLibraryPanel.tsx` (ver abajo) | Fuera de alcance, excluidos de la prueba con nombre |
+| Materiales | 2 hallazgos en `MaterialLibraryPanel.tsx` (ver abajo) | 0 |
 
-### Pendientes fuera de alcance (no son de `App.tsx`, `ux-shell.css` ni `style.css`)
+### Correcciones en `MaterialLibraryPanel.tsx`
 
-- `aria-prohibited-attr` (serious): `.material-library-grid` es un `div` con `aria-label` sin rol. Arreglo sugerido en `MaterialLibraryPanel.tsx`: `role="group"` (o `role="list"` con ítems `listitem`).
-- `label-content-name-mismatch` (serious, WCAG 2.5.3): el botón con `aria-label="Por revisar"` muestra un texto que no está contenido en su nombre accesible. Arreglo sugerido: quitar el `aria-label` o hacer que empiece con el texto visible.
+- `aria-prohibited-attr` (serious): `.material-library-grid` era un `div` con `aria-label` sin rol. Ahora tiene `role="group"`, que admite el nombre «Materiales visuales del taller».
+- `label-content-name-mismatch` (serious, WCAG 2.5.3): los filtros tenían `aria-label` igual al rótulo, y en «Por revisar» el contador visible quedaba fuera del nombre. Se quitó el `aria-label`: el nombre accesible es el texto visible («Por revisar 3»).
 
 No se encontraron violaciones `critical`. No existía un informe previo `A11Y_AXE.md` en `docs/qa/`; este documento lo reemplaza para esta ronda.
 

@@ -129,15 +129,18 @@ export const DETAIL_MAX=80;
 /** Aviso del código compuesto del TXT (código + espacio + detalle, máximo 80 caracteres), o null. */
 export function detailCodeWarning(detail:string,code:string|undefined,mode:string|undefined){
  if(mode!=='module_piece')return null;
- if(!code)return 'Falta el código módulo·pieza: completá módulo y código de pieza en la guía y guardala, o desactivá el código en el perfil del archivo.';
+ if(code===undefined)return 'Falta el código módulo·pieza: completá módulo y código de pieza en la guía y guardala, o desactivá el código en el perfil del archivo.';
+ if(code==='')return 'El código módulo·pieza se repite en otro mueble: corregí el módulo en la guía para que cada mueble tenga el suyo.';
  const length=[...`${code} ${detail}`].length;
  return length>DETAIL_MAX?`Con el código ${code} el detalle ocupa ${length} caracteres y el máximo es ${DETAIL_MAX}: acortalo ${plural(length-DETAIL_MAX,'carácter','caracteres')}.`:null;
 }
-export type BlockField='include'|'exclude'|'secondaryEdge'|'axes'|'checks'|'edgeResolution'|'note'|'dimensions'|'grain'|'edges'|'material';
+export type BlockField='detail'|'links'|'include'|'exclude'|'secondaryEdge'|'axes'|'checks'|'edgeResolution'|'note'|'dimensions'|'grain'|'edges'|'material';
 /** Campo del formulario (data-field) al que lleva cada motivo de bloqueo de Ruby. */
 export function blockedField(reason:string):BlockField|null{
  const r=reason.toLocaleLowerCase('es');
  if(r.includes('excluye'))return 'exclude';
+ if(r.includes('código módulo·pieza')||r.includes('detalle con código')||r.includes('se repite en otro mueble'))return 'detail';
+ if(r.includes('vínculos de cantos del borrador'))return 'links';
  // Una caja no rectangular no se corrige con los ejes: se verifica la geometría o se excluye la pieza.
  if(r.includes('geometría no rectangular'))return 'include';
  if(r.includes('falta confirmar'))return 'checks';

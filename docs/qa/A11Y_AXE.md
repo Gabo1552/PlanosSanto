@@ -3,6 +3,7 @@
 - **Herramienta:** `@axe-core/playwright` 4.14.0 (axe-core 4.14.0), Chromium de Playwright.
 - **Etiquetas:** `wcag2a`, `wcag2aa`, `wcag21aa`, `wcag22aa`.
 - **Spec:** `tests/offline/a11y-axe.spec.ts`, con el controlador Ruby real y dobles sintéticos de SketchUp (`names_bridge_driver.rb`), el mismo puente que `names.spec.ts` y `ux-taller.spec.ts`.
+- **Anchos:** cada pantalla se audita a 1500×1100 (ancho de trabajo) y a 1000×760 (ventana compacta del HtmlDialog, la que usa `editor.spec.ts`): 18 escaneos en total.
 - **Cómo regenerar el detalle crudo:** `A11Y_REPORT=<carpeta> npx playwright test --config playwright.offline.config.ts a11y-axe` deja un JSON por pantalla con regla, impacto y selectores.
 
 ## Pantallas auditadas
@@ -33,10 +34,37 @@ No quedaron violaciones de ningún impacto (minor, moderate, serious ni critical
 
 `ALLOWLIST` en `tests/offline/a11y-axe.spec.ts` está **vacía**. Cualquier violación nueva en las pantallas auditadas hace fallar la suite. Para aceptar una excepción hay que agregar una entrada `{screen, rule, reason}` con su motivo y registrarla en este documento.
 
+## Resultados «incomplete» (axe no pudo decidir): revisión
+
+axe marca como «incomplete» lo que no puede resolver solo. Aparecieron dos tipos.
+
+### Contraste con fondo indeterminado: 43 elementos, todos cumplen
+
+Son textos dentro de diálogos modales, debajo de encabezados fijos o en el SVG del dibujo. axe no determina el fondo cuando hay capas superpuestas. El spec los mide con los colores computados: toma el primer fondo opaco de los ancestros o, en el SVG, el `<rect>` que enmascara el texto. Además **falla si alguno queda por debajo de 4,5:1** (3:1 para texto grande). Esa aserción se verificó con una prueba de mutación: bajar `.viewer-hint` a `#aaa` rompe el spec con 2,32:1.
+
+| Elemento (pantallas) | Contraste medido | Mínimo |
+|---|---|---|
+| `td:nth-child(2) > small` en Nombres: lote | 5,02:1 | 4,5:1 |
+| `.material-review-count` en Materiales OCL | 5,60:1 | 4,5:1 |
+| `.viewer-hint` en editor y A4 | 5,72:1 | 4,5:1 |
+| `.naming-hint` y `kbd` en Sugerencias | 6,10:1 | 4,5:1 |
+| `header > div > p` en Sugerencias, Pedido y Cantos | 6,29:1 | 4,5:1 |
+| Resto (cotas SVG, rótulos de piezas, botones de herramientas, textos de diálogos) | 7,9:1 a 21:1 | 4,5:1 |
+
+Los cinco casos más ajustados quedan entre 5,0 y 6,3:1. Ahí conviene no aclarar más los grises.
+
+### `aria-prohibited-attr` en las cotas del dibujo de Sugerencias: pendiente
+
+- **Selector:** `g[aria-label="P01 · largo: 609,6 mm"]` y `g[aria-label="P01 · ancho: 406,4 mm"]`.
+- **Impacto que asigna axe:** serious, pero quedó como «incomplete», no como violación.
+- **Causa:** en `components/DimensionLayer.tsx`, una cota de solo lectura es un `<g>` con `aria-label` y sin `role`. Ese `aria-label` no tiene soporte fiable y un lector de pantalla puede ignorarlo o leer solo el número suelto.
+- **Corrección propuesta:** usar `role={onHide||onMove?'button':'img'}`, así la cota de solo lectura se anuncia como una imagen con su nombre completo.
+- **Por qué no se aplicó:** `components/DimensionLayer.tsx` está fuera de los archivos autorizados para esta ronda.
+
 ## Límites conocidos (qué no cubre axe)
 
 - axe solo detecta lo que se puede verificar en forma automática (aproximadamente un tercio de los criterios WCAG). No reemplaza la prueba con teclado y lector de pantalla: el orden del foco, la trampa de foco en los diálogos y los anuncios de `role=status` ya los cubren `editor.spec.ts`, `ux-taller.spec.ts` y los specs `ux2-*`.
-- Los resultados «incomplete» (por ejemplo, contraste sobre fondos con gradiente o sobre el `iframe` del PDF) no hacen fallar el spec. Conviene revisarlos manualmente al cambiar la paleta.
+- La medición propia de contraste usa el fondo opaco más cercano. No detecta un texto pintado encima de otra pieza del dibujo con otro color: eso sigue necesitando revisión visual.
 - El contenido del `iframe` con el PDF A4 lo dibuja el visor del navegador y queda fuera de la auditoría.
 - La paleta de pintura y los paneles de materiales y fotos (`SmartPaintPalette`, `PaintPanel`, `MaterialLibraryPanel`, `PhotoMaterialPanel`) quedaron fuera de esta ronda por alcance.
 

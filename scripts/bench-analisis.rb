@@ -411,6 +411,21 @@ edge_face = unique_def.entities[2].persistent_id.to_s
   end
   results << row
 end
+# Modo no inmediato (pintar Cara / lote): el hover prepara una vista previa
+# con token (inventario con geometría) y el clic la vuelve a preparar y aplica,
+# que re-planifica para comparar la firma (SmartPaintTool#apply_targets).
+face_request = lambda do |index|
+  paint_request.call(unique_piece, unique_face, index).reject { |key, _| key == 'immediate' }.merge('side' => 'front', 'paintScope' => 'face')
+end
+row, = measure('hover con vista previa (modo Cara)', runs: runs, warmup: warmup) { |i| smart.preview(face_request.call(i)) }
+results << row
+row, = measure('clic con vista previa (preview + apply)', runs: runs, warmup: warmup) do |i|
+  preview = smart.preview(face_request.call(i))
+  r = smart.apply('token' => preview.fetch('token'), 'confirmed' => true)
+  click_results << r['changed']
+  r
+end
+results << row
 raise 'Algún clic medido no cambió el material (no-op): la medición no sería comparable.' unless click_results.all?(true)
 
 exporter_file = OPTIONS[:exporter]

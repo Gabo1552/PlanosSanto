@@ -15,9 +15,9 @@ sketchup/build/
 sketchup_offline/build/
 
 # Corpus y reportes locales del arranque OpenCutList (privados).
-planos-santo-arranque/referencias_privadas/
-planos-santo-arranque/runs/
-planos-santo-arranque/backups/
+docs/historico/loops/planos-santo-arranque/referencias_privadas/
+docs/historico/loops/planos-santo-arranque/runs/
+docs/historico/loops/planos-santo-arranque/backups/
 
 # Loop 0.6.6: corpus y baseline privados.
 planos-santo-ocl-066/referencias_privadas/
@@ -31,31 +31,58 @@ planos-santo-loop-068/state/
 planos-santo-loop-068/manual/validacion_usuario.json
 
 # Pintado 0.7.3: baseline de referencia y estado de ejecución privados.
-planos-santo-loop-pintado-073/referencias/
-planos-santo-loop-pintado-073/state/
+docs/historico/loops/planos-santo-loop-pintado-073/referencias/
+docs/historico/loops/planos-santo-loop-pintado-073/state/
 
 # UX loop: private SKM/textures/reference captures never published.
-planos-santo-loop-ux-082/referencias_privadas/
-planos-santo-loop-ux-082/runs/
-planos-santo-loop-ux-082/evidencia_local/
-planos-santo-loop-ux-082/inventario_materiales.json
-planos-santo-loop-ux-082/inventario_materiales.csv
+docs/historico/loops/planos-santo-loop-ux-082/referencias_privadas/
+docs/historico/loops/planos-santo-loop-ux-082/runs/
+docs/historico/loops/planos-santo-loop-ux-082/evidencia_local/
+docs/historico/loops/planos-santo-loop-ux-082/inventario_materiales.json
+docs/historico/loops/planos-santo-loop-ux-082/inventario_materiales.csv
 
 # Photo experience loop: private references and local evidence.
-planos-santo-loop-experiencia-084/referencias_privadas/
-planos-santo-loop-experiencia-084/runs/
-planos-santo-loop-experiencia-084/ux/
+docs/historico/loops/planos-santo-loop-experiencia-084/referencias_privadas/
+docs/historico/loops/planos-santo-loop-experiencia-084/runs/
+docs/historico/loops/planos-santo-loop-experiencia-084/ux/
 
 # Fast-flow loop references remain private.
-planos-santo-loop-ux-085/referencias_privadas/
-planos-santo-loop-ux-085/runs/
-planos-santo-loop-ux-085/ux/
+docs/historico/loops/planos-santo-loop-ux-085/referencias_privadas/
+docs/historico/loops/planos-santo-loop-ux-085/runs/
+docs/historico/loops/planos-santo-loop-ux-085/ux/
 
 # User-supplied reference packages and design prototypes.
-planos-santo-loop-toolbar-082/referencia/
-planos-santo-loop-ux-082/WIREFRAME_REFERENCIA.html
+docs/historico/loops/planos-santo-loop-toolbar-082/referencia/
+docs/historico/loops/planos-santo-loop-ux-082/WIREFRAME_REFERENCIA.html
 
 # SketchUp customer models and material libraries remain private everywhere.
 *.skp
 *.skm
+
+# Protección de datos privados independiente de la ruta: sobrevive a mover o
+# archivar loops. Ver docs/qa/ORDEN_REPOSITORIO.md, sección 5.
+**/referencias_privadas/
+**/evidencia_local/
+**/backups/
+**/baseline/
+**/runs/
+!**/runs/.gitkeep
+**/inventario_materiales.json
+**/inventario_materiales.csv
+
+# Bytecode y caches de Python.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Ruido de sistema operativo, editores y logs.
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+
+# Salidas de herramientas.
 coverage/
+blob-report/
+playwright/.cache/

@@ -10,16 +10,17 @@ import type {QuickIntent} from '../../sketchup_offline/ui/quickActions';
 // Usa el controlador Ruby sintético de nombres; no es SketchUp nativo ni un modelo de cliente.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={version:1;id:string;result:unknown;error:string|null};
-let slow=false,child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,calls:{action:string;data:Record<string,unknown>}[],errors:string[];
+// `held` retiene el diagnóstico hasta que la prueba llama a `release`: sin esperas fijas ni carreras con el reloj real.
+let held:Promise<void>|undefined,release=()=>{},child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,calls:{action:string;data:Record<string,unknown>}[],errors:string[];
 function native(message:string):Promise<Reply>{return new Promise((resolve,reject)=>{const msg=JSON.parse(message);pending.set(msg.id,{resolve,reject});child.stdin.write(message+'\n');});}
 async function boot(page:Page,folder:string){
- await mkdir(folder,{recursive:true});pending=new Map();calls=[];errors=[];slow=false;
+ await mkdir(folder,{recursive:true});pending=new Map();calls=[];errors=[];held=undefined;
  child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,'safe'],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  let stderr='';child.stderr.on('data',chunk=>{stderr+=String(chunk);});createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),entry=pending.get(reply.id);if(entry){pending.delete(reply.id);entry.resolve(reply);}});child.on('exit',()=>{for(const entry of pending.values())entry.reject(new Error(stderr));pending.clear();});
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  if(action==='diagnostic'&&slow){await new Promise(done=>setTimeout(done,3200));}
+  if(action==='diagnostic'&&held)await held;
   return native(raw);
  });
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};'});
@@ -80,9 +81,9 @@ test('confirmación integrada al descartar cambios: Escape conserva, el botón n
  await expect(confirm.getByRole('button',{name:'Seguir editando',exact:true})).toBeFocused();await page.keyboard.press('Control+s');expect(count('save')).toBe(0);
  await page.keyboard.press('Escape');await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();await expect(name).toHaveValue('Nombre a conservar');expect(count('scan')).toBe(scans);
  await reanalyze.click();await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();
- slow=true;await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
+ held=new Promise(done=>{release=done;});await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
  const busy=page.locator('.ux-busy');await expect(busy).toHaveAttribute('role','status');await expect(busy).toContainText('Comprobando instalación…');await expect(busy.locator('.ux-spinner')).toHaveCount(1);await expect(busy).toContainText(/· [23] s/,{timeout:4000});
- await expect(rail(page,'Muebles')).toBeDisabled();await expect(rail(page,'Muebles')).toHaveAttribute('title',/Esperá a que termine «Comprobando instalación»/);await expect(busy).toHaveCount(0,{timeout:6000});
+ await expect(rail(page,'Muebles')).toBeDisabled();await expect(rail(page,'Muebles')).toHaveAttribute('title',/Esperá a que termine «Comprobando instalación»/);release();await expect(busy).toHaveCount(0);
 });
 
 // Regresión: noticeHold se reinicia al quitar el aviso. Chromium suele despachar blur/pointerleave al nodo quitado,

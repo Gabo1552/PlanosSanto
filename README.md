@@ -10,7 +10,7 @@ Para desarrollo: `npm ci`, `npm run verify`; Node 24, Ruby 3.2+, Python 3, Chrom
 
 Las secciones siguientes conservan el historial del exportador web y versiones anteriores; para el uso actual, seguir los enlaces de la candidata 0.8.9 de arriba.
 
-Plan: [migración a SketchUp](PLAN_DESARROLLO_EXTENSION.md). Estado operativo: [tareas de la extensión](sketchup_offline/TASKS.md). La aceptación exige probar el RBZ con un modelo real, cinco medidas, guardar/cerrar/reabrir y PDF impreso.
+Plan: [migración a SketchUp](docs/historico/PLAN_DESARROLLO_EXTENSION.md). Estado operativo: [tareas de la extensión](sketchup_offline/TASKS.md). La aceptación exige probar el RBZ con un modelo real, cinco medidas, guardar/cerrar/reabrir y PDF impreso.
 
 Web y extensión de guías de armado con vistas ortográficas ensambladas configurables, notas con flechas persistentes y PDF A4 horizontal (una hoja por mueble).
 
