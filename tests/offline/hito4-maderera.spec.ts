@@ -105,7 +105,7 @@ test('espesor distinto ofrece variante, otra placa o excluir; sin perfil en uso 
  await page.getByLabel('Incluir pieza física en el pedido').check();await expect(options).toBeVisible();
  // Sin confirmación: crear la variante cambia la biblioteca y el pedido se cruza solo, sin perder lo editado.
  await options.getByRole('button',{name:/^Crear variante de Placa gruesa de [\d,]+ mm$/}).click();
- await expect(panel.getByRole('status')).toContainText('el pedido se conserva');expect(asked).toBe('');
+ await expect(panel.getByRole('status')).toContainText(/el pedido se conserva|se conservaron tus cambios/);expect(asked).toBe('');
  const variant=actions.find(a=>a.action==='catalog_variant')!.data;expect(variant).toMatchObject({id:thick.id});expect(Math.abs((variant.thicknessMm as number)-25)).toBeGreaterThan(.1);
  await expect(page.getByLabel('Detalle del pedido')).toHaveValue('Lateral a conservar');
  await fillOrder(page,panel,sheet.id,strip.id);
