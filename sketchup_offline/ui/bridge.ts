@@ -9,7 +9,7 @@ declare global{
 const RESPONSE_TIMEOUT=120_000;
 // Native code signals actual entry/exit of its file chooser. Never exempt all
 // processing for these actions: missing native replies still have a deadline.
-const USER_DIALOG_ACTIONS=new Set(['pdf','save','catalog_import','catalog_export','catalog_install','order_export','materials_report','skm_preview','material_photo_pick']);
+const USER_DIALOG_ACTIONS=new Set(['pdf','save','catalog_import','catalog_export','catalog_install','order_export','materials_report','skm_preview','material_photo_pick','material_package_export','material_package_preview']);
 type Pending={action:string;resolve:(value:unknown)=>void;reject:(error:Error)=>void;timer?:ReturnType<typeof setTimeout>;waitingForUser:boolean};
 const waiting=new Map<string,Pending>();
 function armDeadline(id:string,pending:Pending){

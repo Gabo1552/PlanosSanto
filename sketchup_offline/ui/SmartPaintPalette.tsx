@@ -210,7 +210,10 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
    try{
     let materialUuid=bound?.binding?.uuid||'';
     if(!quickMode&&!materialUuid){const prepared=await request<PrepareResult>('smart_material_prepare',{catalogId:chosen.id,mode:chosen.kind});applyPaintData(prepared.paintStates,prepared.visuals);materialUuid=prepared.prepared.materialUuid;}
-    await accept(await request<Result>(quickMode?'smart_quick_start':'smart_tool_start',quickMode?{mode:chosen.kind,catalogId:chosen.id,materialUuid,...immediateDefaults,immediatePiece:chosen.kind==='sheet'}:{options:{...settings,scope:'unique',allowShared:false,confirmed:true,batch:false,side:'front',catalogId:chosen.id,materialUuid}}));
+    const started=await request<Result>(quickMode?'smart_quick_start':'smart_tool_start',quickMode?{mode:chosen.kind,catalogId:chosen.id,materialUuid,...immediateDefaults,immediatePiece:chosen.kind==='sheet'}:{options:{...settings,scope:'unique',allowShared:false,confirmed:true,batch:false,side:'front',catalogId:chosen.id,materialUuid}});
+    await accept(started);
+    // MATERIALES-19: best effort, the keyboard goes back to the SketchUp viewport.
+    if(started.toolState?.active)void request('viewport_focus').catch(()=>undefined);
    }finally{setInstalling('');}
    setNotice(quickMode?'Listo. Hacé clic en las piezas del modelo para pintarlas.':'Listo para pintar una ocurrencia. La cara y sus ejes se verifican al apuntar; el material sigue pendiente para maderera si no tiene ficha comercial.');
   });
