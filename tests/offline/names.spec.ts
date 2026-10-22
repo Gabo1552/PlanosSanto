@@ -457,7 +457,7 @@ test('cantos por cara: vinculación explícita, cuatro lados y TXT auditado sin 
   await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await expect(panel.getByText('Recorrido completo',{exact:true})).toBeVisible();
   await page.getByLabel(/\(material:888\)$/).selectOption(first.id as string);await page.getByLabel(/\(material:890\)$/).selectOption(second.id as string);
   await panel.getByRole('button',{name:'Usar propuesta de los cuatro lados',exact:true}).click();
-  await expect(page.getByLabel('Canto arriba del pedido')).toHaveValue('1');await expect(page.getByLabel('Canto abajo del pedido')).toHaveValue('0');await expect(page.getByLabel('Canto izquierda del pedido')).toHaveValue('2');await expect(page.getByLabel('Canto derecha del pedido')).toHaveValue('0');
+  await expect(page.getByLabel('Arriba · canto del pedido')).toHaveValue('1');await expect(page.getByLabel('Abajo · canto del pedido')).toHaveValue('0');await expect(page.getByLabel('Izquierda · canto del pedido')).toHaveValue('2');await expect(page.getByLabel('Derecha · canto del pedido')).toHaveValue('0');
   await page.getByLabel('Dirección de veta en esta vista').selectOption('none');await page.getByLabel('Veta / rotación del pedido').selectOption('locked');await page.getByLabel('Medidas que recibe la maderera').selectOption('finished_accepted');await page.getByLabel('Fuente / explicación de la revisión').fill('Dimensiones sintéticas aceptadas para probar formato');
   for(const label of ['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con la maderera','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'])await page.getByLabel(label,{exact:true}).check();
  }
@@ -470,5 +470,5 @@ test('cantos por cara: vinculación explícita, cuatro lados y TXT auditado sin 
  const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);
  // Reversing the shown face invalidates confirmations and relocates the observed left edge.
  await page.getByLabel('Cara mostrada de la vista 2D').selectOption('-1');await expect(page.getByLabel('Los cuatro cantos coinciden con esta vista')).not.toBeChecked();
- await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await panel.getByRole('button',{name:'Usar propuesta de los cuatro lados',exact:true}).click();await expect(page.getByLabel('Canto izquierda del pedido')).toHaveValue('0');await expect(page.getByLabel('Canto derecha del pedido')).toHaveValue('2');
+ await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await panel.getByRole('button',{name:'Usar propuesta de los cuatro lados',exact:true}).click();await expect(page.getByLabel('Izquierda · canto del pedido')).toHaveValue('0');await expect(page.getByLabel('Derecha · canto del pedido')).toHaveValue('2');
 });

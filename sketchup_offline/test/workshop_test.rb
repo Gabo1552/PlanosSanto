@@ -183,6 +183,15 @@ class WorkshopTest < Minitest::Test
   blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
   assert blocked['reasons'].any? { |r| r.include?('mide 3.500 × 600 mm y la placa aprobada es 3.000 × 2.000 mm') },blocked['reasons'].inspect
  end
+ def test_ux2_audit_reports_principal_and_secondary_edge_problems_together
+  _service,draft=order;catalog=@store.read;catalog['items'][1]['widthMm']=10
+  service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog);row=draft['rows'][0];row['edgeMap']=[1,2,0,0];row['secondaryId']=nil
+  blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
+  assert_includes blocked['reasons'],'El canto principal (1) no cubre el espesor de la placa: ancho 10 mm y espesor 19,05 mm.',blocked['reasons'].inspect
+  assert_includes blocked['reasons'],'Elegí un canto secundario (2) aprobado de la biblioteca.'
+  normal=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+  assert normal.message.end_with?(blocked['reasons'].first),normal.message
+ end
  def test_ux2_check_and_export_errors_name_the_piece_and_show_values
   service,draft=order;row=draft['rows'][1];row['materialConfirmed']=false
   error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}

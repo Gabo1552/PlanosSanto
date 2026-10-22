@@ -117,16 +117,26 @@ module PlanosSanto
           %w[cutBase cutHeight].each { |key| n=row[key];raise ExportError,'Medidas de corte inválidas: cargá base y altura de corte mayores que cero.' unless n.is_a?(Numeric) && n.finite? && n>0 && n<=100000 }
         end
       end
+      # Map structure first; then each edge role on its own so collect mode reports both roles.
       mapped=check.call do
         raise ExportError,'Mapa de cantos inválido: cada lado debe ser 0, 1 o 2.' unless mapping.is_a?(Array) && mapping.length==4 && mapping.all? { |v| v.is_a?(Integer) && v.between?(0,2) }
+      end
+      distinct=check.call do
         raise ExportError,'Los cantos principal y secundario deben ser distintos.' if row['principalId'] && row['principalId']==row['secondaryId']
+      end
+      if mapped && distinct
         %w[principalId secondaryId].each_with_index do |key,index|
           next unless row[key] || mapping.include?(index+1)
-          edge=material(row[key],'edge')
-          next unless board
-          width=edge['widthMm'].is_a?(Numeric) ? "#{mm(edge['widthMm'])} mm" : 'sin cargar'
-          raise ExportError,"El canto no cubre el espesor de la placa: ancho #{width} y espesor #{mm(thickness)} mm." unless edge['widthMm'].is_a?(Numeric) && edge['widthMm']+0.1>=thickness
-          raise ExportError,'Confirmá compatibilidad placa/canto en la biblioteca.' unless board['compatibleIds'].include?(edge['id'])
+          role=index.zero? ? 'principal (1)' : 'secundario (2)'
+          check.call do
+            edge=@catalog['items'].find { |item| item['id']==row[key] && item['kind']=='edge' && item['approved'] }
+            raise ExportError,"Elegí un canto #{role} aprobado de la biblioteca." unless edge
+            if board
+              width=edge['widthMm'].is_a?(Numeric) ? "#{mm(edge['widthMm'])} mm" : 'sin cargar'
+              raise ExportError,"El canto #{role} no cubre el espesor de la placa: ancho #{width} y espesor #{mm(thickness)} mm." unless edge['widthMm'].is_a?(Numeric) && edge['widthMm']+0.1>=thickness
+              raise ExportError,"Confirmá compatibilidad placa/canto #{role} en la biblioteca." unless board['compatibleIds'].include?(edge['id'])
+            end
+          end
         end
       end
       if board

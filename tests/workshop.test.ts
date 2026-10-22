@@ -6,7 +6,7 @@ import {pieceRows,synchronizeGroupedNames} from '../lib/pieceGroups';
 import {sheetEntries} from '../lib/sheet';
 import {presentationSchema} from '../lib/presentation';
 import {orderProjection} from '../lib/orderPreview';
-import {applyEquivalent,blockedField,edgeIncompatibility,edgeTotals,equivalentRows,formatMetres,materialLabel,plural,rowWarnings} from '../sketchup_offline/ui/workshopRules';
+import {applyEquivalent,blockedField,edgeAmounts,edgeIncompatibility,fixInBoard,edgeTotals,equivalentRows,formatMetres,materialLabel,plural,rowWarnings} from '../sketchup_offline/ui/workshopRules';
 import type {Catalog,CatalogItem,Geometry,OrderPlan,OrderRow} from '../sketchup_offline/ui/WorkshopPanel';
 describe('Sugerencias auditables de nombres',()=>{
  it('se abstiene sin frente confirmado y no cambia nombres ni geometría',()=>{
@@ -77,8 +77,8 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
   expect(second.metres).toBeCloseTo(0.3,6);expect(second.sku).toBe('Sin SKU');expect(totals.missing).toBe(1);expect(totals.unassigned).toBe(1);
  });
  it('marca cantos incompatibles y avisa por campo lo que Ruby bloquearía',()=>{
-  expect(edgeIncompatibility(e1,board,18)).toBeNull();expect(edgeIncompatibility(e2,board,18)).toBe('sin compatibilidad cargada en la biblioteca');
-  expect(edgeIncompatibility(e2,{...board,compatibleIds:['e2']},22)).toBe('ancho 15 mm < espesor 22 mm');expect(edgeIncompatibility(e2,undefined,22)).toBeNull();
+  expect(edgeIncompatibility(e1,board,18)).toBeNull();expect(edgeIncompatibility(e2,board,18)).toBe('no cubre el espesor de 18 mm; sin compatibilidad cargada en la biblioteca');expect(fixInBoard(edgeIncompatibility(e2,board,18)!)).toBe(true);
+  expect(edgeIncompatibility(e2,{...board,compatibleIds:['e2']},22)).toBe('no cubre el espesor de 22 mm');expect(fixInBoard('no cubre el espesor de 22 mm')).toBe(false);expect(edgeIncompatibility(e2,{...board,compatibleIds:['e2']},15)).toBeNull();expect(edgeIncompatibility(e2,undefined,22)).toBeNull();
   expect(rowWarnings(row('a'),geo([600,720,18]),catalog)).toEqual({});
   const w=rowWarnings(row('a',{secondaryId:'e2',edgeMap:[1,2,0,0],principalId:null,grainAxis:'v',grainPolicy:'rotate'}),geo([2700,720,19.5]),catalog);
   expect(w.material?.[0]).toContain('mide 19,5 mm');expect(w.secondaryId?.[0]).toContain('sin compatibilidad');expect(w.edgeMap?.[0]).toContain('Arriba');
@@ -93,7 +93,31 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
   const b=result.rows[1],c=result.rows[2];expect(result.applied).toBe(2);expect(result.edgesSkipped).toBe(1);
   expect(b.materialId).toBe('b');expect(b.edgeMap).toEqual([1,1,1,1]);expect(b.materialConfirmed).toBe(false);expect(b.edgesConfirmed).toBe(false);expect(b.edgeResolution).toBeNull();
   expect(b.orientationConfirmed).toBe(true);expect(b.dimensionsConfirmed).toBe(true);expect(b.reviewNote).toBe('Nota');
-  expect(c.edgeMap).toEqual([1,1,0,0]);expect(c.edgesConfirmed).toBe(true);expect(result.rows[3]).toBe(plan.rows[3]);
+  expect(c.edgeMap).toEqual([1,1,0,0]);expect(c.edgesConfirmed).toBe(false);expect(result.rows[3]).toBe(plan.rows[3]);
+ });
+ it('copiar solo la placa invalida también los cantos verificados y no copia vínculos de caras del origen',()=>{
+  const source=row('a',{materialId:'b',edgeBindings:[{observedId:'cara-a',catalogId:'e1'}]}),target=row('b',{materialId:'',edgeBindings:[{observedId:'cara-b',catalogId:'e2'}]});
+  const material=applyEquivalent([source,target],source,['b'],{material:true,edges:false,grain:false,dimensions:false}).rows[1];
+  expect(material.materialId).toBe('b');expect(material.edgesConfirmed).toBe(false);expect(material.orientationConfirmed).toBe(true);expect(material.edgeBindings).toEqual([{observedId:'cara-b',catalogId:'e2'}]);
+  const edges=applyEquivalent([source,target],source,['b'],{material:false,edges:true,grain:false,dimensions:false}).rows[1];
+  expect(edges.edgeBindings).toEqual([{observedId:'cara-b',catalogId:'e2'}]);expect(edges.edgeResolution).toBeNull();expect(edges.materialConfirmed).toBe(true);
+ });
+ it('orienta las medidas de corte copiadas según los ejes del destino',()=>{
+  const source=row('a',{dimensionRule:'explicit_cut',cutBase:598,cutHeight:718});
+  const rows=[source,row('b'),row('c',{axes:[1,0]}),row('d',{axes:null})],geometry={a:geo([600,720,18]),b:geo([600,720,18]),c:geo([600,720,18]),d:geo([600,720,18])};
+  const result=applyEquivalent(rows,source,['b','c','d'],{material:false,edges:false,grain:false,dimensions:true},geometry);
+  expect([result.rows[1].cutBase,result.rows[1].cutHeight]).toEqual([598,718]);expect([result.rows[2].cutBase,result.rows[2].cutHeight]).toEqual([718,598]);
+  expect([result.rows[3].cutBase,result.rows[3].cutHeight]).toEqual([598,718]);expect(result.cutsSwapped).toBe(1);expect(result.rows[2].dimensionsConfirmed).toBe(false);
+  // Pieza destino con las medidas en otros ejes locales: se compara la longitud, no el índice del eje.
+  const rotated=applyEquivalent([source,row('e')],source,['e'],{material:false,edges:false,grain:false,dimensions:true},{a:geometry.a,e:geo([720,600,18])});
+  expect([rotated.rows[1].cutBase,rotated.rows[1].cutHeight]).toEqual([718,598]);
+ });
+ it('separa en los cantos los importes con precio desactualizado o futuro del vigente',()=>{
+  const price=(currency:string)=>({currency});
+  const amounts=edgeAmounts([{materialId:'e1',role:'principal_edge',amount:100,status:'current_price',price:price('ARS')},{materialId:'e1',role:'principal_edge',amount:1234,status:'stale_price',price:price('ARS')},
+   {materialId:'e2',role:'secondary_edge',amount:5,status:'future_price',price:price('USD')},{materialId:'e3',role:'secondary_edge',amount:null,status:'price_pending',price:null},{materialId:'b',role:'board',amount:999,status:'current_price',price:price('ARS')}]);
+  expect(amounts.get('e1')).toEqual({current:{ARS:100},outdated:{ARS:1234},pending:false});expect(amounts.get('e2')).toEqual({current:{},outdated:{USD:5},pending:false});
+  expect(amounts.get('e3')?.pending).toBe(true);expect(amounts.has('b')).toBe(false);
  });
  it('lleva cada motivo de bloqueo al campo correspondiente',()=>{
   expect(blockedField('Elegí ejes U/V distintos y la cara frontal de la vista 2D.')).toBe('axes');expect(blockedField('Falta confirmar orientación, cantos.')).toBe('checks');
@@ -101,5 +125,7 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
   expect(blockedField('La pieza no entra en el formato de placa aprobado: mide 2650 × 600 mm')).toBe('dimensions');expect(blockedField('El espesor no coincide: el eje de espesor mide 18 mm')).toBe('material');
   expect(blockedField('Completá detalle y justificación de medidas de corte/terminadas.')).toBe('note');expect(blockedField('Indicá por qué se excluye esta pieza.')).toBe('exclude');
   expect(blockedField('Elegí cómo verificaste los cantos: caras observadas o inspección manual documentada.')).toBe('edgeResolution');
+  expect(blockedField('El canto secundario (2) no cubre el espesor de la placa: ancho 15 mm y espesor 18 mm.')).toBe('secondaryEdge');expect(blockedField('Confirmá compatibilidad placa/canto principal (1) en la biblioteca.')).toBe('edges');
+  expect(blockedField('Elegí un canto secundario (2) aprobado de la biblioteca.')).toBe('secondaryEdge');expect(blockedField('Geometría no rectangular: verificala o excluila explícitamente.')).toBe('include');
  });
 });

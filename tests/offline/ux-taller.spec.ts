@@ -157,7 +157,7 @@ test('cantos: diagnóstico completo, estado por lado y vínculo rápido a princi
  await expect(page.getByLabel('Canto secundario (2) del pedido')).toHaveValue(second.id);await expect(issues).toHaveCount(0);
  await expect(panel.getByRole('group',{name:'Rol de Principal biblioteca en el pedido'}).getByRole('button',{name:'Usar como principal (1)',exact:true})).toHaveAttribute('aria-pressed','true');
  await expect(propose).toBeEnabled();await propose.click();
- await expect(page.getByLabel('Canto arriba del pedido')).toHaveValue('1');await expect(page.getByLabel('Canto izquierda del pedido')).toHaveValue('2');await expect(page.getByLabel('Canto abajo del pedido')).toHaveValue('0');
+ await expect(page.getByLabel('Arriba · canto del pedido')).toHaveValue('1');await expect(page.getByLabel('Izquierda · canto del pedido')).toHaveValue('2');await expect(page.getByLabel('Abajo · canto del pedido')).toHaveValue('0');
  await page.screenshot({path:'artifacts/ux-taller-cantos-SINTETICO.png',fullPage:false});
  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('1,0');
  await expect(panel.getByText('La lectura anterior era de otra orientación. Volvé a leer.',{exact:true})).toBeVisible();await expect(propose).toHaveCount(0);
