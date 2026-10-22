@@ -17,7 +17,7 @@ Validá en **SketchUp 2026 real (Windows)** la candidata **Planos Santo 0.8.19**
    La versión de `sketchup_offline/version.json` tiene que decir **0.8.19**.
 2. Verificá el instalador ya publicado. El SHA-256 de `dist/PlanosSanto-0.8.19-candidata.rbz` tiene que ser:
    ```
-   __SHA__
+   a183d6375ca05f6ca6fd4fe0a88253c28114092337341c2374576d3d11a6ab1a
    ```
    En PowerShell: `Get-FileHash dist\PlanosSanto-0.8.19-candidata.rbz -Algorithm SHA256`. Si no coincide, **detenete** y avisá.
 3. Leé, en este orden:
