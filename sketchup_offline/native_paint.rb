@@ -124,8 +124,11 @@ module PlanosSanto
         raise ExportError,'La selección contiene una cara amplia o ambigua; elegí solamente caras de canto.' unless planar
       end
     end
+    SIDE_GAP='Un lado no está cubierto por caras planas completas (rebaje o geometría abierta). Revisá la pieza; no se pintó nada.'
+    BROAD_GAP='Las caras anchas no cubren la placa completa. Usá pintar Cara.'
     # Local axes are explicitly chosen by the operator. Cardinal expansion is
-    # allowed only when each physical boundary has one unambiguous planar face.
+    # allowed only when the planar faces of a boundary cover its whole local
+    # rectangle (coplanar faces never overlap in SketchUp, so full area = covered).
     def boundary_frame(node,data)
       axes=data['axes']
       valid=axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
@@ -135,15 +138,22 @@ module PlanosSanto
       bounds=shape['localBounds'];thickness=([0,1,2]-axes).first
       sizes=physical_sizes(node,bounds)
       raise ExportError,'El espesor no es menor que base y altura; revisá los ejes antes de expandir lados.' unless axes.all? { |axis| sizes[thickness]<sizes[axis] }
-      groups=Hash.new { |hash,key| hash[key]=[] }
+      groups=Hash.new { |hash,key| hash[key]=[] };areas=Hash.new(0.0)
       faces(node).each do |face|
         fd=face_data(face);normal=fd['normal'];length=Math.sqrt(normal.sum { |value| value*value })
         axis=(0..2).find { |index| length>0 && (normal[index].abs/length-1).abs<1e-5 }
         next unless axis
         position=%w[min max].find { |side| fd['verticesMm'].all? { |point| (point[axis]-bounds[side][axis]).abs<=0.01 } }
-        groups[[axis,position]] << face if position
+        next unless position
+        groups[[axis,position]] << face;areas[[axis,position]]+=fd['areaMm2']
       end
-      {axes:axes,thickness:thickness,groups:groups}
+      # Local mm on both sides of the comparison: instance scale never enters.
+      extent=(0..2).map { |axis| bounds['max'][axis]-bounds['min'][axis] }
+      complete=(0..2).to_a.product(%w[min max]).to_h do |axis,side|
+        rect=extent.each_with_index.reject { |_,index| index==axis }.map(&:first).inject(:*)
+        [[axis,side],rect>0 && (areas[[axis,side]]-rect).abs<=[0.5,rect*1e-3].max]
+      end
+      {axes:axes,thickness:thickness,groups:groups,complete:complete}
     end
 
     # Immediate tools derive the local cutting plane from the physical piece,
@@ -173,24 +183,41 @@ module PlanosSanto
         count=data.fetch('edgeCount',1)
         raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' unless count.is_a?(Integer) && [1,2,4].include?(count)
         validate_edge!(node,selected,data)
-        return selected if count==1
+        if count==1
+          # One edge split by a line is still one edge; a rebate or an
+          # incomplete side keeps the Hito 2 behavior: only the pointed face.
+          frame=begin
+            boundary_frame(node,data)
+          rescue ExportError
+            nil
+          end
+          return selected unless frame
+          return selected.flat_map do |face|
+            key=frame[:axes].flat_map { |axis| [[axis,'min'],[axis,'max']] }.find { |entry| frame[:groups][entry].include?(face) }
+            key && frame[:complete][key] && frame[:groups][key].length>1 ? frame[:groups][key] : [face]
+          end.uniq
+        end
         frame=boundary_frame(node,data);groups=frame[:groups]
         keys=frame[:axes].flat_map { |axis| [[axis,'min'],[axis,'max']] }
-        raise ExportError,'Los cuatro lados no son caras físicas únicas. Revisá la pieza manualmente.' unless keys.all? { |key| groups[key].length==1 }
-        return keys.map { |key| groups[key].first } if count==4
+        if count==4
+          raise ExportError,SIDE_GAP unless keys.all? { |key| frame[:complete][key] }
+          return keys.flat_map { |key| groups[key] }
+        end
         selected.flat_map do |face|
           key=keys.find { |entry| groups[entry].include?(face) }
           raise ExportError,'El lado señalado no pertenece al marco local de cantos.' unless key
-          [groups[[key[0],'min']].first,groups[[key[0],'max']].first]
+          pair=[[key[0],'min'],[key[0],'max']]
+          raise ExportError,SIDE_GAP unless pair.all? { |entry| frame[:complete][entry] }
+          pair.flat_map { |entry| groups[entry] }
         end.uniq
       elsif data['mode']=='sheet'
         scope=data.fetch('paintScope','face')
         raise ExportError,'Elegí pintar Pieza o Cara.' unless %w[face piece].include?(scope)
         return selected if scope=='face'
         frame=boundary_frame(node,data)
-        broad=%w[min max].map { |side| frame[:groups][[frame[:thickness],side]] }
-        raise ExportError,'Las dos caras amplias no se identifican sin ambigüedad. Usá pintar Cara.' unless broad.all? { |group| group.length==1 }
-        broad.map(&:first)
+        keys=%w[min max].map { |side| [frame[:thickness],side] }
+        raise ExportError,BROAD_GAP unless keys.all? { |key| frame[:complete][key] }
+        keys.flat_map { |key| frame[:groups][key] }
       else
         selected
       end
