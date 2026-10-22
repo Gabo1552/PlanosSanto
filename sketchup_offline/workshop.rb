@@ -2,6 +2,8 @@
 require_relative 'catalog_store'
 require_relative 'supplier_order'
 require_relative 'ocl_reader'
+require_relative 'order_proposal'
+require_relative 'guide_store'
 
 module PlanosSanto
   class Workshop
@@ -27,10 +29,18 @@ module PlanosSanto
       @session.check_current!
       catalog=@catalog.read;report=nil
       read=lambda { report ||= OclReader.capture(@model) }
-      SupplierOrder.new(@session.document,@session.fingerprint,catalog,
+      service=SupplierOrder.new(@session.document,@session.fingerprint,catalog,
         edge_review:lambda { |row,geometry| OclReader.verify_edge_mapping(read.call,row,geometry,catalog) },
         source_review:lambda { |row,geometry| verify_native_source(read.call,row,geometry,catalog) },
         material_proposal:lambda { |id| native_proposal(read.call,id,catalog) })
+      service.detail_codes=codes;@read=read;@order_catalog=catalog
+      service
+    end
+    # Código módulo·pieza de la guía guardada. Una guía dañada no inventa códigos: las filas quedan sin código.
+    def codes
+      OrderProposal.codes(@session.document,GuideStore.new(@model).read)
+    rescue ExportError
+      {}
     end
     def native_piece(report,id)
       report['pieces'].find { |piece| piece['path'].join('/')==id }
@@ -40,11 +50,7 @@ module PlanosSanto
       ids=piece['faces'].flat_map { |face| [face['front_material_id'],face['back_material_id']] }.compact.uniq
       report['materials'].select { |material| ids.include?(material['id']) }
     end
-    def bound_catalog_item(material,catalog)
-      binding=material['native_binding']
-      return nil unless material['native_status']=='valid' && binding
-      catalog['items'].find { |item| item['id']==binding['catalogId'] && item['kind']==binding['kind'] && item['approved'] && MaterialResolver.item_fingerprint(item)==binding['catalogFingerprint'] }
-    end
+    def bound_catalog_item(material,catalog);OrderProposal.bound_item(material,catalog);end
     def native_proposal(report,id,catalog)
       materials=native_materials(report,native_piece(report,id))
       sheets=materials.select { |material| material['category']=='sheet' && material['native_status']=='valid' }
@@ -97,11 +103,11 @@ module PlanosSanto
       if !reset && raw.is_a?(String) && raw.bytesize<=8*1024*1024
         stored=JSON.parse(raw)
         if stored['fingerprint']==current['fingerprint'] && stored['catalogRevision']==current['catalogRevision']
-          current.merge!(stored.slice('rows','profile'))
+          current.merge!(stored.slice('rows','profile','edgeLinks','detailCode'))
           current['rows'].each { |row| unless row.key?('edgeResolution');row.merge!('edgeResolution'=>nil,'edgeBindings'=>[],'edgeOverrideReason'=>'','edgesConfirmed'=>false);end }
         end
       end
-      {'plan'=>current,'catalog'=>@catalog.read}
+      {'plan'=>current.merge('edgeLinks'=>current.fetch('edgeLinks',[]),'detailCode'=>current.fetch('detailCode','none'),'codes'=>codes),'catalog'=>@catalog.read}
     rescue JSON::ParserError
       raise ExportError,'Borrador de pedido dañado. Prepará uno nuevo sin sobrescribir el anterior.'
     end
@@ -111,13 +117,40 @@ module PlanosSanto
       report=OclReader.capture(@model)
       OclReader.projected_edges(report,row,proposal['geometry'].fetch(row['id']))
     end
+    def current_draft!(draft,service=order)
+      current=service.proposal
+      raise ExportError,'El borrador quedó desactualizado porque cambió el modelo o la biblioteca: usá «Preparar de nuevo».' unless draft.is_a?(Hash) && draft['fingerprint']==current['fingerprint'] && draft['catalogRevision']==current['catalogRevision']
+      raise ExportError,'El borrador no tiene las mismas piezas que el modelo: usá «Preparar de nuevo».' unless draft['rows'].is_a?(Array) && draft['rows'].map { |r| r.is_a?(Hash) && r['id'] }.sort_by(&:to_s)==current['rows'].map { |r| r['id'] }.sort
+      raise ExportError,'El borrador viene de otra versión de Planos Santo: usá «Preparar de nuevo».' unless draft['rows'].all? { |row| row.is_a?(Hash) && row.keys.sort==SupplierOrder::ROW_KEYS.sort }
+      OrderProposal.check_extras!(draft)
+      current
+    end
+    # Hito 3. Devuelven un borrador nuevo sin guardarlo: el taller lo revisa y guarda con «Guardar borrador».
+    def proposal_service(draft,ids=nil)
+      raise ExportError,'Selección de piezas inválida.' unless ids.nil? || (ids.is_a?(Array) && ids.all?(String))
+      service=order;current_draft!(draft,service)
+      [service,OrderProposal.new(service,@read,@order_catalog)]
+    end
+    def with_view(result,service)
+      result.merge('plan'=>result['plan'].merge('geometry'=>service.proposal['geometry'],'codes'=>codes))
+    end
+    def propose(draft,ids=nil)
+      service,proposal=proposal_service(draft,ids)
+      with_view(proposal.propose(draft,ids:ids),service)
+    end
+    def confirm_bulk(draft,ids=nil)
+      service,proposal=proposal_service(draft,ids)
+      with_view(proposal.confirm_bulk(draft,ids:ids),service)
+    end
+    def apply_rows(draft,source_id,target_ids,groups)
+      raise ExportError,'Elegí piezas destino y qué copiar.' unless target_ids.is_a?(Array) && target_ids.all?(String) && groups.is_a?(Hash)
+      service,proposal=proposal_service(draft)
+      with_view(proposal.apply(draft,source_id,target_ids,groups.select { |key,value| OrderProposal::GROUPS.key?(key) && value==true }),service)
+    end
     def save_plan(draft)
       # Drafts may be unfinished. Preserve exact source linkage, never certify them.
-      current=order.proposal
-      raise ExportError,'El borrador quedó desactualizado porque cambió el modelo o la biblioteca: usá «Preparar de nuevo».' unless draft.is_a?(Hash) && draft['fingerprint']==current['fingerprint'] && draft['catalogRevision']==current['catalogRevision']
-      raise ExportError,'El borrador no tiene las mismas piezas que el modelo: usá «Preparar de nuevo».' unless draft['rows'].is_a?(Array) && draft['rows'].map { |r| r['id'] }.sort==current['rows'].map { |r| r['id'] }.sort
-      raise ExportError,'El borrador viene de otra versión de Planos Santo: usá «Preparar de nuevo».' unless draft['rows'].all? { |row| row.is_a?(Hash) && row.keys.sort==SupplierOrder::ROW_KEYS.sort }
-      value=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','rows','profile'))
+      current_draft!(draft)
+      value=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','rows','profile','edgeLinks','detailCode'))
       raise ExportError,'Borrador demasiado grande.' if value.bytesize>8*1024*1024
       started=false
       begin

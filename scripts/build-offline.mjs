@@ -38,6 +38,7 @@ const copies={
   'planos_santo/piece_highlight_tool.rb':'sketchup_offline/piece_highlight_tool.rb',
   'planos_santo/supplier_order.rb':'sketchup_offline/supplier_order.rb',
   'planos_santo/workshop.rb':'sketchup_offline/workshop.rb',
+  'planos_santo/order_proposal.rb':'sketchup_offline/order_proposal.rb',
   'planos_santo/names.rb':'sketchup_offline/names.rb',
   'planos_santo/session.rb':'sketchup_offline/session.rb',
   'planos_santo/guide_store.rb':'sketchup_offline/guide_store.rb',

@@ -6,7 +6,7 @@ import {pieceRows,synchronizeGroupedNames} from '../lib/pieceGroups';
 import {sheetEntries} from '../lib/sheet';
 import {presentationSchema} from '../lib/presentation';
 import {orderProjection} from '../lib/orderPreview';
-import {applyEquivalent,blockedField,edgeAmounts,edgeIncompatibility,fixInBoard,edgeTotals,equivalentRows,formatMetres,materialLabel,plural,rowWarnings} from '../sketchup_offline/ui/workshopRules';
+import {applySummary,blockedField,bulkNotice,detailCodeWarning,edgeAmounts,edgeIncompatibility,fixInBoard,edgeTotals,equivalentRows,formatMetres,linkEdge,materialLabel,plural,proposalNotice,proposalReview,proposalStatus,rowWarnings,type ProposalRow} from '../sketchup_offline/ui/workshopRules';
 import type {Catalog,CatalogItem,Geometry,OrderPlan,OrderRow} from '../sketchup_offline/ui/WorkshopPanel';
 describe('Sugerencias auditables de nombres',()=>{
  it('se abstiene sin frente confirmado y no cambia nombres ni geometría',()=>{
@@ -85,32 +85,42 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
   expect(w.grainAxis?.[0]).toContain('intercambiá los ejes');expect(w.grainPolicy?.[0]).toContain('asimétricos');expect(w.dimensions?.[0]).toBe('Mide 2.700 × 720 mm y la placa aprobada es 2.600 × 1.830 mm.');
   expect(rowWarnings(row('a',{grainAxis:'u'}),geo([600,720,18]),{...catalog,items:[{...board,grain:true},e1]}).grainAxis).toBeUndefined();
  });
- it('aplica a piezas equivalentes solo los grupos elegidos e invalida solo sus verificaciones',()=>{
-  const source=row('a',{materialId:'b',principalId:'e1',edgeMap:[1,1,1,1],reviewNote:'Copiada'});
-  const plan={rows:[source,row('b',{materialId:'',principalId:null,edgeMap:[0,0,0,0]}),row('c',{axes:[1,0]}),row('d')],geometry:{a:geo([600,720,18]),b:geo([720.05,600,18]),c:geo([600,720,18]),d:geo([600,720,18],true)}};
-  expect(equivalentRows(plan,source).map(r=>r.id)).toEqual(['b','c']);
-  const result=applyEquivalent(plan.rows,source,['b','c'],{material:true,edges:true,grain:false,dimensions:false});
-  const b=result.rows[1],c=result.rows[2];expect(result.applied).toBe(2);expect(result.edgesSkipped).toBe(1);
-  expect(b.materialId).toBe('b');expect(b.edgeMap).toEqual([1,1,1,1]);expect(b.materialConfirmed).toBe(false);expect(b.edgesConfirmed).toBe(false);expect(b.edgeResolution).toBeNull();
-  expect(b.orientationConfirmed).toBe(true);expect(b.dimensionsConfirmed).toBe(true);expect(b.reviewNote).toBe('Nota');
-  expect(c.edgeMap).toEqual([1,1,0,0]);expect(c.edgesConfirmed).toBe(false);expect(result.rows[3]).toBe(plan.rows[3]);
+ it('reconoce piezas equivalentes por medidas ordenadas, espejado y forma',()=>{
+  const source=row('a');
+  const plan={rows:[source,row('b'),row('c',{axes:[1,0]}),row('d'),row('e'),row('f')],geometry:{a:geo([600,720,18]),b:geo([720.05,600,18]),c:geo([600,720,18]),d:geo([600,720,18],true),e:{...geo([600,720,18]),rectangular:false},f:geo([600,720.2,18])}};
+  expect(equivalentRows(plan,source).map(r=>r.id)).toEqual(['b','c']);expect(equivalentRows({rows:plan.rows,geometry:{}},source)).toEqual([]);
  });
- it('copiar solo la placa invalida también los cantos verificados y no copia vínculos de caras del origen',()=>{
-  const source=row('a',{materialId:'b',edgeBindings:[{observedId:'cara-a',catalogId:'e1'}]}),target=row('b',{materialId:'',edgeBindings:[{observedId:'cara-b',catalogId:'e2'}]});
-  const material=applyEquivalent([source,target],source,['b'],{material:true,edges:false,grain:false,dimensions:false}).rows[1];
-  expect(material.materialId).toBe('b');expect(material.edgesConfirmed).toBe(false);expect(material.orientationConfirmed).toBe(true);expect(material.edgeBindings).toEqual([{observedId:'cara-b',catalogId:'e2'}]);
-  const edges=applyEquivalent([source,target],source,['b'],{material:false,edges:true,grain:false,dimensions:false}).rows[1];
-  expect(edges.edgeBindings).toEqual([{observedId:'cara-b',catalogId:'e2'}]);expect(edges.edgeResolution).toBeNull();expect(edges.materialConfirmed).toBe(true);
+ it('anuncia lo que Ruby aplicó, salteó e invalidó al copiar a otras piezas',()=>{
+  const base={applied:2,edgesSkipped:0,cutsSwapped:0,dimensionsSkipped:0,invalidated:{b:['materialConfirmed','edgesConfirmed'],c:['materialConfirmed']}};
+  expect(applySummary(base,7)).toBe('Aplicado a 2 piezas; se invalidaron 3 confirmaciones y quedan 7 verificaciones por confirmar.');
+  expect(applySummary({...base,applied:1,invalidated:{b:['grainConfirmed']}},1)).toBe('Aplicado a 1 pieza; se invalidó 1 confirmación y quedan 1 verificación por confirmar.');
+  expect(applySummary({...base,invalidated:{}},0)).toBe('Aplicado a 2 piezas; no se invalidó ninguna confirmación y quedan 0 verificaciones por confirmar.');
+  const all=applySummary({...base,edgesSkipped:1,cutsSwapped:2,dimensionsSkipped:1},4);
+  expect(all).toContain(' Los cantos no se copiaron a 1 pieza con otros ejes, cara o inversión.');expect(all).toContain(' En 2 piezas con los ejes cruzados se intercambiaron base y altura de corte.');
+  expect(all).toMatch(/ Las medidas de corte explícitas no se copiaron a 1 pieza que no es equivalente\.$/);
+  expect(applySummary({...base,dimensionsSkipped:3},0)).toContain('a 3 piezas que no son equivalentes.');
  });
- it('orienta las medidas de corte copiadas según los ejes del destino',()=>{
-  const source=row('a',{dimensionRule:'explicit_cut',cutBase:598,cutHeight:718});
-  const rows=[source,row('b'),row('c',{axes:[1,0]}),row('d',{axes:null})],geometry={a:geo([600,720,18]),b:geo([600,720,18]),c:geo([600,720,18]),d:geo([600,720,18])};
-  const result=applyEquivalent(rows,source,['b','c','d'],{material:false,edges:false,grain:false,dimensions:true},geometry);
-  expect([result.rows[1].cutBase,result.rows[1].cutHeight]).toEqual([598,718]);expect([result.rows[2].cutBase,result.rows[2].cutHeight]).toEqual([718,598]);
-  expect([result.rows[3].cutBase,result.rows[3].cutHeight]).toEqual([598,718]);expect(result.cutsSwapped).toBe(1);expect(result.rows[2].dimensionsConfirmed).toBe(false);
-  // Pieza destino con las medidas en otros ejes locales: se compara la longitud, no el índice del eje.
-  const rotated=applyEquivalent([source,row('e')],source,['e'],{material:false,edges:false,grain:false,dimensions:true},{a:geometry.a,e:geo([720,600,18])});
-  expect([rotated.rows[1].cutBase,rotated.rows[1].cutHeight]).toEqual([718,598]);
+ it('resume la propuesta y la confirmación en bloque sin dar nada por confirmado',()=>{
+  const rows:ProposalRow[]=[{id:'a',detail:'Lateral',status:'proposed',bulkReady:true,reasons:[]},{id:'b',detail:'Fondo',status:'proposed',bulkReady:false,reasons:['Largo igual al ancho: confirmá la orientación.']},{id:'c',detail:'Curva',status:'abstained',bulkReady:false,reasons:['Geometría no rectangular.']},{id:'d',detail:'Techo',status:'kept',bulkReady:false,reasons:[]}];
+  expect(proposalReview(rows).map(r=>r.id)).toEqual(['b','c']);expect(proposalStatus.abstained).toBe('Sin propuesta');
+  expect(proposalNotice({proposed:2,kept:1,abstained:1,bulkReady:1,review:2})).toBe('Propuesta lista: 2 piezas propuestas, 1 conservada por tener verificaciones y 1 sin propuesta. Nada quedó confirmado; 1 pieza se puede confirmar en bloque.');
+  expect(proposalNotice({proposed:0,kept:0,abstained:3,bulkReady:0,review:3})).toContain('ninguna pieza se puede confirmar en bloque todavía');
+  expect(bulkNotice(3,1)).toBe('Se confirmaron en bloque 3 piezas sin ambigüedad. Queda 1 pieza en revisión individual.');
+  expect(bulkNotice(1,2)).toBe('Se confirmó en bloque 1 pieza sin ambigüedad. Quedan 2 piezas en revisión individual.');
+  expect(bulkNotice(0,0)).toBe('No se confirmó ninguna pieza en bloque. No queda ninguna pieza en revisión individual.');
+ });
+ it('vincula un material de canto observado a un solo canto del borrador y lo quita sin canto',()=>{
+  const links=linkEdge(undefined,'material:888','Canto de prueba','e1');expect(links).toEqual([{observedId:'material:888',catalogId:'e1',name:'Canto de prueba'}]);
+  const both=linkEdge(links,'material:890','Canto secundario','e2');expect(both).toHaveLength(2);
+  expect(linkEdge(both,'material:888','Canto de prueba','e2')).toEqual([{observedId:'material:890',catalogId:'e2',name:'Canto secundario'},{observedId:'material:888',catalogId:'e2',name:'Canto de prueba'}]);
+  expect(linkEdge(both,'material:888','Canto de prueba','')).toEqual([{observedId:'material:890',catalogId:'e2',name:'Canto secundario'}]);expect(links).toHaveLength(1);
+ });
+ it('avisa si el código módulo·pieza falta o lleva el detalle a más de 80 caracteres',()=>{
+  expect(detailCodeWarning('Lateral','M03·P07','none')).toBeNull();expect(detailCodeWarning('Lateral',undefined,undefined)).toBeNull();
+  expect(detailCodeWarning('Lateral','M03·P07','module_piece')).toBeNull();expect(detailCodeWarning('Lateral',undefined,'module_piece')).toContain('Falta el código módulo·pieza');
+  expect(detailCodeWarning('x'.repeat(72),'M03·P07','module_piece')).toBeNull();
+  expect(detailCodeWarning('x'.repeat(73),'M03·P07','module_piece')).toBe('Con el código M03·P07 el detalle ocupa 81 caracteres y el máximo es 80: acortalo 1 carácter.');
+  expect(detailCodeWarning('ñ'.repeat(75),'M03·P07','module_piece')).toContain('ocupa 83 caracteres');expect(detailCodeWarning('ñ'.repeat(75),'M03·P07','module_piece')).toContain('acortalo 3 caracteres');
  });
  it('separa en los cantos los importes con precio desactualizado o futuro del vigente',()=>{
   const price=(currency:string)=>({currency});
