@@ -639,7 +639,8 @@ module PlanosSanto
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
           guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
           remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
-          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing)
+          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing,
+          sample:lambda { |target| tool_guard!(generation);smart_sample_options(target) },sample_key:smart_settings['sampleKey'] || 'shift')
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -784,7 +785,8 @@ module PlanosSanto
       end
     end
 
-    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials].freeze
+    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials sampleKey].freeze
+    SAMPLE_KEYS=%w[shift alt off].freeze
 
     def smart_state
       (@smart_state || {'active'=>false,'changed'=>false,'queuedCount'=>0,'message'=>''}).merge('changed'=>@smart_changed==true)
@@ -814,6 +816,7 @@ module PlanosSanto
       return {} unless parsed.is_a?(Hash)
       settings=parsed.slice(*SMART_SETTING_KEYS)
       settings.delete('edgeCount') if settings.key?('edgeCount') && !(settings['edgeCount'].is_a?(Integer) && [1,2,4].include?(settings['edgeCount']))
+      settings.delete('sampleKey') unless SAMPLE_KEYS.include?(settings['sampleKey'])
       if settings.key?('lastMaterials')
         last=settings['lastMaterials'];last=last.is_a?(Hash) ? last.slice('sheet','edge').select { |_,id| id.is_a?(String) && !id.empty? && id.length<=200 } : {}
         last.empty? ? settings.delete('lastMaterials') : settings['lastMaterials']=last
@@ -835,6 +838,9 @@ module PlanosSanto
         last=last.merge(options['mode']=>options['catalogId']) if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty?
       end
       settings['lastMaterials']=last unless last.empty?
+      # PINTURA-07: the eyedropper key survives every other settings write.
+      settings['sampleKey']=previous['sampleKey'] if !SAMPLE_KEYS.include?(settings['sampleKey']) && previous['sampleKey']
+      settings.delete('sampleKey') unless SAMPLE_KEYS.include?(settings['sampleKey'])
       bytes=JSON.generate('schema'=>2,'settings'=>settings)
       raise ExportError,'Preferencias de paleta demasiado grandes.' if bytes.bytesize>4096
       Sketchup.write_default('PlanosSanto',SMART_SETTINGS_KEY,SMART_SETTINGS_PREFIX+Base64.strict_encode64(bytes))
@@ -870,6 +876,21 @@ module PlanosSanto
       options
     end
 
+    # PINTURA-07: the brush's temporary eyedropper. Same read-only rules as
+    # MaterialSampleTool; the material must be ready in THIS model (never installs).
+    def smart_sample_options(target)
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      library=MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory)
+      info=MaterialSampleTool.sample_info(target,library:library,side:'front')
+      info=MaterialSampleTool.sample_info(target,library:library,side:'back') if info['status']=='unpainted'
+      raise ExportError,info['issues'].join(' ') unless info['selectable']==true
+      raise ExportError,'El material tomado no es placa ni canto.' unless %w[sheet edge].include?(info['kind'])
+      options,=smart_quick_options({'mode'=>info['kind'],'catalogId'=>info['catalogId']},install:false)
+      raise ExportError,'El material tomado no coincide con el listo en este modelo. Revisá la biblioteca.' unless options['materialUuid']==info['materialUuid']
+      @quick_options=options
+      options.merge('sampleName'=>info['name'])
+    end
+
     # One click-time log per process; its folder is the Planos Santo data folder.
     def smart_timing
       @smart_timing ||= PaintTimingLog.new(directory:begin
@@ -881,6 +902,8 @@ module PlanosSanto
 
     def smart_event(event)
       @smart_state=(@smart_state || {}).merge(event)
+      # Full tool events omit these keys when off: never keep a stale value.
+      %w[sampling review].each { |key| @smart_state.delete(key) unless event.key?(key) } if event.key?('options')
       if event['changed']==true
         @smart_changed=true
         @session=NativeSession.new(@model)

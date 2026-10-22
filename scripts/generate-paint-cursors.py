@@ -44,12 +44,17 @@ def cursor(key):
     elif key == 'blocked':
         d.ellipse(tuple(round(v * s) for v in (14, 14, 26, 26)), outline=RED, width=round(2.0 * s))
         line([(16.2, 23.8), (23.8, 16.2)], RED, 2.0)
+    elif key == 'sample':
+        # Temporary eyedropper (PINTURA-07): bulb, tube and one drop of finish.
+        d.ellipse(tuple(round(v * s) for v in (21, 13, 26, 18)), fill=GREEN)
+        line([(16, 23), (22.5, 16.5)], INK, 2.2)
+        d.ellipse(tuple(round(v * s) for v in (14, 24, 17, 27)), fill=AMBER)
     return im.resize((SIZE, SIZE), Image.LANCZOS)
 
 
 def main():
     DEST.mkdir(parents=True, exist_ok=True)
-    for key in ('piece', 'edge', 'remove', 'blocked'):
+    for key in ('piece', 'edge', 'remove', 'blocked', 'sample'):
         cursor(key).save(DEST / f'paint-{key}.png', optimize=True)
 
 

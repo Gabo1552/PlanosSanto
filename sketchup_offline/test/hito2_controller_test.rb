@@ -164,3 +164,34 @@ class Hito2ControllerTest < Minitest::Test
     @controller.dispatch('smart_tool_stop',{});quick('mode'=>'edge','catalogId'=>'canto');assert_equal 2,@selected.compact.length;assert_same timing,tool.args[:timing]
   end
 end
+
+# Hito 7 (pincel avanzado): eyedropper key in settings and the temporary eyedropper.
+class Hito2ControllerTest
+  def sample_info(info);PlanosSanto::MaterialSampleTool.stub(:sample_info,lambda { |_target,library:,side:| info.merge('side'=>side) }) { yield };end
+  def test_sample_key_is_remembered_validated_and_survives_other_writes
+    @controller.remember_smart_settings('sampleKey'=>'alt')
+    quick('mode'=>'edge','catalogId'=>'canto','edgeCount'=>2)
+    assert_equal 'alt',@controller.smart_settings['sampleKey'];assert_equal 'alt',tool.args[:sample_key]
+    raw=JSON.generate('schema'=>2,'settings'=>{'sampleKey'=>'ctrl'})
+    Sketchup.hito2_prefs[['PlanosSanto','smart_paint_settings_v2']]='ps2:'+Base64.strict_encode64(raw)
+    refute @controller.smart_settings.key?('sampleKey')
+  end
+  def test_temporary_eyedropper_resolves_a_ready_material_without_installing
+    quick('mode'=>'edge','catalogId'=>'canto');@prepared.clear;sample=tool.args[:sample]
+    target={'pieceId'=>'1/11','faceIds'=>['100'],'_face'=>Object.new,'_instances'=>[]}
+    options=with_tool { sample_info('selectable'=>true,'kind'=>'sheet','catalogId'=>'placa','materialUuid'=>'uuid-placa','name'=>'Placa QA') { sample.call(target) } }
+    assert_equal 'sheet',options['mode'];assert_equal 'uuid-placa',options['materialUuid'];assert_equal 'Placa QA',options['sampleName']
+    assert_equal 'unique',options['scope'];assert_equal false,options['allowShared'];assert_equal [['placa','sheet']],@prepared
+    error=assert_raises(PlanosSanto::ExportError) { sample_info('selectable'=>false,'status'=>'unbound','issues'=>['Material nativo sin vínculo propio aprobado.']) { sample.call(target) } }
+    assert_match(/sin vínculo propio/,error.message)
+    @ready.delete('placa')
+    assert_raises(PlanosSanto::ExportError) { with_tool { sample_info('selectable'=>true,'kind'=>'sheet','catalogId'=>'placa','materialUuid'=>'uuid-placa') { sample.call(target) } } }
+    assert_raises(PlanosSanto::ExportError) { with_tool { sample_info('selectable'=>true,'kind'=>'edge','catalogId'=>'canto','materialUuid'=>'otro-uuid') { sample.call(target) } } }
+    assert_empty @model.operations
+  end
+  def test_sampling_and_review_never_stay_stale_in_the_tool_state
+    @controller.smart_event('options'=>{},'sampling'=>true,'review'=>{'active'=>true})
+    assert_equal true,@controller.smart_state['sampling']
+    @controller.smart_event('options'=>{});refute @controller.smart_state.key?('sampling');refute @controller.smart_state.key?('review')
+  end
+end

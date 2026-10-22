@@ -27,15 +27,17 @@ module PlanosSanto
       super.merge('mode' => 'sample', 'sample' => @active && @target && @sample ? copy(@sample) : nil, 'sampleSequence' => @sample_sequence)
     end
 
-    def material_name(material)
+    def self.material_name(material)
       material.respond_to?(:display_name) ? material.display_name.to_s : material.name.to_s
     end
 
-    def sample_for(target)
+    # Read-only verdict for one face side; also used by the brush's temporary
+    # eyedropper (PINTURA-07), so both share exactly the same rules.
+    def self.sample_info(target, library:, side:)
       face = target.fetch('_face')
-      material = @options['side'] == 'back' ? face.back_material : face.material
+      material = side == 'back' ? face.back_material : face.material
       result = { 'pieceId' => target['pieceId'], 'faceId' => target['faceIds'].first,
-                 'side' => @options['side'], 'selectable' => false, 'issues' => [] }
+                 'side' => side, 'selectable' => false, 'issues' => [] }
       unless material
         ancestor = target['_instances'].reverse.find { |instance| instance.respond_to?(:material) && instance.material }
         if ancestor
@@ -58,7 +60,7 @@ module PlanosSanto
       end
       # MaterialLibrary performs the existing approval/fingerprint and duplicate
       # UUID checks. The sampler does not bind, install, migrate or approve.
-      row = @library.status.fetch('materials').find { |entry| entry['id'] == result['materialId'] }
+      row = library.status.fetch('materials').find { |entry| entry['id'] == result['materialId'] }
       unless row && row['binding'] == observation['binding'] && row['issues'].is_a?(Array) && row['issues'].empty?
         issues = row && row['issues']
         return result.merge('status' => 'invalid_binding',
@@ -67,6 +69,12 @@ module PlanosSanto
       binding = observation.fetch('binding')
       result.merge('status' => row['designReady']==true && row['supplierReady']==false ? 'design_ready' : 'approved', 'selectable' => true, 'catalogId' => binding['catalogId'],
                    'materialUuid' => binding['uuid'], 'kind' => binding['kind'])
+    end
+
+    def material_name(material); self.class.material_name(material); end
+
+    def sample_for(target)
+      self.class.sample_info(target, library: @library, side: @options['side'])
     end
 
     def hover!(target)

@@ -120,3 +120,69 @@ class Hito7DepthTest < Minitest::Test
     assert_nil hover;key(40);assert_nil hover
   end
 end
+
+# PINTURA-07: holding the eyedropper key turns the click into «tomar material».
+class Hito7SampleTest < Minitest::Test
+  include Hito2Fixture
+  SHIFT=PlanosSanto::SmartPaintTool::SHIFT_MASK;ALT=PlanosSanto::SmartPaintTool::ALT_MASK
+  def setup
+    build_fixture;paint_sheet_on_board!;UI.hito2_set=[];UI.hito2_created=[];@asked=[];@remembered=[]
+    @answer=tool_options('sheet').merge('sampleName'=>'Melamina Blanca')
+  end
+  def tool!(options=tool_options('edge','scope'=>'all','allowShared'=>true),key:'shift')
+    asked=@asked;test=self;remembered=@remembered
+    build_tool(options,sample_key:key,remember:lambda { |o| remembered << o },
+               sample:lambda { |target| asked << target['pieceId'];test.answer })
+  end
+  def answer;raise PlanosSanto::ExportError,@answer if @answer.is_a?(String);@answer;end
+  def test_shift_held_click_takes_the_material_and_release_switches_mode_and_resets_scope
+    tool!;undo=@model.undo_states.length
+    assert @tool.onKeyDown(16,1,SHIFT,@view);assert_equal true,@tool.status['sampling'];assert_equal true,@events.last['sampling']
+    assert_equal 'shift',@events.last['options']['sampleKey']
+    hover_on(@doors[0]);@tool.onSetCursor;assert_equal 'paint-sample.png',UI.hito2_created.last.first
+    click_on(@doors[0])
+    assert_equal ['1/11'],@asked;assert_equal undo,@model.undo_states.length;assert_empty @model.operations
+    assert_equal 'edge',@tool.status['mode'];assert_match(/Melamina Blanca/,@events.last['message'])
+    assert @tool.onKeyUp(16,1,0,@view)
+    refute @tool.status.key?('sampling');assert_equal 'sheet',@tool.status['mode']
+    assert_equal binding_of(@sheet)['uuid'],@tool.status['options']['materialUuid']
+    assert_equal 'unique',@tool.status['options']['scope'];assert_equal false,@tool.instance_variable_get(:@options)['allowShared']
+    refute @tool.instance_variable_get(:@options).key?('sampleName')
+    assert_equal 'sheet',@remembered.last['mode'];assert @tool.status['active'];assert_empty @model.operations
+  end
+  def test_the_modifier_flag_alone_also_samples_and_the_next_plain_move_applies_it
+    tool!;face=faces_of(@doors[1])[2];@picker.path=[@root,@doors[1],face];@picker.leaf=face
+    @tool.onLButtonDown(SHIFT,40,50,@view);assert_equal ['1/12'],@asked;assert_equal 'edge',@tool.status['mode']
+    @tool.onMouseMove(SHIFT,41,50,@view);assert_equal 'edge',@tool.status['mode'] # still held
+    @tool.onMouseMove(0,42,50,@view);assert_equal 'sheet',@tool.status['mode'];assert_empty @model.operations
+  end
+  def test_an_unready_material_changes_nothing_and_says_why
+    tool!;@answer='Material nativo sin vínculo propio aprobado.'
+    before=@tool.status['options']
+    @tool.onKeyDown(16,1,SHIFT,@view);click_on(@doors[0])
+    assert_match(/sin vínculo propio/,@events.last['error'])
+    @tool.onKeyUp(16,1,0,@view);assert_equal before.merge('sampleKey'=>'shift'),@tool.status['options'].merge('sampleKey'=>'shift')
+    assert_empty @model.operations;assert_empty @remembered
+  end
+  def test_alt_key_and_off_are_configurable
+    tool!(tool_options('sheet'),key:'alt')
+    @tool.onKeyDown(16,1,SHIFT,@view);refute @tool.status.key?('sampling')
+    @tool.onKeyDown(18,1,ALT,@view);assert @tool.status['sampling'];@tool.onKeyUp(18,1,0,@view)
+    face=faces_of(@doors[0])[2];@picker.path=[@root,@doors[0],face];@picker.leaf=face
+    @tool.onLButtonDown(ALT,40,50,@view);assert_equal ['1/11'],@asked
+    tool!(tool_options('sheet'),key:'off');@asked.clear
+    @tool.onKeyDown(16,1,SHIFT,@view);@tool.onKeyDown(18,1,ALT,@view);refute @tool.status.key?('sampling')
+    @board.entities.first(2).each { |f| f.material=nil };@picker.path=[@root,@doors[0],face];@picker.leaf=face
+    @tool.onLButtonDown(SHIFT|ALT,40,50,@view)
+    assert_empty @asked;assert @events.last['changed'] # off: the click paints as usual
+    assert_raises(PlanosSanto::ExportError) { @tool.tool_option('sampleKey','ctrl') }
+    @tool.tool_option('sampleKey','alt');assert_equal 'alt',@tool.status['options']['sampleKey']
+  end
+  def test_shift_tab_is_still_tab_and_cancels_the_temporary_eyedropper
+    edge=tool_options('edge');asked=@asked;test=self
+    build_tool(tool_options('sheet'),sample_key:'shift',switch_mode:lambda { |_m| edge },sample:lambda { |t| asked << t['pieceId'];test.answer.merge('mode'=>'sheet') })
+    @tool.onKeyDown(16,1,SHIFT,@view);click_on(@doors[0]);assert_equal 1,@asked.length
+    @tool.onKeyDown(9,1,SHIFT,@view);assert_equal 'edge',@tool.status['mode'];refute @tool.status.key?('sampling')
+    @tool.onKeyUp(16,1,0,@view);assert_equal 'edge',@tool.status['mode'] # the sample was dropped
+  end
+end

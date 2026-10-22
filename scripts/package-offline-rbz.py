@@ -23,8 +23,8 @@ expected_files = {
     )),
 }
 expected_files.update(f'planos_santo/icons/{action}-{size}.png' for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main') for size in (24,32))
-expected_files.update(f'planos_santo/cursors/paint-{key}.png' for key in ('piece','edge','remove','blocked'))
-assert len(files) == 59 and set(files) == expected_files
+expected_files.update(f'planos_santo/cursors/paint-{key}.png' for key in ('piece','edge','remove','blocked','sample'))
+assert len(files) == 60 and set(files) == expected_files
 assert all(not f.endswith(('.skp', '.jsonl')) for f in files)
 assert manifest['version'] == json.loads((root / 'sketchup_offline/version.json').read_text())['version']
 assert manifest['validation'] == 'PENDIENTE de ejecución y aceptación del operador en SketchUp 2026'

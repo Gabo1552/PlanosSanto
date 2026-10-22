@@ -123,11 +123,15 @@ module PlanosSanto
   class SmartPaintTool
     SHIFT_MASK = Object.const_defined?(:CONSTRAIN_MODIFIER_MASK) ? Object.const_get(:CONSTRAIN_MODIFIER_MASK) : 4
     CTRL_MASK = Object.const_defined?(:COPY_MODIFIER_MASK) ? Object.const_get(:COPY_MODIFIER_MASK) : 8
+    ALT_MASK = Object.const_defined?(:ALT_MODIFIER_MASK) ? Object.const_get(:ALT_MODIFIER_MASK) : 32
+    # PINTURA-07: eyedropper key -> [virtual key, click flag]. SketchUp sends Shift as 16 and Alt as 18.
+    SAMPLE_KEYS={'shift'=>[16,SHIFT_MASK],'alt'=>[18,ALT_MASK],'off'=>nil}.freeze
     EDGE_COUNTS=[1,2,4].freeze
     attr_reader :queued_targets,:verdicts,:generation
 
     HOVER_INTERVAL=0.1
-    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil, timing:nil)
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil, timing:nil, sample:nil, sample_key:'shift')
+      @sample=sample;@sample_key=SAMPLE_KEYS.key?(sample_key) ? sample_key : 'shift'
       @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode;@timing=timing
       @clock=clock || lambda { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
       @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
@@ -174,7 +178,58 @@ module PlanosSanto
       @options=copy(options);clear;@last_error=nil;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
     end
     def status
-      {'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch')}
+      result={'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },
+              'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch').merge('sampleKey'=>@sample_key,'reviewMissing'=>@review==true)}
+      result['sampling']=true if @sample_held
+      result
+    end
+    # Palette options applied to the live tool without restarting it (§7).
+    def tool_option(key,value)
+      case key
+      when 'sampleKey'
+        raise ExportError,'Tecla del cuentagotas inválida.' unless value.is_a?(String) && SAMPLE_KEYS.key?(value)
+        @sample_key=value;@sample_held=false;@sampled=nil
+        emit(value=='off' ? 'Cuentagotas temporal desactivado.' : "Cuentagotas temporal: mantené #{sample_label} y hacé clic.")
+      when 'reviewMissing'
+        raise ExportError,'Valor de revisión inválido.' unless [true,false].include?(value)
+        review!(value)
+      else
+        raise ExportError,'Opción de herramienta inválida.'
+      end
+    end
+    def review!(value);@review=value;emit(value ? 'Revisión activa.' : 'Revisión apagada.');end
+    # ---- PINTURA-07: temporary eyedropper (read-only until the key is released).
+    def sample_label;@sample_key=='alt' ? 'Alt' : 'Mayús';end
+    def sample_code;(SAMPLE_KEYS[@sample_key] || [])[0];end
+    def sample_flag?(flags);mask=(SAMPLE_KEYS[@sample_key] || [])[1];mask && flags.is_a?(Integer) && (flags & mask)!=0;end
+    def sampling?(flags);immediate? && SAMPLE_KEYS[@sample_key] && (@sample_held || sample_flag?(flags));end
+    def take_sample(view,x,y)
+      verify_guard!
+      target=hit(view,x,y)
+      return emit('Apuntá a una pieza para tomar su material.') unless target
+      raise ExportError,'El cuentagotas no está disponible en esta paleta.' unless @sample
+      options=@sample.call(target)
+      raise ExportError,'No se pudo tomar el material de esta pieza.' unless options.is_a?(Hash) && %w[sheet edge].include?(options['mode'])
+      @sampled=copy(options)
+      emit("Material tomado: #{options['sampleName'] || 'material de la pieza'}. Soltá #{sample_label} para pintar con él.")
+    rescue ExportError=>error
+      @sampled=nil;emit('No se tomó el material; no cambió nada.',error:error.message)
+    end
+    def commit_sample!
+      options=@sampled;@sampled=nil
+      return emit('Hacé clic en una pieza para pintar. Escape termina.') unless options
+      name=options.delete('sampleName')
+      clear;@last_error=nil;@options=options.merge('scope'=>'unique','allowShared'=>false)
+      @remember.call(copy(@options)) if @remember
+      emit("#{MODE_LABELS[@options['mode']]} · #{name || 'material tomado'}. Hacé clic en una pieza.")
+    end
+    def onKeyUp(key,_repeat,_flags,view)
+      return false unless immediate? && sample_code && key==sample_code
+      held=@sample_held;@sample_held=false
+      held || @sampled ? commit_sample! : nil
+      invalidate(view);true
+    rescue StandardError=>error
+      emit('No se aplicó el material tomado.',error:error.message);invalidate(view)
     end
     # hover:true -> limited (F-ARQ-B): only on a new signature and >=100 ms
     # after the previous hover event, else pending until a timer or the next
@@ -277,14 +332,14 @@ module PlanosSanto
       info=material_info
       depth=@hover['depth']
       line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'],@hover['sharedTruncated']),depth && "#{depth['index']}/#{depth['count']} bajo el cursor"].compact.join(' · ')
-      line2=blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
+      line2=@sample_held ? 'Clic toma el material de esta pieza' : blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
       color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
       view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
-      view.draw_text(klass.new(x,y+16*scale,0),line2,{color:color.call(blocked? ? [200,0,0] : [0,128,0]),size:11})
+      view.draw_text(klass.new(x,y+16*scale,0),line2,{color:color.call(blocked? && !@sample_held ? [200,0,0] : [0,128,0]),size:11})
     rescue StandardError
       nil
     end
-    CURSORS={'piece'=>'paint-piece.png','edge'=>'paint-edge.png','remove'=>'paint-remove.png','blocked'=>'paint-blocked.png'}.freeze
+    CURSORS={'piece'=>'paint-piece.png','edge'=>'paint-edge.png','remove'=>'paint-remove.png','blocked'=>'paint-blocked.png','sample'=>'paint-sample.png'}.freeze
     # One native cursor per file and per process; nil -> native cursor.
     def self.cursor_id(name)
       @cursor_ids||={}
@@ -295,6 +350,7 @@ module PlanosSanto
       @cursor_ids[name]=nil
     end
     def cursor_name
+      return 'sample' if @sample_held && immediate?
       return 'blocked' if blocked?
       {'sheet'=>'piece','edge'=>'edge','remove_edge'=>'remove'}[@options['mode']]
     end
@@ -501,8 +557,9 @@ module PlanosSanto
       @triangles=triangles;@normal_line=normals
       @hover['expandedFaceIds']=ids if @hover
     end
-    def onMouseMove(_flags,x,y,view)
+    def onMouseMove(flags,x,y,view)
       @mouse=[x,y];key=nil
+      commit_sample! if @sampled && !@sample_held && !sample_flag?(flags)
       verify_guard!
       target=hit(view,x,y)
       unless target
@@ -558,6 +615,9 @@ module PlanosSanto
       nil
     end
     def onLButtonDown(flags,x,y,view)
+      if sampling?(flags)
+        take_sample(view,x,y);invalidate(view);return
+      end
       if immediate?
         @click_started=@clock.call
         verify_guard!
@@ -643,13 +703,18 @@ module PlanosSanto
       emit(immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.",extra:{'requiresSharedReview'=>!immediate?})
     end
     def onKeyDown(key,repeat,flags,view)
-      if key==27
+      if immediate? && sample_code && key==sample_code
+        return true if @sample_held || (repeat.is_a?(Integer) && repeat>1)
+        @sample_held=true;@sampled=nil
+        emit("Cuentagotas: hacé clic en una pieza para tomar su material; soltá #{sample_label} para pintar con él.");invalidate(view);true
+      elsif key==27
         onCancel(0,view);true
       elsif key==13 && !@queued_targets.empty?
         apply_targets(copy(@queued_targets));invalidate(view);true
       elsif key==9
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
+        @sample_held=false;@sampled=nil # Shift+Tab is still Tab: it drops the eyedropper
         if immediate? && (flags & CTRL_MASK)!=0
           cycle_edge_count((flags & SHIFT_MASK)!=0)
         elsif immediate?
