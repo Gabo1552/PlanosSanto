@@ -954,6 +954,8 @@ module PlanosSanto
         raise ExportError,'Elegí Alt o Mayús para el cuentagotas.' unless %w[alt shift].include?(key)
         remember_smart_settings(smart_settings.merge('eyedropperKey'=>key))
         @smart_tool.eyedropper_key=key if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? && @smart_tool.respond_to?(:eyedropper_key=)
+        # A stopped tool's last state still carries the old key: the palette would adopt it and undo the choice.
+        @smart_state=@smart_state.merge('eyedropperKey'=>key) if @smart_state&.key?('eyedropperKey')
         {'settings'=>smart_settings,'toolState'=>smart_state}
       when 'smart_palette_compact'
         raise ExportError,'Tamaño de paleta inválido.' unless [true,false].include?(data['compact'])
