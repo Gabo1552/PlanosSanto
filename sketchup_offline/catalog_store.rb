@@ -87,7 +87,7 @@ module PlanosSanto
           raise ExportError,'Para aprobar un canto, completá su ancho.' if row['kind']=='edge' && row['widthMm'].nil?
         end
         if row['price']
-          p=row['price'];raise ExportError,'Precio incompleto.' unless p.is_a?(Hash) && p.keys.sort==%w[amount currency date source unit] && p['amount'].is_a?(Numeric) && p['amount'].finite? && p['amount']>0
+          p=row['price'];raise ExportError,'Precio incompleto.' unless p.is_a?(Hash) && p.keys.sort==%w[amount currency date source unit] && p['amount'].is_a?(Numeric) && p['amount'].finite? && p['amount']>0 && p['amount']<=1e9
           %w[currency source unit].each { |key| raise ExportError,'Falta moneda, unidad o fuente del precio.' if text(p[key]).empty? }
           raise ExportError,'Fecha del precio inválida.' unless p['date'].is_a?(String) && p['date'].match?(/\A\d{4}-\d{2}-\d{2}\z/) && (Time.strptime(p['date'],'%Y-%m-%d').strftime('%Y-%m-%d')==p['date'] rescue false)
         end

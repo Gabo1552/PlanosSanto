@@ -118,6 +118,12 @@ class CatalogSchemaTest < Minitest::Test
     assert_nil @store.import(huge,0)['items'].first['thicknessMm']
   end
 
+  def test_price_amount_is_bounded
+    item=@store.new_item('Melamina','sheet').merge('price'=>{'amount'=>1e10,'currency'=>'ARS','unit'=>'placa','date'=>'2026-10-01','source'=>'Lista'})
+    assert_raises(PlanosSanto::ExportError) { @store.save([item],0) }
+    @store.save([item.merge('price'=>item['price'].merge('amount'=>1e9))],0)
+  end
+
   def test_future_schema_message_does_not_suggest_restoring
     write(JSON.generate('schema'=>3,'revision'=>0,'items'=>[]))
     assert_match(/más nuevo/,assert_raises(PlanosSanto::ExportError) { @store.read }.message)

@@ -34,8 +34,10 @@ export function quantity(value:number|null,unit:string){
 }
 export const statusLabels:Record<BudgetStatus,string>={current_price:'Vigente',stale_price:'Precio desactualizado',future_price:'Precio con fecha futura',price_pending:'Precio pendiente',size_pending:'Formato de placa pendiente'};
 /** Importe de una celda: solo los vigentes suman al total; el resto se muestra aparte o queda pendiente. */
+/** Tarifa tildada pero sin importe, moneda o fuente: Ruby la rechazaría al guardar. */
+export const incompletePrice=(price:{amount:number;currency:string;source:string}|null)=>!!price&&(!(price.amount>0)||!price.currency.trim()||!price.source.trim());
 export function cellAmount(amount:number|null,currency:string|null,status:BudgetStatus){
- if(amount===null||!currency||status==='price_pending'||status==='size_pending')return {text:'Pendiente',counted:false};
+ if(amount===null||!currency||status==='price_pending')return {text:'Pendiente',counted:false};
  return {text:money(currency,amount),counted:status==='current_price'};
 }
 export const serviceNames:Record<BudgetService['kind'],string>={cut:'Corte',edging:'Canteado'};

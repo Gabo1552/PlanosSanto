@@ -133,4 +133,17 @@ class MaderaOrderTest < Minitest::Test
     assert_nil workshop.plan['plan']['maderera'],'Un archivo de perfiles dañado no frena el pedido.'
     assert_raises(PlanosSanto::ExportError) { workshop.maderera_profiles }
   end
+
+  def test_saved_draft_is_bound_to_the_profile_it_was_reviewed_with
+    catalog;profile('decimal'=>',')
+    workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+    draft=workshop.plan['plan'];refute_nil draft['maderera']
+    workshop.save_plan(draft)
+    stored=JSON.parse(@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY))
+    assert_equal draft['maderera'],stored['maderera'],'El borrador guardado recuerda la versión del perfil.'
+    active=@profiles.active;@profiles.save(active.merge('kerfMm'=>4),@profiles.read['revision'])
+    changed=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+    assert_match(/perfil de maderera/,assert_raises(PlanosSanto::ExportError) { changed.save_plan(draft) }.message)
+    assert_nil changed.plan['plan']['maderera'],'Con el perfil desaprobado el pedido vuelve a la estimación neta.'
+  end
 end
