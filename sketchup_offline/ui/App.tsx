@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ViewAdjustments,{shiftDimension,orbitCamera} from '../../components/ViewAdjustments';
 import {withNaming,normalizeNaming,namingIssues,moduleFromName} from '../../lib/naming';
 import Diagram from '../../components/Diagram';
@@ -9,7 +9,7 @@ import {pieceRows,identicalGroups,pieceCodeMap} from '../../lib/pieceGroups';
 import {dimensionCaption} from '../../lib/dimensions';
 import { makeScene, layoutWarnings, type View } from '../../lib/scene';
 import { request } from './bridge';
-import {isQuickIntent,type QuickIntent} from './quickActions';
+import {isQuickIntent,shortcutFor,type QuickIntent} from './quickActions';
 import {ensureRuntime} from './runtime';
 import { countPieces, editsFor, guideIssues, mergeGuide, type Generated, type Guide } from './guide';
 import { createOfflinePdf, decode64, encode64 } from './pdf';
@@ -45,6 +45,10 @@ function ModuleIcon({name}:{name:string}){
  const paths:Record<string,string>={home:'M3 10l9-7 9 7M5 9v12h5v-7h4v7h5V9',materials:'M4 5h13v16H4zM8 2h12v15M7 9h7M7 13h7M7 17h4',furniture:'M4 5h16v14H4zM4 12h16M12 5v14M6 19v3M18 19v3',order:'M6 3h12v19H6zM9 8h6M9 12h6M9 16h3',guides:'M5 2h10l4 4v16H5zM15 2v5h4M8 12l4-2 4 2v5l-4 2-4-2zM12 14v5M8 12l4 2 4-2',paint:'M4 4h12v5H4zM16 6h4v6h-9v8H8v-8'};
  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]||paths.home}/></svg>;
 }
+type NoticeAction={label:string;kind:'analyze'|'generate'|'module';module?:Module};
+type Confirm={title:string;detail:string;confirmLabel:string;run:()=>void;opener?:HTMLElement|null};
+type Block='save'|'export'|'paint'|'nav'|'tools';
+const moduleLabel=(id:Module)=>modules.find(([value])=>value===id)![1];
 const searchable=(value:string)=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');
 
 export default function App(){
@@ -77,9 +81,17 @@ export default function App(){
   const [revision,setRevision]=useState(0),[fingerprint,setFingerprint]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[pieceId,setPieceId]=useState(''),[noteId,setNoteId]=useState('');
   const [picking,setPicking]=useState<string>();
-  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState('');
+  const [busy,setBusy]=useState(''),[error,setErrorText]=useState(''),[errorAction,setErrorAction]=useState<NoticeAction>(),[message,setMessageText]=useState(''),[messageAction,setMessageAction]=useState<NoticeAction>(),[noticeHold,setNoticeHold]=useState(false),[elapsed,setElapsed]=useState(0);
+  const setError=useCallback((text:string,action?:NoticeAction)=>{setErrorText(text);setErrorAction(action);},[]),setMessage=useCallback((text:string,action?:NoticeAction)=>{setMessageText(text);setMessageAction(action);if(!text)setNoticeHold(false);},[]);
+  const [pendingConfirm,setPendingConfirm]=useState<Confirm>();const confirmCancel=useRef<HTMLButtonElement>(null),shortcutHandler=useRef<(event:KeyboardEvent)=>void>(()=>{}),focusAfterBusy=useRef<HTMLElement|null>(null);
+  useEffect(()=>{if(!message||messageAction||noticeHold)return;const timer=setTimeout(()=>setMessage(''),6000);return()=>clearTimeout(timer);},[message,messageAction,noticeHold,setMessage]);
+  useEffect(()=>{if(!busy)return;const start=Date.now(),timer=setInterval(()=>setElapsed(Math.floor((Date.now()-start)/1000)),1000);return()=>{clearInterval(timer);setElapsed(0);};},[busy]);
+  useEffect(()=>{if(pendingConfirm)confirmCancel.current?.focus();},[pendingConfirm]);
+  useEffect(()=>{const target=focusAfterBusy.current;if(busy||!target)return;focusAfterBusy.current=null;requestAnimationFrame(()=>{if(target.isConnected&&!(target as HTMLButtonElement).disabled&&document.activeElement===document.body)target.focus();});},[busy]);
+  useEffect(()=>{const key=(event:KeyboardEvent)=>shortcutHandler.current(event);document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);},[]);
   const [dirty,setDirty]=useState(false),[diagnostic,setDiagnostic]=useState('');
   const [filePending,setFilePending]=useState(false);
+  useEffect(()=>{if(!dirty)setPendingConfirm(undefined);},[dirty]);
   const [view,setView]=useState<View>('front');
   const [draftHidden,setDraftHidden]=useState<string[]|null>(null),[hideMode,setHideMode]=useState(false);
   const [previewReferences,setPreviewReferences]=useState<Record<string,string>>(),[previewReferenceError,setPreviewReferenceError]=useState('');
@@ -128,9 +140,11 @@ export default function App(){
     setRevision(result.guide.revision);
     setFilePending(!result.path&&result.guide.revision>0);
     if(mode==='selected'&&!result.selected.length)setMessage('No hay grupos o componentes seleccionados en SketchUp. Seleccionalos en el modelo y volvé a analizar.');
-  },[]);
-  async function analyze(mode?:'all'|'selected'){
-    if(dirty&&!window.confirm('Hay cambios de la guía sin guardar. ¿Descartarlos y volver a analizar?'))return;
+  },[setMessage]);
+  function askDiscard(title:string,confirmLabel:string,run:()=>void){const count=project?.furniture.length||0;setPendingConfirm({title,confirmLabel,run,opener:document.activeElement as HTMLElement|null,detail:`Se pierden los nombres, notas y ajustes de vista que no guardaste${count?` en ${count} ${count===1?'mueble':'muebles'}`:''}. La guía guardada en el modelo no cambia.`});}
+  function closeConfirm(confirmed:boolean){const current=pendingConfirm;setPendingConfirm(undefined);if(!current)return;if(confirmed){focusAfterBusy.current=current.opener||null;current.run();}else requestAnimationFrame(()=>current.opener?.focus());}
+  async function analyze(mode?:'all'|'selected',confirmed=false){
+    if(dirty&&!confirmed){askDiscard('Descartar cambios y volver a analizar','Descartar y analizar',()=>void analyze(mode,true));return;}
     await run('Analizando modelo…',async()=>{
       await ensureRuntime();
       acceptScan(await request<Scan>('scan'),mode);
@@ -140,7 +154,7 @@ export default function App(){
     let mounted=true;setBusy('Analizando modelo…');
     void ensureRuntime().then(()=>request('ui_loading').catch(()=>{})).then(()=>request<Scan>('scan')).then(result=>{if(mounted)acceptScan(result);}).catch(error=>{if(mounted)setError(error instanceof Error?error.message:String(error));}).finally(()=>{if(mounted)setBusy('');});
     return()=>{mounted=false;};
-  },[acceptScan]);
+  },[acceptScan,setError]);
 
   const consumeQuick=useCallback((value:unknown)=>{
     if(!isQuickIntent(value))return;
@@ -150,10 +164,10 @@ export default function App(){
   useEffect(()=>{
     function action(event:Event){consumeQuick((event as CustomEvent<unknown>).detail);}
     function state(event:Event){const state=(event as CustomEvent<{contextChanged?:boolean;contextRestored?:boolean;error?:string}>).detail;if(state?.contextChanged){if(!heldScan.current)heldScan.current=currentScan.current;setContextChanged(true);setScan(undefined);setError(state.error||'Cambió el modelo activo. Los cambios de esta guía siguen en la ventana: copialos o guardalos en el modelo original antes de analizar otro.');}else if(state?.contextRestored){setContextChanged(false);setScan(heldScan.current||currentScan.current);heldScan.current=undefined;setError('');setMessage('Volviste al modelo de la guía. Los cambios pendientes se conservaron; revisalos antes de guardar.');}}
-    function invalidate(){setModelAnalysisStale(true);setMessage('Cambió el material del modelo desde Pintura Inteligente. Los cambios de la guía se conservan; volvé a analizar y generar antes de guardar o exportar.');}
+    function invalidate(){setModelAnalysisStale(true);setMessage('Cambió el material del modelo desde Pintura Inteligente. Los cambios de la guía se conservan; volvé a analizar y generar antes de guardar o exportar.',{label:'Analizar de nuevo',kind:'analyze'});}
     window.addEventListener('planos-santo-document-invalidated',invalidate);window.addEventListener('planos-santo-quick-action',action);window.addEventListener('planos-santo-smart-paint',state);
     return()=>{window.removeEventListener('planos-santo-document-invalidated',invalidate);window.removeEventListener('planos-santo-quick-action',action);window.removeEventListener('planos-santo-smart-paint',state);};
-  },[consumeQuick]);
+  },[consumeQuick,setError,setMessage]);
   useEffect(()=>{
     if(!scan||uiReady.current)return;uiReady.current=true;
     void request<{intent?:unknown}>('ui_ready').then(result=>consumeQuick(result?.intent)).catch(()=>{uiReady.current=false;});
@@ -162,8 +176,8 @@ export default function App(){
   function toggle(id:string){
     setIds(current=>current.includes(id)?current.filter(x=>x!==id):[...current.filter(x=>!x.startsWith(id+'/')&&!id.startsWith(x+'/')),id]);
   }
-  async function generate(selectedIds=ids,target:Module='furniture'){
-    if(dirty&&!window.confirm('Hay cambios sin guardar. ¿Descartarlos y regenerar desde la guía guardada?'))return;
+  async function generate(selectedIds=ids,target:Module='furniture',confirmed=false){
+    if(dirty&&!confirmed){askDiscard('Descartar cambios y regenerar las guías','Descartar y regenerar',()=>void generate(selectedIds,target,true));return;}
     await run('Generando guías…',async()=>{
       const result=await request<Generated>('generate',{ids:selectedIds});
       const merged=mergeGuide(result.document,result.guide);
@@ -175,7 +189,7 @@ export default function App(){
     });
   }
   async function save(closeAfterSave=false,replacement?:Furniture,projectOverride?:Project){
-    if(modelAnalysisStale){setError('El material del modelo cambió. Volvé a analizar y generar las guías antes de guardar o exportar.');return false;}
+    if(modelAnalysisStale){setError('El material del modelo cambió. Volvé a analizar y generar las guías antes de guardar o exportar.',{label:'Analizar de nuevo',kind:'analyze'});return false;}
     if(contextChanged){setError('Cambió el modelo activo. Volvé al modelo original para guardar esta guía o analizá el nuevo después de conservar tus cambios.');return false;}
     if(!project||draftHidden!==null)return false;
     return await run('Guardando guía…',async()=>{
@@ -190,13 +204,13 @@ export default function App(){
     });
   }
   async function exportPdf(){
-    if(modelAnalysisStale){setError('El material del modelo cambió. Volvé a analizar y generar las guías antes de exportar.');return;}
+    if(modelAnalysisStale){setError('El material del modelo cambió. Volvé a analizar y generar las guías antes de exportar.',{label:'Analizar de nuevo',kind:'analyze'});return;}
     if(contextChanged){setError('Cambió el modelo activo. Volvé a analizar antes de exportar.');return;}
     if(!project||draftHidden!==null)return;
     await run('Preparando PDF A4…',async()=>{
       await ensureRuntime();
       for(const f of project.furniture){const issues=[...guideIssues(f,orphans[f.id]||[]),...namingIssues(f,workCode)];if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
-      if(selectionChanged)throw new Error('La selección cambió. Pulsá Generar guías para actualizar los muebles del PDF.');
+      if(selectionChanged){setError('La selección cambió. Pulsá Generar guías para actualizar los muebles del PDF.',{label:'Regenerar guías',kind:'generate'});return;}
       const references=printMaterials?await request<Record<string,string>>('order_references'):undefined;
       const bytes=await createOfflinePdf(project,decode64(regularFont),decode64(monoFont),decode64(logo),references);
       const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint,furniture:editsFor(project,orphans),base64:encode64(bytes)});
@@ -282,14 +296,14 @@ export default function App(){
       </div>;
     });
   }
-  function acceptPaintScan(result:unknown,warning?:string){setCatalogRefresh(value=>value+1);if(result){acceptScan(result as Scan);setMessage(warning||'Modelo actualizado. Generá las guías para refrescar las vistas; se conservan los ajustes guardados. Revisá y confirmá el pedido antes del TXT.');}else{setProject(undefined);setScan(undefined);setError(warning||'El modelo cambió, pero no se pudo refrescar el análisis. Volvé a analizar antes de generar guías o pedidos.');}}
+  function acceptPaintScan(result:unknown,warning?:string){setCatalogRefresh(value=>value+1);if(result){acceptScan(result as Scan);setMessage(warning||'Modelo actualizado. Generá las guías para refrescar las vistas; se conservan los ajustes guardados. Revisá y confirmá el pedido antes del TXT.');}else{setProject(undefined);setScan(undefined);setError(warning||'El modelo cambió, pero no se pudo refrescar el análisis. Volvé a analizar antes de generar guías o pedidos.',{label:'Analizar de nuevo',kind:'analyze'});}}
   function openPalette(compact=false,catalogId?:string,autoStart=false){
-    if(!scan||busy||dirty||(libraryDirty&&!autoStart)||workshopDirty||draftHidden!==null||contextChanged||modelAnalysisStale){setError('Guardá los cambios pendientes y aplicá o cancelá la visibilidad antes de pintar.');return;}
+    const reason=blockReason('paint',autoStart);if(reason){setError(`No se puede pintar. ${reason}.`);return;}
     setQuickIntent(undefined);setPaintCatalogId(catalogId);setPaintAutoStart(compact?true:autoStart);setCompactPaint(compact);setShowSmartPaint(true);
   }
   function navigateModule(next:Module){
     if(busy){setError('Esperá a que termine la operación actual.');return;}
-    if(libraryDirty||workshopDirty){setError('Hay cambios de biblioteca, importación o pedido pendientes. Guardalos o cancelalos antes de cambiar de sección.');return;}
+    if(workshopDirty||(libraryDirty&&next!=='materials')){const owner:Module=libraryDirty&&next!=='materials'?'materials':'order';setError(`Hay cambios sin guardar en ${moduleLabel(owner)} (biblioteca, importación o pedido). Guardalos o cancelalos antes de cambiar de sección.`,owner==='materials'&&!workshopDirty&&destination!=='materials'?{label:`Ir a ${moduleLabel(owner)}`,kind:'module',module:owner}:undefined);return;}
     if(draftHidden!==null&&!['furniture','guides'].includes(next)){setError('Aplicá o cancelá la previsualización de piezas ocultas antes de cambiar de sección.');return;}
     setError('');setShowWorkshop(false);setShowPaint(false);setShowMaterials(false);setShowSuggestions(false);
     setDestination(next);if(next==='furniture'&&scan&&!project&&!dirty){const roots=selectedFurnitureIds(scan.selected,scan.tree.roots);if(roots.length)void generate(roots,'furniture');}if(next==='materials')setMaterialsVisited(true);
@@ -307,7 +321,7 @@ export default function App(){
     if((dirty||draftHidden!==null||contextChanged||modelAnalysisStale)&&!['furniture','guides'].includes(intent.action)){setError('Conservá los cambios pendientes y aplicá o cancelá la visibilidad antes de cambiar de herramienta.');return;}
     const refreshed=!!intent.scan&&!dirty&&draftHidden===null;
     if(refreshed)acceptPaintScan(intent.scan,intent.refreshWarning);
-    else if(intent.scanRequired){setScan(undefined);setError(intent.refreshWarning||'El modelo cambió. Volvé a analizar antes de continuar.');return;}
+    else if(intent.scanRequired){setScan(undefined);setError(intent.refreshWarning||'El modelo cambió. Volvé a analizar antes de continuar.',{label:'Analizar de nuevo',kind:'analyze'});return;}
     setError('');setMessage(intent.message||'');
     if(['sheet','edge','remove_edge','sample'].includes(intent.action)){
       setShowWorkshop(false);setShowPaint(false);setShowMaterials(false);setShowSuggestions(false);setQuickIntent(intent);setPaintCatalogId(undefined);setCompactPaint(true);setShowSmartPaint(true);return;
@@ -327,11 +341,34 @@ export default function App(){
     setMessage(intent.message||(project?'Revisá el mueble y sus piezas. No se aplicaron nombres ni se exportó ningún archivo.':'Elegí el mueble y pulsá Generar guías para revisar nombres, vistas y notas.'));
     requestAnimationFrame(()=>{const target=document.querySelector<HTMLElement>(project?(intent.action==='furniture'?'.parts-config':'.assembly-drawing'):'#furniture-chooser');target?.scrollIntoView({block:'start'});if(intent.action==='furniture'&&project)target?.querySelector<HTMLInputElement>('input[aria-label="Nombre del grupo"]')?.focus({preventScroll:true});});
   };
+  function blockReason(kind:Block,allowLibrary=false):string|undefined{
+    if(busy)return `Esperá a que termine «${busy.replace(/…$/,'')}»`;
+    if(kind==='nav')return undefined;
+    if(kind==='tools')return scan?undefined:'Esperá a que se analice el modelo abierto';
+    if(contextChanged)return 'Volvé al modelo original de la guía';
+    if(modelAnalysisStale)return 'El material cambió; volvé a analizar y generar las guías';
+    if(draftHidden!==null)return 'Aplicá o cancelá las piezas ocultas';
+    if(kind==='paint')return !scan?'Esperá a que se analice el modelo abierto':dirty?'Guardá la guía antes de pintar':libraryDirty&&!allowLibrary?'Guardá o cancelá los cambios de Materiales':workshopDirty?'Guardá o cancelá los cambios de biblioteca o pedido':undefined;
+    if(!project)return 'Primero generá las guías en Muebles';
+    if(kind==='export'&&selectionChanged)return 'Cambiaste los muebles; pulsá Generar guías';
+    return undefined;
+  }
+  const saveBlock=blockReason('save'),exportBlock=blockReason('export'),paintBlock=blockReason('paint'),navBlock=blockReason('nav'),toolsBlock=blockReason('tools');
+  const guidePending=contextChanged||modelAnalysisStale?'Análisis desactualizado':dirty?'Guía sin guardar':filePending?'Falta guardar el SKP':undefined;
+  const pending:Record<Module,string|undefined>={home:undefined,materials:libraryDirty?'Cambios de biblioteca sin guardar':undefined,furniture:guidePending,order:workshopDirty?'Biblioteca o pedido sin guardar':undefined,guides:guidePending};
+  const dialogOpen=showSmartPaint||showPhotoMaterial||showPaint||showMaterials||showWorkshop||showSuggestions||!!nameBatch||!!pendingConfirm;
+  function runNoticeAction(action:NoticeAction){setError('');setMessage('');if(action.kind==='analyze')void analyze();else if(action.kind==='generate')void generate();else if(action.module)navigateModule(action.module);}
+  useLayoutEffect(()=>{shortcutHandler.current=event=>{
+    const action=shortcutFor(event,dialogOpen);if(!action)return;event.preventDefault();
+    if(action==='save'){if(saveBlock)setError(`No se puede guardar. ${saveBlock}.`);else void save();}
+    else if(action==='export'){if(exportBlock)setError(`No se puede exportar. ${exportBlock}.`);else void exportPdf();}
+    else navigateModule(action);
+  };});
   const palette=showSmartPaint?<SmartPaintPalette quickMode={compactPaint} initialCatalogId={paintCatalogId} autoStart={paintAutoStart} onCreateMaterial={()=>{setQuickIntent(undefined);setPaintAutoStart(false);setShowSmartPaint(false);setPhotoTarget(undefined);setShowPhotoMaterial(true);}} onAssignPhoto={target=>{setQuickIntent(undefined);setPaintAutoStart(false);setShowSmartPaint(false);setPhotoTarget(target);setShowPhotoMaterial(true);}} initialCompact={compactPaint} quickIntent={quickIntent} onApplied={acceptPaintScan} onClose={()=>setShowSmartPaint(false)} onManage={destination=>{setShowSmartPaint(false);if(destination==='catalog'){setDestination('materials');setMaterialsVisited(true);}else{setPaintPieceId(piece?.id);setShowPaint(true);}}}/>:null;
   return <>{showPhotoMaterial&&<PhotoMaterialPanel replacement={photoTarget} initialKind={photoTarget?.kind} onClose={()=>{setShowPhotoMaterial(false);setPhotoTarget(undefined);setPaintAutoStart(false);setShowSmartPaint(true);}} onCreated={(result,options)=>{const assigned=photoTarget?.assign===true;setShowPhotoMaterial(false);setPhotoTarget(undefined);if(assigned&&!options.paint){setCatalogRefresh(value=>value+1);setShowSmartPaint(true);return;}if(result.scan)acceptPaintScan(result.scan,result.refreshWarning);else if(result.refreshWarning)acceptPaintScan(undefined,result.refreshWarning);else setCatalogRefresh(value=>value+1);if(options.paint&&result.scan){setQuickIntent(undefined);setPaintCatalogId(result.catalogId);setPaintAutoStart(true);setCompactPaint(true);setShowSmartPaint(true);}else{setShowSmartPaint(false);setDestination('materials');setMaterialsVisited(true);}}}/>} {palette}<div className={`ux-shell destination-${destination}`} hidden={showSmartPaint}>
     <a className="ux-skip" href="#module-content">Ir al contenido</a>
-    <nav className="ux-rail" aria-label="Módulos de Planos Santo"><div className="ux-brand" title="Planos Santo">S<span>PLANOS</span></div>{modules.map(([id,label,description])=><button key={id} type="button" aria-current={destination===id?'page':undefined} title={description} disabled={!!busy} onClick={()=>navigateModule(id)}><ModuleIcon name={id}/><span>{label}</span></button>)}<div className="ux-rail-divider"/><button type="button" title="Pintura Inteligente · paleta compacta" disabled={!!busy||!scan||dirty||libraryDirty||workshopDirty||draftHidden!==null||contextChanged||modelAnalysisStale} onClick={()=>openPalette(true)}><ModuleIcon name="paint"/><span>Pintar</span></button><span className="ux-offline">LOCAL<br/>SIN NUBE</span></nav>
-    <div className="ux-stage"><header className="ux-topbar"><div><span className="ux-breadcrumb">Planos Santo <span aria-hidden="true">/</span> {modules.find(([id])=>id===destination)?.[1]}</span><h1 className="ux-module-heading" tabIndex={-1}>{modules.find(([id])=>id===destination)?.[1]}</h1></div><div className="ux-project-context"><span>{scan?.tree.modelName||project?.name||'Modelo de SketchUp'}</span><strong>{contextChanged?'Modelo cambiado':modelAnalysisStale?'Análisis desactualizado':dirty||libraryDirty||workshopDirty?'Cambios pendientes':filePending?'Falta guardar SKP':project?'Guía en revisión':'Elegí un mueble'}</strong></div></header>
+    <nav className="ux-rail" aria-label="Módulos de Planos Santo"><div className="ux-brand" title="Planos Santo">S<span>PLANOS</span></div>{modules.map(([id,label,description],index)=><button key={id} type="button" aria-current={destination===id?'page':undefined} aria-keyshortcuts={`Alt+${index+1}`} aria-describedby={pending[id]?`rail-pending-${id}`:undefined} title={[description,pending[id],navBlock,`Alt+${index+1}`].filter(Boolean).join(' · ')} disabled={!!navBlock} onClick={()=>navigateModule(id)}><ModuleIcon name={id}/><span>{label}</span>{pending[id]&&<><span className="ux-rail-badge" aria-hidden="true"/><span id={`rail-pending-${id}`} hidden>{pending[id]}</span></>}</button>)}<div className="ux-rail-divider"/><button type="button" title={paintBlock?`Pintar: ${paintBlock}`:'Pintura Inteligente · paleta compacta'} disabled={!!paintBlock} onClick={()=>openPalette(true)}><ModuleIcon name="paint"/><span>Pintar</span></button><span className="ux-offline">LOCAL<br/>SIN NUBE</span></nav>
+    <div className="ux-stage"><header className="ux-topbar"><div><span className="ux-breadcrumb">Planos Santo <span aria-hidden="true">/</span> {modules.find(([id])=>id===destination)?.[1]}</span><h1 className="ux-module-heading" tabIndex={-1}>{modules.find(([id])=>id===destination)?.[1]}</h1></div><div className="ux-project-context"><span>{scan?.tree.modelName||project?.name||'Modelo de SketchUp'}</span><strong><em className="ux-version-chip" title={`Versión ${version} en prueba. Extensión candidata: instalación y revisión visual pendientes en SketchUp 2026 Windows.`}>v{version} · en prueba</em>{contextChanged?'Modelo cambiado':modelAnalysisStale?'Análisis desactualizado':dirty||libraryDirty||workshopDirty?'Cambios pendientes':filePending?'Falta guardar SKP':project?'Guía en revisión':'Elegí un mueble'}</strong></div></header>
     <div id="module-content" className="offline-app" aria-busy={!!busy}>
 
     {nameBatch&&<NameBatchPreview rows={nameBatch.rows} check={nameBatch.check} busy={!!busy} error={error} onReview={reviewNameBatch} onConfirm={confirmNameBatch} onClose={()=>{setNameBatch(undefined);suggestionsTrigger.current?.focus();}}/>}
@@ -339,11 +376,11 @@ export default function App(){
     {showWorkshop&&<WorkshopPanel initialCatalogId={catalogFocus} initialTab={workshopTab} onDirtyChange={setWorkshopDirty} onClose={()=>{setShowWorkshop(false);setCatalogRefresh(value=>value+1);workshopTrigger.current?.focus();}}/>}
     {showPaint&&<PaintPanel initialPieceId={paintPieceId} onClose={()=>{setShowPaint(false);paintTrigger.current?.focus();}} onApplied={acceptPaintScan}/>}
     {showMaterials&&<MaterialReview onClose={()=>{setShowMaterials(false);materialTrigger.current?.focus();}}/>}
-    <header className="app-header"><img className="workshop-logo" src={`data:image/png;base64,${logo}`} alt="Santo Carpintero · Amoblamientos"/><div className="app-title"><strong>Planos Santo</strong><small>Guías de armado para el taller</small></div><div className="header-actions"><button ref={workshopTrigger} disabled={!!busy||!scan} onClick={()=>{setWorkshopTab('catalog');setShowWorkshop(true);}}>Biblioteca y pedidos</button><button ref={smartPaintTrigger} disabled={!!busy||!scan||dirty||draftHidden!==null} title={dirty||draftHidden!==null?'Guardá primero los cambios pendientes de la guía.':'Ajustes avanzados de caras, alcance y reemplazo de materiales'} onClick={()=>openPalette(false)}>Pintura avanzada</button><button ref={paintTrigger} title={dirty||draftHidden!==null?'Guardá primero los cambios de la guía y aplicá o cancelá la visibilidad pendiente.':'Seleccionar caras y pintar materiales reales en SketchUp'} disabled={!!busy||!scan||dirty||draftHidden!==null} onClick={()=>{setPaintPieceId(piece?.id);setShowPaint(true);}}>Pintar placas y cantos</button><button ref={materialTrigger} disabled={!!busy||!scan} onClick={()=>setShowMaterials(true)}>Materiales y cantos</button><span className={`save-state ${dirty||filePending?'pending':''}`}>{dirty?'Guía sin guardar':filePending?'Falta guardar el SKP':project?'Sin cambios pendientes':''}</span><details className="save-options"><summary>Opciones de guardado</summary><label><input type="checkbox" checked={printMaterials} onChange={e=>setPrintMaterials(e.target.checked)}/> Incluir materiales y cantos del pedido revisado en el PDF</label><p>Requiere un borrador de pedido completo, guardado y vigente. Las piezas excluidas no reciben especificación de material.</p><label><input type="checkbox" disabled={!!busy} checked={saveSkp} onChange={e=>setSaveSkp(e.target.checked)}/> Guardar también el archivo SKP</label><label><input type="checkbox" disabled={!!busy} checked={syncNames} onChange={e=>{setSyncNames(e.target.checked);markDirty();}}/> Sincronizar nombres de grupos y piezas en SketchUp</label><p>Si una pieza aparece en varios cajones compartidos, todas sus apariciones deben tener el mismo nombre. Para usar nombres distintos solo en el plano, desactivá la sincronización.</p><p>Guardar SKP conserva también los demás cambios del modelo abierto. Ctrl+Z deshace el guardado de guía y nombres en el modelo.</p></details><div className="action-with-help"><button disabled={!!busy||!project||draftHidden!==null||contextChanged||modelAnalysisStale} onClick={()=>void save()}>Guardar guía<small aria-hidden="true">{saveSkp?' + SKP':' · modelo abierto'}</small></button><HelpPopover title="Guardar guía"><p>Guarda nombres, notas y ajustes dentro del archivo SketchUp, junto con los cambios que tenga el modelo abierto.</p><p>Si el archivo es nuevo, SketchUp te pide dónde guardarlo. Si cancelás, falta guardar el SKP para conservar la guía al cerrar.</p></HelpPopover></div><button disabled={!!busy||!project||draftHidden!==null||contextChanged||modelAnalysisStale} onClick={()=>void save(true)}>Guardar y cerrar</button><div className="action-with-help"><button className="primary" disabled={!!busy||!project||selectionChanged||draftHidden!==null||contextChanged||modelAnalysisStale} onClick={()=>void exportPdf()}>Exportar PDF A4</button><HelpPopover title="PDF para imprimir"><p>Exporta todas las guías generadas: una hoja A4 horizontal por mueble, con piezas, medidas y flechas.</p><p>Si algo no cabe o una nota perdió su destino, te indica qué corregir. Al imprimir, elegí tamaño real o 100 %.</p></HelpPopover></div></div></header>
-    <div className="notice"><span>VERSIÓN {version} · EN PRUEBA</span> Extensión candidata: instalación y revisión visual pendientes en SketchUp 2026 Windows.</div>
-    {busy&&<div role="status" className="status">{busy}</div>}
-    {error&&<div role="alert" className="error">{error}</div>}
-    {message&&<div role="status" className="success">{message}</div>}
+    <header className="app-header"><img className="workshop-logo" src={`data:image/png;base64,${logo}`} alt="Santo Carpintero · Amoblamientos"/><div className="app-title"><strong>Planos Santo</strong><small>Guías de armado para el taller</small></div><div className="header-actions"><button ref={workshopTrigger} disabled={!!toolsBlock} title={toolsBlock} onClick={()=>{setWorkshopTab('catalog');setShowWorkshop(true);}}>Biblioteca y pedidos</button><button ref={smartPaintTrigger} disabled={!!busy||!scan||dirty||draftHidden!==null} title={dirty||draftHidden!==null?'Guardá primero los cambios pendientes de la guía.':'Ajustes avanzados de caras, alcance y reemplazo de materiales'} onClick={()=>openPalette(false)}>Pintura avanzada</button><button ref={paintTrigger} title={dirty||draftHidden!==null?'Guardá primero los cambios de la guía y aplicá o cancelá la visibilidad pendiente.':'Seleccionar caras y pintar materiales reales en SketchUp'} disabled={!!busy||!scan||dirty||draftHidden!==null} onClick={()=>{setPaintPieceId(piece?.id);setShowPaint(true);}}>Pintar placas y cantos</button><button ref={materialTrigger} disabled={!!toolsBlock} title={toolsBlock} onClick={()=>setShowMaterials(true)}>Materiales y cantos</button><span className={`save-state ${dirty||filePending?'pending':''}`}>{dirty?'Guía sin guardar':filePending?'Falta guardar el SKP':project?'Sin cambios pendientes':''}</span><details className="save-options"><summary>Opciones de guardado</summary><label><input type="checkbox" checked={printMaterials} onChange={e=>setPrintMaterials(e.target.checked)}/> Incluir materiales y cantos del pedido revisado en el PDF</label><p>Requiere un borrador de pedido completo, guardado y vigente. Las piezas excluidas no reciben especificación de material.</p><label><input type="checkbox" disabled={!!busy} checked={saveSkp} onChange={e=>setSaveSkp(e.target.checked)}/> Guardar también el archivo SKP</label><label><input type="checkbox" disabled={!!busy} checked={syncNames} onChange={e=>{setSyncNames(e.target.checked);markDirty();}}/> Sincronizar nombres de grupos y piezas en SketchUp</label><p>Si una pieza aparece en varios cajones compartidos, todas sus apariciones deben tener el mismo nombre. Para usar nombres distintos solo en el plano, desactivá la sincronización.</p><p>Guardar SKP conserva también los demás cambios del modelo abierto. Ctrl+Z deshace el guardado de guía y nombres en el modelo.</p></details><div className="action-with-help"><button disabled={!!saveBlock} aria-keyshortcuts="Control+S" title={saveBlock?`Guardar guía: ${saveBlock}`:'Guardar guía · Ctrl+S'} onClick={()=>void save()}>Guardar guía<small aria-hidden="true">{saveSkp?' + SKP':' · modelo abierto'}</small></button><HelpPopover title="Guardar guía"><p>Guarda nombres, notas y ajustes dentro del archivo SketchUp, junto con los cambios que tenga el modelo abierto.</p><p>Si el archivo es nuevo, SketchUp te pide dónde guardarlo. Si cancelás, falta guardar el SKP para conservar la guía al cerrar.</p></HelpPopover></div><button disabled={!!saveBlock} title={saveBlock?`Guardar y cerrar: ${saveBlock}`:undefined} onClick={()=>void save(true)}>Guardar y cerrar</button><div className="ux-primary-action"><div className="action-with-help"><button className="primary" disabled={!!exportBlock} aria-keyshortcuts="Control+Shift+E" aria-describedby={exportBlock?'export-block-reason':undefined} title={exportBlock?`Exportar PDF A4: ${exportBlock}`:'Exportar PDF A4 · Ctrl+Shift+E'} onClick={()=>void exportPdf()}>Exportar PDF A4</button><HelpPopover title="PDF para imprimir"><p>Exporta todas las guías generadas: una hoja A4 horizontal por mueble, con piezas, medidas y flechas.</p><p>Si algo no cabe o una nota perdió su destino, te indica qué corregir. Al imprimir, elegí tamaño real o 100 %.</p></HelpPopover></div>{exportBlock&&<small id="export-block-reason" className="ux-block-reason">{exportBlock}</small>}</div></div></header>
+    {pendingConfirm&&<div role="alertdialog" aria-modal="false" aria-labelledby="ux-confirm-title" aria-describedby="ux-confirm-detail" className="ux-confirm" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeConfirm(false);}}}><div><strong id="ux-confirm-title">{pendingConfirm.title}</strong><p id="ux-confirm-detail">{pendingConfirm.detail}</p></div><div className="ux-confirm-actions"><button ref={confirmCancel} type="button" onClick={()=>closeConfirm(false)}>Seguir editando</button><button type="button" className="danger" onClick={()=>closeConfirm(true)}>{pendingConfirm.confirmLabel}</button></div></div>}
+    {busy&&<div role="status" className="status ux-busy"><span className="ux-spinner" aria-hidden="true"/><span>{busy}</span>{elapsed>=2&&<span className="ux-busy-time" aria-hidden="true"> · {elapsed} s</span>}</div>}
+    {error&&<div role="alert" className="error ux-notice"><span>{error}</span>{errorAction&&<button type="button" className="ux-notice-action" onClick={()=>runNoticeAction(errorAction)}>{errorAction.label}</button>}<button type="button" className="ux-notice-close" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={()=>setError('')}>×</button></div>}
+    {message&&<div role="status" className="success ux-notice" onPointerEnter={()=>setNoticeHold(true)} onPointerLeave={()=>setNoticeHold(false)} onFocus={()=>setNoticeHold(true)} onBlur={()=>setNoticeHold(false)}><span>{message}</span>{messageAction&&<button type="button" className="ux-notice-action" onClick={()=>runNoticeAction(messageAction)}>{messageAction.label}</button>}<button type="button" className="ux-notice-close" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={()=>{setMessage('');setNoticeHold(false);}}>×</button></div>}
     {materialsVisited&&<div className="ux-materials-content" hidden={destination!=='materials'}><MaterialLibraryPanel refreshKey={catalogRefresh} onApplied={acceptPaintScan} onEdit={id=>{setCatalogFocus(id);setWorkshopTab('catalog');setShowWorkshop(true);}} onPaint={(id,autoStart)=>openPalette(true,id,autoStart)} onManageModel={()=>{setPaintPieceId(piece?.id);setShowPaint(true);}} onDirtyChange={setLibraryDirty} onChanged={()=>setMessage('Biblioteca del taller actualizada. Revisá las fichas antes de usar materiales en producción.')} onClose={()=>navigateModule('home')}/></div>}
     {destination==='order'&&<section className="ux-order-content" aria-label="Pedido a maderera"><div className="ux-module-intro"><div><span className="eyebrow">DEL MUEBLE AL CORTE</span><h2>Prepará un pedido claro</h2><p>Revisá material, espesor, orientación y cantos. El TXT se genera solo después del preflight y tu confirmación.</p></div></div><WorkshopPanel embedded initialTab="order" onDirtyChange={setWorkshopDirty} onClose={()=>{setWorkshopDirty(false);setDestination('home');}}/></section>}
     <main hidden={destination==='materials'||destination==='order'} className={`editor-main ${project&&hideFurniture?'furniture-hidden':''}`}>
