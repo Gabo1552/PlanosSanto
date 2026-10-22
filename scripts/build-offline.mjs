@@ -32,6 +32,7 @@ const copies={
   'planos_santo/smart_paint_tool.rb':'sketchup_offline/smart_paint_tool.rb',
   'planos_santo/material_sample_tool.rb':'sketchup_offline/material_sample_tool.rb',
   'planos_santo/quick_toolbar.rb':'sketchup_offline/quick_toolbar.rb',
+  'planos_santo/model_watch.rb':'sketchup_offline/model_watch.rb',
   'planos_santo/bounded_zip.rb':'sketchup_offline/bounded_zip.rb',
   'planos_santo/skm_import.rb':'sketchup_offline/skm_import.rb',
   'planos_santo/piece_highlight_tool.rb':'sketchup_offline/piece_highlight_tool.rb',

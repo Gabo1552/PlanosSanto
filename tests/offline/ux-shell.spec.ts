@@ -56,9 +56,9 @@ test('motivo visible del bloqueo de exportar y avisos que se cierran o traen la 
  await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().check();await expect(exportButton).toBeEnabled();
  await page.evaluate(()=>window.dispatchEvent(new Event('planos-santo-document-invalidated')));
  const info1=page.getByRole('status').filter({hasText:'Cambió el material del modelo'});await expect(info1).toBeVisible();await expect(info1.getByRole('button',{name:'Analizar de nuevo',exact:true})).toBeVisible();
- await expect(exportButton).toHaveAccessibleDescription('El material cambió; volvé a analizar y generar las guías');await expect(rail(page,'Muebles')).toHaveAttribute('title',/Análisis desactualizado/);
+ await expect(exportButton).toHaveAccessibleDescription('El análisis está desactualizado; volvé a analizar y generar las guías');await expect(rail(page,'Muebles')).toHaveAttribute('title',/Análisis desactualizado/);
  await info1.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await expect(info1).toHaveCount(0);
- await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. El material cambió;');expect(count('pdf')).toBe(0);
+ await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. El análisis está desactualizado;');expect(count('pdf')).toBe(0);
  await alert.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await expect(alert).toHaveCount(0);
  const scans=count('scan');await quick(page,{sequence:1,action:'guides',scanRequired:true,refreshWarning:'El modelo cambió. Volvé a analizar antes de continuar.'});
  await expect(alert).toContainText('El modelo cambió');await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();
