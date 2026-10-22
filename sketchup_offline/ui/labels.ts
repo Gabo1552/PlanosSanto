@@ -55,7 +55,7 @@ export function labelItems(project:Project,references?:OrderReferences,pending?:
       const ordered=state==='order'?reference:undefined,ids=copies.get(p.code)!;
       const oriented=!!ordered&&typeof ordered.base==='number'&&typeof ordered.height==='number'&&ordered.base>0&&ordered.height>0;
       const measures:[number,number,number]=oriented?[ordered!.base!,ordered!.height!,p.dimensions[2]]:[p.dimensions[0],p.dimensions[1],p.dimensions[2]];
-      const item:LabelItem={furnitureId:f.id,furnitureName:f.name,pieceId:p.id,code:compositeCode(f.naming?.moduleCode,p.code),name:p.name.trim(),measures,oriented,state,copy:ids.indexOf(p.id)+1,copies:ids.length};
+      const item:LabelItem={furnitureId:f.id,furnitureName:f.name,pieceId:p.id,code:reference?.code||compositeCode(f.naming?.moduleCode,p.code),name:p.name.trim(),measures,oriented,state,copy:ids.indexOf(p.id)+1,copies:ids.length};
       if(ordered&&hasEdgeMap(ordered))item.edgeMap=[...ordered.edgeMap];
       if(ordered&&validLot(ordered.lot))item.lot=ordered.lot;
       if(ordered&&typeof ordered.grain==='boolean')item.grain=ordered.grain;

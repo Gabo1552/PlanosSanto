@@ -41,6 +41,11 @@ describe('Etiquetas autoadhesivas A4',()=>{
   expect(items.map(i=>[i.code,i.copy,i.copies,i.pieceId])).toEqual([['M03·P01',1,1,'a/3'],['M03·P07',1,2,'a/1'],['M03·P07',2,2,'a/2']]);
   expect(items[0]).toMatchObject({furnitureId:'f1',furnitureName:'Alacena',name:'Lateral',measures:[720,560,18],oriented:false,state:'none'});
  });
+ it('con pedido usa el código módulo·pieza que calcula SketchUp para el detalle del TXT (Hito 3)',()=>{
+  const p=project([furniture('f1','Alacena M03','',[piece('a/1','P07','Estante'),piece('a/2','P08','Estante')])]);
+  const references:OrderReferences={'a/1':{text:'',board:'TEST-18 / 18 mm',edgeMap:[1,0,0,0],base:720,height:560,code:'M03·P07'},'a/2':{text:'',board:'TEST-18 / 18 mm',edgeMap:[1,0,0,0],base:720,height:560}};
+  expect(labelItems(p,references).map(i=>i.code)).toEqual(['M03·P07','P08']);
+ });
  it('ordena por mueble, lote, código numérico e ID; medidas y estado del pedido',()=>{
   const p=project([
    furniture('f2','Torre','M02',[piece('t/1','P10','Lateral',[2000,580,18]),piece('t/2','P05','Puerta',[700,400,18]),piece('t/3','P03','Fondo',[1990,590,3])]),
