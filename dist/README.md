@@ -1,3 +1,14 @@
+# Entrega 0.8.13 — 0.8.12 + latencia del pincel, fix del cuentagotas y empaquetado seguro, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.13-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.12 suma:
+- Línea base de latencia del pincel (PINTURA-09).
+- La tecla del cuentagotas ya no se revierte si se cambia con el pincel detenido.
+- Los scripts de empaquetado sólo toman archivos versionados en git y usan las rutas al día.
+
+`PlanosSanto-0.8.13-Validacion-Local.zip` trae los anexos 0.8.13 y 0.8.12, la guía 0.8.11, el verificador (ahora espera la 0.8.13) y los checklists de cada hito. No se instala. Todo se probó con dobles de la API, no en SketchUp. Producción no aprobada.
+
+---
+
 # Entrega 0.8.12 — 0.8.11 + Hito 3 completo, cierre del Hito 4 y orden del repositorio, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.12-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.11 suma:

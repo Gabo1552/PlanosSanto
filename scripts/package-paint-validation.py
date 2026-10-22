@@ -36,10 +36,10 @@ candidate.write_bytes(rbz.read_bytes())
 dirs = ['app', 'components', 'lib', 'native', 'public', 'scripts', 'sketchup', 'sketchup_offline', 'tests',
         'docs/loop-a4', 'docs/loop-a4-071', 'docs/loop-a4-072', 'docs/loop-a4-073',
         'planos-santo-ocl-066/scripts', 'planos-santo-loop-068/scripts', str(DOCS.relative_to(ROOT))]
-if KIND == 'toolbar': dirs.append('planos-santo-loop-toolbar-082')
-if KIND == 'ux': dirs.append('planos-santo-loop-ux-082')
-if KIND == 'photo': dirs.append('planos-santo-loop-experiencia-084')
-if KIND == 'flows': dirs.append('planos-santo-loop-ux-085')
+if KIND == 'toolbar': dirs.append('docs/historico/loops/planos-santo-loop-toolbar-082')
+if KIND == 'ux': dirs.append('docs/historico/loops/planos-santo-loop-ux-082')
+if KIND == 'photo': dirs.append('docs/historico/loops/planos-santo-loop-experiencia-084')
+if KIND == 'flows': dirs.append('docs/historico/loops/planos-santo-loop-ux-085')
 files = ['package.json', 'package-lock.json', 'tsconfig.json', 'next.config.ts', 'next-env.d.ts',
          'eslint.config.mjs', 'playwright.config.ts', 'playwright.offline.config.ts', 'vitest.config.ts', '.gitignore']
 paths = {p for d in dirs for p in (ROOT/d).rglob('*') if p.is_file()}

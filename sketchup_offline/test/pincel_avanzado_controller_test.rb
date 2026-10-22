@@ -225,6 +225,15 @@ class PincelAvanzadoControllerTest < Minitest::Test
     assert_equal 0,tool.stops
   end
 
+  # Con el pincel detenido, el último estado de la herramienta traía la tecla vieja y la paleta la volvía a adoptar.
+  def test_eyedropper_key_with_the_tool_stopped_reports_the_new_key
+    quick('mode'=>'sheet','catalogId'=>'placa');act('smart_tool_stop')
+    @controller.instance_variable_set(:@smart_state,@controller.instance_variable_get(:@smart_state).to_h.merge('active'=>false,'eyedropperKey'=>'alt'))
+    result=act('smart_eyedropper_key','key'=>'shift')
+    assert_equal 'shift',result['settings']['eyedropperKey'];assert_equal 'shift',result['toolState']['eyedropperKey']
+    assert_equal 'shift',act('smart_palette_load')['settings']['eyedropperKey']
+  end
+
   def test_eyedropper_key_validates_remembers_and_updates_the_active_tool
     quick('mode'=>'sheet','catalogId'=>'placa')
     ['ctrl','ALT',nil,:alt,1].each { |bad| assert_raises(PlanosSanto::ExportError) { act('smart_eyedropper_key','key'=>bad) } }
