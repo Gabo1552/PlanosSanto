@@ -291,3 +291,63 @@ class Hito2TabTest < Minitest::Test
     @tool.onKeyDown(9,1,0,@view);assert_equal 'sheet',@tool.status['mode']
   end
 end
+
+# Optional native APIs the doubles lack; real SketchUp provides them.
+module Sketchup
+  class << self;attr_accessor :hito2_status_texts;end
+  def self.status_text=(text);(self.hito2_status_texts||=[]) << text;end
+end
+module UI
+  class << self;attr_accessor :hito2_created,:hito2_set,:hito2_timers;end
+  def self.create_cursor(path,x,y);(self.hito2_created||=[]) << [File.basename(path),x,y];1000+hito2_created.length;end
+  def self.set_cursor(id);(self.hito2_set||=[]) << id;true;end
+  def self.scale_factor;2.0;end
+  def self.start_timer(delay,repeat,&block);(self.hito2_timers||=[]) << [delay,repeat,block];hito2_timers.length;end
+end
+
+class Hito2FeedbackTest < Minitest::Test
+  include Hito2Fixture
+  def setup;build_fixture;paint_sheet_on_board!;Sketchup.hito2_status_texts=[];UI.hito2_set=[];UI.hito2_timers=[];end
+  def test_status_bar_shows_mode_material_scope_and_last_error_only_when_it_changes
+    build_tool(tool_options('sheet'))
+    hover_on(@doors[0])
+    assert_equal 'Pintar pieza · Melamina Blanca · Solo esta (de 4)',Sketchup.hito2_status_texts.last
+    count=Sketchup.hito2_status_texts.length;5.times { @tool.onMouseMove(0,41,51,@view) }
+    assert_equal count,Sketchup.hito2_status_texts.length
+    build_tool(tool_options('edge','scope'=>'all','allowShared'=>true))
+    split_x_min_side!;click_on(@doors[0])
+    assert_match(/\APintar canto · 4 cantos · Canto Blanco · Todas las iguales \(4\) · último error: Los cuatro lados/,Sketchup.hito2_status_texts.last)
+  end
+  def test_two_line_tooltip_near_the_cursor_in_green_or_red
+    build_tool(tool_options('edge','edgeCount'=>2))
+    hover_on(@doors[0]);@tool.draw(@view)
+    (first,line1,options1),(second,line2,options2)=@view.texts.last(2)
+    assert_equal 'Puerta 1 · 2 cantos · Solo esta (de 4)',line1;assert_equal 'Canto Blanco',line2
+    assert_equal [76.0,86.0],first.first(2).map(&:to_f) # 18 px * scale 2 from (40,50)
+    assert_operator second[1],:>,first[1]
+    assert_equal [0,128,0],rgb(options2[:color])
+    split_x_min_side!;build_tool(tool_options('edge','edgeCount'=>4));hover_on(@doors[1]);@tool.draw(@view)
+    _,line,options=@view.texts.last
+    assert_match(/caras físicas únicas/,line);assert_equal [200,0,0],rgb(options[:color])
+  end
+  def rgb(color);color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3);end
+  def test_preview_uses_the_real_material_color_with_own_alpha_and_red_when_blocked
+    build_tool(tool_options('sheet','scope'=>'all','allowShared'=>true))
+    hover_on(@doors[0]);@tool.draw(@view)
+    colors=@view.draws.select { |mode,_| mode==4 }.map(&:last)
+    assert_equal [[240,240,235,60],[240,240,235,110]],colors.map { |c| c.respond_to?(:red) ? [c.red,c.green,c.blue,c.alpha] : c.to_a }
+    split_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@view.draws.clear;@tool.draw(@view)
+    assert_equal [220,30,30,110],@view.draws.find { |mode,_| mode==4 }.last.to_a
+  end
+  def test_own_cursor_per_mode_and_blocked_cursor_created_once_per_process
+    build_tool(tool_options('sheet'));hover_on(@doors[0]);assert @tool.onSetCursor
+    build_tool(tool_options('edge'));hover_on(@doors[0]);@tool.onSetCursor
+    build_tool(tool_options('remove_edge'));@tool.onSetCursor
+    split_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@tool.onSetCursor
+    build_tool(tool_options('sheet'));@tool.onSetCursor
+    names=UI.hito2_created.map(&:first)
+    assert_equal %w[paint-blocked.png paint-edge.png paint-piece.png paint-remove.png],names.sort;assert UI.hito2_created.all? { |_,x,y| [x,y]==[3,3] }
+    ids=UI.hito2_created.to_h { |name,_,_| [name,1000+UI.hito2_created.index { |row| row.first==name }+1] }
+    assert_equal ids.values_at('paint-piece.png','paint-edge.png','paint-remove.png','paint-blocked.png','paint-piece.png'),UI.hito2_set
+  end
+end

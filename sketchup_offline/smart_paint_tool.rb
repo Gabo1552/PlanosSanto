@@ -96,12 +96,94 @@ module PlanosSanto
     def status
       {'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch')}
     end
-    def emit(message,error:nil,changed:nil)
+    def emit(message,error:nil,changed:nil,hover:false)
       event=status.merge('message'=>message)
       event['error']=error if error || immediate?
       event['changed']=changed unless changed.nil?
+      @last_error=error if error && !hover
+      status_text!
       @on_event.call(event) if @on_event
       event
+    end
+    # ---- In-view feedback (ARQ-10 stage 1): status bar, tooltip, color, cursor.
+    def scope_label(count=nil)
+      return scope=='all' ? 'Todas las iguales' : 'Solo esta' unless count
+      scope=='all' ? "Todas las iguales (#{count})" : "Solo esta (de #{count})"
+    end
+    def mode_short
+      @options['mode']=='sheet' ? 'Pieza' : @options['mode']=='remove_edge' ? 'Quitar canto' : edge_label(edge_count)
+    end
+    # Name/color of the active native material by its UUID; no catalog I/O.
+    def material_info
+      uuid=@options['materialUuid']
+      return nil if uuid.to_s.empty? || !@model.respond_to?(:materials) || !defined?(MaterialResolver)
+      key=[uuid,@generation]
+      return @material_info[1] if @material_info && @material_info[0]==key
+      material=@model.materials.to_a.find { |m| MaterialResolver.observe_binding(m).dig('binding','uuid')==uuid }
+      info=material && {'name'=>(material.respond_to?(:display_name) ? material.display_name : material.name).to_s,'color'=>material.color}
+      @material_info=[key,info];info
+    rescue StandardError
+      nil
+    end
+    def status_text!
+      return unless immediate? && defined?(Sketchup) && Sketchup.respond_to?(:status_text=)
+      label=MODE_LABELS[@options['mode']].to_s
+      label+=" · #{edge_label(edge_count)}" if @options['mode']=='edge'
+      info=material_info
+      parts=[label,info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material'),scope_label((@hover && @hover['sharedCount']) || @shared_count)]
+      parts << "último error: #{@last_error}" if @last_error
+      text=parts.join(' · ')
+      return if text==@status_text
+      @status_text=text;Sketchup.status_text=text
+    rescue StandardError
+      nil
+    end
+    def rgba(color,alpha)
+      rgb=color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3)
+      begin
+        Sketchup::Color.new(*rgb.map(&:to_i),alpha)
+      rescue ArgumentError,TypeError
+        rgb.map(&:to_i)+[alpha]
+      end
+    end
+    def blocked?;@hover && @hover['verdict'] && @hover['verdict']['ok']==false;end
+    def hover_color(alpha)
+      return rgba([220,30,30],alpha) if blocked?
+      info=material_info
+      info && info['color'] ? rgba(info['color'],alpha) : 'orange'
+    end
+    def draw_tooltip(view)
+      return unless immediate? && @hover && @mouse && view.respond_to?(:draw_text)
+      scale=defined?(UI) && UI.respond_to?(:scale_factor) ? UI.scale_factor.to_f : 1.0
+      klass=defined?(Geom::Point3d) ? Geom::Point3d : Sketchup::Point
+      x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
+      info=material_info
+      line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'])].join(' · ')
+      line2=blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
+      color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
+      view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
+      view.draw_text(klass.new(x,y+16*scale,0),line2,{color:color.call(blocked? ? [200,0,0] : [0,128,0]),size:11})
+    rescue StandardError
+      nil
+    end
+    CURSORS={'piece'=>'paint-piece.png','edge'=>'paint-edge.png','remove'=>'paint-remove.png','blocked'=>'paint-blocked.png'}.freeze
+    # One native cursor per file and per process; nil -> native cursor.
+    def self.cursor_id(name)
+      @cursor_ids||={}
+      return @cursor_ids[name] if @cursor_ids.key?(name)
+      path=File.join(__dir__,'cursors',CURSORS.fetch(name))
+      @cursor_ids[name]=defined?(UI) && UI.respond_to?(:create_cursor) && File.file?(path) ? UI.create_cursor(path,3,3) : nil
+    rescue StandardError
+      @cursor_ids[name]=nil
+    end
+    def cursor_name
+      return 'blocked' if blocked?
+      {'sheet'=>'piece','edge'=>'edge','remove_edge'=>'remove'}[@options['mode']]
+    end
+    def onSetCursor
+      name=cursor_name;id=name && self.class.cursor_id(name)
+      return false unless id && defined?(UI) && UI.respond_to?(:set_cursor)
+      UI.set_cursor(id);true
     end
     def invalidate(view);view.invalidate if view && view.respond_to?(:invalidate);end
     def clear
@@ -198,7 +280,7 @@ module PlanosSanto
         # Pick-local feedback only: no inventory, geometry classification,
         # catalog I/O, UUID validation or mutation until the actual click.
         @target=target;@preview=nil;@copy_triangles=[]
-        copies=copies_of(target)
+        copies=copies_of(target);@shared_count=[copies.length,1].max
         @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>[copies.length,1].max}
         verdict=verdict_for(target)
         if verdict
@@ -212,7 +294,7 @@ module PlanosSanto
             end
             @triangles,@normal_line=main
           end
-          emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'])
+          emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'],hover:true)
           return
         end
         if @options['mode']=='sheet'
@@ -224,7 +306,7 @@ module PlanosSanto
         else
           build_overlay(target)
         end
-        emit(@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.')
+        emit(@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.',hover:true)
         return
       end
       result=@service.preview(service_options([target_data(target)]))
@@ -233,7 +315,7 @@ module PlanosSanto
               'affectedPaths'=>result.fetch('affectedPaths',[]),'faceCount'=>result['faceCount'] || result.fetch('faces',[]).length,
               'sharedCount'=>result['sharedCount'] || result.fetch('affectedPaths',[]).length,'side'=>@options['side']}
       build_preview_overlay(target,result)
-      emit((result['warnings'] || []).join(' ').empty? ? 'Cara preparada; revisá la ruta y hacé clic para aplicar.' : result['warnings'].join(' '))
+      emit((result['warnings'] || []).join(' ').empty? ? 'Cara preparada; revisá la ruta y hacé clic para aplicar.' : result['warnings'].join(' '),hover:true)
     end
     def overlay_faces(target,faces)
       triangles=[];normals=[]
@@ -255,6 +337,7 @@ module PlanosSanto
       @hover['expandedFaceIds']=ids if @hover
     end
     def onMouseMove(_flags,x,y,view)
+      @mouse=[x,y]
       verify_guard!
       target=hit(view,x,y)
       unless target
@@ -304,11 +387,12 @@ module PlanosSanto
         @pick_cache=nil
         target=hit(view,x,y)
         return unless target
+        @shared_count=[copies_of(target).length,1].max
         verdict=verdict_for(target)
         # The hover verdict only anticipates a refusal: the service validates everything again.
         raise ExportError,verdict['reason'] if verdict && !verdict['ok']
         applied=@service.apply_immediate(service_options([target_data(target)]))
-        @generation+=1
+        @generation+=1;@last_error=nil
         clear
         emit(applied['changed'] ? 'Pieza pintada. Hacé clic en otra; Ctrl+Z deshace.' : 'La pieza ya tiene este material. Hacé clic en otra.',changed:applied['changed']==true)
         invalidate(view)
@@ -453,11 +537,12 @@ module PlanosSanto
         view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,overlay[:normal]) unless overlay[:normal].empty?
       end
       unless (@copy_triangles || []).empty?
-        view.drawing_color='orange'
+        view.drawing_color=immediate? ? hover_color(60) : 'orange'
         view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@copy_triangles)
       end
+      draw_tooltip(view)
       return if @triangles.nil? || @triangles.empty?
-      view.drawing_color='orange'
+      view.drawing_color=immediate? ? hover_color(110) : 'orange'
       view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@triangles)
       view.drawing_color='blue'
       view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,@normal_line) unless @normal_line.empty?
