@@ -100,33 +100,47 @@ export function edgeAmounts(charges:EdgeCharge[]){
  }
  return out;
 }
-const sameView=(a:OrderRow,b:OrderRow)=>!!a.axes&&!!b.axes&&a.axes[0]===b.axes[0]&&a.axes[1]===b.axes[1]&&a.frontSign===b.frontSign&&a.flipX===b.flipX&&a.flipY===b.flipY;
-/** Copia los grupos elegidos a las filas destino e invalida solo las verificaciones afectadas. Nunca copia verificaciones
- * ni los vínculos de caras observadas (son de las caras del origen). Las medidas de corte se orientan según los ejes del destino. */
-export function applyEquivalent(rows:OrderRow[],source:OrderRow,targets:string[],groups:CopyGroups,geometry:Record<string,Pick<Geometry,'lengths'>>={}){
- let applied=0,edgesSkipped=0,cutsSwapped=0;
- const next=rows.map(row=>{
-  if(row.id===source.id||!targets.includes(row.id))return row;
-  let patch:Partial<OrderRow>={};
-  // Ancho y compatibilidad del canto dependen de la placa: cambiarla invalida también los cantos.
-  if(groups.material)patch={...patch,materialId:source.materialId,materialConfirmed:false,grainConfirmed:false,edgesConfirmed:false};
-  if(groups.edges){if(sameView(source,row))patch={...patch,principalId:source.principalId,secondaryId:source.secondaryId,edgeMap:[...source.edgeMap],edgesConfirmed:false,edgeResolution:null};else edgesSkipped++;}
-  if(groups.grain)patch={...patch,grainAxis:source.grainAxis,grainPolicy:source.grainPolicy,grainConfirmed:false};
-  if(groups.dimensions){
-   // Equivalentes por medidas ordenadas: si la base del origen es la altura del destino, base y altura de corte se cruzan.
-   const from=geometry[source.id],to=geometry[row.id];let [cutBase,cutHeight]=[source.cutBase,source.cutHeight];
-   if(from&&to&&source.axes&&row.axes&&(cutBase!==null||cutHeight!==null)){const base=from.lengths[source.axes[0]];if(Math.abs(base-to.lengths[row.axes[0]])>0.1&&Math.abs(base-to.lengths[row.axes[1]])<=0.1){[cutBase,cutHeight]=[cutHeight,cutBase];cutsSwapped++;}}
-   patch={...patch,dimensionRule:source.dimensionRule,cutBase,cutHeight,reviewNote:source.reviewNote,dimensionsConfirmed:false};
-  }
-  if(!Object.keys(patch).length)return row;applied++;return {...row,...patch};
- });
- return {rows:next,applied,edgesSkipped,cutsSwapped};
+export type ApplyResult={applied:number;edgesSkipped:number;cutsSwapped:number;dimensionsSkipped:number;invalidated:Record<string,string[]>};
+/** Aviso de «Aplicar a…» con lo que Ruby copió, salteó e invalidó; `left` son las verificaciones pendientes en los destinos. */
+export function applySummary(result:ApplyResult,left:number){
+ const invalid=Object.values(result.invalidated||{}).reduce((sum,keys)=>sum+keys.length,0);
+ return `Aplicado a ${plural(result.applied,'pieza','piezas')}; ${invalid?`se ${invalid===1?'invalidó':'invalidaron'} ${plural(invalid,'confirmación','confirmaciones')}`:'no se invalidó ninguna confirmación'} y quedan ${plural(left,'verificación','verificaciones')} por confirmar.`
+  +(result.edgesSkipped?` Los cantos no se copiaron a ${plural(result.edgesSkipped,'pieza','piezas')} con otros ejes, cara o inversión.`:'')
+  +(result.cutsSwapped?` En ${plural(result.cutsSwapped,'pieza','piezas')} con los ejes cruzados se intercambiaron base y altura de corte.`:'')
+  +(result.dimensionsSkipped?` Las medidas de corte explícitas no se copiaron a ${plural(result.dimensionsSkipped,'pieza que no es equivalente','piezas que no son equivalentes')}.`:'');
 }
-export type BlockField='include'|'exclude'|'secondaryEdge'|'axes'|'checks'|'edgeResolution'|'note'|'dimensions'|'grain'|'edges'|'material';
+export type ProposalRow={id:string;detail:string;status:'proposed'|'kept'|'abstained';bulkReady:boolean;reasons:string[]};
+export type ProposalSummary={proposed:number;kept:number;abstained:number;bulkReady:number;review:number};
+export const proposalStatus:Record<ProposalRow['status'],string>={proposed:'Propuesta sin confirmar',kept:'Conservada',abstained:'Sin propuesta'};
+/** Filas propuestas o sin propuesta que no cumplen el criterio de «Confirmar en bloque»: se revisan una por una. */
+export const proposalReview=(rows:ProposalRow[])=>rows.filter(row=>row.status!=='kept'&&!row.bulkReady);
+export function proposalNotice(summary:ProposalSummary){
+ return `Propuesta lista: ${plural(summary.proposed,'pieza propuesta','piezas propuestas')}, ${plural(summary.kept,'conservada','conservadas')} por tener verificaciones y ${plural(summary.abstained,'sin propuesta','sin propuesta')}. Nada quedó confirmado; ${summary.bulkReady?`${plural(summary.bulkReady,'pieza se puede','piezas se pueden')} confirmar en bloque`:'ninguna pieza se puede confirmar en bloque todavía'}.`;
+}
+export function bulkNotice(confirmed:number,review:number){
+ return `${confirmed?`Se ${confirmed===1?'confirmó':'confirmaron'} en bloque ${plural(confirmed,'pieza','piezas')} sin ambigüedad.`:'No se confirmó ninguna pieza en bloque.'} ${review?`${review===1?'Queda 1 pieza':`Quedan ${review} piezas`} en revisión individual.`:'No queda ninguna pieza en revisión individual.'}`;
+}
+export type EdgeLink={observedId:string;catalogId:string;name:string};
+/** Vínculo del borrador «material observado → canto»: uno por material; sin canto se quita. */
+export function linkEdge(links:EdgeLink[]|undefined,observedId:string,name:string,catalogId:string):EdgeLink[]{
+ const rest=(links||[]).filter(link=>link.observedId!==observedId);return catalogId?[...rest,{observedId,catalogId,name}]:rest;
+}
+export const DETAIL_MAX=80;
+/** Aviso del código compuesto del TXT (código + espacio + detalle, máximo 80 caracteres), o null. */
+export function detailCodeWarning(detail:string,code:string|undefined,mode:string|undefined){
+ if(mode!=='module_piece')return null;
+ if(code===undefined)return 'Falta el código módulo·pieza: completá módulo y código de pieza en la guía y guardala, o desactivá el código en el perfil del archivo.';
+ if(code==='')return 'El código módulo·pieza se repite en otro mueble: corregí el módulo en la guía para que cada mueble tenga el suyo.';
+ const length=[...`${code} ${detail}`].length;
+ return length>DETAIL_MAX?`Con el código ${code} el detalle ocupa ${length} caracteres y el máximo es ${DETAIL_MAX}: acortalo ${plural(length-DETAIL_MAX,'carácter','caracteres')}.`:null;
+}
+export type BlockField='detail'|'links'|'include'|'exclude'|'secondaryEdge'|'axes'|'checks'|'edgeResolution'|'note'|'dimensions'|'grain'|'edges'|'material';
 /** Campo del formulario (data-field) al que lleva cada motivo de bloqueo de Ruby. */
 export function blockedField(reason:string):BlockField|null{
  const r=reason.toLocaleLowerCase('es');
  if(r.includes('excluye'))return 'exclude';
+ if(r.includes('código módulo·pieza')||r.includes('detalle con código')||r.includes('se repite en otro mueble'))return 'detail';
+ if(r.includes('vínculos de cantos del borrador'))return 'links';
  // Una caja no rectangular no se corrige con los ejes: se verifica la geometría o se excluye la pieza.
  if(r.includes('geometría no rectangular'))return 'include';
  if(r.includes('falta confirmar'))return 'checks';

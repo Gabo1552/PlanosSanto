@@ -47,7 +47,7 @@ model.selection=[]
 Sketchup.ux_model=model
 folder=ENV.fetch('PLANOS_SANTO_DATA_DIR')
 FileUtils.mkdir_p(folder)
-File.binwrite(File.join(folder,'catalog.json'),JSON.pretty_generate('schema'=>1,'revision'=>1,'items'=>items))
+File.binwrite(File.join(folder,'catalog.json'),JSON.pretty_generate('schema'=>(defined?(PlanosSanto::CatalogStore::SCHEMA) ? PlanosSanto::CatalogStore::SCHEMA : 1),'revision'=>1,'items'=>items))
 class UxStdioController < PlanosSanto::OfflineController
   def reply(id,result:nil,error:nil)
     STDOUT.puts(JSON.generate('version'=>1,'id'=>id,'result'=>result,'error'=>error));STDOUT.flush

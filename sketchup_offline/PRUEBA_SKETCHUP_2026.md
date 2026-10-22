@@ -80,7 +80,7 @@ Cambiar la cámara es una consulta y no marca la guía como modificada. Las nota
 
 ## Agregado de nombres 0.5.1
 
-El panel **Nombres de grupos y piezas** se prueba por separado siguiendo [INSTALACION_RBZ.md](../planos-santo-loop-nombres/INSTALACION_RBZ.md). Renombra instancias y filas de nombres de guías, con una operación deshacible y sin alterar códigos/notas/anclas. No cambió el diseño PDF ni las cámaras de la 0.5.0. Los padres/interiores compartidos se bloquean. La validación humana específica permanece PENDIENTE en `planos-santo-loop-nombres/VALIDACION_SKETCHUP.md`.
+El panel **Nombres de grupos y piezas** se prueba por separado siguiendo [INSTALACION_RBZ.md](../docs/historico/loops/planos-santo-loop-nombres/INSTALACION_RBZ.md). Renombra instancias y filas de nombres de guías, con una operación deshacible y sin alterar códigos/notas/anclas. No cambió el diseño PDF ni las cámaras de la 0.5.0. Los padres/interiores compartidos se bloquean. La validación humana específica permanece PENDIENTE en `planos-santo-loop-nombres/VALIDACION_SKETCHUP.md`.
 
 ## Cotas visibles u ocultas — prueba 0.5.3
 

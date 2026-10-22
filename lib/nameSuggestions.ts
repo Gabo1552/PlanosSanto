@@ -31,8 +31,10 @@ export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includ
   const pos=(axis:Vector3,r:number[])=>((center.dot(axis)-r[0])/(r[1]-r[0]||1));
   const x=pos(right,xRange),z=pos(up,zRange),y=pos(front,yRange),position=`${x<.2?'Izquierda':x>.8?'Derecha':'Centro'} · ${z<.2?'abajo':z>.8?'arriba':'intermedio'} · ${y<.2?'atrás':y>.8?'adelante':'interior'}`;
   const result=(base:string,confidence:'high'|'review'|'unclassified',reason:string)=>({base,confidence,reason,position});
-  if(p.metadata?.rectangular===false||p.warnings.some(w=>/subgrupos|caras propias/i.test(w))||ordered[2]/ordered[1]>.2)return result('Sin clasificar','unclassified','Geometría irregular o proporciones ajenas a un tablón fino; revisar sin adivinar su función.');
-  if(ordered[0]/ordered[1]>8)return result('Listón','review','Pieza alargada; confirmar listón/travesaño/refuerzo (List).');
+  const irregular=p.metadata?.rectangular===false||p.warnings.some(w=>/subgrupos|caras propias/i.test(w));
+  // A long piece is a listón even when its section is not thin (40×18): check it before the thin-board filter.
+  if(!irregular&&ordered[0]/ordered[1]>8)return result('Listón','review','Pieza alargada; confirmar listón/travesaño/refuerzo (List).');
+  if(irregular||ordered[2]/ordered[1]>.2)return result('Sin clasificar','unclassified','Geometría irregular o proporciones ajenas a un tablón fino; revisar sin adivinar su función.');
   const siblings=contexts.filter(c=>c.parent===context.parent),nested=context.parent!==f.id&&siblings.length>=3;
   const siblingBox=new Box3();siblings.forEach(c=>siblingBox.union(c.box));
   const nestedHeight=range(siblingBox,up),drawer=nested&&(nestedHeight[1]-nestedHeight[0])<(zRange[1]-zRange[0])*.45;

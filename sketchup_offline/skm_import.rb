@@ -182,10 +182,13 @@ module PlanosSanto
         end
       end
     end
-    def commit(token,selected_ids,revision,confirmed:false,renames:{})
+    # MATERIALES-06: kinds is the batch type chosen in the preview ({rowId=>kind}).
+    # applySuggestions copies the file-name thickness as an unapproved suggestion.
+    def commit(token,selected_ids,revision,confirmed:false,renames:{},kinds:{},apply_suggestions:false)
       raise ExportError,'Confirmá la importación después de revisar el lote.' unless confirmed==true
       raise ExportError,'Vista previa vencida; volvé a analizar.' unless @pending && token==@pending['token'] && revision==@pending['revision']
       raise ExportError,'Selección de materiales inválida.' unless selected_ids.is_a?(Array) && selected_ids.uniq==selected_ids && selected_ids.all? { |id| id.is_a?(String) && @pending['rows'].any? { |row| row['id']==id } } && renames.is_a?(Hash)
+      raise ExportError,'Tipo de material inválido en el lote.' unless kinds.is_a?(Hash) && kinds.all? { |id,kind| selected_ids.include?(id) && CatalogStore::KINDS.include?(kind) } && [true,false].include?(apply_suggestions)
       current=@catalog.read;raise ExportError,'La biblioteca cambió; volvé a analizar el lote.' unless current['revision']==revision
       selected=@pending['rows'].select { |row| selected_ids.include?(row['id']) && row['status']!='duplicate' }.uniq { |row| row['sha256'] }
       used=current['items'].map { |item| normalized(item['name']) }
@@ -194,7 +197,10 @@ module PlanosSanto
         raise ExportError,'Resolvé el nombre de cada material en conflicto; no se sobrescribió ninguno.' if name.empty? || (row['status']=='conflict' && (!renames.key?(row['id']) || normalized(name)==normalized(row['name']))) || used.include?(normalized(name))
         used << normalized(name)
         skm={'sha256'=>row['sha256'],'sourceName'=>row['sourceName'],'originalName'=>row['name'],'suggestions'=>row['suggestions']}
-        item=@catalog.new_item(name,'unknown',{'source'=>'skm-import','skm'=>skm})
+        kind=kinds.fetch(row['id'],'unknown')
+        thickness=row.dig('suggestions','thicknessMm')
+        values=apply_suggestions && thickness.is_a?(Numeric) && thickness>0 && thickness<=100000 && %w[sheet edge].include?(kind) ? {'thicknessMm'=>thickness} : {}
+        item=@catalog.suggested_item(name,kind,values,'skm',{'source'=>'skm-import','skm'=>skm})
         [item,row]
       end
       if candidates.empty?

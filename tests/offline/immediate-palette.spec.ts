@@ -27,6 +27,8 @@ async function boot(page:Page,folder:string,props:Record<string,unknown>={},acti
   else if(action==='smart_quick_start'){tool={active:true,mode:data.mode as string,options:{...data,scope:'unique'},queuedCount:0};result={toolState:tool};}
   else if(action==='smart_tool_stop'){tool={...tool,active:false,queuedCount:0};result={toolState:tool};}
   else if(action==='smart_tool_status')result={toolState:tool};
+  else if(action==='viewport_focus')result={focused:false,method:'unsupported'};
+  else if(action==='material_extras')result={archivedIds:[],statesRevision:0};
   else throw Error('Unexpected action '+action);
   return {version:1,id:message.id,result,error:null};
  });

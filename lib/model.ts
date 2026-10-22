@@ -33,7 +33,7 @@ const rawNode: z.ZodType<RawNode> = z.lazy(() => z.object({
 export const rawDocumentSchema = z.object({
   version: z.literal(1), units: z.enum(['mm', 'in']), name: z.string().min(1).max(120),
   furniture: z.array(rawNode).min(1).max(100),
-  exporter:z.object({name:z.literal('Planos Santo Ruby'),version:z.enum(['0.2.0','0.3.0','0.4.0','0.4.1','0.4.2','0.4.3','0.4.4','0.5.0','0.5.1','0.5.2','0.5.3','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.6.7','0.6.8','0.6.9','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.8.8','0.8.9','0.8.10']),sketchupVersion:z.string().max(100),modelGuid:z.string().min(1).max(200),modelName:z.string().max(200),exportedAt:z.iso.datetime(),selectionPaths:z.array(z.string()).min(1).max(100),reviewed:z.literal(true),warnings:z.array(z.string().max(500)).max(500)}).optional(),
+  exporter:z.object({name:z.literal('Planos Santo Ruby'),version:z.enum(['0.2.0','0.3.0','0.4.0','0.4.1','0.4.2','0.4.3','0.4.4','0.5.0','0.5.1','0.5.2','0.5.3','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.6.7','0.6.8','0.6.9','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.8.8','0.8.9','0.8.10','0.8.11','0.8.12']),sketchupVersion:z.string().max(100),modelGuid:z.string().min(1).max(200),modelName:z.string().max(200),exportedAt:z.iso.datetime(),selectionPaths:z.array(z.string()).min(1).max(100),reviewed:z.literal(true),warnings:z.array(z.string().max(500)).max(500)}).optional(),
 });
 export type RawDocument = z.infer<typeof rawDocumentSchema>;
 export type Piece = { id: string; code: string; name: string; definition?: string; mesh: Mesh; transform: number[]; dimensions: Vec3; quantity: 1; warnings: string[]; metadata?:NodeMetadata };
@@ -122,7 +122,7 @@ export function importDocument(raw: unknown, source: Project['source']): Project
     if (!pieces.length) throw new Error(`El mueble «${root.name}» no tiene piezas con geometría.`);
     if (pieces.length > 500) throw new Error('Un mueble supera 500 piezas. Separá el modelo.');
     const referenceTransform=[...root.transform];[12,13,14].forEach(i=>{referenceTransform[i]*=units;});
-    return { id: root.id, referenceTransform, name: root.name || 'Mueble sin nombre', pieces, notes: [], explosion: 0.45, zoom: 1 };
+    return { id: root.id, referenceTransform, name: (root.name||'').trim() || 'Mueble sin nombre', pieces, notes: [], explosion: 0.45, zoom: 1 };
   });
   const date = new Date().toISOString();
   return { id: crypto.randomUUID(), name: doc.name, source, createdAt: date, updatedAt: date, revision: 0, furniture, ...(source==='sketchup-ruby'?{importedDocument:doc}:{}) };

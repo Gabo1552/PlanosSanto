@@ -79,25 +79,38 @@ test('textos secundarios y encabezados de tabla cumplen contraste AA y el foco s
   expect(await focused.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
 });
 
-test('las notas se manejan con teclado: foco al crear, Esc cancela el anclaje y el foco vuelve al borrar',async({page})=>{
+test('al eliminar una nota el foco pasa a la nota siguiente y, sin notas, a «Agregar nota»',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'Explorar proyecto DEMO →'}).click();
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+  const items=page.locator('.note-list-item'),initial=await items.count();
+  for(let i=0;i<2;i++){
+    await page.getByRole('button',{name:/^\+ Agregar nota a/}).click();
+    await page.locator('.anchor-hint').getByRole('button',{name:'Cancelar',exact:true}).click();
+  }
+  await expect(items).toHaveCount(initial+2);
+  await items.first().click();
+  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();
+  await expect(items).toHaveCount(initial+1);
+  await expect(items.first()).toBeFocused();
+  while(await items.count()){await items.first().click();await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();}
+  await expect(page.getByRole('button',{name:/^\+ Agregar nota a/})).toBeFocused();
+});
+
+test('las notas se crean con teclado: foco en el comentario, Esc cancela el anclaje y la selección se anuncia',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'Explorar proyecto DEMO →'}).click();
   await expect(page.locator('tbody tr').first()).toBeVisible();
   await page.getByRole('button',{name:'Elegir P01'}).click();
   await expect(page.getByRole('button',{name:'Elegir P01'})).toHaveAttribute('aria-pressed','true');
   await expect(page.locator('.furniture-card').first()).toHaveAttribute('aria-current','true');
+  await expect(page.getByRole('complementary',{name:'Muebles del proyecto'})).toBeVisible();
+  await expect(page.getByRole('complementary',{name:'Notas de armado'})).toBeVisible();
   await page.getByRole('button',{name:'Agregar nota a P01'}).click();
   const text=page.getByRole('textbox',{name:'Comentario',exact:true});
   await expect(text).toBeFocused();
   await page.keyboard.type('Atornillar desde adentro');
   await expect(text).toHaveValue('Atornillar desde adentro');
   await expect(page.locator('.note-list-item').first()).toHaveAttribute('aria-current','true');
-  expect(await contrast(page,'.note-list-item span')).toBeGreaterThanOrEqual(4.5);
-  await expect(page.getByRole('complementary',{name:'Muebles del proyecto'})).toBeVisible();
-  await expect(page.getByRole('complementary',{name:'Notas de armado'})).toBeVisible();
   const hint=page.getByRole('status').filter({hasText:'Esc para cancelar'});
   await expect(hint).toBeVisible();
   await page.keyboard.press('Escape');await expect(hint).toHaveCount(0);
-  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Agregar nota a P01'})).toBeFocused();
-  await expect(page.locator('.note-list-item')).toHaveCount(0);
 });

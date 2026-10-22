@@ -6,6 +6,7 @@ module PlanosSanto
   # Entire gestures/batches are validated before opening ONE native operation.
   # It never calls NativePaint#apply in a loop and never changes OCL attributes.
   class SmartPaint
+    attr_reader :native
     def initialize(model,catalog:)
       @model=model;@catalog=catalog;@native=NativePaint.new(model,catalog:catalog)
     end
@@ -117,7 +118,9 @@ module PlanosSanto
     def plan(data,light:false)
       if data.is_a?(Hash) && (data['immediate']==true || data['immediatePiece']==true)
         raise ExportError,'Modo de pintura inmediata inválido.' unless %w[sheet edge remove_edge].include?(data['mode'])
-        data=data.merge('immediate'=>true,'side'=>'both','scope'=>'unique')
+        # Hito 2 (PINTURA-02): every copy of the definition only with the
+        # authorization in the SAME request; otherwise one isolated occurrence.
+        data=data.merge('immediate'=>true,'side'=>'both','scope'=>data['scope']=='all' && data['allowShared']==true ? 'all' : 'unique')
         data=data.merge('immediatePiece'=>true,'paintScope'=>'piece') if data['mode']=='sheet'
       end
       raise ExportError,'Solicitud de pintura inteligente inválida.' unless data.is_a?(Hash) && %w[sheet edge remove_edge replace].include?(data['mode']) && %w[front back both].include?(data['side']) && %w[all unique].include?(data['scope'])
@@ -129,6 +132,13 @@ module PlanosSanto
         node=snapshot[:index][target['pieceId']]
         raise ExportError,'Elegí una pieza hoja válida.' unless node && node['role']=='piece'
         request_data=data['immediate']==true ? data.merge('axes'=>@native.automatic_axes(node)) : data
+        # Copies may carry different non-uniform scales: one click must mean the
+        # same faces in every occurrence, or it would paint a broad face as an edge.
+        if data['immediate']==true && data['scope']=='all'
+          @native.affected_paths(node,snapshot).each do |path|
+            raise ExportError,'Las copias tienen distinta orientación de espesor; usá Solo esta.' unless @native.automatic_axes(snapshot[:index].fetch(path))==request_data['axes']
+          end
+        end
         faces=target['faceIds'].map { |id| @native.faces(node).find { |f| @native.face_id(f)==id } || (raise ExportError,'La cara ya no pertenece a la pieza.') }
         faces=@native.expanded_faces(node,faces,request_data)
         mode=data['mode']=='replace' ? data['replacementKind'] : data['mode']

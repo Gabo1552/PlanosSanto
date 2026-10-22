@@ -53,24 +53,22 @@ Exclusivos de la web (no compartidos): `lib/archive`, `browser`, `http`, `pairin
 | Paso | Resultado inicial | Resultado final |
 | --- | --- | --- |
 | `npm run build` | OK | OK |
-| `npx vitest run` | 172/172 | 178/178 (+6 de lib compartida) |
+| `npx vitest run` | 172/172 | 178/178 (+6 de lib compartida); en la segunda pasada, 261 pasan y 4 omitidas |
 | `npx tsc --noEmit` | OK | OK |
 | `npx eslint app components lib tests` | OK | OK |
-| e2e `playwright.config.ts` | **13/16**: 3 fallas de entorno | 24/24 |
+| e2e `playwright.config.ts` | **13/16**: 3 fallas de entorno | 23/23 → 34/34 en la segunda pasada (+10 de axe, +1 de foco) |
 
-Las 3 fallas iniciales no eran de la app:
+Las 3 fallas iniciales de la primera pasada no eran de la app. Las causas de entorno quedaron resueltas en la segunda pasada (`claude/noche-webapp-2`):
 
-- `ruby-local.spec` (2 pruebas) lee `sketchup/build/contract-fixture.json`, que genera `npm run test:ruby`.
-- `upload.spec` escribía en `sketchup/build/` sin crear la carpeta. Se corrigió en el test con `mkdir`.
-- `npm run test:ruby` falla con `CSV::InvalidEncodingError` si el locale no es UTF-8. En este contenedor `LANG` estaba vacío; con `LANG=C.UTF-8` pasa 5/5. Conviene fijarlo en CI o en el setup.
-- Chromium no está en `/usr/bin/chromium`. Hay que usar `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
+- `ruby-local.spec` leía `sketchup/build/contract-fixture.json` y fallaba si no se había corrido `npm run test:ruby`. Ahora `tests/e2e/global-setup.ts` lo genera si falta (requiere Ruby).
+- `npm run test:ruby` fallaba con `CSV::InvalidEncodingError` si el locale no era UTF-8. Ahora `scripts/test-ruby.mjs` fuerza `C.UTF-8`, igual que la config offline.
+- Chromium: si no hay `CHROMIUM_PATH` ni `/usr/bin/chromium`, y el navegador de la versión instalada de Playwright no está descargado, `tests/chromium.ts` usa el Chromium más nuevo de `PLAYWRIGHT_BROWSERS_PATH` (por ejemplo, `/opt/pw-browsers`). Lo usan las dos configs.
 
 Secuencia reproducible:
 
 ```sh
-LANG=C.UTF-8 npm run test:ruby   # genera los fixtures en sketchup/build/
 npm run build
-CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npx playwright test --config playwright.config.ts
+npx playwright test --config playwright.config.ts
 ```
 
 ## 5. Pasada de UX y accesibilidad
@@ -91,15 +89,27 @@ CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npx playwright 
 - Hay `lang="es-AR"`, todos los controles tienen etiqueta, los avisos usan `role="alert"` y el guardado usa `role="status"`.
 - La zona de arrastre tiene una alternativa por teclado (el botón «Elegir archivo»).
 
-### Segunda pasada (implementado, e2e en `webapp-ux.spec.ts`)
+### Segunda pasada (`claude/noche-webapp-2`)
 
-8. **Notas con teclado:** al crear una nota, el foco va al comentario con el texto seleccionado, así se puede escribir directamente. `Esc` cancela el modo de anclaje, y el aviso lo indica. Al eliminar una nota, el foco vuelve a «Agregar nota» y el estado anuncia «Nota eliminada».
-9. **Selección anunciada:** el mueble activo y la nota activa llevan `aria-current`, y el código de pieza elegido lleva `aria-pressed`.
-10. **Auditoría axe-core** (WCAG 2.1 A/AA y buenas prácticas). Se corrió puntualmente con el `axe-core` 4.14 que ya trae `eslint-plugin-jsx-a11y`, sin dependencia nueva. Encontró dos problemas, ya corregidos: las dos columnas `<aside>` no tenían nombre (ahora se llaman «Muebles del proyecto» y «Notas de armado») y el código de cada nota daba 4,47:1. **Resultado: 0 violaciones** en inicio, demo, demo con nota, panel de cotas, enlace roto, error de subida y las tres páginas de `/instalar`.
-11. **Móvil (390 px):** sin scroll horizontal en ninguna pantalla.
+1. **Editor partido.** `components/Editor.tsx` queda como orquestador (~70 líneas). Las piezas están en `components/editor/`: `TopBar`, `PageHeading`, `StartGuide`, `ProjectStrip`, `FurnitureSidebar`, `ViewerPanel`, `PartsPanel` y `NotesPanel`. La persistencia (autoguardado, conflicto entre pestañas y aviso al cerrar) pasa al hook `useProjectSession`. Se mantienen el marcado y los textos, y las e2e previas pasan sin tocarlas.
+2. **Foco al eliminar una nota.** Pasa a la nota siguiente (o a la anterior) y, si no queda ninguna, a «Agregar nota». Si ese botón está deshabilitado, al título del panel. Con e2e en `webapp-ux.spec`.
+3. **Auditoría axe (WCAG 2.2 AA)** en `tests/e2e/a11y.spec.ts` con `@axe-core/playwright` (dependencia de desarrollo). Cubre inicio (también con aviso de error), las tres páginas de instalación, el editor (DEMO, nota abierta, moviendo cotas, visibilidad interior), la impresión y el celular. Falla con violaciones serious o critical. Se corrigieron tres:
+   - Contraste del código de pieza en la lista de notas (4,48 → 5,65:1).
+   - Contraste del detalle de «vista previa» de visibilidad interior (4,44 → 5,3:1). El estilo original vive en `sketchup_offline/ui/guideViews.css`, así que la web lo pisa desde `globals.css` y la extensión queda igual.
+   - Nombre accesible de la tarjeta arrastrable de la nota (`label-content-name-mismatch`): ahora empieza con el texto visible. `components/Diagram.tsx` **también lo compila la extensión**, así que el cambio llega al RBZ. Es solo el `aria-label` y espacios invisibles en el SVG, sin cambio visual. Las pruebas offline dan lo mismo antes y después del cambio. Las 2 fallas de `ux2-nombres.spec` ya estaban en la línea base: la prueba buscaba «Otro mueble 1 piezas» y la interfaz dice «1 pieza». Se corrigió la prueba y offline queda en 160/160.
 
-### Pendiente (L o requiere decisión)
+### Notas con teclado (rama `claude/noche-webapp`, portado sobre el Editor partido)
 
-- `Editor.tsx` es un componente de unas 100 líneas muy largas. Partirlo (barra superior, panel de notas, tabla) facilitaría el mantenimiento. No se hizo para no mezclar refactor con UX.
-- Si se quiere axe en CI, hay que declarar `@axe-core/playwright` como dependencia de desarrollo. Hoy solo existe como transitiva de ESLint.
-- Decidir el futuro del editor web (ver §1).
+1. Al crear una nota, el foco va al comentario con el texto sugerido seleccionado (`NotesPanel`).
+2. `Esc` cancela el modo de anclaje, y el aviso lo indica (`Editor` y `ViewerPanel`).
+3. `aria-current` en el mueble y la nota activos, y `aria-pressed` en el código de pieza elegido.
+4. Nombres para las dos columnas `<aside>`: «Muebles del proyecto» y «Notas de armado». Lo marca la regla `landmark-unique` (buenas prácticas de axe, fuera de las etiquetas WCAG de `a11y.spec`).
+
+Con e2e en `webapp-ux.spec`. El foco al eliminar ya venía resuelto en la segunda pasada y se conserva esa versión.
+
+Al integrar `claude/release-0812`, la release ya traía 2 errores de `tsc` y 2 fallas de vitest en `tests/cobertura-pedido-reglas.test.ts` (no existe `applyEquivalent` en `sketchup_offline/ui/workshopRules`) y en `tests/recognition.test.ts`. No vienen de este merge y no se tocaron.
+
+### Pendiente
+
+- Decidir el futuro del editor web (ver §1). No es una tarea de código.
+- En la extensión, `.guide-preview-status small` (`sketchup_offline/ui/guideViews.css`) sigue en 4,44:1. La web lo corrige desde `globals.css`, pero conviene pasar el color a #5a665e en el CSS de la extensión.
