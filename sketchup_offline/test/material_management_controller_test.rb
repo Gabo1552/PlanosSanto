@@ -91,6 +91,14 @@ class MaterialManagementControllerTest < Minitest::Test
     assert_empty @model.operations
   end
 
+  def test_ocl_sync_dry_run_never_opens_operation_and_unbound_item_is_reported
+    error=assert_raises(PlanosSanto::ExportError) { dispatch('material_ocl_sync','catalogId'=>@item['id'],'dryRun'=>true) }
+    assert_match(/vinculados/,error.message)
+    result=dispatch('material_ocl_sync','dryRun'=>true)
+    assert_equal [],result['materials'];assert result['noChanges']
+    assert_empty @model.operations;assert_empty @notices
+  end
+
   def test_rejects_non_hash_data
     assert_raises(PlanosSanto::ExportError) { dispatch('material_extras',[]) }
   end

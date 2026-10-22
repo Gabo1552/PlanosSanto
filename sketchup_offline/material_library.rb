@@ -578,6 +578,40 @@ module PlanosSanto
         {'archivedIds'=>after,'changed'=>changed,'rows'=>rows}
       end
     end
+    # --- Hito 7: OpenCutList sync (MATERIALES-13) -----------------------------
+    def ocl_sync(data)
+      raise ExportError,'Solicitud de sincronización inválida.' unless data.is_a?(Hash) && [true,false].include?(data.fetch('dryRun',false))
+      dry_run=data.fetch('dryRun',false)
+      raise ExportError,'Confirmá la sincronización con OpenCutList.' unless dry_run || data['confirmed']==true
+      catalog=@catalog.read
+      wanted=data['catalogId']
+      raise ExportError,'La ficha ya no existe en la biblioteca.' if wanted && !catalog['items'].any? { |item| item['id']==wanted }
+      duplicates=duplicate_uuids
+      targets=materials.filter_map do |material|
+        binding=observed(material)['binding']
+        next unless binding && (wanted.nil? || binding['catalogId']==wanted)
+        item=catalog['items'].find { |row| row['id']==binding['catalogId'] }
+        next unless item && item['kind']==binding['kind'] && binding_issues(material,catalog,duplicates).empty?
+        [material,item]
+      end
+      raise ExportError,'Esta ficha no tiene materiales vinculados en el modelo.' if wanted && targets.empty?
+      rows=targets.map do |material,item|
+        plan=OclAttributes.plan(material,item)
+        {'materialId'=>material_id(material),'name'=>material.name.to_s,'catalogId'=>item['id']}.merge(plan)
+      end
+      return {'dryRun'=>true,'changed'=>rows.count { |row| !row['changes'].empty? },'materials'=>rows,'noChanges'=>true} if dry_run
+      changing=targets.zip(rows).select { |_pair,row| !row['changes'].empty? || !row['kept'].empty? }
+      return {'dryRun'=>false,'changed'=>0,'materials'=>rows,'noChanges'=>true} if changing.none? { |_pair,row| !row['changes'].empty? }
+      raise ExportError,'No se pudo iniciar la operación.' if @model.start_operation('Planos Santo — sincronizar OpenCutList',true)==false
+      begin
+        changed=changing.count { |(material,_item),row| OclAttributes.apply(material,row) }
+        raise ExportError,'No se pudo confirmar la sincronización.' if @model.commit_operation==false
+      rescue Exception
+        @model.abort_operation
+        raise
+      end
+      {'dryRun'=>false,'changed'=>changed,'materials'=>rows}
+    end
   end
 
   # MATERIALES-07: portable library package (.zip) with item records, the

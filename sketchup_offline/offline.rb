@@ -928,6 +928,11 @@ module PlanosSanto
         result=material_package.commit(data['token'],data['selectedIds'],data['revision'],confirmed:data['confirmed']==true,renames:data.fetch('renames',{}))
         @material_package=nil
         result
+      when 'material_ocl_sync'
+        active!
+        clean_for_paint! unless data['dryRun']==true
+        result=management_library.ocl_sync(data)
+        result['changed'].to_i>0 ? refresh_after_material_change(result) : result
       when 'material_package_cancel'
         @material_package&.cancel
         @material_package=nil
