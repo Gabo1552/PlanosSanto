@@ -9,6 +9,7 @@ require_relative 'names'
 require_relative 'p1_diagnostics'
 require_relative 'ocl_reader'
 require_relative 'workshop'
+require_relative 'order_references'
 require_relative 'material_library'
 require_relative 'native_paint'
 require_relative 'smart_paint'
@@ -458,7 +459,7 @@ module PlanosSanto
         result = @session.scan
         @dirty = false
         result
-      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_edges','order_audit','ocl_open'
+      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_references_partial','order_edges','order_audit','ocl_open'
         active!
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -484,6 +485,7 @@ module PlanosSanto
           when 'order_audit' then workshop.audit(data.fetch('plan'))
           when 'order_edges' then workshop.edge_observations(data.fetch('row'))
           when 'order_references' then workshop.references
+          when 'order_references_partial' then OrderReferences.partial(@model,workshop)
           when 'order_plan' then workshop.plan(data['reset']==true)
           when 'order_save' then workshop.save_plan(data.fetch('plan'))
           when 'order_check' then workshop.check(data.fetch('plan'))

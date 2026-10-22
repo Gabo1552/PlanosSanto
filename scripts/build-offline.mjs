@@ -20,6 +20,7 @@ const copies={
   'planos_santo/p1_diagnostics.rb':'sketchup_offline/p1_diagnostics.rb',
   'planos_santo/release.rb':'sketchup_offline/release.rb',
   'planos_santo/ocl_reader.rb':'sketchup_offline/ocl_reader.rb',
+  'planos_santo/order_references.rb':'sketchup_offline/order_references.rb',
   'planos_santo/catalog_store.rb':'sketchup_offline/catalog_store.rb',
   'planos_santo/material_resolver.rb':'sketchup_offline/material_resolver.rb',
   'planos_santo/photo_material.rb':'sketchup_offline/photo_material.rb',
