@@ -28,15 +28,26 @@ module PlanosSanto
       return {'ok'=>false,'reason'=>LOCKED,'expandedFaceIds'=>[],'faces'=>[]} if instances.any? { |e| e.respond_to?(:locked?) && e.locked? }
       inherited=mode=='edge' ? inherited(instances) : nil
       key=[entity.definition.guid.to_s,generation,mode,edge_count,scales(instances),mode=='sheet' ? nil : target['faceIds'].first,inherited&.object_id]
-      @cache.clear if @cache.length>500
-      @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count,inherited)
+      @cache.clear if @cache.length>5000 # shared with the review summaries (up to 2000 pieces)
+      @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count,inherited,key[0,2]+[key[4]])
     end
     def sheet?(material)
       material && defined?(MaterialResolver) && MaterialResolver.observe_binding(material).dig('binding','kind')=='sheet'
     end
-    def compute(node,face,mode,count,inherited)
+    # Physical axes once per definition, generation and scale (verdict + summary).
+    def axes(node,key)
+      @axes.clear if (@axes ||= {}).length>5000
+      found=(@axes[key] ||= begin
+        @native.automatic_axes(node)
+      rescue ExportError=>error
+        error
+      end)
+      raise found if found.is_a?(ExportError)
+      found
+    end
+    def compute(node,face,mode,count,inherited,axes_key)
       @calls+=1
-      axes=@native.automatic_axes(node)
+      axes=axes(node,axes_key)
       faces=@native.expanded_faces(node,[face],mode=='sheet' ? {'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'} : {'mode'=>mode,'axes'=>axes,'edgeCount'=>count})
       if mode=='edge'
         # F-PINT-B: an edge needs a recognized sheet on a broad face (own or inherited).
@@ -57,12 +68,12 @@ module PlanosSanto
       inherited=inherited(instances)
       key=[:summary,instances.last.definition.guid.to_s,generation,scales(instances),inherited&.object_id]
       @cache.clear if @cache.length>5000
-      @cache[key] ||= compute_summary({'_entity'=>instances.last,'_parents'=>instances[0...-1],'id'=>nil},inherited)
+      @cache[key] ||= compute_summary({'_entity'=>instances.last,'_parents'=>instances[0...-1],'id'=>nil},inherited,key[1,3])
     end
-    def compute_summary(node,inherited)
+    def compute_summary(node,inherited,axes_key)
       @summary_calls+=1;faces=@native.faces(node)
       frame=begin
-        @native.boundary_frame(node,{'axes'=>@native.automatic_axes(node)})
+        @native.boundary_frame(node,{'axes'=>axes(node,axes_key)})
       rescue ExportError
         nil # not a rectangular board: only the sheet is judged
       end
