@@ -70,9 +70,13 @@ module PlanosSanto
     # signature (signature: nil). Only a plan that is validated and committed in
     # the same synchronous call may use it (immediate paint click, 0.8.10; native V19):
     # a token flow that commits later needs the signature to detect drift.
+    # The face part of the fingerprint only depends on the definition: it is
+    # built and hashed once per definition (Hito 6), and still counts toward
+    # the vertex limit once per occurrence. The signature is only compared in
+    # memory between two inventories, never persisted.
     def inventory(geometry: true)
       index = {}; occurrences = Hash.new { |h,k| h[k] = [] }; definitions = Hash.new(0)
-      fingerprint = []; vertex_count = 0
+      fingerprint = []; vertex_count = 0; meshes = {}
       visit = lambda do |entity, parents, stack|
         raise ExportError, 'La jerarquía supera 25 niveles o 5.000 ocurrencias.' if parents.length >= 25 || index.length >= 5000
         raise ExportError, 'Hay una entidad eliminada. Volvé a analizar el modelo.' unless valid?(entity)
@@ -88,12 +92,20 @@ module PlanosSanto
                  '_entity' => entity, '_parents' => parents }
         index[route] = node; occurrences[entity.persistent_id.to_s] << route; definitions[entity.definition.guid.to_s] += 1
         next node.merge!('children' => children.map { |child| visit.call(child, parents + [entity], stack + [entity.definition.guid.to_s]) }) unless geometry
-        mesh = faces.map do |face|
-          face_mesh = face.mesh(0)
-          vertex_count += face_mesh.points.length
-          raise ExportError, 'La geometría supera el límite de revisión de nombres.' if vertex_count > 200_000
-          [face.hidden?, face.layer.name.to_s, face.layer.visible?, face_mesh.points.map { |p| p.to_a }, face_mesh.polygons, @reader.material(face.material), @reader.material(face.back_material)]
+        definition = entity.definition
+        key = definition.respond_to?(:entityID) ? [:entity, definition.entityID] : [:object, definition.object_id]
+        mesh, vertices = meshes[key] ||= begin
+          count = 0
+          rows = faces.map do |face|
+            face_mesh = face.mesh(0)
+            count += face_mesh.points.length
+            raise ExportError, 'La geometría supera el límite de revisión de nombres.' if vertex_count + count > 200_000
+            [face.hidden?, face.layer.name.to_s, face.layer.visible?, face_mesh.points.map { |p| p.to_a }, face_mesh.polygons, @reader.material(face.material), @reader.material(face.back_material)]
+          end
+          [Digest::SHA256.hexdigest(JSON.generate(rows)), count]
         end
+        vertex_count += vertices
+        raise ExportError, 'La geometría supera el límite de revisión de nombres.' if vertex_count > 200_000
         fingerprint << [route, entity.persistent_id.to_s, entity.definition.guid.to_s, entity.definition.name.to_s,
                         entity.name.to_s, entity.transformation.to_a, locked?(entity), entity.hidden?,
                         entity.layer.name.to_s, entity.layer.visible?, @reader.material(entity.material), mesh,
