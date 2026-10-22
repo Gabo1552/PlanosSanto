@@ -50,80 +50,112 @@ async function openWorkshop(page:Page){
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
  const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});await expect(panel).toBeVisible();return panel;
 }
+// axe no resuelve el fondo cuando hay capas superpuestas (modal, encabezado fijo, SVG): se mide con colores
+// computados, tomando el primer fondo opaco de los ancestros o el <rect> que enmascara el texto SVG.
+async function measureContrast(page:Page,selectors:string[]){
+ return page.evaluate(list=>list.map(selector=>{
+  const node=document.querySelector(selector);if(!node)return {selector,ratio:null as number|null,required:4.5,fg:'',bg:''};
+  const rgb=(value:string)=>(value.match(/[\d.]+/g)||[]).map(Number);
+  const lum=([r,g,b]:number[])=>[r,g,b].map(v=>{const c=v/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
+  const css=getComputedStyle(node),fg=node instanceof SVGTextElement?css.fill:css.color;let bg='';
+  const mask=node instanceof SVGTextElement?node.parentElement?.querySelector(':scope > rect'):null;
+  if(mask)bg=getComputedStyle(mask).fill;
+  for(let el:Element|null=node;!bg&&el;el=el.parentElement){const value=getComputedStyle(el).backgroundColor,parts=rgb(value);if(parts.length===3||(parts.length===4&&parts[3]>=.99))bg=value;}
+  bg||='rgb(255, 255, 255)';const a=lum(rgb(fg)),b=lum(rgb(bg)),size=parseFloat(css.fontSize),bold=Number(css.fontWeight)>=700;
+  return {selector,fg,bg,ratio:Math.round((Math.max(a,b)+.05)/(Math.min(a,b)+.05)*100)/100,required:size>=24||(bold&&size>=18.66)?3:4.5};
+ }),selectors);
+}
 // Escanea la pantalla (o solo el diálogo abierto) y falla ante cualquier violación fuera de la allowlist.
 async function audit(page:Page,screen:string,scope?:Locator){
+ const size=page.viewportSize()!,variant=`${screen}@${size.width}`;
  let builder=new AxeBuilder({page}).withTags(TAGS);
  if(scope){await scope.evaluate(node=>node.setAttribute('data-axe-scope',''));builder=builder.include('[data-axe-scope]');}
- const {violations,passes}=await builder.analyze();
+ const {violations,passes,incomplete}=await builder.analyze();
  expect(passes.length,`axe no evaluó reglas en ${screen}`).toBeGreaterThan(0);
  if(scope)await scope.evaluate(node=>node.removeAttribute('data-axe-scope'));
- const findings:Finding[]=violations.map(v=>({screen,rule:v.id,impact:v.impact??'unknown',help:v.help,targets:v.nodes.map(n=>n.target.join(' '))}));
- if(process.env.A11Y_REPORT){await mkdir(process.env.A11Y_REPORT,{recursive:true});await writeFile(resolve(process.env.A11Y_REPORT,screen.replace(/\W+/g,'-')+'.json'),JSON.stringify(findings,null,1));}
+ const toFindings=(list:typeof violations):Finding[]=>list.map(v=>({screen,rule:v.id,impact:v.impact??'unknown',help:v.help,targets:v.nodes.map(n=>n.target.join(' ')+(process.env.A11Y_REPORT?' :: '+[...n.any,...n.all,...n.none].map(c=>c.message).join(' | '):''))}));
+ const findings=toFindings(violations);
+ const measured=await measureContrast(page,incomplete.filter(v=>v.id==='color-contrast').flatMap(v=>v.nodes.map(n=>n.target.join(' '))));
+ // «incomplete» = axe no pudo decidir (p. ej. contraste sobre fondos superpuestos): se reporta para revisión manual, no falla.
+ if(process.env.A11Y_REPORT){await mkdir(process.env.A11Y_REPORT,{recursive:true});await writeFile(resolve(process.env.A11Y_REPORT,variant.replace(/\W+/g,'-')+'.json'),JSON.stringify({violations:findings,incomplete:toFindings(incomplete),measured},null,1));}
  const unexpected=findings.filter(f=>!ALLOWLIST.some(a=>a.screen===screen&&a.rule===f.rule));
- expect(unexpected,`Violaciones WCAG nuevas en ${screen}`).toEqual([]);
+ expect(unexpected,`Violaciones WCAG nuevas en ${variant}`).toEqual([]);
+ expect(measured.filter(m=>m.ratio!==null&&m.ratio<m.required),`Contraste medido insuficiente en ${variant}`).toEqual([]);
 }
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
-test('axe: inicio',async({page},info)=>{await boot(page,info.outputDir);await audit(page,'inicio');});
+// Ancho de trabajo habitual y ventana compacta del HtmlDialog (la misma que usa editor.spec.ts).
+for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>{
+ test(`axe ${w}px: inicio`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});await boot(page,info.outputDir);await audit(page,'inicio');});
 
-test('axe: guía y editor',async({page},info)=>{await boot(page,info.outputDir);await generate(page);await audit(page,'guia-editor');});
+ test(`axe ${w}px: guía y editor`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});await boot(page,info.outputDir);await generate(page);await audit(page,'guia-editor');});
 
-test('axe: ayuda',async({page},info)=>{
- await boot(page,info.outputDir);await generate(page);
- await page.getByRole('button',{name:'Ayuda: Vistas configurables',exact:true}).click();
- const popup=page.getByRole('dialog',{name:'Vistas configurables',exact:true});await expect(popup).toBeVisible();
- await audit(page,'ayuda',popup);
-});
+ test(`axe ${w}px: ayuda`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir);await generate(page);
+  await page.getByRole('button',{name:'Ayuda: Vistas configurables',exact:true}).click();
+  const popup=page.getByRole('dialog',{name:'Vistas configurables',exact:true});await expect(popup).toBeVisible();
+  await audit(page,'ayuda',popup);
+ });
 
-test('axe: nombres sugeridos',async({page},info)=>{
- await boot(page,info.outputDir);await generate(page);
- await page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true}).click();
- await page.getByRole('checkbox',{name:'Incluir piezas que ya tienen nombre'}).check();
- const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog.locator('[aria-label^="Nombre sugerido"]').first()).toBeVisible();
- await audit(page,'nombres-sugerencias',dialog);
-});
+ test(`axe ${w}px: nombres sugeridos`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir);await generate(page);
+  await page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true}).click();
+  await page.getByRole('checkbox',{name:'Incluir piezas que ya tienen nombre'}).check();
+  const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog.locator('[aria-label^="Nombre sugerido"]').first()).toBeVisible();
+  await audit(page,'nombres-sugerencias',dialog);
+ });
 
-test('axe: nombres en lote',async({page},info)=>{
- await boot(page,info.outputDir);await generate(page);
- await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral auditoría');await page.getByLabel('Nombre P01',{exact:true}).press('Enter');
- await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();
- const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog.getByRole('status')).toBeVisible();
- await audit(page,'nombres-lote',dialog);
-});
+ test(`axe ${w}px: nombres en lote`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir);await generate(page);
+  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral auditoría');await page.getByLabel('Nombre P01',{exact:true}).press('Enter');
+  await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog.getByRole('status')).toBeVisible();
+  await audit(page,'nombres-lote',dialog);
+ });
 
-test('axe: vista previa A4',async({page},info)=>{
- await boot(page,info.outputDir);await generate(page);
- await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Planos A4',exact:true}).click();
- const preview=page.getByRole('region',{name:'Vista previa del PDF A4',exact:true});await expect(preview.locator('iframe[title="PDF A4 generado"]')).toBeVisible();
- await audit(page,'vista-previa-a4');
-});
+ test(`axe ${w}px: vista previa A4`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir);await generate(page);
+  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Planos A4',exact:true}).click();
+  const preview=page.getByRole('region',{name:'Vista previa del PDF A4',exact:true});await expect(preview.locator('iframe[title="PDF A4 generado"]')).toBeVisible();
+  await audit(page,'vista-previa-a4');
+ });
 
-test('axe: biblioteca y pedido del taller',async({page},info)=>{
- await boot(page,info.outputDir);
- await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true}}]);
- const panel=await openWorkshop(page);
- await audit(page,'biblioteca',panel);
- await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();
- await audit(page,'pedido-taller',panel);
-});
+ test(`axe ${w}px: biblioteca y pedido del taller`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir);
+  await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true}}]);
+  const panel=await openWorkshop(page);
+  await audit(page,'biblioteca',panel);
+  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();
+  await audit(page,'pedido-taller',panel);
+ });
 
-test('axe: revisión de cantos',async({page},info)=>{
- await boot(page,info.outputDir,'materials-edges');
- const [board,first,second]=await catalog([
-  {name:'Placa observable',kind:'sheet',patch:all=>({sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true,compatibleIds:[all[1].id,all[2].id]})},
-  {name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22,approved:true}},
-  {name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22,approved:true}}]);
- const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
- await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
- await page.getByLabel('Placa aprobada del pedido').selectOption(board.id);
- await page.getByLabel('Canto principal (1) del pedido').selectOption(first.id);await page.getByLabel('Canto secundario (2) del pedido').selectOption(second.id);
- await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await expect(panel.getByText('Recorrido completo',{exact:true})).toBeVisible();
- await audit(page,'revision-cantos',panel);
-});
+ test(`axe ${w}px: revisión de cantos`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir,'materials-edges');
+  const [board,first,second]=await catalog([
+   {name:'Placa observable',kind:'sheet',patch:all=>({sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true,compatibleIds:[all[1].id,all[2].id]})},
+   {name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22,approved:true}},
+   {name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22,approved:true}}]);
+  const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
+  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
+  await page.getByLabel('Placa aprobada del pedido').selectOption(board.id);
+  await page.getByLabel('Canto principal (1) del pedido').selectOption(first.id);await page.getByLabel('Canto secundario (2) del pedido').selectOption(second.id);
+  await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await expect(panel.getByText('Recorrido completo',{exact:true})).toBeVisible();
+  await audit(page,'revision-cantos',panel);
+ });
 
-test('axe: materiales y cantos (OCL)',async({page},info)=>{
- await boot(page,info.outputDir,'materials');
- await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();
- const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});await expect(dialog.locator('tbody').first().locator('tr')).toHaveCount(3);
- await audit(page,'materiales-cantos',dialog);
+ test(`axe ${w}px: materiales y cantos (OCL)`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir,'materials');
+  await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});await expect(dialog.locator('tbody').first().locator('tr')).toHaveCount(3);
+  await audit(page,'materiales-cantos',dialog);
+ });
 });
