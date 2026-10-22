@@ -52,6 +52,16 @@ describe('Reconocimiento contextual en el marco de cada mueble',()=>{
   ].map(data=>({...template,...data,name:'Grupo#1',definition:data.id})));
   const proposals=nameSuggestions(f,orientation);expect(proposals.map(s=>s.base)).toEqual(['Lateral cajón','Frente cajón','Fondo cajón']);expect(proposals.every(s=>s.confidence==='review')).toBe(true);
  });
+ it('propone Listón para listones comunes de 40×18 y 70×18, pero no para geometría irregular (BUG-TS-05)',()=>{
+  const f=createDemo().furniture[0],template=f.pieces[0];f.pieces.push(...[
+   {id:'modulo/liston-40',mesh:box(700,40,18),transform:new Matrix4().makeTranslation(50,0,300).toArray()},
+   {id:'modulo/liston-70',mesh:box(900,70,18),transform:new Matrix4().makeTranslation(50,100,300).toArray()}
+  ].map(data=>({...template,...data,name:'Grupo#1',definition:data.id})));
+  const base=(id:string)=>nameSuggestions(f,orientation).find(s=>s.ids.includes(id))?.base;
+  expect(base('modulo/liston-40')).toBe('Listón');expect(base('modulo/liston-70')).toBe('Listón');
+  f.pieces.find(p=>p.id==='modulo/liston-40')!.metadata={...f.pieces.find(p=>p.id==='modulo/liston-40')!.metadata,rectangular:false};
+  expect(base('modulo/liston-40')).toBe('Sin clasificar');
+ });
  it('un frente no confirmado u oblicuo no habilita roles automáticos',()=>{
   const f=importDocument(unnamed(),'demo').furniture[0];expect(nameSuggestions(f,{...orientation,confirmed:false}).every(s=>s.confidence==='unclassified')).toBe(true);
   f.pieces[0].transform=new Matrix4().makeRotationZ(.55).toArray();expect(nameSuggestions(f,orientation).find(s=>s.ids.includes(f.pieces[0].id))?.base).toBe('Sin clasificar');
