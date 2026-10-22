@@ -237,4 +237,12 @@ class PincelAvanzadoControllerTest < Minitest::Test
     quick('mode'=>'sheet','catalogId'=>'placa');assert_equal 'alt',tool.args[:eyedropper_key]
     assert_equal 'alt',act('smart_palette_load')['settings']['eyedropperKey']
   end
+
+  def test_palette_load_reports_the_model_x_ray_state_without_a_tool
+    act('smart_tool_stop');options={'ModelTransparency'=>true};@model.define_singleton_method(:rendering_options) { options }
+    assert_equal true,act('smart_palette_load')['toolState']['transparency']
+    options['ModelTransparency']=false;assert_equal false,act('smart_palette_load')['toolState']['transparency']
+    @model.define_singleton_method(:rendering_options) { raise 'sin vista' };refute act('smart_palette_load')['toolState'].key?('transparency')
+    assert_empty @model.operations
+  end
 end

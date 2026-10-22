@@ -836,7 +836,7 @@ module PlanosSanto
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
          'paintStates'=>paint_materials.states,
-         'settings'=>smart_settings,'toolState'=>smart_state,'thumbnails'=>material_thumbnails}
+         'settings'=>smart_settings,'toolState'=>smart_view_state,'thumbnails'=>material_thumbnails}
       when 'smart_material_prepare'
         # Advanced palette: install/verify the chosen material without starting a Tool.
         active!;clean_for_paint!
@@ -1145,6 +1145,16 @@ module PlanosSanto
 
     # Hito 7 (PINTURA-04/07): material chosen from the view (recents strip or
     # eyedropper). Same validation as the palette, but never installs.
+    # PINTURA-14: the palette shows the model's real X-ray state even without a Tool.
+    def smart_view_state
+      state=smart_state
+      return state if state.key?('transparency') || !@model.respond_to?(:rendering_options)
+      value=@model.rendering_options['ModelTransparency']
+      [true,false].include?(value) ? state.merge('transparency'=>value) : state
+    rescue StandardError
+      state
+    end
+
     def smart_select_material(catalog_id,mode)
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
       raise ExportError,'Elegí un material de la paleta.' unless catalog_id.is_a?(String) && !catalog_id.empty?

@@ -107,8 +107,11 @@ test('avanzado: aviso de muestreo y pie con la profundidad bajo el cursor',async
  await boot(page,info.outputDir,{active:sheetOptions});
  const notice=page.getByText('Cuentagotas activo: hacé clic en una cara para tomar su material.',{exact:true});
  await expect(notice).toHaveCount(0);
- await push(page,{active:true,mode:'sheet',queuedCount:0,options:sheetOptions,sampling:true});await expect(notice).toBeVisible();
+ // Ruby informa mode:'sample' y sin hover mientras se sostiene la tecla.
+ await push(page,{active:true,mode:'sample',queuedCount:0,options:sheetOptions,sampling:true,hover:null});await expect(notice).toBeVisible();
+ await expect(scopeGroup(page)).toHaveCount(0);await expect(page.getByRole('button',{name:'Resaltar lo que falta',exact:true})).toBeDisabled();
  await push(page,{active:true,mode:'sheet',queuedCount:0,options:sheetOptions,sampling:false});await expect(notice).toHaveCount(0);
+ await expect(scopeGroup(page)).toBeVisible();await expect(page.getByRole('button',{name:'Resaltar lo que falta',exact:true})).toBeEnabled();
  const footer=page.locator('.immediate-footer');
  await push(page,{active:true,mode:'sheet',queuedCount:0,options:sheetOptions,hover:{...hover,depth:{index:1,count:3}}});
  await expect(footer).toContainText('Pieza 2 de 3 bajo el cursor (↑/↓)');await expect(footer).toContainText('Puerta 3');
@@ -130,17 +133,22 @@ test('avanzado: un material elegido desde la vista queda activo y vuelve a «Sol
  await expect(page.getByRole('region',{name:'Material activo en la paleta'})).toContainText('Roble foto QA');
  await expect(scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true})).toHaveAttribute('aria-pressed','true');
  await expect(page.getByText('Pinta todas las copias de la definición con un solo Undo.',{exact:true})).toHaveCount(0);
- // Aunque un evento traiga scope 'all' con otro material, la autorización no se hereda.
+ // Ruby es la fuente del alcance: tras un sondeo de respaldo sigue «Solo esta» y el material de la vista.
+ await page.waitForTimeout(1200);
+ await expect(scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(library.getByRole('button',{name:'Roble foto QA',exact:true})).toHaveAttribute('aria-pressed','true');
+ // Autorizar «Todas» con el material nuevo: la respuesta propia de Ruby con 'all' se respeta (no se reescribe).
  await scopeGroup(page).getByRole('button',{name:'Todas las iguales (4)',exact:true}).click();await expect.poll(()=>starts().length).toBe(2);
  expect(starts()[1].data).toMatchObject({catalogId:'photo',scope:'all',allowShared:true});
- await push(page,{active:true,mode:'sheet',queuedCount:0,options:{...sheetOptions,scope:'all',allowShared:true},hover});
- await expect(library.getByRole('button',{name:'Placa QA',exact:true})).toHaveAttribute('aria-pressed','true');
- await expect(scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(scopeGroup(page).getByRole('button',{name:'Todas las iguales (4)',exact:true})).toHaveAttribute('aria-pressed','true');
+ await page.waitForTimeout(1200);
+ await expect(scopeGroup(page).getByRole('button',{name:'Todas las iguales (4)',exact:true})).toHaveAttribute('aria-pressed','true');
  // Cuentagotas de la vista hacia un canto: cambia el modo de la paleta.
  await push(page,{active:true,mode:'edge',queuedCount:0,options:{...sheetOptions,mode:'edge',catalogId:'edge',materialUuid:'edge-uuid',immediatePiece:false,scope:'unique'}});
  await expect(page.getByRole('button',{name:'Pintar canto',exact:true})).toHaveAttribute('aria-pressed','true');
  await expect(library.getByRole('button',{name:'Canto QA',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.waitForTimeout(1200);expect(starts()).toHaveLength(2);expect(requests('smart_tool_stop')).toHaveLength(0);
+ await expect(scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 
 test('avanzado: la ayuda documenta recientes 1–6, Alt sostenido, ↑/↓ y clic derecho',async({page},info)=>{
