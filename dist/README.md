@@ -1,3 +1,17 @@
+# Entrega 0.8.17 — pintura y materiales como OpenCutList, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.17-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, **respaldar `%LOCALAPPDATA%\PlanosSanto\` (la biblioteca migra a v3)** y comprobar el `.sha256`. Sobre la 0.8.16:
+- Placa↔canto funciona con clic y con Tab.
+- El pincel se detiene solo cuando hace falta y ya no se corta.
+- Barra y tira en la vista al estilo OpenCutList.
+- Vinculación automática de materiales.
+- Espesores predeterminados (placa 3/5/12/15/18/25, canto 0,45/2).
+- Ficha de material nueva.
+
+Validar con `docs/validacion-0817/ENCARGO_SESION_LOCAL_0817.md`. Producción no aprobada.
+
+---
+
 # Entrega 0.8.16 — menos pasos: pedido sin tildes, guía sin diálogos y pestaña Piezas, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.16-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.15:
