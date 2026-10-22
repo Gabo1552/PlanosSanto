@@ -21,7 +21,7 @@ module PlanosSanto
     GROUPS={'material'=>[%w[materialId],%w[materialConfirmed grainConfirmed]],
             'edges'=>[%w[principalId secondaryId edgeMap edgeResolution edgeBindings],%w[edgesConfirmed]],
             'grain'=>[%w[grainAxis grainPolicy],%w[grainConfirmed]],
-            'dimensions'=>[%w[dimensionRule cutBase cutHeight],%w[dimensionsConfirmed]]}.freeze
+            'dimensions'=>[%w[dimensionRule cutBase cutHeight reviewNote],%w[dimensionsConfirmed]]}.freeze
 
     # report: el recorrido de OclReader o un lambda que lo captura recién cuando hace falta.
     def initialize(service,report,catalog,today: Date.today)
@@ -46,25 +46,29 @@ module PlanosSanto
 
     # Código compuesto M03·P07 desde la guía guardada: módulo del mueble y código de la pieza.
     # Sin módulo no se inventa uno; esa pieza queda sin código.
+    # Un mismo código en dos piezas (dos muebles con el mismo módulo) queda vacío: se bloquea, no se usa.
     def self.codes(document,guide)
       roots=document.fetch('furniture',[]).to_h { |node| [node['id'],node] }
-      Array(guide['furniture']).each_with_object({}) do |furniture,out|
+      found=Array(guide['furniture']).each_with_object({}) do |furniture,out|
         root=roots[furniture['id']];next unless root
         module_code=furniture.dig('naming','moduleCode').to_s.upcase
         module_code=root['name'].to_s[/(?:\A|[^\p{L}\p{N}])(M\d{1,3})(?![\p{L}\p{N}])/i,1].to_s.upcase unless module_code.match?(/\AM\d{1,3}\z/)
         next if module_code.empty?
         furniture['pieces'].each { |piece| out[piece['id']]="#{module_code}·#{piece['code']}" }
       end
+      repeated=found.values.tally.select { |_,count| count>1 }.keys
+      found.transform_values { |code| repeated.include?(code) ? '' : code }
     end
     def self.detail_text(draft,row,codes)
       code=draft['detailCode']=='module_piece' && codes && codes[row['id']]
-      code ? "#{code} #{row['detail']}" : row['detail']
+      code && !code.empty? ? "#{code} #{row['detail']}" : row['detail']
     end
     def self.detail_reasons(draft,row,codes)
       raise ExportError,'Opción de código en el detalle inválida.' unless DETAIL_CODES.include?(draft.fetch('detailCode','none'))
       return [] unless draft['detailCode']=='module_piece'
       code=codes && codes[row['id']]
       return ['Falta el código módulo·pieza: guardá la guía con el módulo (por ejemplo M01) y los códigos de pieza, o desactivá el código en el detalle.'] unless code
+      return ['El código módulo·pieza se repite en otro mueble: corregí el módulo en la guía para que cada mueble tenga el suyo.'] if code.empty?
       return [] if detail_text(draft,row,codes).length<=MAX_DETAIL
       ["El detalle con código (#{code}) supera #{MAX_DETAIL} caracteres: acortalo a #{MAX_DETAIL-code.length-1} caracteres."]
     end
@@ -105,7 +109,7 @@ module PlanosSanto
       end
       rows=plan['rows'].filter_map do |row|
         result=results[row['id']];next unless result
-        reasons=result['status']=='proposed' ? (result['reasons']+bulk_reasons(row)).uniq : result['reasons']
+        reasons=result['status']=='proposed' ? (result['reasons']+bulk_reasons(row,plan)).uniq : result['reasons']
         {'id'=>row['id'],'detail'=>row['detail'],'status'=>result['status'],'bulkReady'=>result['status']=='proposed' && reasons.empty?,'reasons'=>reasons}
       end
       summary={'proposed'=>rows.count { |r| r['status']=='proposed' },'kept'=>rows.count { |r| r['status']=='kept' },'abstained'=>rows.count { |r| r['status']=='abstained' },
@@ -118,7 +122,7 @@ module PlanosSanto
       plan=copy(draft);confirmed=[];review=[]
       plan['rows'].each do |row|
         next unless row['include'] && (ids.nil? || ids.include?(row['id'])) && !CHECKS.all? { |key| row[key] }
-        reasons=bulk_reasons(row)
+        reasons=bulk_reasons(row,plan)
         if reasons.empty?
           CHECKS.each { |key| row[key]=true };confirmed << row['id']
         else
@@ -253,7 +257,7 @@ module PlanosSanto
     end
 
     # Criterio de «Confirmar en bloque». Vacío solo si la fila es inequívoca y Ruby la exportaría confirmada.
-    def bulk_reasons(row)
+    def bulk_reasons(row,draft)
       g=@geometry.fetch(row['id'])
       return ['Geometría no rectangular: se revisa pieza por pieza.'] unless g['rectangular']
       reasons=[];axes=row['axes']
@@ -261,16 +265,22 @@ module PlanosSanto
       return reasons+['Faltan ejes y cara de la vista 2D.'] unless axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |n| n.is_a?(Integer) && n.between?(0,2) } && [-1,1].include?(row['frontSign'])
       lengths=g['lengths']
       reasons << 'Largo igual al ancho: confirmá la orientación en la vista 2D.' if (lengths[axes[0]]-lengths[axes[1]]).abs<=TOLERANCE
-      board=sheet(row['materialId']);thickness=lengths[([0,1,2]-axes).first]
+      board=sheet(row['materialId']);w=([0,1,2]-axes).first;thickness=lengths[w]
       if board.nil? then reasons << 'Sin placa aprobada.'
       elsif !board['thicknessMm'].is_a?(Numeric) || (thickness-board['thicknessMm']).abs>TOLERANCE then reasons << "El espesor no coincide con la placa: el eje de espesor mide #{@service.mm(thickness)} mm."
+      elsif (0..2).count { |i| (lengths[i]-board['thicknessMm']).abs<=TOLERANCE }>1 then reasons << 'Dos ejes miden el espesor de la placa: elegí ejes y cara en la vista 2D.'
+      elsif axes.any? { |i| lengths[i]<thickness-TOLERANCE } then reasons << 'Un lado es más chico que el espesor de la placa: confirmá ejes y espesor en la vista 2D.'
       end
       reasons << 'Placa con veta: confirmá la dirección de la veta en la vista 2D.' if board && board['grain']==true
       unresolved=OclReader.projected_edges(report,row,g)['sides'].each_with_index.select { |side,_| side['status']=='unresolved' }.map { |_,index| SIDES[index] }
       reasons << "Lados sin resolver: #{unresolved.join(', ')}." unless unresolved.empty?
       reasons << 'Cantos sin caras observadas: la revisión manual se confirma pieza por pieza.' unless row['edgeResolution']=='observed'
+      # Vista desde el dorso = izquierda y derecha intercambiadas. Solo es la misma pieza si el mapa no cambia
+      # al darla vuelta (izquierda = derecha, o arriba = abajo con un giro de 180°); si no, depende de la cara vista.
+      map=row['edgeMap']
+      reasons << 'Cantos asimétricos que dependen de la cara vista: confirmá la cara vista en la vista 2D.' if map.is_a?(Array) && map.length==4 && map[2]!=map[3] && map[0]!=map[1]
       return reasons unless reasons.empty?
-      @service.validate_row(row.merge(CHECKS.to_h { |key| [key,true] }),collect:true)
+      @service.validate_row(row.merge(CHECKS.to_h { |key| [key,true] }),collect:true)+self.class.detail_reasons(draft,row,@service.detail_codes)
     end
 
     def same_view?(a,b);a['axes'] && a['axes']==b['axes'] && %w[frontSign flipX flipY].all? { |key| a[key]==b[key] };end

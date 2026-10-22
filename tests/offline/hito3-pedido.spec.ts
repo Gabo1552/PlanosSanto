@@ -88,15 +88,15 @@ test('confirmar en bloque: solo las filas sin ambigüedad y el resto en revisió
  await expect(panel.getByRole('status')).toHaveText(`No se confirmó ninguna pieza en bloque. Quedan ${ids.length} piezas en revisión individual.`);
  const bulk=panel.getByRole('region',{name:'Confirmación en bloque · 0 piezas confirmadas'}),list=bulk.getByRole('list',{name:'Piezas en revisión individual'});
  await expect(list.locator(':scope > li')).toHaveCount(ids.length);await expect(list.locator(':scope > li').first().getByRole('list')).toContainText('Sin placa aprobada.');
- // Con placa y veta elegidas a mano en dos piezas, solo esas pasan; la tercera queda en revisión con su motivo.
+ // Con placa y veta elegidas a mano en dos piezas ya no falta la placa, pero el doble pinta cantos distintos en un lado largo
+ // y uno corto: el mapa depende de la cara vista y esas piezas siguen en revisión individual (la confirmación positiva se prueba en Ruby).
  for(const id of ids.slice(0,2)){await select.selectOption(id);await page.getByLabel('Placa aprobada del pedido').selectOption(sheet.id);await page.getByLabel('Dirección de veta en esta vista').selectOption('none');await page.getByLabel('Veta / rotación del pedido').selectOption('locked');}
  await expect(bulk).toContainText('Resultado anterior a tus últimos cambios.');
  await panel.getByRole('button',{name:'Confirmar en bloque las filas sin ambigüedad',exact:true}).click();
- await expect(panel.getByRole('status')).toHaveText('Se confirmaron en bloque 2 piezas sin ambigüedad. Queda 1 pieza en revisión individual.');
- const after=panel.getByRole('region',{name:'Confirmación en bloque · 2 piezas confirmadas'}).getByRole('list',{name:'Piezas en revisión individual'});
- await expect(after.locator(':scope > li')).toHaveCount(1);await expect(after.locator(':scope > li strong')).toHaveText(new RegExp(` · ${ids[2]}$`));
- for(const id of ids.slice(0,2))await expect(select.locator(`option[value="${id}"]`)).toHaveText(/^Lista · /);
- await after.getByRole('button',{name:/^Ir a la pieza/}).click();await expect(select).toHaveValue(ids[2]);await expect(select.locator(`option[value="${ids[2]}"]`)).toHaveText(/^0\/5 · /);
+ const after=panel.getByRole('region',{name:'Confirmación en bloque · 0 piezas confirmadas'}).getByRole('list',{name:'Piezas en revisión individual'});
+ await expect(after.locator(':scope > li')).toHaveCount(ids.length);
+ const first=after.locator(':scope > li').filter({hasText:` · ${ids[0]}`});await expect(first).not.toContainText('Sin placa aprobada.');
+ await first.getByRole('button',{name:/^Ir a la pieza/}).click();await expect(select).toHaveValue(ids[0]);await expect(select.locator(`option[value="${ids[0]}"]`)).toHaveText(/^0\/5 · /);
  await expect(panel.getByText('Cambios sin guardar',{exact:false})).toBeVisible();
 });
 

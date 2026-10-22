@@ -11,7 +11,7 @@ module PlanosSanto
   class SupplierOrder
     COLUMNS=%w[cant base altura detalle rota canto_arr canto_aba canto_izq canto_der].freeze
     # Hito 3: código módulo·pieza por id de fila (F-DESP-C); lo calcula Workshop desde la guía guardada.
-    attr_writer :detail_codes
+    attr_accessor :detail_codes
     ROW_KEYS=%w[id include excludeReason detail axes flipX flipY frontSign materialId principalId secondaryId edgeMap grainPolicy grainAxis grainConfirmed dimensionRule cutBase cutHeight orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed reviewNote edgeResolution edgeBindings edgeOverrideReason].freeze
     def initialize(document,fingerprint,catalog,edge_review: nil, source_review: nil, material_proposal: nil)
       @document=document;@fingerprint=fingerprint;@catalog=catalog;@nodes={};@edge_review=edge_review;@source_review=source_review;@material_proposal=material_proposal

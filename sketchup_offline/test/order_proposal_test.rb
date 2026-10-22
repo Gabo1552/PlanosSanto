@@ -76,8 +76,10 @@ class OrderProposalTest < Minitest::Test
     second=row(result['plan'],'1/2');assert_equal [2,0],second['axes'],'U = el más largo (Z), V = el segundo (X)'
     assert_equal [700,450],@service.dimensions(second)
     assert_equal [0,0,0,1],second['edgeMap'],'+Z es el extremo derecho de U'
-    assert_equal({'proposed'=>2,'kept'=>0,'abstained'=>0,'bulkReady'=>2,'review'=>0},result['proposal']['summary'])
-    assert entry(result,'1/1')['bulkReady'];assert_equal 'proposed',entry(result,'1/1')['status']
+    assert_equal({'proposed'=>2,'kept'=>0,'abstained'=>0,'bulkReady'=>1,'review'=>1},result['proposal']['summary'])
+    refute entry(result,'1/1')['bulkReady'],'Arriba e izquierda: depende de la cara vista'
+    assert_includes entry(result,'1/1')['reasons'].join,'cara vista';assert entry(result,'1/2')['bulkReady']
+assert_equal 'proposed',entry(result,'1/1')['status']
     refute_same draft,result['plan'];assert_nil row(draft,'1/1')['axes'],'El borrador recibido no se modifica'
   end
   def test_thickness_comes_from_the_board_not_from_the_smallest_side
@@ -150,7 +152,7 @@ class OrderProposalTest < Minitest::Test
 
   # --- 2. Confirmar en bloque ------------------------------------------------------
   def test_bulk_confirm_only_rows_without_ambiguity
-    piece('1/1',[700,450,18],'+y'=>'edge-a','-x'=>'edge-a')   # inequívoca
+    piece('1/1',[700,450,18],'+y'=>'edge-a','-y'=>'edge-a')   # inequívoca
     piece('1/2',[450,450,18],'+y'=>'edge-a')                   # largo = ancho
     piece('1/3',[700,450,18],{'+y'=>'edge-a'},mirrored:true)   # espejada
     piece('1/4',[700,450,18],{'+y'=>'edge-a'},coverage:0.5)    # cobertura parcial: lado sin resolver
@@ -188,16 +190,48 @@ class OrderProposalTest < Minitest::Test
     end
   end
 
+  def test_bulk_confirm_leaves_face_dependent_edge_maps_to_individual_review
+    piece('1/1',[700,450,18],'+y'=>'edge-a','-x'=>'edge-c')  # largo y corto: depende de qué cara se mira
+    piece('1/2',[450,700,18],'-x'=>'edge-a','-y'=>'edge-c')  # la misma pieza girada 90°
+    piece('1/3',[700,450,18],'+y'=>'edge-a','-y'=>'edge-c')  # largos con distinto canto: igual al darla vuelta
+    draft=build;result=@proposal.confirm_bulk(@proposal.propose(draft)['plan'])
+    assert_equal ['1/3'],result['confirmed']
+    result['review'].each { |r| assert_includes r['reasons'].join,'cara vista' }
+  end
+  def test_bulk_confirm_rechecks_thickness_ambiguity_without_the_proposal
+    piece('1/1',[600,18,18]);piece('1/2',[600,12,18]);piece('1/3',[600,300,18])
+    draft=build
+    draft['rows'].each { |r| r.merge!('axes'=>[0,1],'frontSign'=>1,'materialId'=>@sheet['id'],'edgeResolution'=>'observed','grainAxis'=>'none','grainPolicy'=>'locked','dimensionRule'=>'finished_accepted','reviewNote'=>'Nota de prueba del taller') }
+    row(draft,'1/1')['axes']=[0,2]
+    result=@proposal.confirm_bulk(draft)
+    assert_equal ['1/3'],result['confirmed']
+    review=result['review'].to_h { |r| [r['id'],r['reasons'].join(' ')] }
+    assert_includes review['1/1'],'Dos ejes';assert_includes review['1/2'],'más chico'
+  end
+  def test_bulk_confirm_includes_detail_code_problems
+    piece('1/1',[700,450,18]);draft=build;plan=@proposal.propose(draft)['plan'];plan['detailCode']='module_piece'
+    @service.detail_codes={}
+    result=@proposal.confirm_bulk(plan);assert_empty result['confirmed']
+    assert_includes result['review'][0]['reasons'].join,'Falta el código'
+    @service.detail_codes={'1/1'=>'M01·P01'};assert_equal ['1/1'],@proposal.confirm_bulk(plan)['confirmed']
+  end
+  def test_apply_note_only_change_invalidates_dimensions
+    piece('1/1',[700,450,18]);piece('1/2',[700,450,18])
+    plan=(draft=build;ready(@proposal.propose(draft)['plan']));row(plan,'1/1')['reviewNote']='Otra justificación del origen'
+    result=@proposal.apply(plan,'1/1',['1/2'],{'dimensions'=>true})
+    assert_equal({'1/2'=>['dimensionsConfirmed']},result['invalidated'])
+  end
+
   # --- 3. Aplicar a filas equivalentes o seleccionadas ------------------------------
   def ready(plan);@proposal.confirm_bulk(plan)['plan'];end
   def test_apply_invalidates_only_the_confirmations_whose_field_changed
     piece('1/1',[700,450,18],'+y'=>'edge-a');piece('1/2',[700,450,18],'+y'=>'edge-a')
     plan=(draft=build;ready(@proposal.propose(draft)['plan']))
-    row(plan,'1/1').merge!('grainPolicy'=>'locked','reviewNote'=>'Nota del origen revisada')
-    result=@proposal.apply(plan,'1/1',['1/2'],{'material'=>true,'edges'=>true,'grain'=>true,'dimensions'=>true})
-    assert_equal 1,result['applied'];assert_equal({},result['invalidated'],'Mismos valores: nada que volver a confirmar')
+    row(plan,'1/1').merge!('grainPolicy'=>'locked','edgeBindings'=>[{'observedId'=>'edge-a','catalogId'=>@a['id']}])
+    row(plan,'1/2')['edgeBindings']=[]
+    result=@proposal.apply(plan,'1/1',['1/2'],{'material'=>true,'edges'=>false,'grain'=>true,'dimensions'=>true})
+    assert_equal 0,result['applied'];assert_equal({},result['invalidated'],'Mismos valores: nada que volver a confirmar')
     CHECKS.each { |key| assert row(result['plan'],'1/2')[key] }
-    assert_equal 'Nota del origen revisada',row(result['plan'],'1/2')['reviewNote']
     row(plan,'1/1')['principalId']=@c['id']
     result=@proposal.apply(plan,'1/1',['1/2'],{'material'=>true,'edges'=>true,'grain'=>true,'dimensions'=>true})
     assert_equal({'1/2'=>['edgesConfirmed']},result['invalidated'])
@@ -253,6 +287,10 @@ class OrderProposalTest < Minitest::Test
       {'id'=>'2','naming'=>{'moduleCode'=>'M12','bases'=>[]},'pieces'=>[{'id'=>'2/5','name'=>'Base','code'=>'P01'}]},
       {'id'=>'3','pieces'=>[{'id'=>'3/1','name'=>'Techo','code'=>'P02'}]},{'id'=>'9','pieces'=>[{'id'=>'9/1','name'=>'Otro','code'=>'P01'}]}]}
     assert_equal({'1/11'=>'M03·P07','2/5'=>'M12·P01'},PlanosSanto::OrderProposal.codes(document,guide),'Sin módulo no se inventa un código')
+    guide['furniture'][1]['naming']['moduleCode']='M03';guide['furniture'][1]['pieces'][0]['code']='P07'
+    codes=PlanosSanto::OrderProposal.codes(document,guide);assert_equal({'1/11'=>'','2/5'=>''},codes,'Código repetido entre muebles: se marca, no se usa')
+    reason=PlanosSanto::OrderProposal.detail_reasons({'detailCode'=>'module_piece'},{'id'=>'1/11','detail'=>'Lateral'},codes)
+    assert_match(/se repite/,reason[0]);assert_equal 'Lateral',PlanosSanto::OrderProposal.detail_text({'detailCode'=>'module_piece'},{'id'=>'1/11','detail'=>'Lateral'},codes)
   end
 
   # --- 4/5. Extras del borrador y totales de canto ---------------------------------
