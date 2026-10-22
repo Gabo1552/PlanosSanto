@@ -103,14 +103,11 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
    `material-library-changed` y una recarga de la paleta (`smart_palette_load`, con miniaturas).
    Con dobles no se puede afirmar. Medirlo en el caso 1.6 de `docs/hito6/VALIDACION_SKETCHUP.md`;
    si ocurre, ignorar el tipo `materials` mientras la herramienta pinta.
-3. **Prueba inestable bajo carga:** `photo-experience.spec.ts › Foto 085: crear textura privada…`
-   falló 1 vez en 4 corridas completas (Escape no cerró «Material desde una foto»); en aislado pasó
-   15/15. En la segunda tanda pasó lo mismo con `material-hito7.spec.ts › paquete .zip…`
-   (Escape apenas visible el modal «Revisar paquete de materiales»; 15/15 en aislado).
-   Hipótesis común sin verificar: los modales ignoran Escape mientras están `busy` y la prueba
-   lo aprieta antes de que termine la carga. **Recomendación:** que la prueba espere el modal
-   no ocupado (`aria-busy="false"`) antes de Escape. No se tocó: no se pudo reproducir de forma
-   determinista.
+3. ~~Pruebas inestables bajo carga~~ → resuelto en la tercera tanda. `photo-experience › Foto 085`
+   y `material-hito7 › paquete .zip` apretaban Escape mientras el panel seguía ocupado; los
+   modales ignoran Escape en ese estado a propósito. Ahora ambas esperan `aria-busy="false"`
+   antes de Escape (la de la foto vino ya corregida en `13001d8`; la del paquete, en esta rama:
+   20/20 con 4 workers en paralelo).
 4. Con la corrección QA-INT-01 la franja aparece **en el primer clic**, no al detener la
    herramienta. Es coherente con el aviso «documento invalidado» que ya se emitía en ese
    clic, pero conviene confirmarlo visualmente en SketchUp (casos 1.1 y 2.6).
