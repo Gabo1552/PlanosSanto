@@ -11,7 +11,10 @@ module PlanosSanto
     MAX_INPUT=128*1024*1024
     MAX_FILES=256
     MAX_SKM=16*1024*1024
-    MAX_PREVIEW=512*1024
+    # Largest embedded/photo preview accepted, in bytes: a 512×512 RGBA PNG that
+    # does not compress (512*512*4 + 512 filter bytes) + 64 KiB of headers =
+    # 1_114_624 (0.8.18; it was 512 KiB and dropped the 512 px photo thumbnails).
+    MAX_PREVIEW=512*512*4+512+64*1024
     THUMBNAIL_BUDGET=8*1024*1024
     def initialize(catalog:,directory:CatalogStore.default_directory)
       @catalog=catalog;@directory=directory;@pending=nil

@@ -36,8 +36,8 @@ module PlanosSanto
         end
         main.tooltip = 'Planos Santo · Trabajo de taller'
         main.status_bar_text = 'Abrir la interfaz completa de Planos Santo.'
-        main.small_icon = File.join(__dir__, 'icons', 'main-24.png')
-        main.large_icon = File.join(__dir__, 'icons', 'main-32.png')
+        main.small_icon = icon('main', 24)
+        main.large_icon = icon('main', 32)
         main.set_validation_proc { unchecked }
         commands['main'] = main
         menu.add_item(main)
@@ -46,8 +46,8 @@ module PlanosSanto
           command = UI::Command.new(label) { in_view?(key) ? @controller.paint_in_view(key) : @controller.quick_action(key) }
           command.tooltip = label
           command.status_bar_text = description
-          command.small_icon = File.join(__dir__, 'icons', "#{key}-24.png")
-          command.large_icon = File.join(__dir__, 'icons', "#{key}-32.png")
+          command.small_icon = icon(key, 24)
+          command.large_icon = icon(key, 32)
           command.set_validation_proc do
             if in_view?(key)
               reason = @controller.paint_block_reason(key)
@@ -81,7 +81,22 @@ module PlanosSanto
         @registry = { main_toolbar: main_toolbar, tools_toolbar: main_toolbar, menu: menu, commands: commands }
       end
 
+      # 0.8.18 (calidad visual): on Windows SketchUp draws an SVG toolbar icon
+      # sharp at any scaling (125-200 % upscaled the 24/32 px PNGs and blurred
+      # them). macOS takes PDF, not SVG, so it keeps the PNGs, as does any
+      # installation without the SVG file.
+      def icon(key, size)
+        vector = File.join(__dir__, 'icons', "#{key}.svg")
+        return vector if windows? && File.file?(vector)
+
+        File.join(__dir__, 'icons', "#{key}-#{size}.png")
+      end
+
       private
+
+      def windows?
+        defined?(Sketchup) && Sketchup.respond_to?(:platform) && Sketchup.platform == :platform_win
+      end
 
       def in_view?(key)
         PAINT_ACTIONS.include?(key) && @controller.respond_to?(:paint_in_view)

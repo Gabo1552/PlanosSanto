@@ -54,6 +54,8 @@ const copies={
 };
 for(const action of ['sheet','edge','remove_edge','sample','furniture','order','guides','materials','main']){
   for(const size of [24,32])copies[`planos_santo/icons/${action}-${size}.png`]=`sketchup_offline/icons/${action}-${size}.png`;
+  // 0.8.18: vector icon, sharp at any Windows scaling; the PNGs stay as fallback.
+  copies[`planos_santo/icons/${action}.svg`]=`sketchup_offline/icons/${action}.svg`;
 }
 // Own paint cursors (Hito 2, PINTURA-12); the Tool degrades to the native cursor if one is missing.
 for(const key of ['piece','edge','remove','blocked','sample'])copies[`planos_santo/cursors/paint-${key}.png`]=`sketchup_offline/cursors/paint-${key}.png`;
