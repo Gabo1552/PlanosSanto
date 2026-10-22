@@ -111,7 +111,7 @@ class CutlistTest < Minitest::Test
     bare=find(result,'Sin pintar')
     assert_nil bare['material'];assert_equal 'none|18.0',bare['sectionKey']
     assert_equal %w[unknown unknown unknown unknown],bare['edges'].map { |e| e['status'] },'Sin material no hay canto que leer'
-    assert_includes bare['notes'].join(' '),'Sin placa vinculada'
+    assert_includes bare['notes'].join(' '),'Sin placa pintada'
     generic=find(result,'Pintada genérica')
     assert_equal({'source'=>'model','observedId'=>'paint','name'=>'Pintura genérica','category'=>'unknown','linked'=>false},generic['material'])
     assert_equal ['catalog','model','none'],result['sections'].map { |s| s['source'] },'Fichas primero, «Sin material» al final'

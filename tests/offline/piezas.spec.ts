@@ -39,14 +39,9 @@ async function axe(page:Page,label:string){
 
 test('Piezas: secciones por material y espesor, plegar, filtrar, resaltar y axe',async({page},info)=>{
  await boot(page,info.outputDir);const found:string[]=[];
- // Sin guías generadas la pestaña explica qué falta y no pide datos a Ruby.
+ // Como el cutlist de OpenCutList: abrir Piezas alcanza. Sin guías, se generan solas para los muebles marcados.
  await rail(page,'Piezas').click();await expect(rail(page,'Piezas')).toHaveAttribute('aria-current','page');
- await expect(page.getByRole('heading',{level:2,name:'Primero generá las guías en Muebles'})).toBeVisible();
- expect(calls.filter(call=>call.action==='cutlist')).toHaveLength(0);found.push(...await axe(page,'Piezas vacío'));
- await page.getByRole('button',{name:'Ir a Muebles',exact:true}).click();await expect(rail(page,'Muebles')).toHaveAttribute('aria-current','page');
- await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
-
- await rail(page,'Piezas').click();
+ await expect.poll(()=>calls.filter(call=>call.action==='generate').length).toBe(1);
  const view=page.locator('section.cutlist');
  await expect(view.getByRole('heading',{level:2,name:'Piezas por material y espesor'})).toBeVisible();
  await expect.poll(()=>replies.has('cutlist')?replies.get('cutlist')!.error:'pendiente').toBeNull();

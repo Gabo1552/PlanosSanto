@@ -105,7 +105,7 @@ module PlanosSanto
        'lengthMm'=>lengths[u].round(2),'widthMm'=>lengths[v].round(2),'thicknessMm'=>thickness,
        'rectangular'=>g['rectangular']==true,'mirrored'=>g['mirrored']==true,'material'=>material,
        'sectionKey'=>"#{section_source_key(material)}|#{format('%.1f',thickness)}",'edges'=>edges,
-       'grain'=>grain(board,kept,u,v),'notes'=>stage ? stage['reasons'].uniq : ['Geometría no rectangular: medidas aproximadas por la caja de la pieza; cantos sin leer.']}
+       'grain'=>grain(board,kept,u,v),'notes'=>stage ? (stage['notes'].map { |note| note['text'] }+stage['blockers']).uniq : ['Geometría no rectangular: medidas aproximadas por la caja de la pieza; cantos sin leer.']}
     end
 
     # Sin ejes del pedido (pieza no rectangular): solo una placa nativa única y vigente.
@@ -140,8 +140,11 @@ module PlanosSanto
       if value.is_a?(String) && (item=context['items'][value])
         return {'side'=>side,'status'=>'catalog','catalogId'=>item['id'],'sku'=>item['sku'],'name'=>item['name']}
       end
-      return {'side'=>side,'status'=>'none'} if value==0
-      ids=observed ? observed['materialIds'] : []
+      # The order proposal leaves unreadable or unlinked sides at 0 (no edge) with a note: the cutlist
+      # still shows what the model says (painted edge without a sheet, or not readable).
+      return {'side'=>side,'status'=>'none'} if value==0 && (!observed || observed['status']=='observed_no_edge')
+      return {'side'=>side,'status'=>'unknown'} if observed && observed['status']=='unresolved'
+      ids=observed ? Array(observed['materialIds']) : []
       edges=ids.filter_map { |id| context['materials'][id] }
       return {'side'=>side,'status'=>'unknown'} if edges.empty?
       {'side'=>side,'status'=>'observed','observedIds'=>edges.map { |material| material['id'] },'name'=>edges.map { |material| material['name'] }.join(' / ')}
