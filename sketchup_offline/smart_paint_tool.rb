@@ -29,6 +29,8 @@ module PlanosSanto
       inherited=mode=='edge' ? inherited(instances) : nil
       key=[entity.definition.guid.to_s,generation,mode,edge_count,scales(instances),mode=='sheet' ? nil : target['faceIds'].first,inherited&.object_id]
       @cache.clear if @cache.length>500
+      @frames={} unless @frames_generation==generation
+      @frames_generation=generation
       @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count,inherited)
     end
     def sheet?(material)
@@ -36,12 +38,12 @@ module PlanosSanto
     end
     def compute(node,face,mode,count,inherited)
       @calls+=1
-      axes=@native.automatic_axes(node)
-      faces=@native.expanded_faces(node,[face],mode=='sheet' ? {'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'} : {'mode'=>mode,'axes'=>axes,'edgeCount'=>count})
+      axes=@native.automatic_axes(node);memo=@frames ||= {}
+      faces=@native.expanded_faces(node,[face],mode=='sheet' ? {'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece',memo:memo} : {'mode'=>mode,'axes'=>axes,'edgeCount'=>count,memo:memo})
       if mode=='edge'
         # F-PINT-B: an edge needs a recognized sheet on a broad face (own or inherited).
         broad=begin
-          @native.expanded_faces(node,[face],{'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'})
+          @native.expanded_faces(node,[face],{'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece',memo:memo})
         rescue ExportError
           @native.faces(node)-faces
         end
@@ -185,7 +187,7 @@ module PlanosSanto
     end
     def resume(view);invalidate(view);end
     def update_options(options)
-      stop_sampling;@options=copy(options);clear;@last_error=nil;refresh_recents!;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
+      stop_sampling;@options=copy(options);clear;@last_error=nil;@missing_results=nil;refresh_recents!;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
     end
     def status
       {'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch'),
@@ -586,7 +588,8 @@ module PlanosSanto
         if (index=strip_index(view,x,y))
           choose_recent(index);return invalidate(view)
         end
-        return sample_click(view,x,y) if @sampling
+        # The held key also travels in the click flags: a lost keyUp/keyDown never turns a sample into paint.
+        return sample_click(view,x,y) if @sampling || sample_flag?(flags)
         @click_started=@clock.call
         verify_guard!
         @pick_cache=nil
@@ -740,7 +743,13 @@ module PlanosSanto
     end
     def eyedropper_key=(value)
       @eyedropper_key=self.class.eyedropper_key!(value);stop_sampling
+      invalidate(@model.active_view) if @model.respond_to?(:active_view)
       emit("Cuentagotas: sostené #{key_label} y hacé clic en una cara para tomar su material.")
+    end
+    ALT_MASK = Object.const_defined?(:ALT_MODIFIER_MASK) ? Object.const_get(:ALT_MODIFIER_MASK) : 32
+    def sample_flag?(flags)
+      return false unless @select_material && flags.is_a?(Integer)
+      (flags & (@eyedropper_key=='shift' ? SHIFT_MASK : ALT_MASK))!=0
     end
     def key_label;@eyedropper_key=='shift' ? 'Mayús' : 'Alt';end
     def eyedropper_codes
@@ -901,6 +910,8 @@ module PlanosSanto
       item.call('Resaltar lo que falta pintar',lambda { @missing==true }) { set_view_options('highlightMissing'=>!@missing) }
       item.call('Transparencia (rayos X)',lambda { transparency==true }) { toggle_view_transparency }
       true
+    rescue StandardError=>error
+      emit('No se pudo armar el menú del pincel.',error:error.message);false
     end
     def menu_action(view)
       verify_guard!;yield
@@ -989,6 +1000,7 @@ module PlanosSanto
         raise ExportError,'«Resaltar lo que falta» debe ser verdadero o falso.' unless [true,false].include?(value)
         @missing=value;@missing_state=nil
       end
+      invalidate(@model.active_view) if @model.respond_to?(:active_view) # the palette has no view: redraw now
       emit(@missing ? 'Resaltando en rojo las piezas sin placa.' : 'Resaltado de lo que falta pintar apagado.')
       status
     end
@@ -996,40 +1008,73 @@ module PlanosSanto
     # reads the catalog); one geometry failure only marks that piece.
     MISSING_LIMIT=500
     MISSING_DRAW_LIMIT=300
+    MISSING_BUDGET=0.15
     def missing_summary
       return {'enabled'=>false,'withoutSheet'=>0,'evaluated'=>0,'truncated'=>false} unless @missing && immediate?
       ensure_missing![:summary].dup
+    rescue StandardError
+      {'enabled'=>true,'withoutSheet'=>0,'evaluated'=>0,'truncated'=>true,'error'=>'No se pudo evaluar lo que falta pintar.'}
     end
     def ensure_missing!
       return @missing_state if @missing_state && @missing_state[:generation]==@generation
-      @missing_state=compute_missing
+      @missing_state=begin
+        compute_missing
+      rescue StandardError
+        # Cached for this generation: a broken model never retries on every emit/draw.
+        {generation:@generation,summary:{'enabled'=>true,'withoutSheet'=>0,'evaluated'=>0,'truncated'=>true,'error'=>'No se pudo evaluar lo que falta pintar.'},pieces:{},triangles:[]}
+      end
+    end
+    # Visible on screen: no hidden instance and no hidden tag on the path.
+    def visible_path?(path)
+      path.none? do |entity|
+        (entity.respond_to?(:hidden?) && entity.hidden?) || (entity.respond_to?(:visible?) && !entity.visible?) ||
+          (entity.respond_to?(:layer) && entity.layer.respond_to?(:visible?) && !entity.layer.visible?)
+      end
+    end
+    # Results are kept per definition, inherited material, scale and face/material
+    # fingerprint across generations, so a click only re-evaluates what changed;
+    # the whole pass is bounded by MISSING_BUDGET seconds (partial -> truncated).
+    def missing_fingerprint(entity)
+      entities_for(entity).grep(Sketchup::Face).map { |face| [face.object_id,face.material&.object_id,face.back_material&.object_id] }.hash
     end
     def compute_missing
       summary={'enabled'=>true,'withoutSheet'=>0,'evaluated'=>0,'truncated'=>false};pieces={};triangles=[]
       state={generation:@generation,summary:summary,pieces:pieces,triangles:triangles}
       native=@verdicts.native
       return state unless native
-      main=[@triangles,@normal_line];leaf={}.compare_by_identity;cache={};drawn=0
+      main=[@triangles,@normal_line];leaf={}.compare_by_identity;prints={}.compare_by_identity;drawn=0
+      @missing_results={} if !@missing_results || @missing_results.length>2000
+      started=@clock.call;memo={}
       paths=@occurrences.all_paths(@generation).select do |path|
         entity=path.last
-        leaf.fetch(entity.definition) { leaf[entity.definition]=leaf_piece?(entity) } && path.none? { |e| e.respond_to?(:hidden?) && e.hidden? }
+        begin
+          leaf.fetch(entity.definition) { leaf[entity.definition]=leaf_piece?(entity) } && visible_path?(path)
+        rescue StandardError
+          false
+        end
       end
       limit=@missing_limit || MISSING_LIMIT
       summary['truncated']=paths.length>limit || @occurrences.truncated?
       paths.first(limit).each do |path|
+        if @clock.call-started>MISSING_BUDGET
+          summary['truncated']=true;break
+        end
         begin
-          inherited=@verdicts.inherited(path)
-          key=[path.last.definition.guid.to_s,@generation,inherited&.object_id,@verdicts.scales(path)]
-          result=cache.key?(key) ? cache[key] : (cache[key]=evaluate_missing(native,path,inherited))
+          inherited=@verdicts.inherited(path);definition=path.last.definition
+          print=prints.fetch(definition) { prints[definition]=missing_fingerprint(path.last) }
+          key=[definition.guid.to_s,inherited&.object_id,@verdicts.scales(path),print]
+          result=@missing_results.key?(key) ? @missing_results[key] : (@missing_results[key]=evaluate_missing(native,path,inherited,memo))
           piece_id=path.map { |entity| persistent(entity) }.join('/')
+          summary['evaluated']+=1;pieces[piece_id]=result
+          next unless result['withoutSheet']
+          summary['withoutSheet']+=1
+          next if (drawn+=1)>MISSING_DRAW_LIMIT
+          overlay=[]
+          entities_for(path.last).grep(Sketchup::Face).each { |face| build_overlay({'_instances'=>path,'_face'=>face});overlay.concat(@triangles) }
+          triangles.concat(overlay)
         rescue StandardError
           next
         end
-        summary['evaluated']+=1;pieces[piece_id]=result
-        next unless result['withoutSheet']
-        summary['withoutSheet']+=1
-        next if (drawn+=1)>MISSING_DRAW_LIMIT
-        entities_for(path.last).grep(Sketchup::Face).each { |face| build_overlay({'_instances'=>path,'_face'=>face});triangles.concat(@triangles) }
       end
       state
     ensure
@@ -1039,7 +1084,7 @@ module PlanosSanto
       entities=entities_for(entity)
       entities.any? { |e| e.is_a?(Sketchup::Face) } && entities.none? { |e| instance?(e) }
     end
-    def evaluate_missing(native,path,inherited)
+    def evaluate_missing(native,path,inherited,memo={})
       node={'_entity'=>path.last,'_parents'=>path[0...-1],'id'=>nil}
       faces=native.faces(node)
       edge=lambda { |face| native.edge_material?(face.material) || native.edge_material?(face.back_material) }
@@ -1050,13 +1095,13 @@ module PlanosSanto
       end
       broad=begin
         raise ExportError,'sin ejes' unless axes
-        native.expanded_faces(node,[faces.first],{'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'})
+        native.expanded_faces(node,[faces.first],{'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece',memo:memo})
       rescue ExportError
         faces.reject(&edge)
       end
       without=broad.none? { |face| @verdicts.sheet?(face.material || inherited) || @verdicts.sheet?(face.back_material || inherited) }
       edges=begin
-        frame=axes && native.boundary_frame(node,{'axes'=>axes})
+        frame=axes && native.boundary_frame(node,{'axes'=>axes,memo:memo})
         frame && {'done'=>frame[:axes].flat_map { |axis| [[axis,'min'],[axis,'max']] }.count { |side| (group=frame[:groups][side]) && !group.empty? && group.all?(&edge) },'total'=>4}
       rescue ExportError
         nil

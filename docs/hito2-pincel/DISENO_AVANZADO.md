@@ -24,7 +24,8 @@ Hoy `boundary_frame` agrupa las caras por `[eje, min|max]` y `expanded_faces` ex
   - **Placa** (`paintScope:'piece'`): las dos caras anchas (`[espesor,min]` y `[espesor,max]`) deben estar completas; devuelve todas sus caras. Si no → «Las caras anchas no cubren la placa completa. Usá pintar Cara.»
 - Validación de `validate_edge!` sigue igual (cada cara debe ser plana en un lado del marco).
 - `smart_paint.rb` no necesita cambios de contrato: ya trabaja con listas de caras.
-- Tolerancia implementada: `|suma−rectángulo| ≤ max(0,5 mm², 1e-3 × rectángulo)`.
+- El área de cada cara es la de su **bucle exterior** proyectado en el plano del lado (los agujeros de bisagra o de clavija no destapan el lado; un rebaje sí). Tolerancia: `|suma−rectángulo| ≤ max(0,5 mm², 1e-6 × rectángulo)`.
+- En el hover el marco se memoriza por definición/ejes/transformación dentro de la generación (`data[:memo]`); el clic nunca usa esa memoria.
 - Excepción al alcance «solo modo inmediato»: `expanded_faces` es compartido, así que la paleta avanzada (vista previa/lote) también expande un lado partido completo y bloquea con el mismo motivo un lado incompleto. Mismas garantías: un Undo, nunca a medias.
 
 ## 2. Herramienta (`smart_paint_tool.rb`)
@@ -48,6 +49,7 @@ Hoy `boundary_frame` agrupa las caras por `[eje, min|max]` y `expanded_faces` ex
 - `onKeyDown` con la tecla configurada (`VK_ALT`/`VK_MENU` → 18 por defecto; `VK_SHIFT` → 16), `repeat==1`, en modo inmediato y sin estar ya muestreando: entra en **muestreo**. Devuelve `true` (intenta que Windows no active el menú con Alt).
 - En muestreo: cursor propio de cuentagotas si existe (`paint-sample.png`; si no, cursor nativo); el hover muestra el material de la cara apuntada (`face.material` o heredado del contenedor) con su estado; no se calcula veredicto de pintura ni se resaltan copias.
 - Clic en muestreo: lee la cara (frente; si no tiene, dorso; si no, heredado). Solo acepta un material con vínculo PS válido (`MaterialResolver.observe_binding(m)['status']=='valid'`) de tipo `sheet`/`edge`. Llama `select_material.(catalogId, kind)`; además verifica que el `materialUuid` devuelto sea el UUID muestreado (si no: «El material de esta cara no coincide con su ficha de biblioteca; revisalo en la biblioteca.»). El modo pasa a `kind` (`sheet` o `edge`); alcance a «Solo esta». **No pinta** y no abre operación. Material sin vínculo/no listo → `error` con motivo, nada cambia.
+- Si el clic trae la máscara de la tecla en `flags` (`ALT_MODIFIER_MASK`/Mayús) se trata como muestreo aunque se haya perdido el `onKeyDown`: un evento de teclado perdido nunca convierte un muestreo en pintura.
 - `onKeyUp` de la misma tecla: sale del muestreo y vuelve al pincel (con el material nuevo si se tomó uno). Devuelve `true`.
 - `deactivate`, `suspend`, `stop`, `onCancel` y cambiar de opciones salen del muestreo.
 - El evento lleva `'sampling'=>true|false` (y `'sample'=>{'name','status','catalogId','kind'}` del hover en muestreo).
@@ -78,7 +80,8 @@ Si no hay pieza bajo el cursor, solo aparecen 6 y 7. `getMenu` nunca escribe el 
 - Dibujo: piezas `sinPlaca` en rojo translúcido (alpha 70), hasta 300 piezas dibujadas.
 - Tooltip (con el interruptor activo) agrega una 3.ª línea para la pieza apuntada: «Falta: placa · cantos 2/4» o «Completa: placa · cantos 4/4».
 - Evento: `'missing'=>{'enabled'=>bool,'withoutSheet'=>N,'evaluated'=>M,'truncated'=>bool}`.
-- Nunca escribe, nunca lee el catálogo; los errores de geometría de una pieza la marcan como no evaluable (no rompen el resto).
+- Nunca escribe, nunca lee el catálogo; los errores de geometría de una pieza la marcan como no evaluable (no rompen el resto). Un error general queda cacheado en la generación (`missing.error`) y nunca escapa de `status`/`draw`.
+- Costo: el resultado se guarda por `[definición, material heredado, escalas, huella de caras y materiales]` entre generaciones (un clic solo reevalúa lo que cambió) y cada pasada tiene un presupuesto de 150 ms (si se agota, `truncated`). No cuenta piezas ocultas ni en etiquetas ocultas.
 
 ### 2.7 PINTURA-14 · alternar transparencia
 - `SmartPaintTool.toggle_transparency(model)` (método de clase): lee `model.rendering_options['ModelTransparency']`, escribe el opuesto y devuelve el nuevo valor. Es una opción de vista: **no** abre operación ni crea Undo; no toca entidades. Si el modelo no tiene `rendering_options`, lanza `ExportError` «Esta versión de SketchUp no permite cambiar la transparencia desde el pincel.»
@@ -90,7 +93,7 @@ Si no hay pieza bajo el cursor, solo aparecen 6 y 7. `getMenu` nunca escribe el 
 
 ## 3. Controlador (`offline.rb`, solo funciones de pintura)
 - `SMART_SETTING_KEYS` agrega `recentMaterials` (`{'sheet'=>[ids…≤6],'edge'=>[ids…≤6]}`) y `eyedropperKey` (`'alt'`/`'shift'`). `smart_settings` sanea ambos (ids String no vacíos ≤200, máximo 6 por modo, únicos; clave inválida → se descarta).
-- `remember_smart_settings`, en modo inmediato con `catalogId` y modo `sheet`/`edge`: mueve el id al frente de `recentMaterials[modo]`, sin duplicados, máximo 6.
+- `remember_smart_settings`, en modo inmediato con `catalogId` y modo `sheet`/`edge`: un id nuevo entra al frente de `recentMaterials[modo]` (máximo 6); uno conocido **conserva su lugar**, para que el cuadrado N y la tecla N sigan siendo el mismo material.
 - `smart_tool_start` pasa a `SmartPaintTool.new` los callbacks nuevos:
   - `select_material: lambda { |catalog_id, mode| tool_guard!(generation); smart_select_material(catalog_id, mode) }` → `smart_quick_options({'mode'=>mode,'catalogId'=>catalog_id},install:false)` + `remember_smart_settings` + `@quick_options=`.
   - `recents: lambda { |mode| smart_recent_materials(mode) }` → para cada id recordado del modo: `paint_materials.state(id)`; solo `state=='ready'`; nombre del ítem del catálogo; color del material nativo con ese UUID (`[r,g,b]`). Nunca instala. Errores por ítem → se omite.

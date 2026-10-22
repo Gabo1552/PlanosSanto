@@ -126,10 +126,28 @@ module PlanosSanto
     end
     SIDE_GAP='Un lado no está cubierto por caras planas completas (rebaje o geometría abierta). Revisá la pieza; no se pintó nada.'
     BROAD_GAP='Las caras anchas no cubren la placa completa. Usá pintar Cara.'
+    # Area enclosed by the face's outer loop, in local mm, projected on the side
+    # plane: holes (hinge cups, shelf pins) do not uncover a side, a rebate does.
+    def outer_area_mm2(face,axis,fallback)
+      return fallback unless face.respond_to?(:outer_loop)
+      points=face.outer_loop.vertices.map { |vertex| vertex.position.to_a.map { |value| value.to_f*Exporter::MM } }
+      a,b=[0,1,2]-[axis]
+      (points.each_with_index.sum { |point,index| other=points[(index+1)%points.length];point[a]*other[b]-other[a]*point[b] }/2.0).abs
+    rescue StandardError
+      fallback
+    end
     # Local axes are explicitly chosen by the operator. Cardinal expansion is
     # allowed only when the planar faces of a boundary cover its whole local
     # rectangle (coplanar faces never overlap in SketchUp, so full area = covered).
+    # data[:memo] (hover only, cleared per transaction generation) reuses the
+    # frame of the same definition/axes/transform; clicks never pass it.
     def boundary_frame(node,data)
+      memo=data[:memo]
+      if memo
+        key=[node['_entity'].definition.object_id,data['axes'],(node['_parents']+[node['_entity']]).map { |entity| entity.transformation.to_a }]
+        return memo[key] if memo.key?(key)
+        return memo[key]=boundary_frame(node,data.reject { |name,_| name==:memo })
+      end
       axes=data['axes']
       valid=axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
       raise ExportError,'Revisá base y altura: hacen falta dos ejes locales distintos.' unless valid
@@ -145,13 +163,13 @@ module PlanosSanto
         next unless axis
         position=%w[min max].find { |side| fd['verticesMm'].all? { |point| (point[axis]-bounds[side][axis]).abs<=0.01 } }
         next unless position
-        groups[[axis,position]] << face;areas[[axis,position]]+=fd['areaMm2']
+        groups[[axis,position]] << face;areas[[axis,position]]+=outer_area_mm2(face,axis,fd['areaMm2'])
       end
       # Local mm on both sides of the comparison: instance scale never enters.
       extent=(0..2).map { |axis| bounds['max'][axis]-bounds['min'][axis] }
       complete=(0..2).to_a.product(%w[min max]).to_h do |axis,side|
         rect=extent.each_with_index.reject { |_,index| index==axis }.map(&:first).inject(:*)
-        [[axis,side],rect>0 && (areas[[axis,side]]-rect).abs<=[0.5,rect*1e-3].max]
+        [[axis,side],rect>0 && (areas[[axis,side]]-rect).abs<=[0.5,rect*1e-6].max]
       end
       {axes:axes,thickness:thickness,groups:groups,complete:complete}
     end

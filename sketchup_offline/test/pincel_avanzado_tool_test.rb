@@ -240,6 +240,14 @@ class PavEyedropperTest < Minitest::Test
     assert_equal true,@tool.onKeyUp(18,1,0,@view);assert_equal false,@tool.status['sampling'];assert_equal 'edge',@tool.status['mode']
     assert_equal binding_of(@edge)['uuid'],@tool.status['options']['materialUuid']
   end
+  def test_a_click_carrying_the_held_key_samples_even_if_the_key_down_was_lost
+    @board.entities[2].material=@edge
+    build_tool(tool_options('sheet'));refute @tool.status['sampling']
+    stack!(entry(@doors[0],2))
+    undo=@model.undo_states.length;@tool.onLButtonDown(PlanosSanto::SmartPaintTool::ALT_MASK,400,300,@view)
+    assert_equal [[EDGE['id'],'edge']],@selected;assert_equal 'edge',@tool.status['mode']
+    assert_empty @model.operations;assert_equal undo,@model.undo_states.length
+  end
   def test_sampling_a_sheet_from_the_broad_face
     build_tool(tool_options('edge'))
     @tool.onKeyDown(18,1,0,@view);click_on(@doors[1],0)
@@ -344,6 +352,11 @@ class PavMenuTest < Minitest::Test
     sheet=build_tool(tool_options('sheet')) && menu!
     refute_includes sheet.texts,'4 cantos'
   end
+  def test_a_failing_menu_falls_back_to_the_native_menu_with_a_message
+    build_tool(tool_options('edge'));hover_on(@doors[0],2)
+    broken=Object.new;broken.define_singleton_method(:add_item) { |_text,&_block| raise 'menú roto' }
+    assert_equal false,@tool.getMenu(broken,0,400,300,@view);assert_match(/menú roto/,@events.last['error']);assert_empty @model.operations
+  end
   def test_without_a_piece_only_view_toggles
     build_tool(tool_options('edge'));@picker.entries=[];@tool.onMouseMove(0,1,1,@view)
     menu=PavMenu.new;@tool.getMenu(menu,0,1,1,@view)
@@ -416,10 +429,23 @@ class PavMissingTest < Minitest::Test
     assert(@view.texts.any? { |_,text,| text=='Falta: placa · cantos 0/4' })
     hover_on(@doors[0]);@view.texts.clear;@tool.draw(@view)
     assert(@view.texts.any? { |_,text,| text=='Falta: cantos 0/4' })
-    @model.observers.first.onTransactionCommit(@model);@tool.draw(@view);assert_operator calls,:>,computed
+    # A transaction that changed nothing on these pieces reuses the per-definition result.
+    @model.observers.first.onTransactionCommit(@model);@tool.draw(@view);assert_equal computed,calls
+    @board.entities[0].material=@sheet;@model.observers.first.onTransactionCommit(@model)
+    assert_equal 0,@tool.status['missing']['withoutSheet'];assert_operator calls,:>,computed
     assert_empty @model.operations
     @tool.set_view_options('highlightMissing'=>false);@view.draws.clear;@tool.draw(@view)
     assert_empty(@view.draws.select { |_,_,color| color.to_a==[220,30,30,70] })
+  end
+  def test_missing_never_raises_into_sketchup_and_skips_invisible_pieces
+    build_tool(tool_options('sheet'))
+    @doors[3].define_singleton_method(:visible?) { false }
+    @tool.set_view_options('highlightMissing'=>true)
+    assert_equal 3,@events.last['missing']['evaluated']
+    occurrences=@tool.instance_variable_get(:@occurrences);occurrences.define_singleton_method(:all_paths) { |_generation| raise 'modelo roto' }
+    @model.observers.first.onTransactionCommit(@model)
+    status=@tool.status['missing'];assert status['truncated'];assert_match(/No se pudo evaluar/,status['error'])
+    hover_on(@doors[0]);@tool.draw(@view);assert @tool.status['active'];assert_empty @model.operations
   end
   def test_edges_count_and_complete_piece
     paint_sheet_on_board!;@board.entities.drop(2).each { |face| face.material=@edge }

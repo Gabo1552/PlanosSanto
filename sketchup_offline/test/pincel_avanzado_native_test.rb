@@ -228,6 +228,28 @@ class PincelAvanzadoSheetTest < Minitest::Test
     verdict=hover(tool_options('sheet'),@doors[0],101)['verdict'];refute verdict['ok'];assert_match(BROAD,verdict['reason'])
     assert_match(BROAD,click!['error']);assert_empty @model.operations
   end
+  # Hinge cups / shelf pins: the broad face mesh loses area but its outer loop
+  # still spans the board. Coverage reads the outer loop, so Pieza still paints.
+  Vertex=Struct.new(:position)
+  def drill!(face,lost_mm2)
+    real=@native.method(:face_data)
+    @native.define_singleton_method(:face_data) { |f| data=real.call(f);f.equal?(face) ? data.merge('areaMm2'=>data['areaMm2']-lost_mm2) : data }
+  end
+  def test_a_drilled_broad_face_still_paints_when_its_outer_loop_covers_the_board
+    build(grid_board);bottom=face(@doors[0],100)
+    drill!(bottom,3*962.0) # three 35 mm cups
+    assert_refused(BROAD) { @smart.apply_immediate(sheet_request(@doors[0])) } # mesh area alone would refuse
+    corners=[[0,0,0],[24,0,0],[24,16,0],[0,16,0]].map { |point| Vertex.new(point) }
+    bottom.define_singleton_method(:outer_loop) { Struct.new(:vertices).new(corners) }
+    assert @smart.apply_immediate(sheet_request(@doors[0]))['changed']
+    assert_equal [100,101],painted(@doors[0],@sheet)
+  end
+  def test_an_outer_loop_short_of_the_side_is_refused
+    build(grid_board);bottom=face(@doors[0],100)
+    corners=[[0,0,0],[23,0,0],[23,16,0],[0,16,0]].map { |point| Vertex.new(point) } # a 1 in rebate along x
+    bottom.define_singleton_method(:outer_loop) { Struct.new(:vertices).new(corners) }
+    assert_refused(BROAD) { @smart.apply_immediate(sheet_request(@doors[0])) }
+  end
 end
 
 class PincelAvanzadoScaleTest < Minitest::Test

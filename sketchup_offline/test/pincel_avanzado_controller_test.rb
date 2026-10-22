@@ -108,17 +108,20 @@ class PincelAvanzadoControllerTest < Minitest::Test
     refute @controller.instance_variable_get(:@analysis_stale);refute @controller.smart_state['changed']
   end
 
-  def test_recent_materials_go_to_the_front_without_duplicates_and_at_most_six_per_mode
+  def test_new_recent_materials_enter_at_the_front_known_ones_keep_their_slot_at_most_six_per_mode
     %w[a b c d e f g].each { |id| @controller.remember_smart_settings(immediate('sheet',id)) }
     @controller.remember_smart_settings(immediate('edge','k1'));@controller.remember_smart_settings(immediate('edge','k2'))
     assert_equal({'sheet'=>%w[g f e d c b],'edge'=>%w[k2 k1]},@controller.smart_settings['recentMaterials'])
+    # Uno conocido conserva su lugar: el cuadrado N y la tecla N no cambian de material al elegirlo.
     @controller.remember_smart_settings(immediate('sheet','d'))
-    assert_equal %w[d g f e c b],@controller.smart_settings['recentMaterials']['sheet']
+    assert_equal %w[g f e d c b],@controller.smart_settings['recentMaterials']['sheet']
+    @controller.remember_smart_settings(immediate('sheet','h'))
+    assert_equal %w[h g f e d c],@controller.smart_settings['recentMaterials']['sheet']
     # remove_edge, sin catalogId o fuera del modo inmediato no tocan la lista.
     @controller.remember_smart_settings(immediate('remove_edge','x'))
     @controller.remember_smart_settings(immediate('sheet',''))
     @controller.remember_smart_settings('mode'=>'sheet','catalogId'=>'avanzado','scope'=>'unique','side'=>'front','axes'=>[0,1])
-    assert_equal({'sheet'=>%w[d g f e c b],'edge'=>%w[k2 k1]},@controller.smart_settings['recentMaterials'])
+    assert_equal({'sheet'=>%w[h g f e d c],'edge'=>%w[k2 k1]},@controller.smart_settings['recentMaterials'])
     # Las opciones nunca inyectan una lista propia.
     @controller.remember_smart_settings(immediate('edge','k3').merge('recentMaterials'=>{'edge'=>['intrusa']}))
     assert_equal %w[k3 k2 k1],@controller.smart_settings['recentMaterials']['edge']

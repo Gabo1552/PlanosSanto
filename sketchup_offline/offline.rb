@@ -1102,8 +1102,10 @@ module PlanosSanto
         # Tab (PINTURA-06): last catalog id per mode; the UUID belongs to the model.
         if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty? && options['catalogId'].length<=200
           last=last.merge(options['mode']=>options['catalogId'])
-          # PINTURA-04: the chosen id moves to the front, unique, at most 6 per mode.
-          recent=recent.merge(options['mode']=>([options['catalogId']]+(recent[options['mode']] || [])).uniq.first(RECENT_MATERIALS_MAX))
+          # PINTURA-04: a new id enters at the front (at most 6 per mode); a known one
+          # keeps its slot, so the strip square and key 1–6 always mean the same material.
+          list=recent[options['mode']] || []
+          recent=recent.merge(options['mode']=>list.include?(options['catalogId']) ? list : ([options['catalogId']]+list).first(RECENT_MATERIALS_MAX))
         end
       end
       settings['lastMaterials']=last unless last.empty?
