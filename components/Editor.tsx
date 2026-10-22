@@ -33,6 +33,7 @@ export default function Editor(){
   useEffect(()=>{refresh().catch(e=>setError(e.message));const id=new URLSearchParams(window.location.search).get('proyecto');if(!id)return;setOpening(true);request<Project>(`/api/projects/${encodeURIComponent(id)}`).then(p=>{if(!hasProject())open(p);}).catch(e=>{if(e instanceof ApiError&&e.status===404){window.history.replaceState(null,'',window.location.pathname);setError(MISSING_LINK);}else setError(e.message);}).finally(()=>setOpening(false));},[refresh,open]); // eslint-disable-line react-hooks/exhaustive-deps
   const f=project?.furniture.find(f=>f.id===furnitureId);
   const preview=f&&draftHidden!==null?{...f,presentation:{...f.presentation,guide:{...ensureGuide(f).presentation!.guide!,hiddenPieceIds:draftHidden}}}:f;
+  useEffect(()=>{if(!reanchor)return;const handler=(e:KeyboardEvent)=>{if(e.key==='Escape')setReanchor(false);};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);},[reanchor]);
   useEffect(()=>{const mode=f?.presentation?.guide?.mode;if(mode==='exterior')setView('front');else if(mode==='interior')setView('back');},[f?.id,f?.presentation?.guide?.mode]);
   const rows=f?pieceRows(f):[],codes=f?pieceCodeMap(f):new Map<string,string>();
   const piece=f?.pieces.find(p=>p.id===pieceId),note=f?.notes.find(n=>n.id===noteId);

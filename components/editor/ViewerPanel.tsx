@@ -23,7 +23,7 @@ export default function ViewerPanel({furniture:f,preview,view,tool,pieceId,draft
       <label>Zoom <input aria-label="Zoom" disabled={locked} type="range" min="0.35" max="1.4" step="0.05" value={f.zoom} onChange={e=>onEdit(f=>{f.zoom=Number(e.target.value);})}/></label>
       <button className="text-button" disabled={locked} onClick={()=>onEdit(f=>{f.zoom=1;f.presentation={...f.presentation,cameras:undefined};})}>Restablecer vista</button>
     </div>
-    {reanchor&&<div className="anchor-hint" role="status">Hacé clic sobre la pieza para ubicar la punta de la flecha. <button className="text-button" onClick={onCancelReanchor}>Cancelar</button></div>}
+    {reanchor&&<div className="anchor-hint" role="status">Hacé clic sobre la pieza para ubicar la punta de la flecha (Esc para cancelar). <button className="text-button" onClick={onCancelReanchor}>Cancelar</button></div>}
     <ViewAdjustments furniture={f} view={view} mode={tool} onMode={onTool} disabled={locked} onChange={presentation=>onEdit(f=>{f.presentation=presentation;})}/>
     <DimensionControls furniture={f} disabled={locked} onChange={refs=>onEdit(f=>{f.hiddenDimensions=refs;})}/>
     <Diagram furniture={preview} layout={tool==='dimensions'?'sheet':'editor'} view={view} selected={pieceId} onPick={onPick} onNote={onNote}
