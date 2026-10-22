@@ -90,7 +90,7 @@ test('ayuda global: ? abre atajos y diagnóstico desde cualquier módulo, y el d
 
 test('un solo h1, estados vacíos con el siguiente paso y plurales correctos',async({page},info)=>{
  await boot(page,info.outputDir);
- const steps=page.locator('.ux-next-steps strong');await expect(steps).toHaveText(['1. Materiales','2. Muebles','3. Maderera','4. Planos A4']);
+ const steps=page.locator('.ux-next-steps strong');await expect(steps).toHaveText(['1. Materiales','2. Muebles','3. Piezas','4. Maderera','5. Planos A4']);
  await page.keyboard.press('Alt+5');await expect(page.locator('h1')).toHaveCount(1);await expect(page.getByRole('heading',{level:2,name:'Primero generá las guías en Muebles'})).toBeVisible();
  await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();
  await page.getByRole('button',{name:'Generar 1 guía',exact:true}).click();await expect(page.locator('.a4-sheet-preview')).toBeVisible();await expect(rail(page,'Planos A4')).toHaveAttribute('aria-current','page');

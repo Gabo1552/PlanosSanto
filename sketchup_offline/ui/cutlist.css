@@ -1,0 +1,64 @@
+/* Vista «Piezas». Colores con contraste AA sobre blanco y sobre el lienzo del shell. */
+.cutlist{--cl-ink:#263830;--cl-muted:#4F5E56;--cl-line:#D2D8D0;--cl-accent:#19483D;--cl-soft:#EAF1EC;--cl-head:#F3F2EC;--cl-warn-bg:#FFF1D6;--cl-warn-ink:#6B4300;min-width:0;padding:24px 28px 40px;color:var(--cl-ink);font:14px/1.45 Segoe UI,Arial,sans-serif}
+.cutlist *{box-sizing:border-box}
+.cutlist .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.cutlist button,.cutlist input,.cutlist select{font:inherit}
+.cutlist button{min-height:34px;border:1px solid #9AA59C;border-radius:6px;background:#fff;color:var(--cl-ink);padding:6px 12px;cursor:pointer}
+.cutlist button:hover:not(:disabled){border-color:var(--cl-accent);background:var(--cl-soft)}
+.cutlist button:disabled{color:#5E6862;background:#F1F2EF;cursor:not-allowed}
+.cutlist button:focus-visible,.cutlist input:focus-visible,.cutlist select:focus-visible{outline:3px solid var(--cl-accent);outline-offset:2px}
+.cutlist .primary{background:var(--cl-accent);border-color:var(--cl-accent);color:#fff}
+.cutlist .primary:hover:not(:disabled){background:#10392F;color:#fff}
+.cutlist .eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;color:#6B5541}
+.cutlist h2{margin:4px 0 6px;font-size:22px;line-height:1.25}
+.cutlist-empty{max-width:640px}
+.cutlist-empty p{color:var(--cl-muted)}
+.cutlist-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px 24px;margin-bottom:10px}
+.cutlist-heading{min-width:0}
+.cutlist-totals{margin:0;color:var(--cl-muted);font-variant-numeric:tabular-nums}
+.cutlist-tools{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.cutlist-field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--cl-muted)}
+.cutlist-field select,.cutlist-field input{min-height:36px;min-width:180px;border:1px solid #8E998F;border-radius:6px;background:#fff;color:var(--cl-ink);padding:6px 10px;font-size:14px;font-weight:400}
+.cutlist-search input{min-width:220px}
+.cutlist-tool-buttons{display:flex;flex-wrap:wrap;gap:6px}
+.cutlist-readonly{margin:0 0 14px;font-size:13px;color:var(--cl-muted)}
+.cutlist-error{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0;padding:12px 14px;border:1px solid #C6887C;border-radius:8px;background:#FFF2ED;color:#6E3326}
+.cutlist-warning{margin:10px 0;padding:10px 12px;border-left:4px solid #B07A1E;background:var(--cl-warn-bg);color:var(--cl-warn-ink)}
+.cutlist-none{margin:18px 0;padding:24px;text-align:center;border:1px dashed var(--cl-line);border-radius:8px;background:#fff;color:var(--cl-muted)}
+.cutlist-section{margin:0 0 14px;border:1px solid var(--cl-line);border-radius:8px;background:#fff;overflow:hidden}
+.cutlist-section.is-none{border-color:#D9B98A}
+.cutlist-section-title{margin:0;font-size:15px}
+.cutlist .cutlist-section-title button{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;border:0;border-radius:0;background:var(--cl-head);padding:10px 14px;text-align:left;font-weight:700}
+.cutlist .cutlist-section-title button:hover{background:#E8ECE5}
+.cutlist-caret{width:14px;flex:none;color:var(--cl-accent)}
+.cutlist-section-name{min-width:0;overflow-wrap:anywhere}
+.cutlist-section-thickness{flex:none;padding:1px 8px;border-radius:12px;background:var(--cl-accent);color:#fff;font-size:12px;font-variant-numeric:tabular-nums}
+.cutlist-section-count{margin-left:auto;flex:none;font-weight:400;font-size:13px;color:var(--cl-muted);font-variant-numeric:tabular-nums}
+.cutlist-meta{display:flex;flex-wrap:wrap;gap:4px 18px;margin:0;padding:6px 14px 8px 38px;list-style:none;font-size:13px;color:var(--cl-ink);background:var(--cl-head);border-bottom:1px solid var(--cl-line)}
+.cutlist-meta:empty{display:none}
+.cutlist-meta li span{color:var(--cl-muted);font-size:12px;font-weight:700}
+.cutlist-meta .cutlist-meta-note{color:var(--cl-warn-ink)}
+.cutlist-table-wrap{overflow-x:auto}
+.cutlist-table{width:100%;border-collapse:collapse;font-size:13px}
+.cutlist-table th{position:sticky;top:0;background:#fff;color:var(--cl-muted);font-size:12px;font-weight:700;text-align:left;padding:7px 8px;border-bottom:2px solid var(--cl-line);white-space:nowrap}
+.cutlist-table abbr{text-decoration:none}
+.cutlist-table td{padding:5px 8px;border-bottom:1px solid #E6E9E3;vertical-align:middle}
+.cutlist-table tbody tr{cursor:pointer}
+.cutlist-table tbody tr:hover td{background:#F4F7F2}
+.cutlist-table tbody tr.is-selected td{background:#E1ECE4}
+.cutlist-table tbody tr.is-selected td:first-child{box-shadow:inset 3px 0 0 var(--cl-accent)}
+.cutlist-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cutlist-table .qty{font-weight:700}
+.cutlist-table .edge,.cutlist-table .grain{text-align:center;white-space:nowrap}
+.cutlist-table .code{white-space:nowrap;font-variant-numeric:tabular-nums}
+.cutlist-table .name{min-width:180px}
+.cutlist .cutlist-row-button{min-height:28px;border:0;background:transparent;padding:2px 0;text-align:left;font-weight:700;color:var(--cl-ink);text-decoration:underline;text-decoration-color:#9AA59C;text-underline-offset:3px}
+.cutlist .cutlist-row-button:hover:not(:disabled){background:transparent;text-decoration-color:var(--cl-accent)}
+.cutlist-furniture,.cutlist-flag{display:block;font-size:12px;color:var(--cl-muted)}
+.cutlist-flag{color:var(--cl-warn-ink)}
+.cutlist-chip{display:inline-block;max-width:11ch;padding:1px 7px;border-radius:10px;border:1px solid #9DB8A6;background:var(--cl-soft);color:var(--cl-accent);font-size:12px;font-weight:700;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.cutlist-chip.is-observed{border-color:#D3A85B;background:var(--cl-warn-bg);color:var(--cl-warn-ink)}
+.cutlist-dash{color:var(--cl-muted)}
+.cutlist-table tfoot td{padding:8px 12px;background:var(--cl-head);border-bottom:0;font-size:13px;color:var(--cl-ink);font-variant-numeric:tabular-nums}
+.cutlist-edge-total.is-observed{color:var(--cl-warn-ink)}
+@media(max-width:760px){.cutlist{padding:16px}.cutlist-field select,.cutlist-field input{min-width:0;width:100%}.cutlist-tools{width:100%}.cutlist-section-count{display:none}}
