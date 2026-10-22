@@ -623,7 +623,11 @@ module PlanosSanto
     MAX_PACKAGE=128*1024*1024
     MAX_ENTRIES=2048
     MAX_MANIFEST=8*1024*1024
-    MAX_FILE=32*1024*1024
+    MAX_FILE=16*1024*1024
+    MAX_OBSERVED=16*1024
+    MAX_COMPATIBLE=200
+    MAX_COMPATIBLE_TOTAL=2000
+    MAX_NODES=200_000
     FOLDERS={'photo-assets'=>/\A[0-9a-f]{64}\.(?:png|jpg|jpeg)\z/,'material-assets'=>/\A[0-9a-f]{64}\.skm\z/,'skm-import-assets'=>/\A[0-9a-f]{64}\.skm\z/}.freeze
     MANIFEST_KEYS=%w[createdAt files format items schema visualRecords].freeze
     RECORD_KEYS=%w[assetHash assetName catalogFingerprint catalogId sourceName].freeze
@@ -672,7 +676,14 @@ module PlanosSanto
       ids=items.map { |item| item['id'] }
       items=items.map { |item| JSON.parse(JSON.generate(item)).tap { |copy| copy['compatibleIds']&=ids } }
       records=@library.assets['records'].select { |row| ids.include?(row['catalogId']) }
-      files={};warnings=[]
+      files={};warnings=[];planned=0
+      items.each do |item|
+        references(item,records).each do |folder,name,_hash|
+          path=File.join(@directory,folder,name)
+          planned+=File.size(path) if File.file?(path) && !File.symlink?(path)
+        end
+      end
+      raise ExportError,'El paquete superaría 128 MiB; exportá menos fichas por vez.' if planned>MAX_PACKAGE
       items.each do |item|
         references(item,records).each do |folder,name,hash|
           path="#{folder}/#{name}"
@@ -693,12 +704,13 @@ module PlanosSanto
       json=JSON.pretty_generate(manifest)
       raise ExportError,'El manifiesto del paquete es demasiado grande; exportá menos fichas.' if json.bytesize>MAX_MANIFEST
       bytes=BoundedZip.build([['manifest.json',json,true]]+files.map { |path,data| [path,data,false] },max_bytes:MAX_PACKAGE,max_entries:MAX_ENTRIES)
+      created=false
       begin
-        File.open(target,File::WRONLY|File::CREAT|File::EXCL,0o600) { |file| file.binmode;file.write(bytes);file.flush;file.fsync }
+        File.open(target,File::WRONLY|File::CREAT|File::EXCL,0o600) { |file| created=true;file.binmode;file.write(bytes);file.flush;file.fsync }
       rescue Errno::EEXIST
         raise ExportError,'Ese archivo ya existe; no se sobrescribió.'
       rescue StandardError
-        File.delete(target) if File.file?(target) && !File.symlink?(target) && File.size(target)!=bytes.bytesize
+        File.delete(target) if created && File.file?(target) && !File.symlink?(target)
         raise
       end
       {'fileName'=>File.basename(target),'items'=>items.length,'files'=>files.length,'bytes'=>bytes.bytesize,'sha256'=>Digest::SHA256.hexdigest(bytes),'warnings'=>warnings.uniq}
@@ -710,18 +722,23 @@ module PlanosSanto
       raise ExportError,'Elegí un paquete .zip local; no enlaces simbólicos.' unless path.is_a?(String) && File.extname(path).downcase=='.zip' && File.file?(path) && !File.symlink?(path)
       size=File.size(path);raise ExportError,'El paquete supera 128 MiB.' if size>MAX_PACKAGE
       bytes=File.binread(path,MAX_PACKAGE+1);raise ExportError,'El paquete cambió mientras se leía.' if bytes.bytesize!=size
-      zip=BoundedZip.new(bytes,max_bytes:MAX_PACKAGE,max_entries:MAX_ENTRIES,max_total:256*1024*1024,max_entry:MAX_FILE)
+      zip=BoundedZip.new(bytes,max_bytes:MAX_PACKAGE,max_entries:MAX_ENTRIES,max_total:160*1024*1024,max_entry:MAX_FILE)
       names=zip.entries.map(&:name)
       bad=names.reject { |name| name=='manifest.json' || self.class.path_allowed?(name) }
       reject!("contiene rutas no permitidas (#{bad.first(3).join(', ')}).") unless bad.empty?
       manifest_entry=zip.entries.find { |entry| entry.name=='manifest.json' }
       reject!('falta manifest.json.') unless manifest_entry
       reject!('el manifiesto es demasiado grande.') if manifest_entry.size>MAX_MANIFEST
+      text=zip.read(manifest_entry).force_encoding(Encoding::UTF_8)
+      reject!('el manifiesto no es UTF-8.') unless text.valid_encoding?
+      # Huge numerals cost seconds to parse and never appear in a real package.
+      reject!('el manifiesto contiene números fuera de rango.') if text.match?(/\d{40,}/)
       manifest=begin
-        JSON.parse(zip.read(manifest_entry).force_encoding(Encoding::UTF_8),max_nesting:32)
+        JSON.parse(text,max_nesting:32)
       rescue JSON::ParserError,JSON::NestingError
         reject!('el manifiesto está dañado.')
       end
+      reject!('el manifiesto contiene valores no permitidos.') unless plain_json?(manifest)
       reject!('formato o versión desconocidos.') unless manifest.is_a?(Hash) && manifest.keys.sort==MANIFEST_KEYS && manifest['format']==FORMAT && manifest['schema']==1 && manifest['createdAt'].is_a?(String) && manifest['createdAt'].length<=40
       %w[items files visualRecords].each { |key| reject!("#{key} inválido.") unless manifest[key].is_a?(Array) && manifest[key].length<=5000 }
       rows=manifest['files']
@@ -738,17 +755,64 @@ module PlanosSanto
         files[row['path']]=data
       end
       items=manifest['items']
-      begin
-        @catalog.validate({'schema'=>1,'revision'=>0,'items'=>items})
-      rescue ExportError => error
-        reject!("fichas inválidas (#{error.message})")
-      end
+      validate_items(items)
       records=manifest['visualRecords']
       reject!('registros visuales inválidos.') unless records.all? do |row|
         row.is_a?(Hash) && row.keys.sort==RECORD_KEYS && items.any? { |item| item['id']==row['catalogId'] } && row['assetName']=="#{row['assetHash']}.skm" &&
           files.key?("material-assets/#{row['assetName']}") && row['catalogFingerprint'].is_a?(String) && row['sourceName'].is_a?(String) && row['sourceName'].length<=512
       end && records.map { |row| row['catalogId'] }.uniq.length==records.length
       {'manifest'=>manifest,'files'=>files,'sha256'=>Digest::SHA256.hexdigest(bytes),'bytes'=>bytes.bytesize}
+    end
+
+    # Only finite numbers, strings, booleans, nil, arrays and string-keyed
+    # objects, with a bounded node count (Infinity/NaN never reach JSON.generate).
+    def plain_json?(value)
+      stack=[value];nodes=0
+      until stack.empty?
+        node=stack.pop;nodes+=1
+        return false if nodes>MAX_NODES
+        case node
+        when Hash then return false unless node.keys.all? { |key| key.is_a?(String) };stack.concat(node.values)
+        when Array then stack.concat(node)
+        when Float then return false unless node.finite?
+        when String,Integer,true,false,nil then next
+        else return false
+        end
+      end
+      true
+    end
+
+    SKM_KEYS=%w[originalName sha256 sourceName suggestions].freeze
+    # CatalogStore#validate leaves `observed` free-form and its compatibility
+    # check is cubic: items from a foreign package get a strict, linear check
+    # first so hostile metadata can never be persisted into catalog.json.
+    def validate_items(items)
+      ids={};kinds={};total=0
+      items.each do |item|
+        reject!('ficha con formato inválido.') unless item.is_a?(Hash) && item['id'].is_a?(String) && !ids.key?(item['id']) && item['compatibleIds'].is_a?(Array)
+        ids[item['id']]=true;kinds[item['id']]=item['kind']
+        reject!("«#{item['name']}» tiene demasiados cantos compatibles.") if item['compatibleIds'].length>MAX_COMPATIBLE
+        total+=item['compatibleIds'].length
+      end
+      reject!('el paquete tiene demasiadas compatibilidades.') if total>MAX_COMPATIBLE_TOTAL
+      items.each do |item|
+        reject!('canto compatible inexistente o de otro tipo.') unless item['compatibleIds'].all? { |id| id.is_a?(String) && kinds[id]=='edge' }
+        begin
+          @catalog.validate({'schema'=>1,'revision'=>0,'items'=>[item.merge('compatibleIds'=>[])]})
+        rescue ExportError => error
+          reject!("fichas inválidas (#{error.message})")
+        end
+        observed=item['observed']
+        reject!("«#{item['name']}» trae metadatos demasiado grandes.") if JSON.generate(observed).bytesize>MAX_OBSERVED
+        reject!("«#{item['name']}» trae metadatos de foto inválidos.") if observed.key?('photo') && !MaterialPolicy.metadata_valid?(item)
+        if observed['source']=='skm-import' || observed.key?('skm')
+          skm=observed['skm']
+          valid=skm.is_a?(Hash) && (skm.keys-SKM_KEYS).empty? && MaterialPolicy.skm_provenance_valid?(item) &&
+            (skm['originalName'].nil? || skm['originalName'].is_a?(String) && skm['originalName'].length<=160) &&
+            (skm['suggestions'].nil? || skm['suggestions'].is_a?(Hash))
+          reject!("«#{item['name']}» trae un origen SKM inválido.") unless valid
+        end
+      end
     end
 
     # Defense in depth: content is never executed, but types must be what the
@@ -776,7 +840,7 @@ module PlanosSanto
       photo=MaterialPolicy.photo(item)
       if photo
         bytes=files["photo-assets/#{photo['thumbnailAsset']}"]
-        return bytes && bytes.bytesize<=512*1024 ? 'data:image/png;base64,'+Base64.strict_encode64(bytes) : nil
+        return bytes && bytes.bytesize<=SkmImport::MAX_PREVIEW ? SkmImport.new(catalog:@catalog,directory:@directory).thumbnail(bytes) : nil
       end
       skm=MaterialPolicy.skm_import?(item) && item['observed']['skm']
       bytes=skm.is_a?(Hash) && files["skm-import-assets/#{skm['sha256']}.skm"]
@@ -794,16 +858,18 @@ module PlanosSanto
       manifest=package['manifest'];files=package['files']
       current=@catalog.read
       budget=SkmImport::THUMBNAIL_BUDGET
-      names=manifest['items'].map { |item| @library.normalized_name(item['name']) }
+      names=manifest['items'].map { |item| @library.normalized_name(item['name']) }.tally
+      existing_names=current['items'].to_h { |item| [@library.normalized_name(item['name']),true] }
+      existing_by_hash=current['items'].group_by { |item| item['sourceHash'] }
       rows=manifest['items'].map do |item|
         refs=references(item,manifest['visualRecords'])
         present=refs.count { |folder,name,_hash| files.key?("#{folder}/#{name}") }
         warnings=['Se importa sin aprobar: revisá la ficha antes de pedir a maderera.']
         warnings << 'Faltan archivos visuales en el paquete; la ficha quedará para revisar.' if present<refs.length && refs.any? { |folder,name,hash| !files.key?("#{folder}/#{name}") && !MaterialPolicy.file_matches?(@directory,folder,name,hash) }
         warnings << 'La foto tiene metadatos inválidos; la ficha quedará para revisar.' if MaterialPolicy.photo?(item) && !MaterialPolicy.metadata_valid?(item)
-        status=if current['items'].any? { |existing| same_item?(existing,item) }
+        status=if existing_by_hash.fetch(item['sourceHash'],[]).any? { |existing| same_item?(existing,item) }
           'duplicate'
-        elsif current['items'].any? { |existing| @library.normalized_name(existing['name'])==@library.normalized_name(item['name']) } || names.count(@library.normalized_name(item['name']))>1
+        elsif existing_names.key?(@library.normalized_name(item['name'])) || names[@library.normalized_name(item['name'])]>1
           'conflict'
         else
           'new'
@@ -845,7 +911,7 @@ module PlanosSanto
         used=catalog['items'].map { |item| @library.normalized_name(item['name']) }
         mapping={}
         candidates=selected.map do |row|
-          name=renames.key?(row['id']) ? @catalog.text(renames[row['id']].to_s) : row['name']
+          name=@catalog.text(renames.key?(row['id']) ? renames[row['id']].to_s : row['name'])
           if name.empty? || (row['status']=='conflict' && (!renames.key?(row['id']) || @library.normalized_name(name)==@library.normalized_name(row['name']))) || used.include?(@library.normalized_name(name))
             raise ExportError,'Resolvé el nombre de cada ficha en conflicto; no se sobrescribió ninguna.'
           end
@@ -881,10 +947,20 @@ module PlanosSanto
           end
           @library.publish_catalog_locked(catalog,revision)
         rescue Exception
+          # Each cleanup step is independent: one failure never skips the rest
+          # nor masks the original error.
           if added_records
-            previous_index ? @library.atomic_write(index_path,previous_index) : (File.delete(index_path) if File.file?(index_path))
+            begin
+              previous_index ? @library.atomic_write(index_path,previous_index) : (File.delete(index_path) if File.file?(index_path))
+            rescue StandardError => restore_error
+              warn("Planos Santo: no se pudo restaurar material-assets.json: #{restore_error.class}")
+            end
           end
-          created.each { |path| File.delete(path) if File.file?(path) && !File.symlink?(path) }
+          created.each do |path|
+            File.delete(path) if File.file?(path) && !File.symlink?(path)
+          rescue StandardError => delete_error
+            warn("Planos Santo: no se pudo quitar #{File.basename(path)}: #{delete_error.class}")
+          end
           raise
         end
         {'catalog'=>catalog,'imported'=>candidates.length,'skipped'=>selected_ids.length-candidates.length}

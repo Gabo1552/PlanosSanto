@@ -175,7 +175,8 @@ module PlanosSanto
       return [] unless photo?(item) || skm_import?(item)
       warnings=[]
       warnings << 'Listo para diseño; falta validar la ficha comercial antes de maderera.' unless item['approved']==true
-      warnings << 'Escala de textura sin verificar; la foto no determina medidas físicas ni garantiza repetición sin juntas.' if photo?(item) && photo(item).dig('textureScale','verified')!=true
+      scale=photo?(item) ? photo(item)['textureScale'] : nil
+      warnings << 'Escala de textura sin verificar; la foto no determina medidas físicas ni garantiza repetición sin juntas.' if photo?(item) && !(scale.is_a?(Hash) && scale['verified']==true)
       warnings
     end
   end

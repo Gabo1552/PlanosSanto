@@ -175,4 +175,67 @@ class MaterialPackageTest < Minitest::Test
     assert_equal 'DANADO',File.binread(damaged)
     assert_equal 0,@target_catalog.read['items'].length
   end
+
+  def manifest_mutation(path)
+    tamper(path) do |entries|
+      row=entries.find { |name,_| name=='manifest.json' };data=JSON.parse(row[1]);yield data;row[1]=JSON.generate(data)
+    end
+  end
+
+  def test_hostile_observed_metadata_is_rejected_before_it_reaches_the_catalog
+    mutations={
+      'photo-scale'=>lambda { |data| data['items'].find { |item| item['observed']['photo'] }['observed']['photo']['textureScale']='x' },
+      'skm-provenance'=>lambda { |data| data['items'].find { |item| item['observed']['skm'] }['observed']['skm']['sourceName']='../x.skm' },
+      'huge-observed'=>lambda { |data| data['items'].first['observed']['nota']='x'*20_000 },
+      'many-compatible'=>lambda { |data| data['items'].first['compatibleIds']=Array.new(300) { SecureRandom.uuid } }
+    }
+    mutations.each do |label,mutation|
+      _result,path=export
+      manifest_mutation(path,&mutation)
+      assert_raises(PlanosSanto::ExportError,label) { @importer.preview(path) }
+    end
+    _result,path=export
+    tamper(path) { |entries| row=entries.find { |name,_| name=='manifest.json' };row[1]=row[1].sub('"schema": 1','"schema": 1,"n":1e999') }
+    assert_raises(PlanosSanto::ExportError) { @importer.preview(path) }
+    _result,path=export
+    tamper(path) { |entries| row=entries.find { |name,_| name=='manifest.json' };row[1]=row[1].sub('"schema": 1','"schema": 1'+('0'*50)) }
+    assert_raises(PlanosSanto::ExportError) { @importer.preview(path) }
+    assert_equal 0,@target_catalog.read['items'].length
+  end
+
+  def test_many_items_preview_stays_fast
+    _result,path=export
+    manifest_mutation(path) do |data|
+      base=data['items'].find { |item| item['kind']=='edge' }
+      data['items']=Array.new(3000) { |i| base.merge('id'=>SecureRandom.uuid,'name'=>"Canto #{i}",'sourceHash'=>Digest::SHA256.hexdigest(i.to_s)) }
+      data['visualRecords']=[]
+    end
+    started=Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    preview=@importer.preview(path)
+    assert_equal 3000,preview['rows'].length
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC)-started,:<,5
+  end
+
+  def test_photo_thumbnail_with_absurd_dimensions_is_not_sent_to_the_page
+    huge="\x89PNG\r\n\x1a\n".b+[13].pack('N')+'IHDR'+[60_000,60_000,8,6,0,0,0].pack('NNCCCCC')+'X'.b
+    hash=Digest::SHA256.hexdigest(huge);File.binwrite(File.join(@source,'photo-assets',"#{hash}.png"),huge)
+    items=@catalog.read['items'].map { |item| item['id']==@sheet['id'] ? item.merge('observed'=>item['observed'].merge('photo'=>item['observed']['photo'].merge('thumbnailAsset'=>"#{hash}.png"))) : item }
+    @catalog.save(items,@catalog.read['revision'])
+    _result,path=export
+    row=@importer.preview(path)['rows'].find { |candidate| candidate['name']=='Roble foto' }
+    assert_nil row['thumbnail']
+  end
+
+  def test_rollback_cleans_files_when_index_write_fails
+    index={'schema'=>1,'revision'=>0,'records'=>[]}
+    sheet=@catalog.read['items'].find { |item| item['id']==@sheet['id'] }
+    index['records'] << {'catalogId'=>sheet['id'],'catalogFingerprint'=>PlanosSanto::MaterialResolver.item_fingerprint(sheet),'assetName'=>"#{sheet['observed']['photo']['skmHash']}.skm",'assetHash'=>sheet['observed']['photo']['skmHash'],'sourceName'=>'Roble'}
+    File.write(File.join(@source,'material-assets.json'),JSON.generate(index))
+    _result,path=export
+    preview=@importer.preview(path)
+    @target_library.define_singleton_method(:write_index) { |_index| raise IOError,'disco lleno sintético' }
+    assert_raises(IOError) { @importer.commit(preview['token'],preview['rows'].map { |row| row['id'] },preview['revision'],confirmed:true) }
+    assert_empty Dir.glob(File.join(@target,'*-assets','*'))
+    assert_equal 0,@target_catalog.read['items'].length
+  end
 end
