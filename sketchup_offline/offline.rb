@@ -121,6 +121,60 @@ module PlanosSanto
            .map { |entity| (prefix+[entity.persistent_id.to_s]).join('/') }
     end
 
+    # Pintura en vista: «Pintar», «Pintar canto» and «Quitar canto» from the
+    # toolbar start the immediate brush with no window. The material is chosen
+    # in the view (strip of swatches) or in SketchUp's Materials tray. Painting
+    # needs no analysis and no saved guide; only open library/order edits block.
+    PAINT_IN_VIEW=%w[sheet edge remove_edge].freeze
+    def paint_block_reason(action)
+      return 'Acceso de herramientas desconocido.' unless PAINT_IN_VIEW.include?(action)
+      return 'Esperá a que termine la operación actual.' if @busy
+      return 'Terminá o cancelá la vista previa de importación antes de pintar.' if @skm_preview_active || @photo_preview_active
+      return 'Abrí un modelo de SketchUp antes de pintar.' unless Sketchup.respond_to?(:active_model) && Sketchup.active_model
+      return 'Guardá los cambios de biblioteca o pedido antes de pintar.' if @workshop_dirty
+      nil
+    end
+
+    def paint_validation(action)
+      return Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1 if paint_block_reason(action)
+      state=smart_state
+      active=state['active']==true && state['mode']==action
+      active ? (Object.const_defined?(:MF_CHECKED) ? Object.const_get(:MF_CHECKED) : 8) : (Object.const_defined?(:MF_UNCHECKED) ? Object.const_get(:MF_UNCHECKED) : 0)
+    rescue StandardError
+      Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1
+    end
+
+    def paint_in_view(action)
+      reason=paint_block_reason(action)
+      raise ExportError,reason if reason
+      if smart_state['active']==true && smart_state['mode']==action && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
+        result=stop_smart_tool
+        paint_status('Pintura terminada.')
+        return result.merge('toggleOff'=>true)
+      end
+      stop_smart_tool(refresh:false)
+      ensure_paint_context!
+      options=paint_in_view_options(action)
+      result=start_smart_tool(options,in_view:true)
+      @quick_options=options
+      result
+    rescue StandardError => error
+      message=error.is_a?(ExportError) ? error.message : "No se pudo activar la pintura (#{error.class})."
+      paint_status(message)
+      {'error'=>message}
+    end
+
+    # The palette stays available from the menu; painting never opens it.
+    def open_paint_palette
+      ensure_palette_context!
+      show_palette
+      {'opened'=>true}
+    rescue StandardError => error
+      message=error.is_a?(ExportError) ? error.message : "No se pudo abrir la paleta (#{error.class})."
+      paint_status(message)
+      {'error'=>message}
+    end
+
     def quick_action(action,destination:nil)
       reason=quick_block_reason(action)
       raise ExportError,reason if reason
@@ -371,7 +425,7 @@ module PlanosSanto
     # model when missing (0.8.8), then the current bound material is used.
     # Builds and validates immediate options; resolves the material (installing
     # only when install:true). Returns [options, prepared or nil].
-    def smart_quick_options(data,install:true)
+    def smart_quick_options(data,install:true,allow_empty:false)
       # Hito 2 (PINTURA-02): «Todas las iguales» is authorized only by
       # allowShared:true in this same request; it is never remembered.
       scope=data['scope'] || 'unique'
@@ -402,7 +456,9 @@ module PlanosSanto
       # an installed material behind (0.8.8 review).
       options=validate_smart_options(options)
       prepared=nil
-      if mode!='remove_edge' || !data['catalogId'].to_s.empty?
+      # Pintura en vista (allow_empty): the brush starts without material and the
+      # operator chooses it in the view or in SketchUp's Materials tray.
+      if (mode!='remove_edge' || !data['catalogId'].to_s.empty?) && !(allow_empty && data['catalogId'].to_s.empty?)
         raise ExportError,'Elegí un material de la paleta.' if data['catalogId'].to_s.empty?
         service=paint_materials
         unless install
@@ -414,6 +470,38 @@ module PlanosSanto
         options.merge!('catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid'])
       end
       [options,prepared]
+    end
+
+    def start_smart_tool(options,in_view:false)
+      stop_smart_tool(refresh:false)
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      service=SmartPaint.new(@model,catalog:CatalogStore.new(directory:directory))
+      @smart_state={'active'=>false,'mode'=>options['mode'],'changed'=>false,'queuedCount'=>0,'message'=>''}
+      generation=@tool_generation || 0
+      # Hito 7 (PINTURA-04/07): recientes y cuentagotas de la vista eligen sin instalar.
+      advanced={select_material:lambda { |catalog_id,mode| tool_guard!(generation,in_view);smart_select_material(catalog_id,mode) },
+        recents:lambda { |mode| generation==(@tool_generation || 0) ? smart_recent_materials(mode) : [] },
+        eyedropper_key:smart_settings['eyedropperKey'] || 'alt'}
+      if in_view
+        # Pintura en vista: the strip lists the library and the Materials tray chooses too.
+        advanced.merge!(swatches:lambda { |mode| generation==(@tool_generation || 0) ? smart_swatches(mode) : [] },
+          pick_material:lambda { |catalog_id,mode| tool_guard!(generation,true);smart_pick_material(catalog_id,mode) },
+          native_material:lambda { |material| tool_guard!(generation,true);smart_native_material(material) })
+      end
+      @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
+        guard:lambda { tool_guard!(generation,in_view) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
+        remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
+        switch_mode:lambda { |mode| tool_guard!(generation,in_view);smart_switch_mode(mode) },timing:smart_timing,**advanced)
+      begin
+        @model.select_tool(@smart_tool)
+        @smart_state['active']=true
+      rescue StandardError
+        @smart_tool.stop
+        @smart_tool=nil
+        raise
+      end
+      remember_smart_settings(options) unless options['catalogId'].to_s.empty? && options['mode']!='remove_edge'
+      {'toolState'=>smart_state}
     end
 
     def quick_paint_start(data,install:true)
@@ -885,30 +973,7 @@ module PlanosSanto
       when 'smart_tool_start'
         active!
         clean_for_paint!
-        options=validate_smart_options(data.fetch('options'))
-        stop_smart_tool(refresh:false)
-        directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
-        service=SmartPaint.new(@model,catalog:CatalogStore.new(directory:directory))
-        @smart_state={'active'=>false,'mode'=>options['mode'],'changed'=>false,'queuedCount'=>0,'message'=>''}
-        generation=@tool_generation || 0
-        # Hito 7 (PINTURA-04/07): recientes y cuentagotas de la vista eligen sin instalar.
-        advanced={select_material:lambda { |catalog_id,mode| tool_guard!(generation);smart_select_material(catalog_id,mode) },
-          recents:lambda { |mode| generation==(@tool_generation || 0) ? smart_recent_materials(mode) : [] },
-          eyedropper_key:smart_settings['eyedropperKey'] || 'alt'}
-        @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
-          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
-          remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
-          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing,**advanced)
-        begin
-          @model.select_tool(@smart_tool)
-          @smart_state['active']=true
-        rescue StandardError
-          @smart_tool.stop
-          @smart_tool=nil
-          raise
-        end
-        remember_smart_settings(options)
-        {'toolState'=>smart_state}
+        start_smart_tool(validate_smart_options(data.fetch('options')))
       when 'smart_sample_start'
         active!
         clean_for_paint!
@@ -1215,6 +1280,112 @@ module PlanosSanto
       options
     end
 
+    # Pintura en vista: a session for the active model without scanning. If the
+    # operator moved to another model, the brush follows it (the guide editor is
+    # told its analysis is out of date) unless that guide has unsaved edits.
+    def ensure_paint_context!
+      observe_context
+      model=Sketchup.active_model
+      raise ExportError,'Abrí un modelo antes de pintar.' unless model
+      moved=@session && (@context_invalid || !model.equal?(@model))
+      if @session.nil? || moved
+        raise ExportError,'Cambió el modelo activo y la guía tiene cambios sin guardar. Guardala o descartala antes de pintar en este modelo.' if moved && @dirty
+        @model=model;@context_invalid=false;@session=NativeSession.new(@model)
+        if moved
+          @naming=nil;@paint=nil
+          emit_to(@dialog,'planos-santo-document-invalidated',{'scanRequired'=>true}) if @dialog
+        end
+      end
+      watch_model!
+    end
+
+    def paint_status(text)
+      Sketchup.status_text=text if Sketchup.respond_to?(:status_text=)
+    rescue StandardError
+      nil
+    end
+
+    # The last material of the mode when it is ready in this model (never
+    # installs); otherwise the brush starts without material.
+    def paint_in_view_options(action)
+      remembered=smart_settings
+      if action=='remove_edge'
+        options,=smart_quick_options(remembered.except('scope','catalogId').merge('mode'=>'remove_edge'),install:false)
+        return options
+      end
+      data={'mode'=>action}
+      data['edgeCount']=remembered['edgeCount'] if action=='edge' && [1,2,4].include?(remembered['edgeCount'])
+      last=(remembered['lastMaterials'] || {})[action]
+      last=remembered['catalogId'] if last.to_s.empty? && remembered['mode']==action
+      unless last.to_s.empty?
+        begin
+          options,=smart_quick_options(data.merge('catalogId'=>last),install:false)
+          return options
+        rescue ExportError
+          nil # not ready in this model: chosen again in the view
+        end
+      end
+      options,=smart_quick_options(data,install:false,allow_empty:true)
+      options
+    end
+
+    # Library materials of the mode that the brush can use: ready (bound in this
+    # model) first, then installable ones. Archived items stay out unless used here.
+    def smart_swatches(mode)
+      return [] unless %w[sheet edge].include?(mode)
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      natives=@model.respond_to?(:materials) ? @model.materials.to_a : []
+      by_uuid={};used=[]
+      natives.each do |material|
+        binding=MaterialResolver.observe_binding(material)['binding']
+        next unless binding
+        by_uuid[binding['uuid']]=material;used << {'binding'=>{'catalogId'=>binding['catalogId']}}
+      end
+      catalog=without_archived(CatalogStore.new(directory:directory).read,{'materials'=>used})
+      states=paint_materials.states
+      rows=(catalog['items'] || []).filter_map do |item|
+        next unless item.is_a?(Hash) && item['kind']==mode
+        state=states[item['id']]
+        next unless state.is_a?(Hash) && %w[ready installable].include?(state['state'])
+        ready=state['state']=='ready'
+        native=ready && by_uuid[state['materialUuid'].to_s]
+        color=native && native.respond_to?(:color) && native.color
+        rgb=color && (color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3))
+        {'catalogId'=>item['id'],'materialUuid'=>ready ? state['materialUuid'].to_s : '','name'=>item['name'].to_s,
+         'color'=>rgb.is_a?(Array) && rgb.length==3 ? rgb.map { |value| value.to_i.clamp(0,255) } : nil,'state'=>state['state']}
+      end
+      rows.sort_by { |row| [row['state']=='ready' ? 0 : 1,row['name'].downcase] }
+    rescue StandardError => error
+      warn("Planos Santo: no se pudieron leer las muestras de la vista: #{error.class}")
+      []
+    end
+
+    # A swatch click is the explicit choice: installs in this model when needed
+    # (Hito 1 auto-install), without opening any window.
+    def smart_pick_material(catalog_id,mode)
+      raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
+      raise ExportError,'Elegí un material.' unless catalog_id.is_a?(String) && !catalog_id.empty?
+      options,prepared=without_model_watch { smart_quick_options({'mode'=>mode,'catalogId'=>catalog_id},install:true) }
+      remember_smart_settings(options);@quick_options=options
+      notify_material_library_changed('paint_install') if prepared && prepared['installed']
+      options
+    end
+
+    # SketchUp's Materials tray: a material bound to a library item becomes the
+    # brush material (switching to its mode); anything else explains why not.
+    def smart_native_material(material)
+      name=(material.respond_to?(:display_name) ? material.display_name : material.name).to_s
+      observed=MaterialResolver.observe_binding(material)
+      binding=observed['binding']
+      unless observed['status']=='valid' && binding.is_a?(Hash) && binding['catalogId'].is_a?(String)
+        raise ExportError,"«#{name}» tiene un vínculo dañado con la biblioteca; revisalo en Materiales." if observed['status']=='invalid'
+        raise ExportError,"«#{name}» no está en la biblioteca de Planos Santo; elegí una muestra de la tira o agregalo en Materiales."
+      end
+      mode=binding['kind']
+      raise ExportError,"«#{name}» no es una placa ni un canto." unless %w[sheet edge].include?(mode)
+      smart_select_material(binding['catalogId'],mode)
+    end
+
     # Recents strip: remembered ids of the mode that are ready in THIS model, with
     # the catalog name and the native colour [r,g,b]. Never installs; a failing
     # item is skipped so one broken entry never hides the others.
@@ -1272,10 +1443,12 @@ module PlanosSanto
       end
     end
 
-    def tool_guard!(generation)
+    # in_view: the toolbar brush never waits for the guide to be saved.
+    def tool_guard!(generation,in_view=false)
       raise ExportError,'La herramienta se canceló. Volvé a activarla desde la paleta.' unless generation==(@tool_generation || 0)
       active!
-      clean_for_paint!
+      return clean_for_paint! unless in_view
+      raise ExportError,'Guardá los cambios de biblioteca o pedido antes de pintar.' if @workshop_dirty
     end
 
     def stop_smart_tool(refresh:true)
