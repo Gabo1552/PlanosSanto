@@ -5,6 +5,7 @@ import {readFile,mkdir,copyFile,writeFile,readdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {openDetail} from './fixtures/order-detail';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 let saveRequests:unknown[],saveReplies:Reply[],actions:Map<string,string>;
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,errors:string[];
@@ -384,7 +385,7 @@ test('pedido: propuesto desde el modelo, guardado solo y lotes TXT reales sin ti
  const saved=await send('catalog_save',{revision:library.catalog.revision,items:library.catalog.items});expect(saved.error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();
+ await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(page);
  const summary=page.getByRole('dialog').locator('#workshop-problems-summary');await expect(summary).toHaveText('3 piezas con 3 problemas que impiden exportar.');
  const select=page.getByLabel('Pieza del pedido'),ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));expect(ids).toHaveLength(3);
  for(const id of ids){
@@ -393,7 +394,8 @@ test('pedido: propuesto desde el modelo, guardado solo y lotes TXT reales sin ti
   await page.getByLabel('Placa del pedido').selectOption(library.catalog.items[0].id as string);
  }
  await expect(summary).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
- await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeInViewport({ratio:0.9});
+ // 0.8.19: el detalle por pieza está al final del pedido, debajo de la optimización; al llevarlo a la vista entra junto con el botón de cerrar.
+ await page.getByRole('img',{name:'Vista 2D orientada para maderera'}).scrollIntoViewIfNeeded();await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeInViewport({ratio:0.9});
  await expect(page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true})).toBeInViewport();
  await page.screenshot({path:'artifacts/pedido-068-SINTETICO-2D.png',fullPage:false});
  // Se guardó solo: al cerrar no se pregunta nada y al reabrir sigue igual.
@@ -448,7 +450,7 @@ test('cantos por cara: se leen solos de las caras, se vinculan los materiales si
  for(const [index,edge] of [first,second].entries())Object.assign(edge,{sku:`EDGE-${index+1}`,supplier:'Prueba',thicknessMm:index?1:.8,widthMm:22});
  response=await send('catalog_save',{revision:library.revision,items:library.items});expect(response.error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog');await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
+ await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog');await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);
  await expect(panel.getByLabel('Piezas con problemas').locator(':scope > li')).toHaveCount(3);
  const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});
  await links.getByLabel('Canto de biblioteca para Canto de prueba').selectOption(first.id as string);await links.getByLabel('Canto de biblioteca para Canto secundario de prueba').selectOption(second.id as string);
