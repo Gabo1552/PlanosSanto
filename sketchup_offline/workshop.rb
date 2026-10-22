@@ -11,8 +11,8 @@ module PlanosSanto
       @model=model;@session=session;@catalog=CatalogStore.new(directory:directory)
     end
     def catalog
-      data=@catalog.read
-      {'catalog'=>data,'conflicts'=>@catalog.conflicts(data)}
+      _bytes,parsed,data=@catalog.load
+      {'catalog'=>data,'conflicts'=>@catalog.conflicts(data),'migration'=>@catalog.migration(parsed)}
     end
     def save_catalog(items,revision);data=@catalog.save(items,revision);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
     def import_catalog(data,revision);data=@catalog.import(data,revision);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
