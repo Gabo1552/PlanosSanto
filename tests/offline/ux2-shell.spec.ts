@@ -39,11 +39,12 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 
 test('a 1366×768 los avisos de guardar y de bloqueo quedan a la vista aunque se haya hecho scroll',async({page},info)=>{
  await boot(page,info.outputDir,{width:1366,height:768});await generated(page);
- await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();
+ // Simplificación 23: changing furniture no longer blocks export; an empty piece name still does.
+ await page.getByLabel('Nombre P01',{exact:true}).fill('');
  await page.locator('.ux-module-heading').click();await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBeGreaterThan(300);
- await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. Cambiaste los muebles');
+ await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('Completá el nombre de cada pieza');
  expect(await inViewport(page,'.ux-notices .ux-notice.error')).toBe(true);
- await alert.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().check();
+ await alert.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral');
  await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));await page.locator('.notes-panel .hint').first().click();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);
  await expect(page.getByRole('status').filter({hasText:'Guía guardada'})).toBeVisible();expect(await inViewport(page,'.ux-notices .ux-notice')).toBe(true);
 });
@@ -90,7 +91,7 @@ test('ayuda global: ? abre atajos y diagnóstico desde cualquier módulo, y el d
 
 test('un solo h1, estados vacíos con el siguiente paso y plurales correctos',async({page},info)=>{
  await boot(page,info.outputDir);
- const steps=page.locator('.ux-next-steps strong');await expect(steps).toHaveText(['1. Materiales','2. Muebles','3. Maderera','4. Planos A4']);
+ const steps=page.locator('.ux-next-steps strong');await expect(steps).toHaveText(['1. Materiales','2. Muebles','3. Piezas','4. Maderera','5. Planos A4']);
  await page.keyboard.press('Alt+5');await expect(page.locator('h1')).toHaveCount(1);await expect(page.getByRole('heading',{level:2,name:'Primero generá las guías en Muebles'})).toBeVisible();
  await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();
  await page.getByRole('button',{name:'Generar 1 guía',exact:true}).click();await expect(page.locator('.a4-sheet-preview')).toBeVisible();await expect(rail(page,'Planos A4')).toHaveAttribute('aria-current','page');
@@ -99,14 +100,13 @@ test('un solo h1, estados vacíos con el siguiente paso y plurales correctos',as
  await page.keyboard.press('Alt+1');await expect(page.locator('.ux-current-job p')).toContainText(/^1 mueble · \d+ piezas? en revisión$/);
 });
 
-test('el foco vuelve a Aplicar renombrado, las advertencias no se releen enteras y el foco del riel se ve',async({page},info)=>{
+// Simplificación punto 20: no «Aplicar renombrado»; the focus returns to «Proponer nombres» after its dialog.
+test('el foco vuelve a Proponer nombres, las advertencias no se releen enteras y el foco del riel se ve',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- const batch=page.getByRole('button',{name:'Aplicar renombrado',exact:true});await batch.click();await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toBeVisible();
- // El diálogo aparece antes de que termine «Revisando lote de nombres…»; mientras dura, Escape no lo cierra (a propósito).
- await expect(page.locator('.ux-busy')).toHaveCount(0);
- // The dialog handles Escape once its initial focus is inside it.
- await expect(page.getByRole('dialog',{name:'Aplicar renombrado'}).locator(':focus')).toHaveCount(1);await page.keyboard.press('Escape');
- await expect(page.getByRole('dialog',{name:'Aplicar renombrado'})).toHaveCount(0);await expect(batch).toBeFocused();
+ await expect(page.getByRole('button',{name:'Aplicar renombrado',exact:true})).toHaveCount(0);
+ const propose=page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true});await propose.click();await expect(page.getByRole('dialog',{name:'Sugerencias de nombres'})).toBeVisible();
+ await expect(page.getByRole('dialog',{name:'Sugerencias de nombres'}).locator(':focus')).toHaveCount(1);await page.keyboard.press('Escape');
+ await expect(page.getByRole('dialog',{name:'Sugerencias de nombres'})).toHaveCount(0);await expect(propose).toBeFocused();
  const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('');await expect(page.locator('.warnings').first()).toBeVisible();
  await expect(page.locator('.warnings')).not.toHaveAttribute('role','status');await expect(page.locator('.sr-only[role=status]').filter({hasText:/advertencias? en la hoja/})).toHaveCount(1);
  await name.fill('Lateral');

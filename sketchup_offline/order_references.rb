@@ -2,22 +2,18 @@
 require 'json'
 
 module PlanosSanto
-  # F-DESP-B: the A4 and the labels print the rows of the saved order that already validate; every other
-  # included row is «pendiente de pedido». Same per-row contract as Workshop#references (text, board, edge map,
-  # roles and cut of the supplier TXT) plus the TXT lot and the board grain, read-only over the saved draft.
+  # F-DESP-B / punto 17 (0.8.16): the A4 and the labels print the order rows that already validate, taken
+  # from the order proposed from the painted model (crossed with the saved draft when there is one). Every
+  # other included row is «pendiente de pedido». No saved draft and no ticks are needed. Same per-row
+  # contract as Workshop#references (text, board, edge map, roles and cut of the supplier TXT) plus the TXT
+  # lot and the board grain; read-only.
   module OrderReferences
     SIDES=%w[Arr Aba Izq Der].freeze
     TXT_PROFILE={'encoding'=>'utf8','decimal'=>'.','header'=>false}.freeze
 
-    def self.partial(model,workshop)
-      raw=model.get_attribute(Workshop::DICT,Workshop::KEY)
-      raise ExportError,'Guardá primero el borrador revisado del pedido.' unless raw.is_a?(String)
-      result=workshop.plan;draft=result['plan']
-      stored=JSON.parse(raw)
-      unless stored.is_a?(Hash) && stored['fingerprint']==draft['fingerprint'] && stored['catalogRevision']==draft['catalogRevision']
-        raise ExportError,'El pedido guardado quedó desactualizado: volvé a revisarlo en Biblioteca y pedidos.'
-      end
-      service=workshop.order
+    def self.partial(_model,workshop)
+      service,draft=workshop.current_plan
+      draft=SupplierOrder.normalize(draft)
       included=draft['rows'].select { |row| row['include'] }
       excluded=draft['rows'].reject { |row| row['include'] }.map { |row| row['id'] }
       # Nothing included yet: the sheet prints without order data instead of failing the whole draft.
@@ -27,7 +23,7 @@ module PlanosSanto
       # Lots follow the supplier export: one TXT per board, thickness and edge roles, in draft order.
       lots={}
       included.each do |row|
-        board=approved(service,row['materialId'],'sheet') or next
+        board=usable(service,row['materialId'],'sheet') or next
         lots[[row['materialId'],board['thicknessMm'],row['principalId'],row['secondaryId']]] ||= lots.length+1
       end
       references={};pending=[]
@@ -41,19 +37,22 @@ module PlanosSanto
       # Lot numbers are final only when every included row validates: a pending row can still move to another lot and renumber the TXT.
       references.each_value { |reference| reference.delete('lot') } unless pending.empty?
       {'references'=>references,'pending'=>pending,'excluded'=>excluded}
-    rescue JSON::ParserError
-      raise ExportError,'Borrador de pedido dañado. Prepará uno nuevo sin sobrescribir el anterior.'
     end
 
-    def self.approved(service,id,kind)
+    def self.usable(service,id,kind)
       service.material(id,kind)
     rescue ExportError
       nil
     end
 
+    # SKU of each edge role a side actually uses (an unused role never reaches the TXT).
+    def self.roles(service,row)
+      [row['principalId'],row['secondaryId']].each_with_index.map { |id,index| id && row['edgeMap'].include?(index+1) ? service.material(id,'edge')['sku'] : nil }
+    end
+
     def self.reference_for(service,row,lots)
       board=service.material(row['materialId'],'sheet')
-      roles=[row['principalId'],row['secondaryId']].map { |id| id ? service.material(id,'edge')['sku'] : nil }
+      roles=roles(service,row)
       edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{SIDES[i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
       board_text="#{board['sku']} / #{board['thicknessMm']} mm";base,height=service.dimensions(row)
       {'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],

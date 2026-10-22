@@ -34,10 +34,28 @@ export function normalizeNaming(f:Furniture,workCode:string){
   prepared.naming!.bases=prepared.naming!.bases.map(b=>({...b,base:b.base.normalize('NFC').replace(/\s+/g,' ').trim()}));
   return withNaming(prepared,workCode);
 }
-export function namingIssues(f:Furniture,workCode:string){
+/** Simplificación punto 22: only two letters make an obra; anything else names without obra (never blocks). */
+export const effectiveWorkCode=(workCode:string)=>/^[A-Z]{2}$/.test(workCode)?workCode:'';
+const MODULE_CODE=/^M\d{1,3}$/;
+/** Punto 22: with an obra, a furniture without a valid module takes the next free M01, M02… in list order. */
+export function autoModules(list:Furniture[],workCode:string):Furniture[]{
+  if(!effectiveWorkCode(workCode))return list;
+  const used=new Set(list.map(f=>f.naming?.moduleCode||'').filter(code=>MODULE_CODE.test(code)).map(code=>Number(code.slice(1))));
+  let next=1;
+  return list.map(f=>{
+    if(MODULE_CODE.test(f.naming?.moduleCode||''))return f;
+    while(used.has(next))next++;
+    used.add(next);
+    return withNaming(f,workCode,`M${String(next).padStart(2,'0')}`);
+  });
+}
+/** Blocking issues: a name that cannot be saved. Obra and módulo are deduced (punto 22, autoModules before saving), so they never block. */
+export function namingIssues(f:Furniture){
   const issues:string[]=groupedNameIssues(f);
-  if(workCode&&!/^[A-Z]{2}$/.test(workCode))issues.push('Completá las dos letras de la obra, por ejemplo VF.');
-  if(workCode&&!/^M\d{1,3}$/.test(f.naming?.moduleCode||''))issues.push('Completá el módulo de este mueble, por ejemplo M01, o agregalo al grupo y volvé a analizar.');
   if(f.naming?.bases.some(b=>!b.base.trim()))issues.push('Completá el nombre de cada pieza, por ejemplo Lateral.');
   return issues;
+}
+/** Notices that never block: an incomplete obra is left out of the names until it has two letters. */
+export function namingNotices(workCode:string){
+  return workCode&&!effectiveWorkCode(workCode)?['La obra lleva dos letras (por ejemplo VF); mientras tanto los nombres se guardan sin obra.']:[];
 }

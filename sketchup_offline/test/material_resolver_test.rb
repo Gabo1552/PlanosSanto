@@ -125,18 +125,12 @@ class MaterialResolverTest < Minitest::Test
     catalog={'revision'=>1,'items'=>@native_items}
     workshop=PlanosSanto::Workshop.allocate
     node={'id'=>'1/11','name'=>'Panel','children'=>[],'mesh'=>{'vertices'=>[[0,0,0],[700,450,18]],'triangles'=>[]},'metadata'=>{'localBounds'=>@g['bounds'],'worldTransform'=>Geom::Transformation.new.to_a,'rectangular'=>true}}
-    service=PlanosSanto::SupplierOrder.new({'furniture'=>[node]},'test-native',catalog,
-      source_review:lambda { |row,geometry| workshop.verify_native_source(report,row,geometry,catalog) },
-      edge_review:lambda { |row,geometry| R.verify_edge_mapping(report,row,geometry,catalog) },
-      material_proposal:lambda { |id| workshop.native_proposal(report,id,catalog) })
+    service=PlanosSanto::SupplierOrder.new({'furniture'=>[node]},'test-native',catalog,material_proposal:lambda { |id| workshop.native_proposal(report,id,catalog) })
     [service,report,catalog]
   end
   def completed_native_draft(service)
     draft=service.proposal
-    draft['rows'][0].merge!('axes'=>[0,1],'frontSign'=>1,'principalId'=>@native_items[1]['id'],'secondaryId'=>@native_items[2]['id'],
-      'edgeMap'=>[1,0,2,0],'grainPolicy'=>'locked','grainAxis'=>'none','grainConfirmed'=>true,'dimensionRule'=>'finished_accepted',
-      'orientationConfirmed'=>true,'materialConfirmed'=>true,'dimensionsConfirmed'=>true,'edgesConfirmed'=>true,
-      'reviewNote'=>'Medidas terminadas verificadas','edgeResolution'=>'manual','edgeOverrideReason'=>'Inspección física documentada')
+    draft['rows'][0].merge!('axes'=>[0,1],'frontSign'=>1,'principalId'=>@native_items[1]['id'],'secondaryId'=>@native_items[2]['id'],'edgeMap'=>[1,0,2,0],'grainPolicy'=>'locked','dimensionRule'=>'finished_accepted')
     draft
   end
   def test_native_order_proposes_material_bindings_but_no_axes_roles_or_confirmations
@@ -145,23 +139,7 @@ class MaterialResolverTest < Minitest::Test
     assert_equal @native_items[0]['id'],row['materialId']
     assert_equal @native_items[1..].map { |edge| edge['id'] },row['edgeBindings'].map { |binding| binding['catalogId'] }
     assert_nil row['axes'];assert_nil row['frontSign'];assert_nil row['principalId'];assert_nil row['secondaryId']
-    %w[orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed grainConfirmed].each { |key| refute row[key] }
-  end
-  def test_manual_override_cannot_substitute_native_sheet_or_bypass_conflicts
-    service,report,catalog=native_service;draft=completed_native_draft(service)
-    assert service.validate(draft)
-    alternate=@native_items[0].merge('id'=>'44444444-4444-4444-8444-444444444444','sku'=>'other-board')
-    catalog['items'] << alternate;draft['rows'][0]['materialId']=alternate['id']
-    error=assert_raises(PlanosSanto::ExportError) { service.validate(draft) };assert_match(/placa elegida/,error.message)
-    draft['rows'][0]['materialId']=@native_items[0]['id'];report['materials'][1]['native_status']='conflict'
-    error=assert_raises(PlanosSanto::ExportError) { service.validate(draft) };assert_match(/conflicto/,error.message)
-  end
-  def test_manual_override_cannot_hide_native_edge_change_or_catalog_revision
-    service,report,catalog=native_service;draft=completed_native_draft(service)
-    draft['rows'][0]['edgeMap']=[0,0,0,0]
-    error=assert_raises(PlanosSanto::ExportError) { service.validate(draft) };assert_match(/mapa manual/,error.message)
-    draft['rows'][0]['edgeMap']=[1,0,2,0];catalog['items'][0]['sku']='new-sku'
-    error=assert_raises(PlanosSanto::ExportError) { service.validate(draft) };assert_match(/vínculo/,error.message)
+    %w[orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed grainConfirmed].each { |key| refute row.key?(key),"#{key}: ya no existe" }
   end
   def test_nine_column_export_keeps_native_roles_and_physical_identity
     service,=native_service;draft=completed_native_draft(service)
@@ -199,5 +177,18 @@ class MaterialResolverTest < Minitest::Test
     assert_equal report,again
     assert_equal bytes,JSON.generate(input)
     assert_equal %w[edge-a none edge-b none],map(@row,@g,again)
+  end
+  def test_a_board_or_edges_chosen_by_hand_are_edits_of_the_order_not_blocks
+    # 0.8.16: elegir otra placa o tocar el mapa a mano no pide justificación. Que la pintura cambie después
+    # lo detecta Workshop#export_order al cruzar con la propuesta (workshop_coverage_test).
+    service,report,catalog=native_service;draft=completed_native_draft(service)
+    assert service.validate(draft)
+    alternate=@native_items[0].merge('id'=>'44444444-4444-4444-8444-444444444444','sku'=>'other-board')
+    catalog['items'] << alternate;draft['rows'][0]['materialId']=alternate['id']
+    assert service.validate(draft)
+    report['materials'][1]['native_status']='conflict';draft['rows'][0]['edgeMap']=[0,0,0,0]
+    assert service.validate(draft)
+    catalog['revision']=2
+    assert_match(/biblioteca cambió/,assert_raises(PlanosSanto::ExportError) { service.validate(draft) }.message,'Una biblioteca más nueva se cruza al reabrir el pedido')
   end
 end

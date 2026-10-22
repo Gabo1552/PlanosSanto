@@ -44,7 +44,7 @@ root.render(window.harnessMode==='photo'?React.createElement(Photo,{onClose:()=>
     :{catalogId:data.catalogId,applied:[{materialId:'501',name:'Roble foto QA',widthMm:data.widthMm,heightMm:data.heightMm}],textureScale:{verified:true,widthMm:data.widthMm,heightMm:data.heightMm},rotation:data.rotation,verification:{ok:true,checked:1},warnings:[]};
   }else if(action==='material_ocl_sync'){
    const row={materialId:'501',name:'Roble foto QA',catalogId:uuid(1),status:data.dryRun?'updated':'updated',changes:[{key:'std_thicknesses',from:'15mm',to:'18mm',action:'update'},{key:'std_sizes',from:null,to:'2600mm x 1830mm',action:'write'}],kept:[{key:'grained',current:true,proposed:false}]};
-   if(!data.dryRun&&data.planDigest!=='plan-digest-qa')return {version:1,id:message.id,result:null,error:'La vista previa de OpenCutList venció.'};
+   if(!data.dryRun&&data.planDigest!==undefined&&data.planDigest!=='plan-digest-qa')return {version:1,id:message.id,result:null,error:'La vista previa de OpenCutList venció.'};
    result={dryRun:!!data.dryRun,changed:2,materials:[row],...(data.dryRun?{noChanges:true,planDigest:'plan-digest-qa'}:{})};
   }else if(action==='smart_palette_load')result={catalog:{schema:1,revision,items},visuals:{materials:[{id:'501',designReady:true,name:'Roble foto QA',hasTexture:true,color:[113,81,55],binding:{uuid:'photo-uuid',catalogId:uuid(1),kind:'sheet'},issues:[]},...(options.extraSheet?[{id:'502',designReady:true,name:'Nogal archivado QA',hasTexture:false,color:[90,60,40],binding:{uuid:'nogal-uuid',catalogId:uuid(4),kind:'sheet'},issues:[]}]:[])]},thumbnails:{[uuid(1)]:pixel},settings:{scope:'all',axes:[0,1],batch:true,paintScope:'face',side:'front'},toolState:tool};
   else if(action==='smart_palette_compact')result={compact:data.compact};
@@ -69,17 +69,17 @@ root.render(window.harnessMode==='photo'?React.createElement(Photo,{onClose:()=>
 const details=(page:Page)=>page.getByRole('complementary',{name:'Material seleccionado'});
 const select=(page:Page,name:string)=>page.getByRole('article',{name:`Material ${name}`,exact:true}).locator('.material-card-select').click();
 
-test('archivar oculta la ficha de la biblioteca activa sin borrarla y restaurar la devuelve',async({page},info)=>{
+test('archivar oculta la ficha de la biblioteca activa en un clic, sin borrarla, y restaurar la devuelve',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
  await expect(page.getByRole('button',{name:'Archivados',exact:true})).toContainText('0');
+ // Punto 27: sin paso de confirmación; archivar no borra nada y se deshace con «Restaurar ficha».
  await select(page,'Canto blanco QA');await details(page).getByRole('button',{name:'Archivar ficha',exact:true}).click();
- const confirm=page.getByRole('group',{name:'Confirmar archivado'});await expect(confirm).toContainText('Compatible con 2 fichas activas');await expect(confirm).toContainText('sigue siendo compatible');
- expect(requests('material_archive')[0].data).toMatchObject({catalogIds:[uuid(2)],archived:true,dryRun:true,revision:3,statesRevision:0});
- await confirm.getByRole('button',{name:'Sí, archivar',exact:true}).click();
- await expect(page.getByText('archivada. No se borró la ficha',{exact:false})).toBeVisible();
+ await expect(page.getByRole('group',{name:'Confirmar archivado'})).toHaveCount(0);
+ expect(requests('material_archive')).toHaveLength(1);expect(requests('material_archive')[0].data).toMatchObject({catalogIds:[uuid(2)],archived:true,revision:3,statesRevision:0});expect(requests('material_archive')[0].data).not.toHaveProperty('dryRun');
+ await expect(page.getByText('archivada: no se borró la ficha ni sus archivos',{exact:false})).toBeVisible();
  await expect(page.getByRole('article',{name:'Material Canto blanco QA',exact:true})).toHaveCount(0);expect(items).toHaveLength(3);
  await page.getByRole('button',{name:'Archivados',exact:true}).click();await expect(page.getByRole('article',{name:/^Material /})).toHaveCount(1);await expect(page.getByRole('article',{name:'Material Canto blanco QA',exact:true})).toContainText('Archivada');
- await details(page).getByRole('button',{name:'Restaurar ficha',exact:true}).click();await page.getByRole('group',{name:'Confirmar restauración'}).getByRole('button',{name:'Sí, restaurar',exact:true}).click();
+ await details(page).getByRole('button',{name:'Restaurar ficha',exact:true}).click();
  await expect(page.getByText('restaurada en la biblioteca activa',{exact:false})).toBeVisible();expect(archived).toEqual([]);
  await expect(page.getByRole('button',{name:'Todos',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.getByRole('article',{name:/^Material /})).toHaveCount(3);
  await page.getByRole('button',{name:'Archivados',exact:true}).click();await expect(page.getByText('No hay fichas archivadas',{exact:true})).toBeVisible();
@@ -133,18 +133,18 @@ test('escala y giro: el candado sigue la proporción, girar intercambia lados y 
  expect(errors).toEqual([]);
 });
 
-test('OpenCutList: la vista previa lista cambios y conserva valores del usuario antes de confirmar',async({page},info)=>{
+test('OpenCutList: un clic sincroniza, lista lo que cambió y conserva los valores del usuario',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
  await select(page,'Herraje QA');await expect(details(page).getByRole('button',{name:'Sincronizar con OpenCutList',exact:true})).toBeDisabled();
  await select(page,'Roble foto QA');await details(page).getByRole('button',{name:'Sincronizar con OpenCutList',exact:true}).click();
- const plan=page.getByRole('group',{name:'Cambios para OpenCutList'});await expect(plan.getByRole('list',{name:'Cambios en Roble foto QA'})).toContainText('std_thicknesses: 15mm → 18mm');
- await expect(plan.getByRole('list',{name:'Valores del usuario conservados en Roble foto QA'})).toContainText('grained: se conserva true');
- expect(requests('material_ocl_sync')).toHaveLength(1);expect(requests('material_ocl_sync')[0].data).toEqual({catalogId:uuid(1),dryRun:true});
- await plan.getByRole('button',{name:'Aplicar 2 cambios',exact:true}).click();await expect(page.getByText('OpenCutList sincronizado: 2 cambios',{exact:false})).toBeVisible();await expect(page.getByText('Se conservaron 1 valor cargado por el usuario.',{exact:false})).toBeVisible();
- expect(requests('material_ocl_sync')[1].data).toEqual({catalogId:uuid(1),dryRun:false,confirmed:true,planDigest:'plan-digest-qa'});
+ await expect(page.getByText('OpenCutList sincronizado: 2 cambios',{exact:false})).toBeVisible();await expect(page.getByText('Se conservaron 1 valor cargado por el usuario.',{exact:false})).toBeVisible();
+ expect(requests('material_ocl_sync')).toHaveLength(1);expect(requests('material_ocl_sync')[0].data).toEqual({catalogId:uuid(1),dryRun:false});
+ const result=page.getByRole('group',{name:'Cambios en OpenCutList'});await expect(result).toBeFocused();
+ await expect(result.getByRole('list',{name:'Cambios en Roble foto QA'})).toContainText('std_thicknesses: 15mm → 18mm');
+ await expect(result.getByRole('list',{name:'Valores del usuario conservados en Roble foto QA'})).toContainText('grained: se conservó true');
+ await result.getByRole('button',{name:'Cerrar',exact:true}).click();await expect(result).toHaveCount(0);
  expect(errors).toEqual([]);
 });
-
 test('búsqueda: Escape la limpia, las flechas recorren tarjetas y "Pintar en el modelo" inicia con autoStart',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
  const search=page.getByRole('searchbox',{name:'Buscar materiales del taller'});await search.fill('zzz');await expect(page.getByText('Ningún material coincide con «zzz»',{exact:true})).toBeVisible();
@@ -181,7 +181,8 @@ test('foto: candado de proporción, errores accesibles y Enter guarda sin pintar
  const dialog=page.getByRole('dialog',{name:'Material desde una foto'});await dialog.getByRole('button',{name:'Elegir foto (JPG/PNG)',exact:true}).click();
  const name=dialog.getByRole('textbox',{name:'Nombre del material desde foto',exact:true});await expect(name).toHaveValue('Nogal QA');
  await name.fill('');await expect(name).toHaveAttribute('aria-invalid','true');await expect(dialog.getByText('Escribí un nombre para el material.',{exact:true})).toBeVisible();
- await dialog.getByText('Escala de textura (opcional)',{exact:true}).click();await dialog.getByRole('checkbox',{name:'Confirmar escala física de la textura',exact:true}).check();
+ // Simplificación punto 28: no «Conozco el tamaño físico…»; writing the measures is enough and they stay optional.
+ await dialog.getByText('Escala de textura (opcional)',{exact:true}).click();await expect(dialog.getByRole('checkbox',{name:'Confirmar escala física de la textura',exact:true})).toHaveCount(0);
  await expect(dialog.getByRole('checkbox',{name:'Mantener la proporción de la foto',exact:true})).toBeChecked();
  await dialog.getByRole('spinbutton',{name:'Ancho físico de textura',exact:true}).fill('1500');await expect(dialog.getByRole('spinbutton',{name:'Alto físico de textura',exact:true})).toHaveValue('500');
  await name.fill('Nogal del taller');await name.press('Enter');await expect.poll(()=>requests('material_photo_create').length).toBe(1);

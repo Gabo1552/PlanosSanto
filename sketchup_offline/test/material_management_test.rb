@@ -54,7 +54,7 @@ class MaterialManagementTest < Minitest::Test
     refute copy['approved'];refute copy['favorite']
     refute_equal @sheet['id'],copy['id'];refute_equal @sheet['sourceHash'],copy['sourceHash']
     assert_equal @sheet['id'],copy['observed']['duplicatedFrom']
-    assert_includes result['warnings'].join(' '),'aprob'
+    assert_includes result['warnings'].join(' '),'conserva el SKU del original','Ya no hay aprobación que esperar: solo se avisa del SKU repetido'
     assert_equal 0,@model.starts
     second=@library.duplicate('catalogId'=>@sheet['id'],'revision'=>revision,'confirmed'=>true)
     assert_equal 'Blanco 18 (copia 2)',second['name']

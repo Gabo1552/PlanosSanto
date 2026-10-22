@@ -3,7 +3,7 @@ import type {CatalogItem} from '../sketchup_offline/ui/WorkshopPanel';
 import {copyName,filterCounts,filterItems,lockedHeight,rotateDimensions,normalizeRotation,searchText,textureRepeats} from '../sketchup_offline/ui/materialLibraryModel';
 
 const item=(id:string,patch:Partial<CatalogItem>={}):CatalogItem=>({id,name:`Material ${id}`,kind:'sheet',sku:'',supplier:'',thicknessMm:18,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'2026-10-22T00:00:00Z',sourceHash:'0'.repeat(64),observed:{},...patch});
-const items=[item('a',{name:'Roble Áspero',approved:true,sku:'R18',supplier:'Maderera Norte'}),item('b',{kind:'edge',name:'Canto roble',thicknessMm:0.45}),item('c',{kind:'unknown',name:'Herraje'}),item('d',{name:'Blanco viejo'}),item('e',{kind:'edge',name:'Canto blanco',approved:true})];
+const items=[item('a',{name:'Roble Áspero',sku:'R18',supplier:'Maderera Norte',widthMm:1830,lengthMm:2750,grain:true}),item('b',{kind:'edge',name:'Canto roble',thicknessMm:0.45}),item('c',{kind:'unknown',name:'Herraje'}),item('d',{name:'Blanco viejo'}),item('e',{kind:'edge',name:'Canto blanco',approved:true})];
 const archived=new Set(['d','e']);
 
 describe('Filtros de la biblioteca de materiales',()=>{
@@ -18,6 +18,8 @@ describe('Filtros de la biblioteca de materiales',()=>{
   expect(filterItems(items,{filter:'all',query:'',archived}).map(row=>row.id).sort()).toEqual(['a','b','c']);
   expect(filterItems(items,{filter:'edge',query:'',archived}).map(row=>row.id)).toEqual(['b']);
   expect(filterItems(items,{filter:'review',query:'',archived}).map(row=>row.id).sort()).toEqual(['b','c']);
+  // «Por completar» es la ficha a la que le falta un dato: la vieja casilla aprobada no cuenta.
+  expect(filterItems([item('z',{approved:true})],{filter:'review',query:'',archived:new Set()}).map(row=>row.id)).toEqual(['z']);
   expect(filterItems(items,{filter:'other',query:'',archived}).map(row=>row.id)).toEqual(['c']);
   expect(filterItems(items,{filter:'archived',query:'',archived}).map(row=>row.id).sort()).toEqual(['d','e']);
   expect(filterItems(items,{filter:'archived',query:'canto',archived}).map(row=>row.id)).toEqual(['e']);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ViewAdjustments,{shiftDimension,orbitCamera} from '../../components/ViewAdjustments';
-import {withNaming,normalizeNaming,namingIssues,moduleFromName} from '../../lib/naming';
+import {withNaming,normalizeNaming,namingIssues,namingNotices,moduleFromName,autoModules,effectiveWorkCode} from '../../lib/naming';
 import Diagram from '../../components/Diagram';
 import DimensionControls from '../../components/DimensionControls';
 import {setDimensionVisible} from '../../lib/dimensions';
@@ -11,7 +11,7 @@ import { makeScene, layoutWarnings, type View } from '../../lib/scene';
 import { request } from './bridge';
 import {isQuickIntent,moduleShortcuts,noticeActionFor,shortcutFor,type QuickIntent} from './quickActions';
 import {ensureRuntime,fitWindowOnce,setWindowFolded} from './runtime';
-import { countPieces, editsFor, guideIssues, mergeGuide, modelGuidOf, withoutCodeHistory, type Generated, type Guide } from './guide';
+import { countPieces, editsFor, guideIssues, guideNotices, mergeGuide, modelGuidOf, withoutCodeHistory, type Generated, type Guide, type GuideFurniture } from './guide';
 import { createOfflinePdf, decode64, encode64, type OrderReferences, type PartialReferences } from './pdf';
 import regularFont from '../assets/DejaVuSans.ttf';
 import monoFont from '../assets/DejaVuSansMono.ttf';
@@ -25,8 +25,8 @@ import WorkshopPanel from './WorkshopPanel';
 import NameSuggestions from './NameSuggestions';
 import CodePlanDialog from './CodePlanDialog';
 import LabelsPanel from './LabelsPanel';
-import NameBatchPreview,{type NameBatchCheck,type NameBatchRow} from './NameBatchPreview';
 import A4SheetPreview from './A4SheetPreview';
+import CutlistView from './CutlistView';
 import GuideViews,{ensureGuide} from './GuideViews';
 import MaterialLibraryPanel from './MaterialLibraryPanel';
 import PhotoMaterialPanel from './PhotoMaterialPanel';
@@ -46,10 +46,10 @@ function ToolIcon({tool}:{tool:string}){
   const paths:Record<string,string>={select:'M5 3l13 9-6 1-3 6-4-16z',orbit:'M19 8a8 8 0 1 0 1 7M19 3v5h-5',dimensions:'M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4M7 8l-4 4 4 4M17 8l4 4-4 4'};
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d={paths[tool]}/></svg>;
 }
-type Module='home'|'materials'|'furniture'|'order'|'guides';
-const modules:[Module,string,string][]=[['home','Inicio','Trabajo actual y próximos pasos'],['materials','Materiales','Biblioteca visual del taller'],['furniture','Muebles','Piezas, medidas y nombres'],['order','Maderera','Lotes, cantos y pedido TXT'],['guides','Planos A4','Vistas, cotas y notas']];
+type Module='home'|'materials'|'furniture'|'pieces'|'order'|'guides';
+const modules:[Module,string,string][]=[['home','Inicio','Trabajo actual y próximos pasos'],['materials','Materiales','Biblioteca visual del taller'],['furniture','Muebles','Piezas, medidas y nombres'],['pieces','Piezas','Lista de corte por material y espesor'],['order','Maderera','Lotes, cantos y pedido TXT'],['guides','Planos A4','Vistas, cotas y notas']];
 function ModuleIcon({name}:{name:string}){
- const paths:Record<string,string>={home:'M3 10l9-7 9 7M5 9v12h5v-7h4v7h5V9',materials:'M4 5h13v16H4zM8 2h12v15M7 9h7M7 13h7M7 17h4',furniture:'M4 5h16v14H4zM4 12h16M12 5v14M6 19v3M18 19v3',order:'M6 3h12v19H6zM9 8h6M9 12h6M9 16h3',guides:'M5 2h10l4 4v16H5zM15 2v5h4M8 12l4-2 4 2v5l-4 2-4-2zM12 14v5M8 12l4 2 4-2',paint:'M4 4h12v5H4zM16 6h4v6h-9v8H8v-8'};
+ const paths:Record<string,string>={home:'M3 10l9-7 9 7M5 9v12h5v-7h4v7h5V9',materials:'M4 5h13v16H4zM8 2h12v15M7 9h7M7 13h7M7 17h4',furniture:'M4 5h16v14H4zM4 12h16M12 5v14M6 19v3M18 19v3',order:'M6 3h12v19H6zM9 8h6M9 12h6M9 16h3',guides:'M5 2h10l4 4v16H5zM15 2v5h4M8 12l4-2 4 2v5l-4 2-4-2zM12 14v5M8 12l4 2 4-2',pieces:'M4 4h16v16H4zM4 9h16M4 14h16M10 4v16',paint:'M4 4h12v5H4zM16 6h4v6h-9v8H8v-8'};
  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]||paths.home}/></svg>;
 }
 type NoticeAction={label:string;kind:'analyze'|'generate'|'module'|'save'|'workshop';module?:Module};
@@ -58,7 +58,7 @@ type Confirm={title:string;detail:string;confirmLabel:string;run:()=>void;opener
 type Block='save'|'export'|'paint'|'nav'|'tools';
 const moduleLabel=(id:Module)=>modules.find(([value])=>value===id)![1];
 const plural=(count:number,one:string,many:string)=>`${count} ${new Intl.PluralRules('es').select(count)==='one'?one:many}`;
-const moduleSteps:Partial<Record<Module,string>>={materials:'Texturas reales, candidatos y fichas revisadas.',furniture:'Encontrá cada pieza y editá su nombre con las medidas protegidas.',order:'Revisá lotes, cantos y orientación antes de generar el TXT para la maderera.',guides:'Elegí vistas, agregá indicaciones y exportá una A4 por mueble.'};
+const moduleSteps:Partial<Record<Module,string>>={materials:'Texturas reales, candidatos y fichas revisadas.',furniture:'Encontrá cada pieza y editá su nombre con las medidas protegidas.',pieces:'Todas las piezas por material y espesor, con cantos y veta.',order:'Revisá lotes, cantos y orientación antes de generar el TXT para la maderera.',guides:'Elegí vistas, agregá indicaciones y exportá una A4 por mueble.'};
 const NOTICE_TIMEOUT=20_000;
 const searchable=(value:string)=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');
 
@@ -68,7 +68,8 @@ export default function App(){
   const [pieceQuery,setPieceQuery]=useState(''),[onlySelected,setOnlySelected]=useState(false),[editingPieceId,setEditingPieceId]=useState('');
   const [highlight,setHighlight]=useState(false),[hideFurniture,setHideFurniture]=useState(false);
   const [tool,setTool]=useState<'select'|'orbit'|'dimensions'>('select');
-  const [nameBatch,setNameBatch]=useState<{rows:NameBatchRow[];check:NameBatchCheck;source:Project}>();
+  // Punto 20: rows the last save kept in the guide without renaming them in SketchUp (id → reason).
+  const [nameWarnings,setNameWarnings]=useState<Record<string,string>>({});
   const editSnapshot=useRef<{id:string;bases:{id:string;base:string}[];dirty:boolean}|undefined>(undefined);
   const highlightSequence=useRef(0);
   // DESPIECE-01: pieces without saved code per furniture and furniture renumbered since the last save (sent as renumber:true).
@@ -85,7 +86,8 @@ export default function App(){
   const [contextChanged,setContextChanged]=useState(false),[modelAnalysisStale,setModelAnalysisStale]=useState(false),[scanDeferred,setScanDeferred]=useState(false),[windowFolded,setWindowFoldedState]=useState(false);
   const restoreSmartFocus=useRef(false);
   useEffect(()=>{if(showSmartPaint)restoreSmartFocus.current=true;else if(restoreSmartFocus.current){restoreSmartFocus.current=false;smartPaintTrigger.current?.focus();}},[showSmartPaint]);
-  const [workCode,setWorkCode]=useState(''),[saveSkp,setSaveSkp]=useState(true),[syncNames,setSyncNames]=useState(true);
+  // Punto 22: what the operator typed; names only use a complete obra (two letters).
+  const [workCodeInput,setWorkCodeInput]=useState(''),workCode=effectiveWorkCode(workCodeInput),[saveSkp,setSaveSkp]=useState(true),[syncNames,setSyncNames]=useState(true);
   const [scan,setScan]=useState<Scan>();
   const heldScan=useRef<Scan|undefined>(undefined),currentScan=useRef<Scan|undefined>(undefined);currentScan.current=scan;
   const [ids,setIds]=useState<string[]>([]);
@@ -127,10 +129,9 @@ export default function App(){
   const pieceIndex=rows.findIndex(row=>row.id===selectedRow?.id);
   const visiblePieces=rows.filter(p=>(!onlySelected||p.memberIds.includes(piece?.id||''))&&(p.memberIds.includes(editingPieceId)||searchable(`${p.code} ${p.name} ${furniture?.naming?.bases.find(b=>b.id===p.id)?.base||''}`).includes(searchable(pieceQuery.trim()))))||[];
   const scene=useMemo(()=>previewFurniture?makeScene(previewFurniture,{view,layout:tool==='dimensions'?'sheet':'editor'}):undefined,[previewFurniture,view,tool]);
-  const warnings=useMemo(()=>furniture&&scene?[...new Set([...scene.warnings,...layoutWarnings(furniture)]),...guideIssues(furniture,orphans[furniture.id]||[]),...namingIssues(furniture,workCode)]:[],[furniture,scene,orphans,workCode]);
+  const warnings=useMemo(()=>furniture&&scene?[...new Set([...scene.warnings,...layoutWarnings(furniture)]),...guideIssues(furniture),...namingIssues(furniture),...guideNotices(orphans[furniture.id]||[]),...namingNotices(workCodeInput)]:[],[furniture,scene,orphans,workCodeInput]);
   const [warningAnnouncement,setWarningAnnouncement]=useState('');
   useEffect(()=>{const timer=setTimeout(()=>setWarningAnnouncement(warnings.length?plural(warnings.length,'advertencia en la hoja','advertencias en la hoja'):''),600);return()=>clearTimeout(timer);},[warnings.length]);
-  const batchTrigger=useRef<HTMLButtonElement>(null);
   const selectionChanged=!!project&&JSON.stringify([...ids].sort())!==JSON.stringify(project.furniture.map(f=>f.id).sort());
   useEffect(()=>{if(noteId&&!picking)noteInput.current?.focus();},[noteId,picking]);
   useEffect(()=>{
@@ -152,7 +153,7 @@ export default function App(){
     setProject(previous=>previous?{...previous,furniture:previous.furniture.map(f=>f.id===furniture?.id?change(f):f)}:previous);markDirty();
   }
   const acceptScan=useCallback((result:Scan,mode?:'all'|'selected')=>{
-    heldScan.current=undefined;editSnapshot.current=undefined;userEdited.current=false;setNameBatch(undefined);setContextChanged(false);setModelAnalysisStale(false);setWorkCode(result.guide.workCode||'');setPieceQuery('');setOnlySelected(false);setEditingPieceId('');setHideFurniture(false);setScan(result);setProject(undefined);setOrphans({});setRenumbered(new Set());setDirty(false);setPicking(undefined);
+    heldScan.current=undefined;editSnapshot.current=undefined;userEdited.current=false;setNameWarnings({});setContextChanged(false);setModelAnalysisStale(false);setWorkCodeInput(result.guide.workCode||'');setPieceQuery('');setOnlySelected(false);setEditingPieceId('');setHideFurniture(false);setScan(result);setProject(undefined);setOrphans({});setRenumbered(new Set());setDirty(false);setPicking(undefined);
     const available=new Set(allIds(result.tree.roots));
     const stored=result.guide.selection.filter(id=>available.has(id));
     const roots=result.tree.roots.filter(n=>n.children.length>0&&countPieces(n)>0).map(n=>n.id);
@@ -182,11 +183,31 @@ export default function App(){
     await analyze(undefined,true);
     if(hadGuides&&pieces.length)await generate(pieces,target,true);
   };
+  // Piezas works like OpenCutList's cutlist: opening it is enough. Without guides it generates them
+  // once for the marked furniture (the stored selection, or every furniture group by default).
+  const piecesAutoGenerated=useRef(false);
+  useEffect(()=>{
+    if(destination!=='pieces'){piecesAutoGenerated.current=false;return;}
+    if(project||!scan||busy||contextChanged||!ids.length||piecesAutoGenerated.current)return;
+    piecesAutoGenerated.current=true;void generate(ids,'pieces',true);
+  },[destination,project,scan,busy,contextChanged,ids]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if(!modelAnalysisStale||userEdited.current||busy||contextChanged||!scan)return;
     const timer=window.setTimeout(()=>{if(!userEdited.current)void autoRefresh.current();},1200);
     return()=>window.clearTimeout(timer);
   },[modelAnalysisStale,dirty,busy,contextChanged,scan]);
+  // Point 23: choosing other furniture regenerates the guides by itself, keeping the unsaved edits by id.
+  // One attempt per choice: a failure stays on screen instead of retrying in a loop.
+  const autoSelection=useRef<()=>Promise<void>>(async()=>{}),selectionAttempt=useRef('');
+  autoSelection.current=async()=>{
+    selectionAttempt.current=JSON.stringify([...ids].sort());
+    await run('Actualizando guías…',async()=>{await ensureRuntime();await refreshGuides(ids,modelAnalysisStale);setMessage('Guías actualizadas con los muebles elegidos.',undefined,'info');});
+  };
+  useEffect(()=>{
+    if(!project||!selectionChanged||!ids.length||busy||contextChanged||draftHidden!==null||!scan||pendingConfirm||selectionAttempt.current===JSON.stringify([...ids].sort()))return;
+    const timer=window.setTimeout(()=>void autoSelection.current(),500);
+    return()=>window.clearTimeout(timer);
+  },[project,selectionChanged,ids,busy,contextChanged,draftHidden,scan,pendingConfirm]);
   useEffect(()=>{
     let mounted=true;setBusy('Analizando modelo…');
     // ARQ-07: opening Materiales or Maderera never scans; the banner offers Analizar.
@@ -230,53 +251,81 @@ export default function App(){
     await run('Generando guías…',async()=>{
       const result=await request<Generated>('generate',{ids:selectedIds});
       const merged=mergeGuide(result.document,result.guide);
-      merged.project.furniture=merged.project.furniture.map(f=>ensureGuide(withNaming(f,workCode)));
-      userEdited.current=false;setDestination(target);setIds(selectedIds);setProject(merged.project);setOrphans(merged.orphans);setUnsavedCodes(merged.unsaved);setRenumbered(new Set());setRevision(result.guide.revision);setFingerprint(result.fingerprint);
+      merged.project.furniture=autoModules(merged.project.furniture.map(f=>ensureGuide(withNaming(f,workCode))),workCode);
+      userEdited.current=false;setNameWarnings({});setDestination(target);setIds(selectedIds);setProject(merged.project);setOrphans(merged.orphans);setUnsavedCodes(merged.unsaved);setRenumbered(new Set());setRevision(result.guide.revision);setFingerprint(result.fingerprint);
       const unsaved=editsFor(merged.project,merged.orphans).some(f=>JSON.stringify(f)!==JSON.stringify(withoutCodeHistory(result.guide.furniture.find(saved=>saved.id===f.id))));
       setPieceQuery('');setOnlySelected(false);setFurnitureId(merged.project.furniture[0].id);setPieceId('');setNoteId('');setPicking(undefined);setDirty(unsaved);
       await request('dirty',{value:unsaved});setMessage('Guías generadas. Revisá las piezas, agregá tus indicaciones y guardá la guía.');
     });
   }
+  // Points 18 and 23: rebuilds the guides of `selection` from the live model keeping the unsaved edits by id
+  // (names, codes, notes, views). Pieces that appeared get the next free code; a note whose piece is gone stays
+  // only if it was already saved as orphan (the store never accepts a new one) and the rest is reported.
+  type Fresh={project:Project;orphans:Record<string,Note[]>;fingerprint:string;revision:number;dropped:number};
+  async function refreshGuides(selection:string[],rescan:boolean,source:Project|undefined=project,sourceOrphans=orphans):Promise<Fresh>{
+    let chosen=selection;
+    if(rescan){
+      const fresh=await request<Scan>('scan'),available=new Set(allIds(fresh.tree.roots));
+      chosen=selection.filter(id=>available.has(id));
+      if(!chosen.length)throw new Error('Los muebles de la guía ya no están en el modelo. Elegilos de nuevo en Muebles.');
+      setScan(fresh);setModelAnalysisStale(false);
+    }
+    const result=await request<Generated>('generate',{ids:chosen});
+    const local:GuideFurniture[]=source?editsFor(source,sourceOrphans,renumbered).filter(f=>chosen.includes(f.id)):[];
+    const merged=mergeGuide(result.document,{...result.guide,furniture:[...result.guide.furniture.filter(f=>!local.some(edit=>edit.id===f.id)),...local]});
+    const pending=new Map(source?.furniture.filter(f=>f.groupName!==undefined).map(f=>[f.id,f.groupName!])||[]);
+    merged.project.furniture=autoModules(merged.project.furniture.map(f=>{const groupName=pending.get(f.id);return ensureGuide(groupName===undefined?withNaming(f,workCode):withNaming({...f,name:groupName,groupName},workCode,moduleFromName(groupName)||f.naming?.moduleCode||''));}),workCode);
+    let dropped=0;const kept:Record<string,Note[]>={};
+    for(const [id,notes] of Object.entries(merged.orphans)){const saved=result.guide.furniture.find(f=>f.id===id)?.notes||[];kept[id]=notes.filter(note=>{const ok=saved.some(old=>old.id===note.id&&old.pieceId===note.pieceId&&JSON.stringify(old.anchor)===JSON.stringify(note.anchor));if(!ok)dropped++;return ok;});}
+    const unsaved=Object.fromEntries(merged.project.furniture.map(f=>{const saved=result.guide.furniture.find(g=>g.id===f.id);return [f.id,f.pieces.filter(p=>!saved?.pieces.some(old=>old.id===p.id)).map(p=>p.id)];}));
+    setIds(chosen);setProject(merged.project);setOrphans(kept);setUnsavedCodes(unsaved);setRenumbered(previous=>new Set([...previous].filter(id=>chosen.includes(id))));setRevision(result.guide.revision);setFingerprint(result.fingerprint);setNameWarnings({});
+    if(!merged.project.furniture.some(f=>f.id===furniture?.id)){setFurnitureId(merged.project.furniture[0].id);setPieceId('');setNoteId('');}
+    const changed=editsFor(merged.project,kept).some(f=>JSON.stringify(f)!==JSON.stringify(withoutCodeHistory(result.guide.furniture.find(saved=>saved.id===f.id))));
+    setDirty(changed);void request('dirty',{value:changed}).catch(()=>{});
+    return {project:merged.project,orphans:kept,fingerprint:result.fingerprint,revision:result.guide.revision,dropped};
+  }
+  const droppedNotice=(count:number)=>count?` ${count===1?'Se quitó 1 nota':`Se quitaron ${count} notas`} sin guardar cuya pieza ya no está en el modelo.`:'';
   async function save(closeAfterSave=false,replacement?:Furniture,projectOverride?:Project,saveFile=saveSkp){
-    if(modelAnalysisStale){setError('El análisis está desactualizado. Volvé a analizar y generar las guías antes de guardar o exportar.',{label:'Analizar de nuevo',kind:'analyze'});return false;}
     if(contextChanged){setError('Cambió el modelo activo. Volvé al modelo original para guardar esta guía o analizá el nuevo después de conservar tus cambios.');return false;}
     if(!project||draftHidden!==null)return false;
     return await run('Guardando guía…',async()=>{
       await ensureRuntime();
-      const source=projectOverride||project;
-      const prepared={...source,furniture:source.furniture.map(f=>ensureGuide(normalizeNaming(replacement?.id===f.id?replacement:f,workCode)))};
-      for(const f of prepared.furniture){const issues=namingIssues(f,workCode);if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
-      const result=await request<{guide:Guide;modelSaved:boolean;path:string;fingerprint:string;document:RawDocument}>('save',{furniture:editsFor(prepared,orphans,renumbered),revision,saveFile,syncNames,workCode,closeAfterSave});
+      let source=projectOverride||project;
+      if(replacement)source={...source,furniture:source.furniture.map(f=>f.id===replacement.id?replacement:f)};
+      let current={orphans,revision,dropped:0};
+      // Point 18: with the analysis out of date the guide is saved anyway: it goes by id, so it is rebuilt on the live model first.
+      if(modelAnalysisStale){const fresh=await refreshGuides(source.furniture.map(f=>f.id),true,source);source=fresh.project;current=fresh;}
+      const prepared={...source,furniture:autoModules(source.furniture.map(f=>ensureGuide(normalizeNaming(f,workCode))),workCode)};
+      for(const f of prepared.furniture){const issues=[...guideIssues(f),...namingIssues(f)];if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
+      const result=await request<{guide:Guide;modelSaved:boolean;path:string;fingerprint:string;document:RawDocument;skippedNames?:{id:string;reason:string}[]}>('save',{furniture:editsFor(prepared,current.orphans,renumbered),revision:current.revision,saveFile,syncNames,workCode,closeAfterSave});
       const stored=mergeGuide(result.document,result.guide);
       stored.project.furniture=stored.project.furniture.map(ensureGuide);setProject(stored.project);setOrphans(stored.orphans);setUnsavedCodes(stored.unsaved);setRenumbered(new Set());setFingerprint(result.fingerprint);setRevision(result.guide.revision);setDirty(false);setFilePending(!result.modelSaved);
-      if(result.modelSaved)setMessage('Guía y archivo SketchUp guardados.');else setMessage('Guía guardada en el modelo abierto. Falta guardar el archivo .skp para conservarla al cerrar.',{label:'Guardar SKP',kind:'save'},'warning');
+      // Point 20: a row that could not be renamed keeps its name in SketchUp and shows why on the row.
+      const skipped=result.skippedNames||[];setNameWarnings(Object.fromEntries(skipped.map(row=>[row.id,row.reason])));
+      const notRenamed=skipped.length?` ${skipped.length===1?'1 nombre no se cambió':`${skipped.length} nombres no se cambiaron`} en SketchUp: mirá el aviso en ${skipped.length===1?'su fila':'cada fila'}.`:'';
+      if(result.modelSaved&&!notRenamed&&!current.dropped)setMessage('Guía y archivo SketchUp guardados.');
+      else if(result.modelSaved)setMessage(`Guía y archivo SketchUp guardados.${notRenamed}${droppedNotice(current.dropped)}`,undefined,'warning');
+      else setMessage(`Guía guardada en el modelo abierto. Falta guardar el archivo .skp para conservarla al cerrar.${notRenamed}${droppedNotice(current.dropped)}`,{label:'Guardar SKP',kind:'save'},'warning');
     });
   }
   async function exportPdf(){
-    if(modelAnalysisStale){setError('El análisis está desactualizado. Volvé a analizar y generar las guías antes de exportar.',{label:'Analizar de nuevo',kind:'analyze'});return;}
     if(contextChanged){setError('Cambió el modelo activo. Volvé a analizar antes de exportar.');return;}
     if(!project||draftHidden!==null)return;
     await run('Preparando PDF A4…',async()=>{
       await ensureRuntime();
-      for(const f of project.furniture){const issues=[...guideIssues(f,orphans[f.id]||[]),...namingIssues(f,workCode)];if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
-      if(selectionChanged){setError('La selección cambió. Pulsá Generar guías para actualizar los muebles del PDF.',{label:'Generar guías',kind:'generate'});return;}
+      let source=project,print=fingerprint,dropped=0;
+      // Points 18 and 23: an out-of-date analysis or a new choice of furniture regenerates the guides, keeping the edits.
+      if(modelAnalysisStale||(selectionChanged&&ids.length)){const fresh=await refreshGuides(selectionChanged&&ids.length?ids:project.furniture.map(f=>f.id),modelAnalysisStale);source=fresh.project;print=fresh.fingerprint;dropped=fresh.dropped;}
+      source={...source,furniture:autoModules(source.furniture,workCode)};
+      for(const f of source.furniture){const issues=[...guideIssues(f),...namingIssues(f)];if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
       // F-DESP-B: rows that validate print their order data; the rest print «pendiente de pedido».
       const order=printMaterials?await request<PartialReferences>('order_references_partial'):undefined;
-      const bytes=await createOfflinePdf(project,decode64(regularFont),decode64(monoFont),decode64(logo),order?.references,{pending:order?.pending});
-      const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint,furniture:editsFor(project,orphans,renumbered),base64:encode64(bytes)});
-      if(result.cancelled)setMessage('Exportación cancelada.',undefined,'info');else setMessage(`PDF A4 guardado: ${result.path}`);
+      const bytes=await createOfflinePdf(source,decode64(regularFont),decode64(monoFont),decode64(logo),order?.references,{pending:order?.pending});
+      // Orphan notes are a notice, not a blocker (point 22): they are not printed, so they stay out of the export check.
+      const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint:print,furniture:editsFor(source,{},renumbered),base64:encode64(bytes)});
+      if(result.cancelled)setMessage('Exportación cancelada.',undefined,'info');else setMessage(`PDF A4 guardado: ${result.path}${droppedNotice(dropped)}`);
     });
   }
-  function batchRows(source:Project,native?:{id:string;currentName:string;name:string;affectedPaths?:string[];changed?:boolean}[]):NameBatchRow[]{
-    const current=new Map<string,string>();function visit(nodes:RawNode[]){for(const node of nodes){current.set(node.id,node.metadata?.originalName??node.name);visit(node.children);}}visit(scan?.tree.roots||[]);
-    const changes:{id:string;currentName:string;name:string;affectedPaths?:string[];changed?:boolean}[]=native||source.furniture.flatMap(f=>[...(f.groupName!==undefined?[{id:f.id,currentName:current.get(f.id)||'',name:f.groupName}]:[]),...f.pieces.map(p=>({id:p.id,currentName:current.get(p.id)??p.metadata?.originalName??p.name,name:p.name}))]);
-    return changes.filter(row=>row.currentName!==row.name&&row.changed!==false).map(row=>{const f=source.furniture.find(f=>f.id===row.id||f.pieces.some(p=>p.id===row.id))!,prefix=workCode?`${workCode} ${f.naming?.moduleCode||''} `:'',isRoot=f.id===row.id,canExclude=!!row.currentName.trim()&&(isRoot||!prefix||row.currentName.startsWith(prefix)&&!!row.currentName.slice(prefix.length).trim());return {id:row.id,currentName:row.currentName,name:row.name,furniture:f.name,furnitureId:f.id,moduleCode:f.naming?.moduleCode||undefined,code:isRoot?'Grupo':pieceCodeMap(f).get(row.id)||'Pieza',canExclude,warning:(row.affectedPaths?.length||0)>1?`Instancia compartida: ${row.affectedPaths!.length} rutas afectadas. Deben mantener nombres compatibles.`:undefined};});
-  }
-  function selectedBatch(ids:string[]){if(!nameBatch)return project!;const included=new Set(ids);return {...nameBatch.source,furniture:nameBatch.source.furniture.map(f=>{const originals=new Map(nameBatch.rows.filter(row=>!included.has(row.id)).map(row=>[row.id,row.currentName])),prefix=workCode?`${workCode} ${f.naming?.moduleCode||''} `:'';return withNaming({...f,...(originals.has(f.id)?{name:originals.get(f.id)!,groupName:originals.get(f.id)!}:{}),naming:f.naming?{...f.naming,bases:f.naming.bases.map(base=>originals.has(base.id)?{...base,base:prefix?originals.get(base.id)!.slice(prefix.length):originals.get(base.id)!}:base)}:undefined},workCode);})};}
-  async function checkNameBatch(source:Project){return await request<NameBatchCheck&{rows?:{id:string;currentName:string;name:string;affectedPaths?:string[];changed?:boolean}[]}>('guide_names_preview',{furniture:editsFor(source,orphans,renumbered),revision,workCode});}
-  async function openNameBatch(){if(!project||!syncNames||contextChanged||modelAnalysisStale||draftHidden!==null)return;await run('Revisando lote de nombres…',async()=>{const source={...project,furniture:project.furniture.map(f=>ensureGuide(normalizeNaming(f,workCode)))};try{const result=await checkNameBatch(source);setNameBatch({source,rows:batchRows(source,result.rows),check:{...result,blocked:!!result.blockers?.length}});}catch(value){setNameBatch({source,rows:batchRows(source),check:{blocked:true,blockers:[value instanceof Error?value.message:String(value)]}});}});}
-  async function reviewNameBatch(ids:string[]){await run('Revisando selección del lote…',async()=>{try{const check=await checkNameBatch(selectedBatch(ids));setNameBatch(previous=>previous?{...previous,check:{...check,blocked:!!check.blockers?.length}}:previous);}catch(value){setNameBatch(previous=>previous?{...previous,check:{blocked:true,blockers:[value instanceof Error?value.message:String(value)]}}:previous);}});}
-  async function confirmNameBatch(ids:string[]){const source=selectedBatch(ids);let checked=false;await run('Verificando nombres antes de guardar…',async()=>{const result=await checkNameBatch(source);if(result.blockers?.length)throw new Error(result.blockers.join(' '));checked=true;});if(!checked)return false;return await save(false,undefined,source);}
   function selectPiece(id:string,focus=false,fromDrawing=false){
     if(fromDrawing)setPieceQuery('');
     setPieceId(id);
@@ -326,8 +375,8 @@ export default function App(){
     setOrphans(o=>({...o,[furniture.id]:(o[furniture.id]||[]).filter(n=>n.id!==note.id)}));setNoteId('');setPicking(undefined);
   }
   function setCode(value:string){
-    const code=value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,2);setWorkCode(code);
-    setProject(p=>p?{...p,furniture:p.furniture.map(f=>withNaming(f,code))}:p);if(project)markDirty();
+    const typed=value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,2),code=effectiveWorkCode(typed);setWorkCodeInput(typed);
+    setProject(p=>p?{...p,furniture:autoModules(p.furniture.map(f=>withNaming(f,code)),code)}:p);if(project)markDirty();
   }
   function visibleTree(nodes:RawNode[]):RawNode[]{
     return nodes.flatMap(node=>{
@@ -398,16 +447,15 @@ export default function App(){
     // Painting works on the live model with its own per-click inventory, like OpenCutList: it never waits for the analysis or the guide.
     if(kind==='paint')return libraryDirty&&!allowLibrary?'Guardá o cancelá los cambios de Materiales':undefined;
     if(contextChanged)return 'Volvé al modelo original de la guía';
-    if(modelAnalysisStale)return 'El análisis está desactualizado; volvé a analizar y generar las guías';
+    // Point 18: saving and exporting rebuild the guide on the live model by id, so an old analysis never blocks them.
     if(draftHidden!==null)return 'Aplicá o cancelá las piezas ocultas';
     if(!project)return 'Primero generá las guías en Muebles';
-    if(kind==='export'&&selectionChanged)return 'Cambiaste los muebles; pulsá Generar guías';
     return undefined;
   }
   const saveBlock=blockReason('save'),exportBlock=blockReason('export'),paintBlock=blockReason('paint'),navBlock=blockReason('nav'),toolsBlock=blockReason('tools');
   const guidePending=contextChanged||modelAnalysisStale?'Análisis desactualizado':dirty?'Guía sin guardar':filePending?'Falta guardar el SKP':undefined;
-  const pending:Record<Module,string|undefined>={home:undefined,materials:libraryDirty?'Cambios de biblioteca sin guardar':undefined,furniture:guidePending,order:workshopDirty?'Biblioteca o pedido sin guardar':undefined,guides:guidePending};
-  const dialogOpen=showSmartPaint||showPhotoMaterial||showPaint||showMaterials||showWorkshop||showSuggestions||showCodePlan||!!nameBatch||!!pendingConfirm;
+  const pending:Record<Module,string|undefined>={home:undefined,materials:libraryDirty?'Cambios de biblioteca sin guardar':undefined,furniture:guidePending,pieces:undefined,order:workshopDirty?'Biblioteca o pedido sin guardar':undefined,guides:guidePending};
+  const dialogOpen=showSmartPaint||showPhotoMaterial||showPaint||showMaterials||showWorkshop||showSuggestions||showCodePlan||!!pendingConfirm;
   function runNoticeAction(action:NoticeAction){setError('');setMessage('');if(action.kind==='analyze')void analyze();else if(action.kind==='generate')void generate();else if(action.kind==='save')void save(false,undefined,undefined,true);else if(action.kind==='workshop')openWorkshop('order');else if(action.module)navigateModule(action.module);}
   function openWorkshop(tab:'catalog'|'order'){if(toolsBlock){setError(`No se puede abrir Biblioteca y pedidos. ${toolsBlock}.`);return;}setWorkshopTab(tab);setShowWorkshop(true);}
   const helpTrigger=useRef<HTMLSpanElement>(null),diagnosticOutput=useRef<HTMLPreElement>(null),[copyStatus,setCopyStatus]=useState('');
@@ -422,11 +470,11 @@ export default function App(){
   const palette=showSmartPaint?<SmartPaintPalette quickMode={compactPaint} initialCatalogId={paintCatalogId} autoStart={paintAutoStart} onCreateMaterial={()=>{setQuickIntent(undefined);setPaintAutoStart(false);setShowSmartPaint(false);setPhotoTarget(undefined);setShowPhotoMaterial(true);}} onAssignPhoto={target=>{setQuickIntent(undefined);setPaintAutoStart(false);setShowSmartPaint(false);setPhotoTarget(target);setShowPhotoMaterial(true);}} initialCompact={compactPaint} quickIntent={quickIntent} onApplied={acceptPaintScan} onClose={()=>setShowSmartPaint(false)} onManage={destination=>{setShowSmartPaint(false);if(destination==='catalog'){setDestination('materials');setMaterialsVisited(true);}else{setPaintPieceId(piece?.id);setShowPaint(true);}}}/>:null;
   return <>{showPhotoMaterial&&<PhotoMaterialPanel replacement={photoTarget} initialKind={photoTarget?.kind} onClose={()=>{setShowPhotoMaterial(false);setPhotoTarget(undefined);setPaintAutoStart(false);setShowSmartPaint(true);}} onCreated={(result,options)=>{const assigned=photoTarget?.assign===true;setShowPhotoMaterial(false);setPhotoTarget(undefined);if(assigned&&!options.paint){setCatalogRefresh(value=>value+1);setShowSmartPaint(true);return;}if(result.scan)acceptPaintScan(result.scan,result.refreshWarning);else if(result.refreshWarning)acceptPaintScan(undefined,result.refreshWarning);else setCatalogRefresh(value=>value+1);if(options.paint&&(result.scan||(result as {stale?:boolean}).stale===true)){setQuickIntent(undefined);setPaintCatalogId(result.catalogId);setPaintAutoStart(true);setCompactPaint(true);setShowSmartPaint(true);}else{setShowSmartPaint(false);setDestination('materials');setMaterialsVisited(true);}}}/>} {palette}<div className={`ux-shell destination-${destination}`} hidden={showSmartPaint}>
     <a className="ux-skip" href="#module-content">Ir al contenido</a>
-    <nav className="ux-rail" aria-label="Módulos de Planos Santo"><div className="ux-brand" title="Planos Santo">S<span>PLANOS</span></div>{modules.map(([id,label,description],index)=><button key={id} type="button" aria-current={destination===id?'page':undefined} aria-keyshortcuts={`Alt+${index+1}`} aria-describedby={[pending[id]&&`rail-pending-${id}`,navBlock&&'rail-block-reason'].filter(Boolean).join(' ')||undefined} aria-disabled={navBlock?true:undefined} title={[description,pending[id],navBlock,`Alt+${index+1}`].filter(Boolean).join(' · ')} onClick={()=>navigateModule(id)}><ModuleIcon name={id}/><span>{label}</span>{pending[id]&&<><span className="ux-rail-badge" aria-hidden="true"/><span id={`rail-pending-${id}`} hidden>{pending[id]}</span></>}</button>)}<span id="rail-block-reason" className="sr-only">{navBlock}</span><div className="ux-rail-divider"/><button type="button" title={paintBlock?`Pintar: ${paintBlock}`:'Pintura Inteligente · paleta compacta'} aria-disabled={paintBlock?true:undefined} aria-describedby={paintBlock?'rail-paint-reason':undefined} onClick={()=>openPalette(true)}><ModuleIcon name="paint"/><span>Pintar</span><span id="rail-paint-reason" className="sr-only">{paintBlock}</span></button><span className="ux-offline">LOCAL<br/>SIN NUBE</span></nav>
+    <nav className="ux-rail" aria-label="Módulos de Planos Santo"><div className="ux-brand" title="Planos Santo">S<span>PLANOS</span></div>{modules.map(([id,label,description])=>{const shortcut=(moduleShortcuts as string[]).indexOf(id)+1,keys=shortcut?`Alt+${shortcut}`:undefined;return <button key={id} type="button" aria-current={destination===id?'page':undefined} aria-keyshortcuts={keys} aria-describedby={[pending[id]&&`rail-pending-${id}`,navBlock&&'rail-block-reason'].filter(Boolean).join(' ')||undefined} aria-disabled={navBlock?true:undefined} title={[description,pending[id],navBlock,keys].filter(Boolean).join(' · ')} onClick={()=>navigateModule(id)}><ModuleIcon name={id}/><span>{label}</span>{pending[id]&&<><span className="ux-rail-badge" aria-hidden="true"/><span id={`rail-pending-${id}`} hidden>{pending[id]}</span></>}</button>;})}<span id="rail-block-reason" className="sr-only">{navBlock}</span><div className="ux-rail-divider"/><button type="button" title={paintBlock?`Pintar: ${paintBlock}`:'Pintura Inteligente · paleta compacta'} aria-disabled={paintBlock?true:undefined} aria-describedby={paintBlock?'rail-paint-reason':undefined} onClick={()=>openPalette(true)}><ModuleIcon name="paint"/><span>Pintar</span><span id="rail-paint-reason" className="sr-only">{paintBlock}</span></button><span className="ux-offline">LOCAL<br/>SIN NUBE</span></nav>
     <div className="ux-stage"><header className="ux-topbar"><div><span className="ux-breadcrumb">Planos Santo <span aria-hidden="true">/</span> {modules.find(([id])=>id===destination)?.[1]}</span><h1 className="ux-module-heading" tabIndex={-1}>{modules.find(([id])=>id===destination)?.[1]}</h1></div><div className="ux-topbar-tools" style={{flexWrap:'wrap',minWidth:0,justifyContent:'flex-end'}}>{lastNotice&&<details className="ux-last-notice" open={lastOpen} onToggle={event=>setLastOpen(event.currentTarget.open)}><summary>Último aviso <span>{lastNotice.time}</span></summary>{lastOpen&&<p className={lastNotice.tone==='error'?'error':lastNotice.tone==='warning'?'warning':'success'}>{lastNotice.text}</p>}</details>}<button type="button" className="quiet ux-fold" aria-pressed={windowFolded} disabled={!!busy} title={windowFolded?'Volver al tamaño anterior de la ventana':'Achicar esta ventana y volver al modelo de SketchUp'} onClick={()=>void toggleWindowFold()}>{windowFolded?'Desplegar':'Plegar'}</button><span ref={helpTrigger} className="ux-help-shortcuts"><HelpPopover title="Atajos y diagnóstico"><h3>Atajos de teclado</h3><dl className="ux-shortcuts">{moduleShortcuts.map((id,index)=><div key={id}><dt><kbd>Alt</kbd>+<kbd>{index+1}</kbd></dt><dd>{moduleLabel(id)}</dd></div>)}<div><dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>Guardar guía</dd></div><div><dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></dt><dd>Exportar PDF A4</dd></div><div><dt><kbd>Escape</kbd></dt><dd>Cancelar o cerrar</dd></div><div><dt><kbd>?</kbd></dt><dd>Abrir esta ayuda</dd></div></dl><p>No actúan con un diálogo abierto ni mientras escribís en notas, listas o menús. En un campo de una línea funcionan Ctrl+S, Ctrl+Shift+E y Alt+1 a Alt+5; ? no, para que puedas escribirlo.</p><h3>Si necesitás ayuda con un error</h3><p>El diagnóstico muestra la versión instalada. No envía tu modelo.</p><div className="ux-diagnostic-actions"><button type="button" disabled={!!busy} onClick={()=>{setCopyStatus('');void run('Comprobando instalación…',async()=>{const result=await request('diagnostic');setDiagnostic(JSON.stringify(result,null,2));});}}>Ver diagnóstico</button>{diagnostic&&<button type="button" onClick={()=>void copyDiagnostic()}>Copiar diagnóstico</button>}</div>{diagnostic&&<pre ref={diagnosticOutput} className="ux-diagnostic" tabIndex={0} aria-label="Diagnóstico de la instalación">{diagnostic}</pre>}<span role="status" className="ux-copy-status">{copyStatus}</span></HelpPopover></span></div><div className="ux-project-context"><span>{scan?.tree.modelName||project?.name||'Modelo de SketchUp'}</span><strong><em className="ux-version-chip" title={`Versión ${version} en prueba. Extensión candidata: instalación y revisión visual pendientes en SketchUp 2026 Windows.`}>v{version} · en prueba</em>{contextChanged?'Modelo cambiado':modelAnalysisStale?'Análisis desactualizado':dirty||libraryDirty||workshopDirty?'Cambios pendientes':filePending?'Falta guardar SKP':project?'Guía en revisión':'Elegí un mueble'}</strong></div></header>
     <div id="module-content" className="offline-app">
 
-    {nameBatch&&<NameBatchPreview rows={nameBatch.rows} check={nameBatch.check} busy={!!busy} error={error} onReview={reviewNameBatch} onConfirm={confirmNameBatch} onClose={()=>{setNameBatch(undefined);const trigger=batchTrigger.current;if(trigger&&!trigger.disabled)trigger.focus();else if(trigger&&busy)focusAfterBusy.current=trigger;else document.querySelector<HTMLElement>('.ux-module-heading')?.focus();}}/>}
+
     {showCodePlan&&furniture&&<CodePlanDialog furniture={furniture} unsaved={unsavedCodes[furniture.id]||NO_UNSAVED_CODES} references={previewReferences} loadReferences={()=>request<PartialReferences>('order_references_partial').then(result=>result.references)} onClose={()=>{setShowCodePlan(false);codePlanTrigger.current?.focus();}} onApply={(codes,renumber)=>{changeFurniture(f=>({...f,pieces:f.pieces.map(p=>codes[p.id]?{...p,code:codes[p.id]}:p)}));if(renumber)setRenumbered(old=>new Set([...old,furniture.id]));setShowCodePlan(false);codePlanTrigger.current?.focus();setMessage('Códigos aplicados. Guardá la guía para conservarlos.');}}/>}
     {showSuggestions&&furniture&&<NameSuggestions furniture={furniture} workCode={workCode} onConfirm={f=>save(false,f)} busy={!!busy} error={error} syncNames={syncNames} onClose={()=>{setShowSuggestions(false);suggestionsTrigger.current?.focus();}}/>}
     {showWorkshop&&<WorkshopPanel initialCatalogId={catalogFocus} initialTab={workshopTab} onDirtyChange={setWorkshopDirty} onClose={()=>{setShowWorkshop(false);setCatalogRefresh(value=>value+1);workshopTrigger.current?.focus();}}/>}
@@ -439,8 +487,9 @@ export default function App(){
     {error&&<div role="alert" className="error ux-notice"><span>{error}</span>{errorAction&&<button type="button" className="ux-notice-action" onClick={()=>runNoticeAction(errorAction)}>{errorAction.label}</button>}<button type="button" className="ux-notice-close" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={()=>setError('')}>×</button></div>}
     {message&&<div role="status" className={`${messageTone==='warning'?'warning':'success'} ux-notice`} data-tone={messageTone} onPointerEnter={()=>setNoticeHold(true)} onPointerLeave={()=>setNoticeHold(false)} onFocus={()=>setNoticeHold(true)} onBlur={()=>setNoticeHold(false)}><span>{message}</span>{messageAction&&<button type="button" className="ux-notice-action" onClick={()=>runNoticeAction(messageAction)}>{messageAction.label}</button>}<button type="button" className="ux-notice-close" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={()=>{setMessage('');setNoticeHold(false);}}>×</button></div>}</div>
     {materialsVisited&&<div className="ux-materials-content" hidden={destination!=='materials'}><MaterialLibraryPanel refreshKey={catalogRefresh} onApplied={acceptPaintScan} onEdit={id=>{setCatalogFocus(id);setWorkshopTab('catalog');setShowWorkshop(true);}} onPaint={(id,autoStart)=>openPalette(true,id,autoStart)} onManageModel={()=>{setPaintPieceId(piece?.id);setShowPaint(true);}} onDirtyChange={setLibraryDirty} onChanged={()=>setMessage('Biblioteca del taller actualizada. Revisá las fichas antes de usar materiales en producción.')} onClose={()=>navigateModule('home')}/></div>}
-    {destination==='order'&&<section className="ux-order-content" aria-label="Pedido a maderera"><div className="ux-module-intro"><div><span className="eyebrow">DEL MUEBLE AL CORTE</span><h2>Prepará un pedido claro</h2><p>Revisá material, espesor, orientación y cantos. El TXT se genera solo después del preflight y tu confirmación.</p></div></div><WorkshopPanel embedded initialTab="order" onDirtyChange={setWorkshopDirty} onClose={()=>{setWorkshopDirty(false);setDestination('home');}}/></section>}
-    <main hidden={destination==='materials'||destination==='order'} className={`editor-main ${project&&hideFurniture?'furniture-hidden':''}`}>
+    {destination==='order'&&<section className="ux-order-content" aria-label="Pedido a maderera"><div className="ux-module-intro"><div><span className="eyebrow">DEL MUEBLE AL CORTE</span><h2>Prepará un pedido claro</h2><p>El pedido se propone solo desde lo pintado y se guarda solo. Corregí lo que haga falta y exportá el TXT.</p></div></div><WorkshopPanel embedded initialTab="order" onDirtyChange={setWorkshopDirty} onClose={()=>{setWorkshopDirty(false);setDestination('home');}}/></section>}
+    {destination==='pieces'&&<CutlistView ready={!!project} onHighlight={id=>void highlightRoute(id)} onGoToFurniture={()=>navigateModule('furniture')}/>}
+    <main hidden={destination==='materials'||destination==='order'||destination==='pieces'} className={`editor-main ${project&&hideFurniture?'furniture-hidden':''}`}>
       <aside id="furniture-chooser" className="left-panel" hidden={!!project&&hideFurniture}><div className="section-heading"><h2><span>01</span> Elegí los muebles</h2><HelpPopover title="Elegir muebles"><p>Marcar todos propone los grupos padres que contienen piezas. Usar selección de SketchUp toma los grupos que marcaste en SketchUp, incluso dentro de otro grupo.</p><p>Abrí «Ver contenido» para elegir un mueble interno. No se incluye al mismo tiempo un grupo y su descendiente. Los ocultos quedan identificados para que los revises.</p></HelpPopover></div><div className="naming-settings"><label>Abreviatura de la obra<input aria-label="Abreviatura de la obra" value={workCode} maxLength={2} placeholder="VF" disabled={!!busy} onChange={e=>setCode(e.target.value)}/></label><p className="hint">Dos letras. Ejemplo: VF = Vestuarios de Futbol. El módulo se toma de M01, M02… en el nombre del grupo.</p></div><div className="project-card"><span>MODELO ABIERTO</span><p>{scan?.tree.modelName||'Leyendo SketchUp…'}</p></div><div className="scope-buttons"><button disabled={!!busy} onClick={()=>void analyze('all')}>Marcar todos</button><button disabled={!!busy} onClick={()=>void analyze('selected')}>Usar selección de SketchUp</button></div><p className="hint">Marcá los muebles que necesitás. Revisá los grupos internos antes de generar.</p>
         <label className="tree-filter">Mostrar en el listado<select aria-label="Filtrar muebles" value={filter} onChange={e=>setFilter(e.target.value as typeof filter)}><option value="all">Todos</option><option value="selected">Seleccionados para generar</option><option value="unselected">No seleccionados para generar</option></select></label><div className="tree">{scan?scan.tree.roots.some(node=>countPieces(node)>0)?tree(visibleTree(scan.tree.roots)):<p className="hint tree-empty">No encontramos grupos ni componentes con piezas en este modelo. Agrupá las placas y volvé a analizar.</p>:busy?<p className="hint tree-empty">Analizando modelo…</p>:null}</div>
         {scan?.tree.warnings.map(w=><p className="warning" key={w}>{w}</p>)}
@@ -452,7 +501,7 @@ export default function App(){
         {destination==='home'?<div className="ux-home"><span className="eyebrow">TRABAJO DE TALLER</span><h2>Del modelo a una guía clara.</h2><p className="ux-home-lead">Elegí el mueble, revisá sus piezas y prepará lo que necesita el taller. Tu modelo original se conserva.</p><div className="ux-current-job"><span>TRABAJO ACTUAL</span><strong>{furniture?.name||scan?.tree.modelName||'Esperando el modelo abierto'}</strong><p>{project?`${plural(project.furniture.length,'mueble','muebles')} · ${plural(project.furniture.reduce((sum,f)=>sum+f.pieces.length,0),'pieza','piezas')} en revisión`:ids.length?`${plural(ids.length,'mueble seleccionado','muebles seleccionados')} para generar`:'Ningún mueble seleccionado'}</p><button className="primary" disabled={!!busy||!scan} onClick={()=>navigateModule(project?'guides':'furniture')}>{project?'Continuar con los planos':'Revisar muebles seleccionados'}</button></div><div className="ux-next-steps">{modules.filter(([id])=>id!=='home').map(([id,label],index)=><button key={id} type="button" onClick={()=>navigateModule(id)}><ModuleIcon name={id}/><strong>{index+1}. {label}</strong><span>{moduleSteps[id]}</span></button>)}</div><p className="ux-home-help">Para pintar directamente en SketchUp usá <strong>Pintar</strong> o la barra nativa. La paleta deja libre el modelo.</p></div>:furniture&&project?<>
           <nav className="furniture-tabs" aria-label="Guías por mueble">{project.furniture.map(f=><button className={f.id===furniture.id?'active':''} key={f.id} disabled={!!busy||draftHidden!==null} onClick={()=>{setDraftHidden(null);setFurnitureId(f.id);setPieceId('');setNoteId('');setPicking(undefined);setPieceQuery('');setOnlySelected(false);setEditingPieceId('');}}>{f.name}<small>{plural(f.pieces.length,'pieza','piezas')}</small></button>)}</nav>
           <div className="guide-heading"><div><span className="eyebrow">{destination==='furniture'?'MUEBLES Y PIEZAS':'FICHA DE ARMADO A4'}</span><h2>{furniture.name}</h2></div><div className="guide-actions"><button className="quiet" aria-expanded={!hideFurniture} aria-controls="furniture-chooser" onClick={()=>setHideFurniture(v=>!v)}>{hideFurniture?'Mostrar muebles':'Ocultar muebles'}</button><span className="piece-count">{plural(furniture.pieces.length,'pieza','piezas')} · {project.furniture.length} {project.furniture.length===1?'guía':'guías'} en el PDF</span></div></div>
-          {selectionChanged&&<div className="selection-notice" role="status">Cambiaste los muebles elegidos. Pulsá <strong>Generar guías</strong> para actualizar la vista y habilitar el PDF.</div>}
+          {selectionChanged&&!ids.length&&<div className="selection-notice" role="status">No hay muebles elegidos: la guía conserva los anteriores hasta que marques alguno.</div>}
           <div className="assembly-layout">
             <div className="assembly-drawing">
               <section className={`view ${picking?'picking':''}`} aria-label="Visor del mueble">
@@ -471,11 +520,11 @@ export default function App(){
             </div>
             <div className="assembly-inspector">
               <section className="parts-config" aria-label="Configuración de grupos y piezas">
-                <div className="table-heading"><h2><span>02</span> Grupos y piezas</h2><HelpPopover title="Nombres y medidas"><p>Tocá una pieza del dibujo para encontrarla en el listado. También podés buscar por ID o nombre y usar las flechas para recorrer las piezas.</p><p>Escribí solo el nombre de la pieza, por ejemplo Lateral. Obra y módulo se agregan automáticamente. Al guardar se actualizan en SketchUp si Sincronizar nombres está activado.</p><p>Las medidas están en milímetros y no se editan acá. Buscar, filtrar o resaltar no quita piezas del PDF.</p></HelpPopover><button ref={batchTrigger} disabled={!!busy||draftHidden!==null||!syncNames||contextChanged||modelAnalysisStale} onClick={()=>void openNameBatch()}>Aplicar renombrado</button><button ref={suggestionsTrigger} className="suggest-names" aria-label="Proponer nombres por geometría…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowSuggestions(true)}>Proponer nombres</button><button ref={codePlanTrigger} className="code-plan-open" aria-label="Codificar despiece…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowCodePlan(true)}>Codificar despiece</button></div>
-                <div className="group-configuration"><label>Nombre del grupo<input aria-label="Nombre del grupo" maxLength={80} disabled={!!busy} value={furniture.name} onChange={e=>{const name=e.target.value;changeFurniture(f=>withNaming({...f,name,groupName:name},workCode,moduleFromName(name)||f.naming?.moduleCode||''));}}/></label><div className="module-configuration"><label>Módulo<input aria-label="Módulo de este mueble" placeholder="M01" value={furniture.naming?.moduleCode||''} disabled={!!busy} maxLength={4} onChange={e=>changeFurniture(f=>withNaming(f,workCode,e.target.value.toUpperCase()))}/></label><p>Obra <strong>{workCode||'sin completar'}</strong><br/>Nombre: {workCode||'[obra]'} {furniture.naming?.moduleCode||'[módulo]'} + pieza</p></div></div>
+                <div className="table-heading"><h2><span>02</span> Grupos y piezas</h2><HelpPopover title="Nombres y medidas"><p>Tocá una pieza del dibujo para encontrarla en el listado. También podés buscar por ID o nombre y usar las flechas para recorrer las piezas.</p><p>Escribí solo el nombre de la pieza, por ejemplo Lateral. Obra y módulo se agregan automáticamente. Al guardar la guía se renombran en SketchUp si Sincronizar nombres está activado, en una sola operación que Ctrl+Z deshace; si una fila no se puede renombrar (instancia compartida, bloqueada o con subgrupos), queda con un aviso y conserva su nombre en SketchUp.</p><p>Las medidas están en milímetros y no se editan acá. Buscar, filtrar o resaltar no quita piezas del PDF.</p></HelpPopover><button ref={suggestionsTrigger} className="suggest-names" aria-label="Proponer nombres por geometría…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowSuggestions(true)}>Proponer nombres</button><button ref={codePlanTrigger} className="code-plan-open" aria-label="Codificar despiece…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowCodePlan(true)}>Codificar despiece</button></div>
+                <div className="group-configuration"><label>Nombre del grupo<input aria-label="Nombre del grupo" maxLength={80} disabled={!!busy} value={furniture.name} onChange={e=>{const name=e.target.value;changeFurniture(f=>withNaming({...f,name,groupName:name},workCode,moduleFromName(name)||f.naming?.moduleCode||''));}}/></label><div className="module-configuration"><label>Módulo<input aria-label="Módulo de este mueble" placeholder="M01" value={furniture.naming?.moduleCode||''} disabled={!!busy} maxLength={4} onChange={e=>changeFurniture(f=>withNaming(f,workCode,e.target.value.toUpperCase()))}/></label><p>Obra <strong>{workCode||'sin obra'}</strong><br/>Nombre: {workCode?`${workCode} ${furniture.naming?.moduleCode||'M01, M02… al guardar'} + pieza`:'pieza, sin obra ni módulo'}</p></div></div>
                 {piece&&<div className="selected-piece-summary" aria-live="polite"><span className="selected-code">{selectedRow?.code||piece.code}</span><div><strong>{selectedRow&&selectedRow.quantity>1?`${selectedRow.quantity} piezas iguales`:'Pieza seleccionada'}</strong><span>{piece.name}</span></div><div className="piece-navigation"><button aria-label="Pieza anterior" disabled={!!busy||pieceIndex<=0} onClick={()=>selectPiece(rows[pieceIndex-1].id,true,true)}>‹</button><small>{pieceIndex+1}/{rows.length}</small><button aria-label="Pieza siguiente" disabled={!!busy||pieceIndex>=rows.length-1} onClick={()=>selectPiece(rows[pieceIndex+1].id,true,true)}>›</button></div></div>}
                 <div className="piece-grouping"><label><input type="checkbox" aria-label="Agrupar componentes iguales" disabled={!!busy||(!repeated&&!furniture.groupIdentical)} checked={furniture.groupIdentical||false} onChange={e=>{const groupIdentical=e.target.checked;setPieceQuery('');setEditingPieceId('');changeFurniture(f=>withNaming({...f,groupIdentical},workCode));}}/><span>Agrupar componentes iguales<small>{repeated?`${repeated} ${repeated===1?'grupo de repetidos':'grupos de repetidos'} · mismo componente, medidas y material`:'No hay componentes repetidos compatibles'}</small></span></label><HelpPopover title="Piezas iguales"><p>Una fila, un nombre y un ID para los componentes iguales de este mueble. La cantidad indica cuántas piezas hay y el ID se repite en cada una en ambas vistas.</p><p>Se muestra el nombre de la primera pieza como referencia. Agrupar no cambia los nombres de las instancias en SketchUp. Si editás el nombre de la fila, ese cambio sí se aplica a todas sus piezas al guardar. Se mantienen las medidas y todas las geometrías. Las notas siguen en la pieza física donde las anclaste.</p><p>Se exige misma definición, medidas y material. Las piezas con escalas locales distintas o espejadas en distinto sentido quedan separadas. Desactivar recupera los IDs y nombres individuales; si editaste el nombre de la fila, se conservan esos cambios explícitos.</p></HelpPopover></div><div className="parts-search"><label>Buscar piezas<div className="search-field"><input type="search" aria-label="Buscar piezas" placeholder="ID o nombre de la pieza" value={pieceQuery} onChange={e=>setPieceQuery(e.target.value)}/>{pieceQuery&&<button aria-label="Limpiar búsqueda" onClick={()=>setPieceQuery('')}>×</button>}</div></label><div className="parts-filter"><div role="group" aria-label="Filtrar piezas"><button aria-pressed={!onlySelected} onClick={()=>setOnlySelected(false)}>Todas</button><button aria-pressed={onlySelected} onClick={()=>setOnlySelected(true)}>Seleccionada</button></div><span role="status">{visiblePieces.length} de {rows.length}{furniture.groupIdentical?' tipos':''}</span></div></div>
-                <div className="table-scroll" ref={partsScroll}><table aria-label="Piezas del mueble"><thead><tr><th>ID</th><th>Pieza y medidas · mm</th></tr></thead><tbody>{visiblePieces.map(p=><tr key={p.id} data-piece-row={p.id} aria-selected={p.memberIds.includes(piece?.id||'')} className={p.memberIds.includes(piece?.id||'')?'selected':''} onClick={()=>selectPiece(p.id)}><td><button className="piece-code-button" aria-label={`Elegir ${p.code}`} disabled={!!busy} onClick={e=>{e.stopPropagation();selectPiece(p.id,true);}}>{p.code}</button><small>×{p.quantity}</small></td><td><input data-piece-name={p.id} aria-label={`Nombre ${p.code}`} value={furniture.naming?.bases.find(b=>b.id===p.id)?.base??p.name} maxLength={70} disabled={!!busy} onFocus={()=>startNameEdit(p.id)} onBlur={()=>{editSnapshot.current=undefined;setEditingPieceId('');}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelNameEdit(p.id);event.currentTarget.blur();}else if(event.key==='Enter'||(event.key==='Tab'&&!event.shiftKey)){event.preventDefault();stepNameEdit(p.id);if(event.key==='Enter')event.currentTarget.blur();}}} onChange={e=>changeFurniture(f=>withNaming(f,workCode,undefined,{id:p.id,base:e.target.value}))}/>{p.name!==(furniture.naming?.bases.find(b=>b.id===p.id)?.base??p.name)&&<small className="composed-name">{p.name}</small>}<dl className="piece-measures">{p.dimensions.map((d,i)=><div key={i}><dt>{['Largo','Ancho','Espesor'][i]}</dt><dd>{mm(d)}</dd></div>)}</dl>{p.warnings.map(w=><small className="piece-warning" key={w}>{w}</small>)}</td></tr>)}</tbody></table>{!visiblePieces.length&&<div className="parts-empty"><strong>No hay piezas con ese filtro</strong><p>Probá otro nombre o volvé al listado completo.</p><button onClick={()=>{setPieceQuery('');setOnlySelected(false);}}>Mostrar todas las piezas</button></div>}</div>
+                <div className="table-scroll" ref={partsScroll}><table aria-label="Piezas del mueble"><thead><tr><th>ID</th><th>Pieza y medidas · mm</th></tr></thead><tbody>{visiblePieces.map(p=><tr key={p.id} data-piece-row={p.id} aria-selected={p.memberIds.includes(piece?.id||'')} className={p.memberIds.includes(piece?.id||'')?'selected':''} onClick={()=>selectPiece(p.id)}><td><button className="piece-code-button" aria-label={`Elegir ${p.code}`} disabled={!!busy} onClick={e=>{e.stopPropagation();selectPiece(p.id,true);}}>{p.code}</button><small>×{p.quantity}</small></td><td><input data-piece-name={p.id} aria-label={`Nombre ${p.code}`} value={furniture.naming?.bases.find(b=>b.id===p.id)?.base??p.name} maxLength={70} disabled={!!busy} onFocus={()=>startNameEdit(p.id)} onBlur={()=>{editSnapshot.current=undefined;setEditingPieceId('');}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelNameEdit(p.id);event.currentTarget.blur();}else if(event.key==='Enter'||(event.key==='Tab'&&!event.shiftKey)){event.preventDefault();stepNameEdit(p.id);if(event.key==='Enter')event.currentTarget.blur();}}} onChange={e=>changeFurniture(f=>withNaming(f,workCode,undefined,{id:p.id,base:e.target.value}))}/>{p.name!==(furniture.naming?.bases.find(b=>b.id===p.id)?.base??p.name)&&<small className="composed-name">{p.name}</small>}<dl className="piece-measures">{p.dimensions.map((d,i)=><div key={i}><dt>{['Largo','Ancho','Espesor'][i]}</dt><dd>{mm(d)}</dd></div>)}</dl>{p.warnings.map(w=><small className="piece-warning" key={w}>{w}</small>)}{[...new Set(p.memberIds.map(id=>nameWarnings[id]).filter(Boolean))].map(reason=><small className="piece-warning name-not-synced" role="note" key={reason}>No se renombró en SketchUp: {reason}</small>)}</td></tr>)}</tbody></table>{!visiblePieces.length&&<div className="parts-empty"><strong>No hay piezas con ese filtro</strong><p>Probá otro nombre o volvé al listado completo.</p><button onClick={()=>{setPieceQuery('');setOnlySelected(false);}}>Mostrar todas las piezas</button></div>}</div>
                 <p className="parts-instructions">Editá solo el nombre. Medidas del modelo protegidas.<br/>Los filtros afectan este listado; el PDF incluye todas las piezas.{furniture.groupIdentical&&<> Los IDs compartidos indican piezas iguales; la cantidad figura en cada fila.</>}</p>
               </section>
       <aside className="notes-panel"><div className="section-heading"><h2><span>03</span> Indicaciones</h2><HelpPopover title="Notas con flechas"><p>Elegí «Agregar nota» y hacé clic sobre la superficie de la pieza donde debe terminar la flecha. Después escribí la indicación.</p><p>Arrastrá la tarjeta para acomodarla. La punta sigue vinculada a esa pieza al cambiar la cámara. Escape cancela la elección del destino.</p></HelpPopover></div><p className="hint">Una indicación breve, una flecha y su pieza de destino.</p>

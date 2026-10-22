@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {PDFDocument,PDFRawStream,decodePDFRawStream} from 'pdf-lib';
-import {A4FitError,createOfflinePdf,pdfFaceColor,previewFileName} from '../sketchup_offline/ui/pdf';
+import {A4FitError,createOfflinePdf,createOfflinePdfPages,pdfFaceColor,previewFileName} from '../sketchup_offline/ui/pdf';
 import {createDemo,box} from '../lib/demo';
 import {createA4Demo} from '../lib/a4Demo';
 import {editSchema} from '../lib/model';
@@ -48,9 +48,11 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
   const project=sample();delete project.furniture[0].presentation;const original=JSON.stringify(project);const {text}=await exportPage(project);
   expect(text).toContain('VISTA EXTERIOR');expect(text).toContain('VISTA INTERIOR');expect(JSON.stringify(project)).toBe(original);
  });
- it('rechaza tablas extensas y textos largos con opciones de ajuste sin truncar ni agregar páginas',async()=>{
+ // Simplificación punto 29: una tabla extensa sigue sola en la hoja 2, sin truncar; los textos largos siguen bloqueando.
+ it('pasa a la hoja 2 una tabla extensa y rechaza textos largos con opciones de ajuste sin truncar',async()=>{
   const project=sample('exterior'),f=project.furniture[0];const template=f.pieces[0];f.pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
-  await expect(createOfflinePdf(project,regular,mono)).rejects.toThrow(/listado.*A4.*8 pt\. Necesita \d+ mm de 139 mm: sobran unas \d+ filas\. Qué hacer: /);
+  const {pages}=await createOfflinePdfPages(project,regular,mono);
+  expect(pages.map(p=>p.label).slice(0,2)).toEqual(['1a','1b']);expect(pages[0].fit?.detail).toMatch(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/);
   const notes=sample('exterior');notes.furniture[0].presentation!.guide!.observations='Texto extenso de armado '.repeat(120);
   await expect(createOfflinePdf(notes,regular,mono)).rejects.toThrow(/notas y observaciones.*Acortá/);
  });
@@ -73,7 +75,8 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
   expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toBe(`${notes.furniture[0].name}: Las notas y observaciones no caben legiblemente debajo de las vistas. ${(legend as A4FitError).detail} Qué hacer: Acortá observaciones o notas.`);expect((legend as A4FitError).detail).toMatch(/^Necesita \d+ mm de 42 mm\.$/);
   const blank=sample();blank.furniture[0].pieces[0].name='';expect(await failure(blank)).toMatchObject({kind:'names'});
   const table=sample('exterior'),template=table.furniture[0].pieces[0];table.furniture[0].pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
-  expect(await failure(table)).toMatchObject({kind:'table',action:'Activá Agrupar componentes iguales en este mueble. También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.',detail:expect.stringMatching(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/)});
+  // The long list is no longer a blocker: it goes on to hoja 2 and the lever is advice on page 1a.
+  expect((await createOfflinePdfPages(table,regular,mono)).pages[0].fit).toMatchObject({action:'Activá Agrupar componentes iguales en este mueble.',detail:expect.stringMatching(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/)});
   const glyph=sample();glyph.furniture[0].presentation!.guide!.observations='Usar tornillo 🪚 largo';
   const g=await failure(glyph);expect(g).toMatchObject({kind:'glyph',character:'🪚',furniture:glyph.furniture[0].name,action:'Reemplazá el carácter «🪚».'});expect((g as Error).message).toBe(`${glyph.furniture[0].name}: El PDF no puede representar el carácter «🪚». Qué hacer: Reemplazá el carácter «🪚».`);
  });

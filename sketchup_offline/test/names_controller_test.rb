@@ -62,5 +62,24 @@ class NamesControllerTest < Minitest::Test
     again=@controller.dispatch('save',{'furniture'=>[edit],'revision'=>1,'saveFile'=>true})
     assert again['modelSaved'];assert_equal ['/synthetic/not-a-real-file.skp'],calls
   end
+  # Simplificación punto 20: saving the guide renames without a preview dialog;
+  # a blocked row (locked) comes back in skippedNames and the rest is renamed in
+  # ONE operation that Ctrl+Z undoes.
+  def test_save_renames_without_dialog_and_reports_the_blocked_row
+    generated=@controller.dispatch('generate',{'ids'=>['1']})
+    pieces=[]
+    PlanosSanto::Exporter.each_node(generated['document']['furniture']) do |n|
+      pieces << {'id'=>n['id'],'name'=>"Pieza #{pieces.length+1}",'code'=>"P#{(pieces.length+1).to_s.rjust(2,'0')}"} if n['mesh']
+    end
+    locked=@model.entities[0].entities[1].entities[0];locked.locked_for_names=true
+    before=locked.name
+    edit={'id'=>'1','explosion'=>0.45,'zoom'=>1,'pieces'=>pieces,'notes'=>[]}
+    saved=@controller.dispatch('save',{'furniture'=>[edit],'revision'=>0,'saveFile'=>false,'syncNames'=>true,'workCode'=>''})
+    assert_equal ['1/13/12'],saved['skippedNames'].map { |row| row['id'] }
+    assert_match(/bloqueado/,saved['skippedNames'][0]['reason'])
+    assert_equal 'Pieza 1',@model.entities[0].entities[0].name;assert_equal before,locked.name
+    assert_equal 1,@model.operations.count { |op| op[0]==:start };assert_equal 1,@model.undo_states.length
+    @model.undo;refute_equal 'Pieza 1',@model.entities[0].entities[0].name
+  end
 
 end

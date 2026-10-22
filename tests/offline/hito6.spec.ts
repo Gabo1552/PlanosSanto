@@ -40,12 +40,16 @@ test('ARQ-02: pintar o editar en SketchUp muestra la franja en vez de reanalizar
  const banner=page.getByRole('status',{name:'Análisis desactualizado'});
  await expect(banner).toContainText('Análisis desactualizado · Pintaste desde Planos Santo.');
  expect(count('scan')).toBe(scans);
- await page.keyboard.press('Control+s');await expect(page.getByRole('alert')).toContainText(/volvé a analizar/i);expect(count('save')).toBe(0);
+ // Simplificación punto 18: an old analysis never blocks saving; the guide is rebuilt by id on the live model and saved.
+ await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);await expect(page.getByText(/Guía (guardada en el modelo abierto|y archivo SketchUp guardados)/)).toBeVisible();
+ expect(count('scan')).toBeGreaterThan(scans);await expect(banner).toHaveCount(0);
+ await analysis(page,{stale:true,reason:'Pintaste desde Planos Santo.',source:'paint'});await expect(banner).toBeVisible();
  await analysis(page,{stale:false,reason:null,source:null});await expect(banner).toHaveCount(0);
+ const before=count('scan');
  await analysis(page,{stale:true,reason:'El modelo cambió en SketchUp (edición, Deshacer o Rehacer).',source:'model'});
  await banner.getByRole('button',{name:'Reanalizar',exact:true}).click();
  const discard=page.getByRole('button',{name:'Descartar y analizar',exact:true});if(await discard.isVisible())await discard.click();
- await expect.poll(()=>count('scan')).toBe(scans+1);await expect(banner).toHaveCount(0);
+ await expect.poll(()=>count('scan')).toBeGreaterThan(before);await expect(banner).toHaveCount(0);
  await analysis(page,{stale:'sí'});await expect(banner).toHaveCount(0);
 });
 

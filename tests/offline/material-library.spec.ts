@@ -59,18 +59,18 @@ test('35 candidatos con miniaturas se importan sin aprobar; repetir detecta dupl
  await boot(page,info.outputDir);await preview(page);const modal=page.getByRole('dialog',{name:'Revisar importación de materiales'});
  await expect(modal.getByRole('checkbox',{name:/^Importar /})).toHaveCount(35);await expect(modal.getByRole('img',{name:/Miniatura real/})).toHaveCount(35);await expect(modal).toContainText('Sugerencia sin verificar: Canto');
  await page.screenshot({path:info.outputPath('import-35-SINTETICO.png'),fullPage:true});
- await modal.getByRole('button',{name:'Importar 35 pendientes',exact:true}).click();await expect(modal).toHaveCount(0);
+ await modal.getByRole('button',{name:'Importar 35 materiales',exact:true}).click();await expect(modal).toHaveCount(0);
  await expect(page.getByRole('article',{name:/Material /})).toHaveCount(35);expect(catalog.items.every(item=>!item.approved&&item.kind==='unknown'&&item.thicknessMm===null&&item.grain===null)).toBe(true);
  const forbidden=['catalog_install','paint_apply','smart_tool_start','skm_install','save','pdf','order_export'];expect(calls.some(call=>forbidden.includes(call.action))).toBe(false);
  await page.getByRole('searchbox',{name:'Buscar materiales del taller'}).fill('Catno QA 13');await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toHaveCount(1);await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toContainText('Tipo pendiente');
- await preview(page);await expect(modal).toContainText('35 duplicados');await expect(modal.getByRole('button',{name:'Importar 0 pendientes',exact:true})).toBeDisabled();
+ await preview(page);await expect(modal).toContainText('35 duplicados');await expect(modal.getByRole('button',{name:'Importar 0 materiales',exact:true})).toBeDisabled();
  await modal.getByRole('button',{name:'Cancelar importación',exact:true}).click();expect(catalog.items).toHaveLength(35);expect(calls.filter(call=>call.action==='skm_commit_typed')).toHaveLength(1);
 });
 
 test('conflicto requiere un nombre explícito o excluir la fila; Escape cancela sin crear candidatos',async({page},info)=>{
  await boot(page,info.outputDir,{conflict:true});await preview(page);const modal=page.getByRole('dialog',{name:'Revisar importación de materiales'});
- await modal.getByRole('checkbox',{name:'Importar QA001.skm',exact:true}).check();await expect(modal.getByRole('button',{name:'Importar 35 pendientes',exact:true})).toBeDisabled();
- await modal.getByRole('textbox',{name:'Resolver nombre QA001.skm',exact:true}).fill('Material QA 01 alternativa');await expect(modal.getByRole('button',{name:'Importar 35 pendientes',exact:true})).toBeEnabled();
+ await modal.getByRole('checkbox',{name:'Importar QA001.skm',exact:true}).check();await expect(modal.getByRole('button',{name:'Importar 35 materiales',exact:true})).toBeDisabled();
+ await modal.getByRole('textbox',{name:'Resolver nombre QA001.skm',exact:true}).fill('Material QA 01 alternativa');await expect(modal.getByRole('button',{name:'Importar 35 materiales',exact:true})).toBeEnabled();
  await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(catalog.items).toHaveLength(1);expect(calls.filter(call=>call.action==='skm_commit_typed')).toHaveLength(0);expect(calls.some(call=>call.action==='skm_cancel')).toBe(true);
  await expect(page.getByRole('button',{name:'Importar biblioteca',exact:true})).toBeFocused();
 });
@@ -78,7 +78,7 @@ test('conflicto requiere un nombre explícito o excluir la fila; Escape cancela 
 test('miniatura externa se sustituye por placeholder y favorito persiste sin alterar aprobación',async({page},info)=>{
  await boot(page,info.outputDir,{badThumbnail:true});await preview(page);const modal=page.getByRole('dialog',{name:'Revisar importación de materiales'});
  await expect(modal.getByRole('img')).toHaveCount(34);await expect(modal).toContainText('Sin miniatura disponible');
- await modal.getByRole('button',{name:'Importar 35 pendientes',exact:true}).click();const card=page.getByRole('article',{name:'Material Material QA 01',exact:true});
+ await modal.getByRole('button',{name:'Importar 35 materiales',exact:true}).click();const card=page.getByRole('article',{name:'Material Material QA 01',exact:true});
  await card.getByRole('button',{name:'Marcar favorito Material QA 01',exact:true}).click();await expect(card.getByRole('button',{name:'Quitar favorito Material QA 01',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.getByRole('checkbox',{name:'Solo favoritos',exact:true}).check();await expect(page.getByRole('article',{name:/Material /})).toHaveCount(1);expect(catalog.items.find(item=>item.name==='Material QA 01')!.approved).toBe(false);
  await page.getByRole('button',{name:'En este modelo',exact:true}).click();await expect(page.getByRole('article',{name:/Material /})).toHaveCount(0);await expect(page.getByText('Materiales ya cargados en el modelo abierto.',{exact:false})).toBeVisible();
@@ -90,10 +90,12 @@ test('archivo malformado informa recuperación y no sustituye la biblioteca ni a
 });
 
 
-test('un SKM aprobado requiere confirmación explícita antes de cargarse en el modelo',async({page},info)=>{
+test('un SKM se carga en el modelo con un clic, sin confirmación: no pinta nada y Ctrl+Z lo deshace',async({page},info)=>{
  await boot(page,info.outputDir,{approved:true});const card=page.getByRole('article',{name:'Material Material QA 01',exact:true});await card.getByRole('button',{name:/Material QA 01/}).first().click();
- const details=page.getByRole('complementary',{name:'Material seleccionado'});await details.getByRole('button',{name:'Cargar SKM en este modelo',exact:true}).click();expect(calls.filter(call=>call.action==='skm_install')).toHaveLength(0);
- await details.getByRole('button',{name:'Sí, cargar SKM',exact:true}).click();await expect(page.getByText('SKM cargado en el modelo.',{exact:false})).toBeVisible();
+ const details=page.getByRole('complementary',{name:'Material seleccionado'});
+ await expect(details.getByText('No pinta piezas ni modifica el archivo original; Ctrl+Z en SketchUp lo deshace.',{exact:true})).toBeVisible();
+ await details.getByRole('button',{name:'Cargar SKM en este modelo',exact:true}).click();await expect(page.getByText('SKM cargado en el modelo.',{exact:false})).toBeVisible();
+ await expect(details.getByRole('button',{name:'Sí, cargar SKM'})).toHaveCount(0);
  expect(calls.filter(call=>call.action==='skm_install')).toHaveLength(1);expect(calls.find(call=>call.action==='skm_install')!.data).toMatchObject({catalogId:catalog.items[0].id,revision:0,assetRevision:0,confirmed:true,replaceVisual:false});
  await expect(details.getByText('1 material vinculado',{exact:true})).toBeVisible();await expect(details.getByRole('button',{name:'Cargar SKM en este modelo',exact:true})).toHaveCount(0);expect(calls.some(call=>call.action==='paint_apply'||call.action==='smart_tool_start')).toBe(false);
 });

@@ -5,6 +5,7 @@ require_relative 'maderera_profile'
 require_relative 'ocl_reader'
 require_relative 'order_proposal'
 require_relative 'guide_store'
+require_relative 'order_references'
 
 module PlanosSanto
   class Workshop
@@ -66,8 +67,6 @@ module PlanosSanto
       catalog=@catalog.read;report=nil
       read=lambda { report ||= OclReader.capture(@model) }
       service=SupplierOrder.new(@session.document,@session.fingerprint,catalog,
-        edge_review:lambda { |row,geometry| OclReader.verify_edge_mapping(read.call,row,geometry,catalog) },
-        source_review:lambda { |row,geometry| verify_native_source(read.call,row,geometry,catalog) },
         material_proposal:lambda { |id| native_proposal(read.call,id,catalog) },maderera:active_maderera)
       service.detail_codes=codes;@read=read;@order_catalog=catalog
       service
@@ -97,7 +96,7 @@ module PlanosSanto
       materials=native_materials(report,native_piece(report,id))
       sheets=materials.select { |material| material['category']=='sheet' && material['native_status']=='valid' }
       patch={}
-      if sheets.size==1 && (item=bound_catalog_item(sheets.first,catalog))
+      if sheets.size==1 && (item=bound_catalog_item(sheets.first,catalog)) && item['kind']=='sheet'
         patch['materialId']=item['id']
       end
       edges=materials.select { |material| material['category']=='edge' && material['native_status']=='valid' }
@@ -105,53 +104,44 @@ module PlanosSanto
       patch['edgeBindings']=bindings unless bindings.empty?
       patch
     end
-    def verify_native_source(report,row,geometry,catalog)
-      materials=native_materials(report,native_piece(report,row['id']))
-      if materials.any? { |material| %w[invalid conflict].include?(material['native_status']) }
-        raise ExportError,'Hay vínculos Planos Santo inválidos o en conflicto con OpenCutList. Resolvé el material antes de exportar; una nota manual no reemplaza el vínculo.'
+    # Draft saved in the model, or nil. A damaged one is reported, never trusted, and replaced on the next save.
+    def stored_draft
+      raw=@model.get_attribute(DICT,KEY)
+      return nil unless raw.is_a?(String) && raw.bytesize<=8*1024*1024
+      stored=JSON.parse(raw)
+      stored.is_a?(Hash) && stored['rows'].is_a?(Array) ? stored : (@damaged=true;nil)
+    rescue JSON::ParserError
+      @damaged=true;nil
+    end
+    def stale?(draft,current)
+      !draft.is_a?(Hash) || %w[fingerprint catalogRevision maderera].any? { |key| draft[key]!=current[key] } ||
+        !draft['rows'].is_a?(Array) || draft['rows'].map { |r| r.is_a?(Hash) ? r['id'] : nil }.sort_by(&:to_s)!=current['rows'].map { |r| r['id'] }.sort
+    end
+    # Puntos 3 y 10: the order is always proposed from the painted model when it opens. A saved draft is
+    # crossed with that proposal by row id (OrderProposal.merge), never discarded because the model, the
+    # library or the supplier profile changed.
+    def build(stored,service=order)
+      fresh=service.proposal
+      links=stored.is_a?(Hash) ? stored['edgeLinks'] : nil
+      fresh['edgeLinks']=links.is_a?(Array) ? links : []
+      proposed=OrderProposal.new(service,@read,@order_catalog).propose(fresh)
+      plan=proposed['plan'];merge=nil
+      if stored
+        merged=OrderProposal.merge(stored,plan);plan=merged['plan']
+        merge=merged['merge'].merge('stale'=>stale?(stored,fresh)) if stale?(stored,fresh) || merged['merge']['kept']>0
       end
-      natives=materials.select { |material| material['native_status']=='valid' }
-      return if natives.empty?
-      raise ExportError,'El recorrido está incompleto; no se validan materiales nativos.' unless report['complete']
-      natives.each do |material|
-        item=bound_catalog_item(material,catalog)
-        raise ExportError,'El material pintado no coincide con un ítem aprobado vigente de biblioteca. Revisá el vínculo y sus medidas.' unless item
-        if item['kind']=='sheet' && row['materialId']!=item['id']
-          raise ExportError,'La placa elegida no coincide con el material Planos Santo pintado. No se sustituye el SKU mediante revisión manual.'
-        end
-      end
-      native_edges=natives.select { |material| material['category']=='edge' }
-      return if native_edges.empty?
-      observation=OclReader.projected_edges(report,row,geometry)
-      native_ids=native_edges.map { |material| material['id'] }
-      native_edges.each do |material|
-        unless observation['sides'].any? { |side| side['materialIds'].include?(material['id']) }
-          raise ExportError,'Un canto nativo no tiene una cara perimetral verificable en estos ejes; revisá la orientación y la pintura.'
-        end
-        binding=row['edgeBindings'].find { |entry| entry['observedId']==material['id'] }
-        raise ExportError,'Confirmá el vínculo del canto nativo con su ítem exacto de biblioteca.' unless binding && binding['catalogId']==material['native_binding']['catalogId']
-      end
-      observation['sides'].each_with_index do |side,index|
-        next if (side['materialIds'] & native_ids).empty?
-        raise ExportError,'El canto nativo tiene cobertura o pintura ambigua; revisá sus caras antes de exportar.' unless side['status']=='observed_edge' && side['materialIds'].size==1
-        material=native_edges.find { |entry| entry['id']==side['materialIds'].first }
-        role=[row['principalId'],row['secondaryId']].index(material['native_binding']['catalogId'])
-        raise ExportError,'El mapa manual no coincide con el canto nativo pintado o sus roles de lote.' unless role && row['edgeMap'][index]==role+1
-      end
+      plan['detailCode']=plan.fetch('detailCode','none');plan['codes']=codes
+      {'plan'=>plan,'proposal'=>proposed['proposal'],'merge'=>merge,'service'=>service}
     end
     def plan(reset=false)
-      current=order.proposal
-      raw=@model.get_attribute(DICT,KEY)
-      if !reset && raw.is_a?(String) && raw.bytesize<=8*1024*1024
-        stored=JSON.parse(raw)
-        if stored['fingerprint']==current['fingerprint'] && stored['catalogRevision']==current['catalogRevision'] && stored['maderera']==current['maderera']
-          current.merge!(stored.slice('rows','profile','edgeLinks','detailCode'))
-          current['rows'].each { |row| unless row.key?('edgeResolution');row.merge!('edgeResolution'=>nil,'edgeBindings'=>[],'edgeOverrideReason'=>'','edgesConfirmed'=>false);end }
-        end
-      end
-      {'plan'=>current.merge('edgeLinks'=>current.fetch('edgeLinks',[]),'detailCode'=>current.fetch('detailCode','none'),'codes'=>codes),'catalog'=>@catalog.read}
-    rescue JSON::ParserError
-      raise ExportError,'Borrador de pedido dañado. Prepará uno nuevo sin sobrescribir el anterior.'
+      @damaged=false
+      built=build(reset ? nil : stored_draft)
+      {'plan'=>built['plan'],'catalog'=>@order_catalog,'proposal'=>built['proposal'],'merge'=>built['merge'],'damagedDraft'=>@damaged,
+       'audit'=>audit_with(built['service'],built['plan'])}
+    end
+    # Order rows as the A4 and the labels see them: the proposal crossed with the saved draft, if any.
+    def current_plan
+      built=build(stored_draft);[built['service'],built['plan']]
     end
     def edge_observations(row)
       proposal=order.proposal
@@ -161,14 +151,11 @@ module PlanosSanto
     end
     def current_draft!(draft,service=order)
       current=service.proposal
-      raise ExportError,'El borrador quedó desactualizado porque cambió el modelo o la biblioteca: usá «Preparar de nuevo».' unless draft.is_a?(Hash) && draft['fingerprint']==current['fingerprint'] && draft['catalogRevision']==current['catalogRevision']
-      raise ExportError,'El perfil de maderera en uso cambió: usá «Preparar de nuevo» y revisá las medidas.' unless draft['maderera']==current['maderera']
-      raise ExportError,'El borrador no tiene las mismas piezas que el modelo: usá «Preparar de nuevo».' unless draft['rows'].is_a?(Array) && draft['rows'].map { |r| r.is_a?(Hash) && r['id'] }.sort_by(&:to_s)==current['rows'].map { |r| r['id'] }.sort
-      raise ExportError,'El borrador viene de otra versión de Planos Santo: usá «Preparar de nuevo».' unless draft['rows'].all? { |row| row.is_a?(Hash) && row.keys.sort==SupplierOrder::ROW_KEYS.sort }
+      raise ExportError,'El modelo, la biblioteca o el perfil cambiaron: volvé a abrir el pedido y se actualiza solo.' if stale?(draft,current)
+      raise ExportError,'Pedido con campos desconocidos: volvé a abrir el pedido.' unless draft['rows'].all? { |row| row.is_a?(Hash) && SupplierOrder.normalize_row(row).keys.sort==SupplierOrder::ROW_KEYS.sort }
       OrderProposal.check_extras!(draft)
       current
     end
-    # Hito 3. Devuelven un borrador nuevo sin guardarlo: el taller lo revisa y guarda con «Guardar borrador».
     def proposal_service(draft,ids=nil)
       raise ExportError,'Selección de piezas inválida.' unless ids.nil? || (ids.is_a?(Array) && ids.all?(String))
       service=order;current_draft!(draft,service)
@@ -177,56 +164,93 @@ module PlanosSanto
     def with_view(result,service)
       result.merge('plan'=>result['plan'].merge('geometry'=>service.proposal['geometry'],'codes'=>codes))
     end
+    # Vuelve a proponer desde el modelo las piezas elegidas (o todas): reemplaza lo editado en esas filas.
     def propose(draft,ids=nil)
       service,proposal=proposal_service(draft,ids)
       with_view(proposal.propose(draft,ids:ids),service)
     end
+    # 0.8.15 «Confirmar en bloque»: ya no hay nada que confirmar. Se conserva la acción del bridge sin efecto.
     def confirm_bulk(draft,ids=nil)
-      service,proposal=proposal_service(draft,ids)
-      with_view(proposal.confirm_bulk(draft,ids:ids),service)
+      service,_proposal=proposal_service(draft,ids)
+      with_view({'plan'=>SupplierOrder.normalize(draft),'confirmed'=>[],'review'=>[]},service)
     end
     def apply_rows(draft,source_id,target_ids,groups)
       raise ExportError,'Elegí piezas destino y qué copiar.' unless target_ids.is_a?(Array) && target_ids.all?(String) && groups.is_a?(Hash)
       service,proposal=proposal_service(draft)
       with_view(proposal.apply(draft,source_id,target_ids,groups.select { |key,value| OrderProposal::GROUPS.key?(key) && value==true }),service)
     end
+    STORED=%w[schema fingerprint catalogRevision maderera rows profile edgeLinks detailCode proposed].freeze
+    # Punto 11: autosave. The UI sends the draft a moment after each change. When the model, the library,
+    # the profile or the edge links changed meanwhile, the draft is crossed again with a new proposal and
+    # the result comes back (`changed`). Always returns the live problems of the saved draft.
     def save_plan(draft)
-      # Drafts may be unfinished. Preserve exact source linkage, never certify them.
-      current_draft!(draft)
-      value=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','maderera','rows','profile','edgeLinks','detailCode'))
+      raise ExportError,'Pedido inválido.' unless draft.is_a?(Hash) && draft['rows'].is_a?(Array)
+      service=order;current=service.proposal;stored=stored_draft
+      links_changed=Array(stored.is_a?(Hash) ? stored['edgeLinks'] : [])!=Array(draft['edgeLinks'])
+      changed=stale?(draft,current) || links_changed || !draft['proposed'].is_a?(Hash)
+      built=changed ? build(draft,service) : nil
+      draft=built ? built['plan'] : SupplierOrder.normalize(draft)
+      current_draft!(draft,service)
+      value=JSON.generate(draft.slice(*STORED))
       raise ExportError,'Borrador demasiado grande.' if value.bytesize>8*1024*1024
+      write_draft(value) unless value==@model.get_attribute(DICT,KEY)
+      result={'saved'=>true,'modelFileSaved'=>false,'changed'=>changed,'audit'=>audit_with(service,draft)}
+      result.merge!('plan'=>draft.merge('geometry'=>current['geometry']),'proposal'=>built['proposal'],'merge'=>built['merge']) if built
+      result
+    end
+    def write_draft(value)
       started=false
       begin
         raise ExportError,'No se pudo iniciar la operación.' unless @model.start_operation('Guardar pedido Planos Santo',true)
         started=true;@model.set_attribute(DICT,KEY,value)
         raise ExportError,'No se pudo guardar el pedido.' unless @model.commit_operation
-        started=false;{'saved'=>true,'modelFileSaved'=>false}
+        started=false
       rescue StandardError
         @model.abort_operation if started;raise
       end
     end
-    def audit(draft)
-      errors=order.validate(draft,collect_errors:true)
-      {'blocked'=>errors,'warnings'=>order.warnings(draft),'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| row.slice('id','detail','excludeReason') },'production_ready'=>false}
+    # Live problems (punto 12): physical blockers per row, supplier warnings and, when nothing blocks, the net estimate.
+    def audit_with(service,draft)
+      errors=service.validate(draft,collect_errors:true)
+      normalized=SupplierOrder.normalize(draft)
+      result={'blocked'=>errors,'warnings'=>service.warnings(normalized),'excluded'=>normalized['rows'].reject { |row| row['include'] }.map { |row| row.slice('id','detail','excludeReason') },'production_ready'=>false}
+      result['estimate']=service.estimate(normalized) if errors.empty? && normalized['rows'].any? { |row| row['include'] }
+      result
+    rescue ExportError => error
+      # Nothing included, or a stale draft: the reason is the only problem to show.
+      {'blocked'=>[],'warnings'=>[],'excluded'=>[],'production_ready'=>false,'error'=>error.message}
     end
+    def audit(draft);audit_with(order,draft);end
     def check(draft)
       service=order
       service.validate(draft)
       {'valid'=>true,'estimate'=>service.estimate(draft)}
     end
+    # Every included row must validate; the rows come from the model proposal crossed with the saved draft.
     def references
-      raise ExportError,'Guardá primero el borrador revisado del pedido.' unless @model.get_attribute(DICT,KEY)
-      draft=plan['plan'];service=order;service.validate(draft)
+      service,draft=current_plan;draft=service.validate(draft)
       draft['rows'].select { |row| row['include'] }.to_h do |row|
         board=service.material(row['materialId'],'sheet')
-        roles=[row['principalId'],row['secondaryId']].map { |id| id ? service.material(id,'edge')['sku'] : nil }
+        roles=OrderReferences.roles(service,row)
         edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{%w[Arr Aba Izq Der][i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
         board_text="#{board['sku']} / #{board['thicknessMm']} mm";base,height=service.dimensions(row)
         # 'text' keeps the previous printed contract; the rest is the same edge map and cut as the supplier TXT (Arr·Aba·Izq·Der over base × height).
         [row['id'],{'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],'base'=>base,'height'=>height}]
       end
     end
-    def export_order(draft,directory);order.export(draft,directory);end
+    # The TXT never goes out stale: the painted model is read once more and, if the proposal moved under
+    # what the taller did not edit (repainted faces, renamed pieces), the export stops and the order is
+    # refreshed when it is opened again. Hand-made edits never trigger this.
+    def export_order(draft,directory)
+      service=order
+      current_draft!(draft,service)
+      built=build(draft,service)
+      unless canonical(SupplierOrder.normalize(draft)['rows'])==canonical(built['plan']['rows'])
+        raise ExportError,'El modelo cambió desde que se abrió el pedido (pintura o nombres de piezas): el pedido se actualiza solo al volver a abrirlo. Revisalo y exportá de nuevo.'
+      end
+      service.export(draft,directory)
+    end
+    def canonical(value);value.is_a?(Hash) ? value.sort.to_h.transform_values { |v| canonical(v) } : value.is_a?(Array) ? value.map { |v| canonical(v) } : value;end
   end
 
   module OclGateway

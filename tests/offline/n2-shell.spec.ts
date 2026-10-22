@@ -57,7 +57,7 @@ test('axe no encuentra violaciones serious ni critical en las vistas del shell',
  await boot(page,info.outputDir);const found:string[]=[];
  found.push(...await axe(page,'Inicio'));
  await page.keyboard.press('Alt+2');await expect(rail(page,'Materiales')).toHaveAttribute('aria-current','page');found.push(...await axe(page,'Materiales'));
- await expect(page.getByRole('navigation',{name:'Filtrar biblioteca'}).getByRole('button',{name:'Por revisar',exact:true})).toHaveAccessibleDescription(/^\d+ material(es)?$/);await expect(page.getByRole('group',{name:'Materiales visuales del taller'})).toBeAttached();
+ await expect(page.getByRole('navigation',{name:'Filtrar biblioteca'}).getByRole('button',{name:'Por completar',exact:true})).toHaveAccessibleDescription(/^\d+ material(es)?$/);await expect(page.getByRole('group',{name:'Materiales visuales del taller'})).toBeAttached();
  await page.keyboard.press('Alt+4');await expect(rail(page,'Maderera')).toHaveAttribute('aria-current','page');found.push(...await axe(page,'Maderera'));
  await page.keyboard.press('Alt+5');await expect(page.getByRole('heading',{level:2,name:'Primero generá las guías en Muebles'})).toBeVisible();found.push(...await axe(page,'Planos A4 vacío'));
  await generated(page);found.push(...await axe(page,'Muebles'));

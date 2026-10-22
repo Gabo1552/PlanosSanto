@@ -138,7 +138,7 @@ class MaterialPolicyTest < Minitest::Test
     assert status['visuals'].first['available']
     order=PlanosSanto::SupplierOrder.new({'furniture'=>[]},'test',@data)
     error=assert_raises(PlanosSanto::ExportError) { order.material(@item['id'],'sheet') }
-    assert_match(/aprobad/,error.message)
+    assert_match(/incompleta: falta SKU, espesor, largo, ancho, veta/,error.message,'Lista para diseño no alcanza para pedir: la ficha dice qué le falta')
     assert_empty @model.operations
   end
   def test_stale_photo_native_binding_blocks_paint_even_when_same_catalog_id_is_used

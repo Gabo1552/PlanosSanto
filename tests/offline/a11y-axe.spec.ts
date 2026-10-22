@@ -109,13 +109,15 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
   await audit(page,'nombres-sugerencias',dialog);
  });
 
+ // Simplificación punto 20: no batch dialog; the row notice of a name that was not synced is what gets audited.
  test(`axe ${w}px: nombres en lote`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir);await generate(page);
-  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral auditoría');await page.getByLabel('Nombre P01',{exact:true}).press('Enter');
-  await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();
-  const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog.getByRole('status')).toBeVisible();
-  await audit(page,'nombres-lote',dialog);
+  await send('__names_lock',{persistentId:'12'});
+  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral auditoría');await page.getByLabel('Nombre P02',{exact:true}).fill('Base auditoría');await page.getByLabel('Nombre P02',{exact:true}).press('Enter');
+  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
+  const table=page.getByRole('table',{name:'Piezas del mueble'});await expect(table.getByRole('note')).toContainText('No se renombró en SketchUp');
+  await audit(page,'nombres-lote',table);
  });
 
  test(`axe ${w}px: vista previa A4`,async({page},info)=>{
@@ -129,7 +131,7 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
  test(`axe ${w}px: biblioteca y pedido del taller`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir);
-  await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true}}]);
+  await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false}}]);
   const panel=await openWorkshop(page);
   await audit(page,'biblioteca',panel);
   await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();
@@ -140,14 +142,17 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir,'materials-edges');
   const [board,first,second]=await catalog([
-   {name:'Placa observable',kind:'sheet',patch:all=>({sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true,compatibleIds:[all[1].id,all[2].id]})},
-   {name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22,approved:true}},
-   {name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22,approved:true}}]);
+   {name:'Placa observable',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false}},
+   {name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}},
+   {name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22}}]);
   const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
-  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
-  await page.getByLabel('Placa aprobada del pedido').selectOption(board.id);
-  await page.getByLabel('Canto principal (1) del pedido').selectOption(first.id);await page.getByLabel('Canto secundario (2) del pedido').selectOption(second.id);
-  await panel.getByRole('button',{name:'Leer cantos de las caras',exact:true}).click();await expect(panel.getByText('Recorrido completo',{exact:true})).toBeVisible();
+  // 0.8.16: los cantos se leen solos de las caras; solo los materiales sin vínculo piden elegir el canto.
+  const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});await expect(links).toBeVisible();
+  await expect(panel.getByRole('list',{name:'Avisos de los cantos del modelo'})).toBeVisible();
+  await audit(page,'revision-cantos-sin-vinculo',panel);
+  await page.getByLabel('Placa del pedido').selectOption(board.id);
+  await links.getByLabel('Canto de biblioteca para Canto de prueba').selectOption(first.id);await links.getByLabel('Canto de biblioteca para Canto secundario de prueba').selectOption(second.id);
+  await expect(panel.getByRole('region',{name:'Cantos del pedido'})).toContainText('EDGE-2');
   await audit(page,'revision-cantos',panel);
  });
 

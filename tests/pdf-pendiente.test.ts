@@ -3,7 +3,7 @@ import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {A4FitError,createOfflinePdf,exportTableTsv,listRows,referenceCoverage,type OrderReference} from '../sketchup_offline/ui/pdf';
+import {A4FitError,createOfflinePdf,createOfflinePdfPages,exportTableTsv,listRows,referenceCoverage,type A4Page,type OrderReference} from '../sketchup_offline/ui/pdf';
 import {createDemo,box} from '../lib/demo';
 import type {Project} from '../lib/model';
 const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf');
@@ -36,14 +36,17 @@ describe('F-DESP-B: filas pendientes de pedido',()=>{
   expect(text(await createOfflinePdf(project,regular,mono,undefined,references))).not.toContain('Pendiente de pedido');
   expect(text(await createOfflinePdf(project,regular,mono,undefined,references,{pending:[a.id]}))).not.toContain('Pendiente de pedido');
  });
+ // Simplificación punto 29: the extra line makes the list go on to hoja 2 earlier, by itself.
  it('la línea cuenta en la altura de la fila con las mismas reglas de ajuste',async()=>{
-  let blocked:A4FitError|undefined,fitted=0;
-  for(let count=10;count<=30&&!blocked;count++){
+  let split:A4Page[]|undefined,fitted=0;
+  for(let count=10;count<=30&&!split;count++){
    const project=groupsProject(count),all=project.furniture[0].pieces.map(p=>p.id);
-   if(!await createOfflinePdf(project,regular,mono,undefined,{}).then(()=>true,()=>false))break;
-   fitted=count;blocked=await createOfflinePdf(project,regular,mono,undefined,{},{pending:all}).then(()=>undefined,(error:A4FitError)=>error);
+   const plain=await createOfflinePdfPages(project,regular,mono,undefined,{});
+   if(plain.pages.length>1)break;
+   fitted=count;const pending=await createOfflinePdfPages(project,regular,mono,undefined,{},{pending:all});
+   if(pending.pages.length>1)split=pending.pages;
   }
-  expect(fitted).toBeGreaterThan(10);expect(blocked?.kind).toBe('table');expect(blocked?.action).toContain('«Permitir hoja 2: despiece completo»');
+  expect(fitted).toBeGreaterThan(10);expect(split?.map(p=>p.label).slice(0,2)).toEqual(['1a','1b']);expect(split?.[0].fit?.detail).toMatch(/^Necesita/);
  },60000);
  it('la leyenda de pendientes pasa por el mismo ajuste que la de cantos',async()=>{
   let blocked:A4FitError|undefined;

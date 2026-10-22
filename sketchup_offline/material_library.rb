@@ -113,7 +113,7 @@ module PlanosSanto
             'color' => color && color.respond_to?(:red) ? [color.red, color.green, color.blue] : nil,
             'hasTexture' => material.respond_to?(:texture) && !material.texture.nil?,
             'designReady' => !observed(material)['binding'].nil? && binding_issues(material, catalog, duplicates).empty?,
-            'supplierReady' => catalog['items'].any? { |item| item['id']==observed(material).dig('binding','catalogId') && item['approved']==true },
+            'supplierReady' => catalog['items'].any? { |item| item['id']==observed(material).dig('binding','catalogId') && CatalogStore.complete?(item) },
             'binding' => observed(material)['binding'], 'issues' => binding_issues(material, catalog, duplicates),
             'commercialIssues' => commercial_issues(material, catalog) }
         end,
@@ -122,7 +122,7 @@ module PlanosSanto
           available = MaterialPolicy.paintable?(item,directory:@directory)
           { 'catalogId' => item['id'], 'available' => available, 'assetHash' => record && record['assetHash'],
             'assetName' => record && record['assetName'], 'status' => available ? 'available' : 'needs_review',
-            'designReady' => MaterialPolicy.paintable?(item,directory:@directory), 'supplierReady' => item['approved']==true, 'warnings' => MaterialPolicy.warnings(item) }
+            'designReady' => MaterialPolicy.paintable?(item,directory:@directory), 'supplierReady' => CatalogStore.complete?(item), 'warnings' => MaterialPolicy.warnings(item) }
         end, 'issues' => [] }
     end
 
@@ -528,7 +528,7 @@ module PlanosSanto
           end
           raise
         end
-        warnings=['La copia queda pendiente de aprobación para maderera: revisá su ficha antes de pedir.']
+        warnings=['La copia conserva el SKU del original: cambialo si es otro producto.']
         warnings << 'Comparte la foto o el SKM de la ficha original; no se duplicaron archivos.' if MaterialPolicy.photo?(copy) || MaterialPolicy.skm_import?(copy) || record
         {'catalog'=>catalog,'catalogId'=>copy['id'],'duplicatedFrom'=>source['id'],'name'=>copy['name'],'warnings'=>warnings}
       end
@@ -603,7 +603,9 @@ module PlanosSanto
     def ocl_sync(data)
       raise ExportError,'Solicitud de sincronización inválida.' unless data.is_a?(Hash) && [true,false].include?(data.fetch('dryRun',false))
       dry_run=data.fetch('dryRun',false)
-      raise ExportError,'Confirmá la sincronización con OpenCutList.' unless dry_run || data['confirmed']==true
+      # 0.8.16 (punto 27): one click applies. It only writes empty keys or keys Planos Santo wrote before,
+      # never values typed in OpenCutList, in a single operation that Ctrl+Z undoes; no confirmation step.
+      raise ExportError,'Solicitud de sincronización inválida.' unless data['planDigest'].nil? || data['planDigest'].is_a?(String)
       catalog=@catalog.read
       wanted=data['catalogId']
       raise ExportError,'La ficha ya no existe en la biblioteca.' if wanted && !catalog['items'].any? { |item| item['id']==wanted }
@@ -622,8 +624,8 @@ module PlanosSanto
       end
       digest=Digest::SHA256.hexdigest(JSON.generate([catalog['revision'],rows]))
       return {'dryRun'=>true,'changed'=>rows.count { |row| !row['changes'].empty? },'materials'=>rows,'planDigest'=>digest,'noChanges'=>true} if dry_run
-      # The applied plan must be exactly the one the operator reviewed.
-      raise ExportError,'Los materiales o la ficha cambiaron desde la vista previa; volvé a revisar la sincronización.' unless data['planDigest']==digest
+      # A caller that showed a preview still gets exactly that plan applied, or nothing.
+      raise ExportError,'Los materiales o la ficha cambiaron desde la vista previa; volvé a sincronizar.' unless data['planDigest'].nil? || data['planDigest']==digest
       changing=targets.zip(rows).select { |_pair,row| !row['changes'].empty? || !row['kept'].empty? }
       return {'dryRun'=>false,'changed'=>0,'materials'=>rows,'noChanges'=>true} if changing.none? { |_pair,row| !row['changes'].empty? }
       raise ExportError,'No se pudo iniciar la operación.' if @model.start_operation('Planos Santo — sincronizar OpenCutList',true)==false
@@ -891,7 +893,7 @@ module PlanosSanto
       rows=manifest['items'].map do |item|
         refs=references(item,manifest['visualRecords'])
         present=refs.count { |folder,name,_hash| files.key?("#{folder}/#{name}") }
-        warnings=['Se importa sin aprobar: revisá la ficha antes de pedir a maderera.']
+        warnings=[]
         warnings << 'Faltan archivos visuales en el paquete; la ficha quedará para revisar.' if present<refs.length && refs.any? { |folder,name,hash| !files.key?("#{folder}/#{name}") && !MaterialPolicy.file_matches?(@directory,folder,name,hash) }
         warnings << 'La foto tiene metadatos inválidos; la ficha quedará para revisar.' if MaterialPolicy.photo?(item) && !MaterialPolicy.metadata_valid?(item)
         status=if existing_by_hash.fetch(item['sourceHash'],[]).any? { |existing| same_item?(existing,item) }

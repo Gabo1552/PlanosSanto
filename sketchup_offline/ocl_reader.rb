@@ -166,8 +166,8 @@ module PlanosSanto
       expected=observation['sides'].map do |side|
         next 0 if side['status']=='observed_no_edge'
         catalog_id=bindings[side['materialIds'].first]
-        edge=catalog['items'].find { |item| item['id']==catalog_id && item['kind']=='edge' && item['approved'] }
-        raise ExportError,'Vinculá cada canto observado con un canto aprobado de biblioteca.' unless edge
+        edge=catalog['items'].find { |item| item['id']==catalog_id && item['kind']=='edge' }
+        raise ExportError,'Vinculá cada canto observado con un canto de la biblioteca.' unless edge
         material=observation['materials'].find { |entry| entry['id']==side['materialIds'].first }
         native=material && material['native_binding']
         if native

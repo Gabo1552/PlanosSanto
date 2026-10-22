@@ -12,12 +12,14 @@ module Sketchup
     @names_model ||= begin
       model=ARGV[1] == 'shared' ? NamingModelDouble.new(Fixture.model) : ARGV[1]=='cantos' ? CantosFixture.model : NamesFixture.model
       OclReadFixture.prepare(model) if ARGV[1].to_s.start_with?('materials')
-      if ARGV[1]=='materials-edges'
+      if %w[materials-edges materials-cutlist].include?(ARGV[1])
         board=model.materials[0];first=model.materials[1]
         second=Sketchup::Material.new(890,'Canto secundario de prueba',Sketchup::Color.new(80,80,80),1,nil);second.ocl_attributes={'type'=>4,'thickness'=>'1mm','std_widths'=>'22mm'};model.materials << second
         faces=model.entities[0].entities[0].definition.entities;faces[1].material=nil;faces[3].material=first;faces[4].material=second
         model.entities[1].material=board
       end
+      # Vista «Piezas»: el segundo mueble hereda otra placa en la cara sin pintar → sección con dos materiales.
+      model.entities[1].material=model.materials[2] if ARGV[1]=='materials-cutlist'
       model
     end
   end
@@ -67,6 +69,10 @@ STDIN.each_line do |line|
     model.entities[0].name=msg.fetch('data',{}).fetch('name','Alacena externa');controller.reply(msg['id'],result:true)
   when '__names_undo'
     model.undo;controller.reply(msg['id'],result:true)
+  when '__names_lock'
+    # Punto 20: a locked piece is skipped on save with a notice on its row.
+    id=msg.fetch('data',{}).fetch('persistentId').to_s
+    model.all_instances.find { |e| e.persistent_id.to_s==id }.locked_for_names=true;controller.reply(msg['id'],result:true)
   when '__names_geometry'
     model.entities[0].transformation=Geom::Transformation.translation(3,2,1);controller.reply(msg['id'],result:true)
   else

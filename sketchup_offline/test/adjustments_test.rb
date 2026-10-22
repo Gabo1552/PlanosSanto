@@ -57,14 +57,20 @@ class AdjustmentsTest < Minitest::Test
     assert_equal 'AB M03 AS - Lateral',@model.entities[0].entities[0].name
     refute_includes @model.entities[0].entities[0].name,'VF M01'
   end
-  def test_shared_parent_and_locked_piece_reject_entire_batch_before_writing
+  # Punto 20: a shared parent or a locked piece is skipped with its row notice;
+  # the guide and every safe name go in one operation.
+  def test_shared_parent_and_locked_piece_are_skipped_and_reported
     before=state
     @model.entities << Sketchup::ComponentInstance.new(3,'Repeated',@model.entities[0].definition)
-    assert_raises(PlanosSanto::ExportError){save}
-    assert_empty @model.operations; assert_equal before,state[0,before.length]
+    save
+    assert_equal %w[1/11 1/13/12],@session.skipped_names.map { |row| row['id'] }.sort
+    assert_equal before,state[0,before.length],'Ningún nombre del mueble compartido cambia.'
+    assert_equal 1,@model.undo_states.length
     @model.entities.pop; @model.entities[0].entities[1].entities[0].locked_for_names=true
-    assert_raises(PlanosSanto::ExportError){save}
-    assert_empty @model.attributes; assert_empty @model.operations
+    @session=PlanosSanto::NativeSession.new(@model);@session.scan;@session.generate(['1'])
+    save
+    assert_equal ['1/13/12'],@session.skipped_names.map { |row| row['id'] }
+    assert_equal 'VF M01 Lateral',@model.entities[0].entities[0].name;assert_equal 'Base',@model.entities[0].entities[1].entities[0].name
   end
   def test_guide_write_failure_rolls_back_all_names_and_metadata
     before=state; document=@session.document
@@ -129,7 +135,9 @@ class AdjustmentsTest < Minitest::Test
     assert_match(/Sincronizar nombres/,assert_raises(PlanosSanto::ExportError){save(sync:false)}.message)
     assert_empty @model.operations
     @model.entities[0].locked_for_names=true
-    assert_raises(PlanosSanto::ExportError){save};assert_empty @model.operations
+    save
+    assert_equal '1',@session.skipped_names.first['id'];assert_match(/bloqueado/,@session.skipped_names.first['reason'])
+    assert_equal 'M01 Estantería izq. Util.',@model.entities[0].name
   end
   def test_invalid_field_reports_its_context_without_allowing_measure_edits_or_leaking_values
     @edits[0]['pieces'][0]['dimensions']='private-value'

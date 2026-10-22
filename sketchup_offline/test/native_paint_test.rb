@@ -61,11 +61,20 @@ class NativePaintTest < Minitest::Test
     assert_same before,@faces[0].material;assert_same @material,@faces[0].back_material
     assert_equal mesh,@faces.map { |f| f.mesh.points.map(&:to_a) };assert_equal transforms,@model.all_instances.map { |e| [e.transformation.to_a,e.hidden?] }
   end
-  def test_stale_model_catalog_binding_and_explicit_confirmation_block
+  def test_stale_model_catalog_binding_and_expired_token_block
     p=@paint.preview(request);@left.name='Cambio';assert_raises(PlanosSanto::ExportError) { apply(p) }
     p=@paint.preview(request);@data['revision']=2;assert_raises(PlanosSanto::ExportError) { apply(p) }
-    p=@paint.preview(request);assert_raises(PlanosSanto::ExportError) { @paint.apply({'token'=>p['token'],'confirmed'=>false}) }
+    p=@paint.preview(request);assert_raises(PlanosSanto::ExportError) { @paint.apply({'token'=>'otro'}) }
+    assert_raises(PlanosSanto::ExportError) { @paint.apply({'token'=>p['token']}) } # one token, one use
     assert_empty @model.operations
+  end
+  # Simplificación punto 25: no «Verifiqué…» flag; the current preview token is
+  # enough and the result is one operation that Ctrl+Z undoes.
+  def test_current_preview_applies_without_confirmation_flag_in_one_undo_step
+    original=@faces[0].material
+    result=@paint.apply({'token'=>@paint.preview(request)['token']})
+    assert result['changed'];assert_same @material,@faces[0].material;assert_equal 1,@model.undo_states.length
+    @model.undo;assert_same original,@faces[0].material
   end
   def test_locked_other_mueble_and_ambiguous_scope_block
     @model.entities[1].locked_for_names=true

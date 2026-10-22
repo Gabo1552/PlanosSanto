@@ -1,3 +1,15 @@
+# Entrega 0.8.16 — menos pasos: pedido sin tildes, guía sin diálogos y pestaña Piezas, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.16-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.15:
+- El pedido se propone y se guarda solo, sin tildes, con un solo «Exportar TXT».
+- Las fichas se marcan como «completas» de forma automática.
+- La guía y la pintura ya no tienen diálogos ni casillas de confirmación.
+- Pestaña «Piezas» por material y espesor, al estilo OpenCutList.
+
+Validar con `docs/validacion-0816/ENCARGO_SESION_LOCAL_0816.md`. Producción no aprobada.
+
+---
+
 # Entrega 0.8.15 — pintar sin ventanas y sin pasos previos, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.15-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.14:

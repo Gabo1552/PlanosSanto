@@ -8,7 +8,8 @@ require_relative '../session'
 require_relative '../names'
 require_relative '../workshop'
 require_relative '../order_references'
-# F-DESP-B: the A4 prints the rows that validate and marks the rest «pendiente de pedido».
+# F-DESP-B / punto 17: the A4 prints the rows that validate (from the model proposal, no saved draft
+# or ticks needed) and marks the rest «pendiente de pedido».
 class OrderReferencesTest < Minitest::Test
  def setup
   @dir=Dir.mktmpdir;@store=PlanosSanto::CatalogStore.new(directory:@dir)
@@ -17,23 +18,19 @@ class OrderReferencesTest < Minitest::Test
  end
  def teardown;FileUtils.remove_entry(@dir);end
  def draft
-  sheet=@store.new_item('Placa de prueba','sheet');sheet.merge!('sku'=>'TEST-18','supplier'=>'Proveedor de prueba','thicknessMm'=>19.05,'widthMm'=>2000,'lengthMm'=>3000,'grain'=>false,'approved'=>true)
-  edge=@store.new_item('Canto de prueba','edge');edge.merge!('sku'=>'EDGE-1','supplier'=>'Proveedor de prueba','thicknessMm'=>0.8,'widthMm'=>22,'approved'=>true)
-  sheet['compatibleIds']=[edge['id']];catalog=@store.save([sheet,edge],0)
+  # Fichas completas, sin `approved`; filas con datos y sin ningún tilde.
+  sheet=@store.new_item('Placa de prueba','sheet');sheet.merge!('sku'=>'TEST-18','supplier'=>'Proveedor de prueba','thicknessMm'=>19.05,'widthMm'=>2000,'lengthMm'=>3000,'grain'=>false)
+  edge=@store.new_item('Canto de prueba','edge');edge.merge!('sku'=>'EDGE-1','supplier'=>'Proveedor de prueba','thicknessMm'=>0.8,'widthMm'=>22)
+  catalog=@store.save([sheet,edge],0)
   draft=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog).proposal
   draft['rows'].each do |row|
-   row.merge!('axes'=>[0,1],'frontSign'=>1,'materialId'=>sheet['id'],'principalId'=>edge['id'],'edgeMap'=>[1,0,0,1],
-    'grainPolicy'=>'locked','grainAxis'=>'none','grainConfirmed'=>true,'dimensionRule'=>'finished_accepted','orientationConfirmed'=>true,'materialConfirmed'=>true,'dimensionsConfirmed'=>true,'edgesConfirmed'=>true,'edgeResolution'=>'manual','edgeOverrideReason'=>'Inspección manual sintética para prueba','reviewNote'=>'Caso sintético, terminadas verificadas para prueba')
+   row.merge!('axes'=>[0,1],'frontSign'=>1,'materialId'=>catalog['items'][0]['id'],'principalId'=>catalog['items'][1]['id'],'edgeMap'=>[1,0,0,1],'grainPolicy'=>'locked','dimensionRule'=>'finished_accepted')
   end
   draft
  end
- def test_requires_a_saved_draft
-  error=assert_raises(PlanosSanto::ExportError){PlanosSanto::OrderReferences.partial(@model,@workshop)}
-  assert_match(/Guardá primero/,error.message)
- end
  def test_valid_rows_print_and_unvalidated_rows_stay_pending_while_full_references_still_refuse
   plan=draft;ids=plan['rows'].map { |row| row['id'] }
-  plan['rows'][1]['orientationConfirmed']=false
+  plan['rows'][1]['axes']=[1,2] # espesor distinto del eje: problema físico
   @workshop.save_plan(plan)
   assert_raises(PlanosSanto::ExportError){@workshop.references}
   result=PlanosSanto::OrderReferences.partial(@model,@workshop)
@@ -56,7 +53,7 @@ class OrderReferencesTest < Minitest::Test
  end
  def test_valid_rows_carry_the_module_piece_code_of_the_txt_detail
   plan=draft;ids=plan['rows'].map { |row| row['id'] }
-  plan['rows'][1]['orientationConfirmed']=false
+  plan['rows'][1]['axes']=[1,2]
   @workshop.save_plan(plan)
   @workshop.define_singleton_method(:codes) { {ids[0]=>'M03·P07',ids[1]=>'M03·P08'} }
   result=PlanosSanto::OrderReferences.partial(@model,@workshop)
@@ -80,10 +77,16 @@ class OrderReferencesTest < Minitest::Test
   @workshop.save_plan(plan)
   assert_equal({'references'=>{},'pending'=>[],'excluded'=>ids},PlanosSanto::OrderReferences.partial(@model,@workshop))
  end
- def test_stale_catalog_refuses_instead_of_printing_old_references
+ def test_without_a_saved_draft_the_proposal_from_the_model_is_printed
+  draft # biblioteca con fichas completas, pero el doble no tiene pintada ninguna placa de la biblioteca
+  result=PlanosSanto::OrderReferences.partial(@model,@workshop)
+  assert_empty result['references'];assert_equal %w[1/11 1/13/12],result['pending'].sort;assert_empty result['excluded']
+ end
+ def test_a_library_change_keeps_the_saved_order_and_prints_current_data
   @workshop.save_plan(draft)
-  catalog=@store.read;@store.save(catalog['items'],catalog['revision'])
-  error=assert_raises(PlanosSanto::ExportError){PlanosSanto::OrderReferences.partial(@model,@workshop)}
-  assert_match(/desactualizado/,error.message)
+  catalog=@store.read;catalog['items'][0]['sku']='TEST-18B';@store.save(catalog['items'],catalog['revision'])
+  result=PlanosSanto::OrderReferences.partial(@model,@workshop)
+  assert_equal 2,result['references'].length,'El borrador no se descarta por cambiar la biblioteca'
+  assert result['references'].values.all? { |reference| reference['board']=='TEST-18B / 19.05 mm' },'Se imprimen los datos vigentes de la ficha'
  end
 end

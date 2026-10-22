@@ -116,7 +116,8 @@ if(process.env.PLANOS_PHOTO_CAPTURE_BASELINE!=='1'){
   const card=page.getByRole('article',{name:'Material Foto QA ámbar',exact:true});await expect(card).toBeVisible();
   await card.getByRole('button').first().click();
   await page.getByRole('button',{name:'Cargar SKM en este modelo',exact:true}).click();
-  await page.getByRole('button',{name:'Sí, cargar SKM',exact:true}).click();
+  // Punto 27: cargar el SKM es un clic, sin paso de confirmación.
+  await expect(page.getByRole('button',{name:'Sí, cargar SKM',exact:true})).toHaveCount(0);
   await expect.poll(()=>calls.filter(c=>c.action==='material_photo_install').length).toBe(1);
   await expect.poll(async()=>((await rpc(page,'__photo_snapshot')).photoItems as {hasTexture:boolean}[])[0]?.hasTexture).toBe(true);
   await page.getByRole('button',{name:'Abrir paleta de pintura',exact:true}).click();
