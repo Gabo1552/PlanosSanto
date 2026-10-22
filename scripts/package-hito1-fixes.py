@@ -27,14 +27,17 @@ files={}
 allowed={'app','components','lib','native','public','scripts','sketchup','sketchup_offline','tests','docs','.claude'}
 root_files={'README.md','.gitignore','package.json','package-lock.json','tsconfig.json','next.config.ts','next-env.d.ts','eslint.config.mjs','playwright.config.ts','playwright.offline.config.ts','vitest.config.ts'}
 source_dirs=sorted(allowed)+['planos-santo-ocl-066/scripts','planos-santo-loop-068/scripts']
-paths=[str(path.relative_to(ROOT)) for folder in source_dirs for path in (ROOT/folder).rglob('*') if path.is_file()]
+# Only files tracked by git: untracked local folders (docs/ux, backups, state, referencia...) can hold private workshop data.
+import subprocess
+tracked=set(subprocess.run(['git','ls-files','-z'],cwd=ROOT,check=True,capture_output=True).stdout.decode('utf-8').split('\0'))
+paths=[str(path.relative_to(ROOT)) for folder in source_dirs for path in (ROOT/folder).rglob('*') if path.is_file() and str(path.relative_to(ROOT)) in tracked]
 paths+=sorted(root_files)
 for name in sorted(set(paths)):
     if not name:continue
     p=Path(name);local=ROOT/p
     if not local.is_file() or local.is_symlink():continue
     if p.parts[0] not in allowed and name not in root_files and not name.startswith(('planos-santo-ocl-066/scripts/','planos-santo-loop-068/scripts/')):continue
-    if set(p.parts)&{'private','referencias_privadas','referencias','runs','evidencia_local','node_modules','build','__pycache__'}:continue
+    if set(p.parts)&{'private','referencias_privadas','referencias','referencia','runs','evidencia_local','node_modules','build','__pycache__','ux','backups','state'}:continue
     if p.suffix.lower() in {'.skp','.skm','.rbz','.zip','.pyc'} or p.name.startswith('.env'):continue
     files[name]=local.read_bytes()
 # Public historical product fixture for warm_update_test; never install it.
