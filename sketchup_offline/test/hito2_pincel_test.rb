@@ -351,3 +351,65 @@ class Hito2FeedbackTest < Minitest::Test
     assert_equal ids.values_at('paint-piece.png','paint-edge.png','paint-remove.png','paint-blocked.png','paint-piece.png'),UI.hito2_set
   end
 end
+
+class Hito2VerdictTest < Minitest::Test
+  include Hito2Fixture
+  def setup
+    build_fixture;@applied=0;applied=0;test=self
+    real=@smart.method(:apply_immediate)
+    @smart.define_singleton_method(:apply_immediate) { |data| test.count_apply;real.call(data) }
+  end
+  def count_apply;@applied+=1;end
+  def test_edge_on_a_piece_without_sheet_is_refused_before_the_click_reaches_the_service
+    build_tool(tool_options('edge'));undo=@model.undo_states.length
+    hover_on(@doors[0])
+    verdict=@tool.status['hover']['verdict'];refute verdict['ok']
+    assert_equal 'Canto sin placa: pintá primero la placa de esta pieza.',verdict['reason']
+    assert_equal 'Canto sin placa: pintá primero la placa de esta pieza.',@events.last['error']
+    click_on(@doors[0])
+    assert_equal 0,@applied;assert_equal undo,@model.undo_states.length;assert_match(/Canto sin placa/,@events.last['error'])
+    assert @board.entities.none? { |face| face.material.equal?(@edge) };assert @tool.status['active']
+  end
+  def test_sheet_on_a_broad_face_or_inherited_from_the_instance_allows_the_edge
+    build_tool(tool_options('edge'))
+    @doors[1].material=@sheet;hover_on(@doors[1]);assert @tool.status['hover']['verdict']['ok']
+    hover_on(@doors[0]);refute @tool.status['hover']['verdict']['ok'] # same definition, no inherited sheet
+    @board.entities[1].back_material=@sheet;@model.observers.each { |observer| observer.onTransactionCommit(@model) }
+    hover_on(@doors[0]);assert @tool.status['hover']['verdict']['ok']
+    click_on(@doors[0]);assert_equal 1,@applied;assert @events.last['changed']
+  end
+  def test_sheet_and_remove_edge_do_not_need_a_painted_sheet
+    build_tool(tool_options('sheet'));hover_on(@doors[0]);assert @tool.status['hover']['verdict']['ok']
+    build_tool(tool_options('remove_edge','edgeCount'=>1,'catalogId'=>nil,'materialUuid'=>nil));hover_on(@doors[0]);assert @tool.status['hover']['verdict']['ok']
+  end
+  def test_locked_piece_is_blocked_with_reason
+    paint_sheet_on_board!;@doors[2].locked_for_names=true
+    build_tool(tool_options('sheet'));hover_on(@doors[2])
+    assert_match(/bloquead/,@tool.status['hover']['verdict']['reason']);click_on(@doors[2]);assert_equal 0,@applied
+  end
+  def test_two_instances_of_the_same_definition_reuse_the_verdict_until_a_transaction
+    paint_sheet_on_board!;build_tool(tool_options('edge'))
+    native=@smart.native;axes=0;real=native.method(:automatic_axes)
+    native.define_singleton_method(:automatic_axes) { |node| axes+=1;real.call(node) }
+    hover_on(@doors[0]);hover_on(@doors[1]);hover_on(@doors[2]);hover_on(@doors[0])
+    assert_equal 1,@tool.verdicts.calls;assert_equal 1,axes
+    assert_equal 1,@model.observers.length
+    @model.observers.first.onTransactionCommit(@model)
+    hover_on(@doors[1]);assert_equal 2,@tool.verdicts.calls;assert_equal 2,axes
+    %i[onTransactionUndo onTransactionRedo onTransactionAbort onTransactionEmpty].each { |name| @model.observers.first.public_send(name,@model) }
+    assert_equal 5,@tool.generation
+    @tool.deactivate(@view);assert_empty @model.observers
+  end
+  def test_a_geometry_edit_committed_elsewhere_invalidates_the_cached_verdict
+    paint_sheet_on_board!;build_tool(tool_options('edge'))
+    hover_on(@doors[0]);assert @tool.status['hover']['verdict']['ok']
+    split_x_min_side!;@model.observers.first.onTransactionCommit(@model)
+    hover_on(@doors[0]);refute @tool.status['hover']['verdict']['ok']
+    click_on(@doors[0]);assert_equal 0,@applied;assert_empty @model.undo_states
+  end
+  def test_own_click_advances_the_generation_even_without_observers
+    paint_sheet_on_board!;@model.define_singleton_method(:respond_to?) { |name,*rest| name.to_s=~/observer/ ? false : super(name,*rest) }
+    build_tool(tool_options('edge','edgeCount'=>1));hover_on(@doors[1]);click_on(@doors[1])
+    assert_equal 1,@tool.generation;assert_equal 1,@applied
+  end
+end

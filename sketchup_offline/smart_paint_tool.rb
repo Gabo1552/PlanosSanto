@@ -18,20 +18,47 @@ module PlanosSanto
       m=instances.inject(Geom::Transformation.new) { |world,entity| world*entity.transformation }.to_a
       [m[0,3],m[4,3],m[8,3]].map { |axis| Math.sqrt(axis.sum { |v| v*v }).round(3) }
     end
+    NO_SHEET='Canto sin placa: pintá primero la placa de esta pieza.'
+    LOCKED='La pieza o un contenedor está bloqueado.'
+    def inherited(instances);instances.reverse.find { |entity| entity.respond_to?(:material) && entity.material }&.material;end
     def for(target,mode:,edge_count:,generation:)
-      entity=target['_instances'].last
-      key=[entity.definition.guid.to_s,generation,mode,edge_count,scales(target['_instances']),mode=='sheet' ? nil : target['faceIds'].first]
+      instances=target['_instances'];entity=instances.last
+      return {'ok'=>false,'reason'=>LOCKED,'expandedFaceIds'=>[],'faces'=>[]} if instances.any? { |e| e.respond_to?(:locked?) && e.locked? }
+      inherited=mode=='edge' ? inherited(instances) : nil
+      key=[entity.definition.guid.to_s,generation,mode,edge_count,scales(instances),mode=='sheet' ? nil : target['faceIds'].first,inherited&.object_id]
       @cache.clear if @cache.length>500
-      @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count)
+      @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count,inherited)
     end
-    def compute(node,face,mode,count)
+    def sheet?(material)
+      material && defined?(MaterialResolver) && MaterialResolver.observe_binding(material).dig('binding','kind')=='sheet'
+    end
+    def compute(node,face,mode,count,inherited)
       @calls+=1
       axes=@native.automatic_axes(node)
       faces=@native.expanded_faces(node,[face],mode=='sheet' ? {'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'} : {'mode'=>mode,'axes'=>axes,'edgeCount'=>count})
+      if mode=='edge'
+        # F-PINT-B: an edge needs a recognized sheet on a broad face (own or inherited).
+        broad=begin
+          @native.expanded_faces(node,[face],{'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'})
+        rescue ExportError
+          @native.faces(node)-faces
+        end
+        raise ExportError,NO_SHEET unless broad.any? { |f| sheet?(f.material || inherited) || sheet?(f.back_material || inherited) }
+      end
       {'ok'=>true,'reason'=>nil,'expandedFaceIds'=>faces.map { |f| @native.face_id(f) },'faces'=>faces,'axes'=>axes}
     rescue ExportError=>error
       {'ok'=>false,'reason'=>error.message,'expandedFaceIds'=>[],'faces'=>[]}
     end
+  end
+
+  # Minimal ModelObserver: only counts transactions, never walks the model.
+  class PaintGenerationObserver
+    def initialize(&block);@bump=block;end
+    def onTransactionCommit(_model);@bump.call;end
+    def onTransactionUndo(_model);@bump.call;end
+    def onTransactionRedo(_model);@bump.call;end
+    def onTransactionAbort(_model);@bump.call;end
+    def onTransactionEmpty(_model);@bump.call;end
   end
 
   # Copies of each definition in the model, rebuilt once per transaction
@@ -82,11 +109,25 @@ module PlanosSanto
     end
     def copy(value);JSON.parse(JSON.generate(value));end
     def immediate?;@options['immediate']==true || @options['immediatePiece']==true;end
+    def observe!
+      return if @observer || !@model.respond_to?(:add_observer)
+      @observer=PaintGenerationObserver.new { @generation+=1 }
+      @model.add_observer(@observer)
+    rescue StandardError
+      @observer=nil
+    end
+    def unobserve!
+      observer=@observer;@observer=nil
+      @model.remove_observer(observer) if observer && @model.respond_to?(:remove_observer)
+    rescue StandardError
+      nil
+    end
     def activate
+      observe!
       @active=true;emit(immediate? ? 'Hacé clic en una pieza para pintar. Escape termina.' : 'Elegí una cara. Mayús agrega caras; Enter aplica la selección. Esc cancela.')
     end
     def deactivate(view)
-      @active=false;clear;emit('Herramienta desactivada.');invalidate(view)
+      unobserve!;@active=false;clear;emit('Herramienta desactivada.');invalidate(view)
     end
     def suspend(view);invalidate(view);end
     def resume(view);invalidate(view);end
@@ -492,7 +533,7 @@ module PlanosSanto
       @model.select_tool(nil) if @model.respond_to?(:select_tool)
     end
     def stop(view=nil)
-      clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
+      unobserve!;clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
       invalidate(view)
     end
     def world_point(point,matrix)
