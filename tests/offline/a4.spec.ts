@@ -5,6 +5,7 @@ import {readFile,mkdir,copyFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {showIds} from './ids';
 
 // Actual Ruby controller and browser/PDF generation with synthetic API doubles.
 // These checks never open SketchUp or a customer's SKP.
@@ -43,7 +44,7 @@ test('A4 exterior ensamblada: cámara y zoom se guardan, reabren y exportan una 
  const points=await page.locator('polygon[data-piece]').first().getAttribute('points');
  await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('24');await page.getByRole('slider',{name:'Zoom',exact:true}).fill('1.15');
  expect(await page.locator('polygon[data-piece]').first().getAttribute('points')).not.toBe(points);
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear esta pieza antes de fijar');
+ await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear esta pieza antes de fijar');
  await page.getByLabel('Observaciones de armado',{exact:true}).fill('Revisar escuadra antes del montaje');await save(page);
  const after=await snapshot();unchanged(before,after);expect(after.guide!.furniture[0].presentation!.guide!.mode).toBe('exterior');expect(after.guide!.furniture[0].notes).toHaveLength(1);expect(after.guide!.furniture[0].presentation!.cameras!.front!.yaw).toBe(24);
  await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior',exact:true})).toHaveAttribute('aria-checked','true');
@@ -76,7 +77,7 @@ test('A4 dos vistas: orientación compartida e interior distinto persisten en un
 
 test('A4 bloquea una nota anclada a una pieza oculta y permite recuperarla sin perder su texto',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('radio',{name:'Interior',exact:true}).click();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Conservar la indicación de la pieza interior');
+ await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Conservar la indicación de la pieza interior');
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/oculta|visible/i);expect(existsSync(resolve(info.outputDir,'PlanosSanto-A4.pdf'))).toBe(false);
  await openVisibility(page);await page.getByRole('button',{name:'Mostrar todas',exact:true}).click();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();const output=await pdf(page,info.outputDir);expect(output.text).toContain('Conservar la indicación de la pieza interior');
@@ -85,13 +86,13 @@ test('A4 bloquea una nota anclada a una pieza oculta y permite recuperarla sin p
 test('A4 composición inviable informa ajustes y no recorta notas ni genera hojas extra',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();
  for(let index=0;index<6;index++){
-  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill((`Indicación ${index+1}. Revisar fijaciones y alineación de todas las piezas antes de realizar el montaje. `).repeat(2).slice(0,200));
+  await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill((`Indicación ${index+1}. Revisar fijaciones y alineación de todas las piezas antes de realizar el montaje. `).repeat(2).slice(0,200));
  }
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/no caben legiblemente|no cabe legiblemente/i);await expect(page.getByRole('alert')).toContainText(/Acortá|reducí|ajust/i);expect(existsSync(resolve(info.outputDir,'PlanosSanto-A4.pdf'))).toBe(false);
 });
 
 test('A4 visor: los líderes se pintan antes de las máscaras y textos de cotas; mover sigue disponible',async({page},info)=>{
- await boot(page,info.outputDir);
+ await boot(page,info.outputDir);await showIds(page);
  const phases=await page.locator('svg.diagram').evaluate(svg=>{
   const lines=svg.querySelector('[data-dimension-phase="lines"]'),labels=svg.querySelector('[data-dimension-phase="labels"]'),id=svg.querySelector('.piece-label');
   return {linesBeforeIds:!!lines&&!!id&&!!(lines.compareDocumentPosition(id)&Node.DOCUMENT_POSITION_FOLLOWING),idsBeforeLabels:!!id&&!!labels&&!!(id.compareDocumentPosition(labels)&Node.DOCUMENT_POSITION_FOLLOWING),labelsHaveNoStrokes:!!labels&&!labels.querySelector('line'),measures:labels?.querySelectorAll('[data-dimension]').length||0};

@@ -37,7 +37,9 @@ describe('Rotación, cotas e identificación persistentes',()=>{
     expect(moved.localStart).toEqual(d.localStart);expect(moved.localEnd).toEqual(d.localEnd);expect(moved.valueMm).toBe(d.valueMm);
     const oldExtension=d.segments.find(s=>s.kind==='extension')!,newExtension=moved.segments.find(s=>s.kind==='extension')!;
     expect(newExtension.a).toEqual(oldExtension.a);expect(newExtension.b.x-oldExtension.b.x).toBeCloseTo(8);
-    const far=structuredClone(f);far.presentation!.dimensionOffsets![0].offset=[1,1];expect(makeScene(far,{layout:'sheet'}).warnings.join()).toMatch(/fuera de la vista/);
+    // A cota dragged off the paper comes back to the nearest free position on it (0.8.19), without a warning.
+    const far=structuredClone(f);far.presentation!.dimensionOffsets![0].offset=[1,1];const back=makeScene(far,{layout:'sheet'}),r=back.dimensions.find(n=>n.role===d.role)!.label.rect;
+    expect(back.warnings).toEqual([]);expect(r.x).toBeGreaterThanOrEqual(9);expect(r.y).toBeGreaterThanOrEqual(9);expect(r.x+r.w).toBeLessThanOrEqual(back.width-9);expect(r.y+r.h).toBeLessThanOrEqual(back.height-40);
     expect(makeScene(f,{view:'back',layout:'sheet'}).dimensions).toEqual([]);
   });
   it('web valida preferencias, conserva valores anteriores cuando se omiten y rechaza referencias ajenas',()=>{

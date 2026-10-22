@@ -10,6 +10,10 @@ export type Dimension={
   mode:'linear'|'depth';
   localStart:Vec3;localEnd:Vec3;segments:DimensionSegment[];
   label:{center:Point;angle:number;width:number;height:number;rect:Rect};
+  /** Codes of other pieces with the same measure in the same direction, covered by this cota. */
+  shared?:string[];
+  /** Set only when no free position existed: the cota prints anyway, flagged in the viewer and the sheet. */
+  issue?:string;
 };
 export const DIMENSION_FONT_SIZE=13;
 export const dimensionText=(value:number)=>`${new Intl.NumberFormat('es-AR',{useGrouping:false,maximumFractionDigits:2}).format(Number(value.toFixed(2)))} mm`;
@@ -73,15 +77,34 @@ export function setDimensionVisible(f:Furniture,pieceId:string,role:Dimension['r
 export function dimensionCaption(f:Furniture){
   const choices=dimensionChoices(f),hidden=choices.filter(c=>!c.visible).length;
   if(hidden===choices.length)return 'COTAS OCULTAS · MEDIDAS EN LA TABLA';
-  return `COTAS EN mm · UNA PIEZA POR TAMAÑO${hidden?` · ${hidden} OCULTA${hidden===1?'':'S'}`:''}`;
+  return `COTAS EN mm · MEDIDAS IGUALES UNA SOLA VEZ${hidden?` · ${hidden} OCULTA${hidden===1?'':'S'}`:''}`;
+}
+
+/** Two cotas are the same measure within this tolerance, and only if they also print the same text. */
+export const EQUAL_DIMENSION_MM=.5;
+/** Layout notices of cotas never block the sheet: they print where they least obstruct. */
+export const isDimensionNotice=(warning:string)=>/^Cotas (sin lugar libre|que no entran en la vista):/.test(warning);
+type Request={pieceId:string;code:string;axis:number;role:Dimension['role'];valueMm:number;edges:{a:Point;b:Point;localStart:Vec3;localEnd:Vec3}[];difficulty:number;direction:Vector3;printed:string;offset?:[number,number]};
+/**
+ * Same length (±0,5 mm and identical printed text), same direction in the furniture and same kind of cota (linear or
+ * depth leader, whose text names the role): one cota stands for all. An omitted cota therefore never carries a
+ * different number than the one drawn, and the table keeps every piece.
+ */
+export function sameMeasure(a:Pick<Request,'direction'|'valueMm'|'printed'>,b:Pick<Request,'direction'|'valueMm'|'printed'>){
+  return Math.abs(a.direction.dot(b.direction))>.999&&Math.abs(a.valueMm-b.valueMm)<=EQUAL_DIMENSION_MM&&a.printed===b.printed;
 }
 
 /** All values come from the local box and accumulated axis scale, never from projected pixels. */
 export function makeDimensions(f:Furniture,anchor:(pieceId:string,local:Vec3)=>Point,obstacles:Rect[],noteLeaders:DimensionSegment[]=[],protectedNotes:Rect[]=[],viewport={width:960,height:580},view:'front'|'back'='front'){
-  const pieceRects:Rect[]=[],requests:{pieceId:string;code:string;axis:number;role:Dimension['role'];valueMm:number;edges:{a:Point;b:Point;localStart:Vec3;localEnd:Vec3}[];difficulty:number}[]=[];
+  const pieceRects:Rect[]=[],requests:Request[]=[];
   const choices=dimensionChoices(f),representatives=new Set(choices.map(c=>c.pieceId));
   const visible=new Set(choices.filter(c=>c.visible).map(c=>dimensionKey(c.pieceId,c.role)));
   const codes=pieceCodeMap(f);
+  const manual=(pieceId:string,role:Dimension['role'])=>{
+    const choice=choices.find(c=>c.pieceId===pieceId&&c.role===role);
+    const ref=f.presentation?.dimensionOffsets?.find(r=>r.view===view&&r.role===role&&choice?.pieceIds.includes(r.pieceId));
+    return ref?[ref.offset[0]*viewport.width,ref.offset[1]*viewport.height] as [number,number]:undefined;
+  };
   for(const piece of f.pieces){
     const box=bounds(piece.mesh),min=box.min.toArray(),max=box.max.toArray(),matrix=new Matrix4().fromArray(piece.transform);
     const lengths=[0,1,2].map(axis=>(max[axis]-min[axis])*new Vector3().setFromMatrixColumn(matrix,axis).length());
@@ -93,23 +116,25 @@ export function makeDimensions(f:Furniture,anchor:(pieceId:string,local:Vec3)=>P
     for(let axis=0;axis<3;axis++){
       // Thickness stays in the parts table; only the two major dimensions are drawn.
       if(axis===rank[2])continue;
-      if(!visible.has(dimensionKey(piece.id,axis===rank[0]?'largo':'ancho')))continue;
+      const role=axis===rank[0]?'largo':'ancho';
+      if(!visible.has(dimensionKey(piece.id,role)))continue;
       const others=[0,1,2].filter(i=>i!==axis),edges=[];
       for(let bits=0;bits<4;bits++){
         const a=[...min] as Vec3,b=[...min] as Vec3;b[axis]=max[axis];
         others.forEach((other,index)=>{a[other]=b[other]=bits&(1<<index)?max[other]:min[other];});
         edges.push({a:anchor(piece.id,a),b:anchor(piece.id,b),localStart:a,localEnd:b});
       }
-      requests.push({pieceId:piece.id,code:codes.get(piece.id)!,axis,role:axis===rank[0]?'largo':'ancho',valueMm:lengths[axis],edges,
-        difficulty:Math.hypot(edges[0].b.x-edges[0].a.x,edges[0].b.y-edges[0].a.y)});
+      const difficulty=Math.hypot(edges[0].b.x-edges[0].a.x,edges[0].b.y-edges[0].a.y);
+      requests.push({pieceId:piece.id,code:codes.get(piece.id)!,axis,role,valueMm:lengths[axis],edges,difficulty,
+        direction:new Vector3().setFromMatrixColumn(matrix,axis).normalize(),printed:difficulty<0.05?`${role} ${dimensionText(lengths[axis])}`:dimensionText(lengths[axis]),offset:manual(piece.id,role)});
     }
   }
   // Place the main lengths first; short dimensions can put their text outside the ticks.
   requests.sort((a,b)=>f.presentation?.compact?(a.code.localeCompare(b.code,undefined,{numeric:true})||a.axis-b.axis):(b.difficulty-a.difficulty||a.pieceId.localeCompare(b.pieceId)||a.axis-b.axis));
   const dimensions:Dimension[]=[],occupied=[...obstacles],previousLines:DimensionSegment[]=[],missing:string[]=[];
-  let compactSlot=0;
-  for(const req of requests){
-    if(f.presentation?.compact){
+  if(f.presentation?.compact){
+    let compactSlot=0;
+    for(const req of requests){
       const columns=viewport.width>700?4:2,columnWidth=(viewport.width-20)/columns,rows=Math.floor((viewport.height-40-220-19)/20)+1;
       let placed=false;
       while(compactSlot<columns*rows&&!placed){
@@ -123,26 +148,27 @@ export function makeDimensions(f:Furniture,anchor:(pieceId:string,local:Vec3)=>P
         occupied.push(label.rect);placed=true;
       }
       if(!placed)missing.push(`${req.code} (${req.role})`);
-      continue;
     }
+    dimensions.sort((a,b)=>a.pieceId.localeCompare(b.pieceId)||a.axis-b.axis);
+    return {dimensions,warnings:missing.length?[`No hay espacio legible para todas las cotas: ${missing.slice(0,8).join(', ')}${missing.length>8?` y ${missing.length-8} más`:''}. Revisá el zoom o las notas; no se exportará un plano incompleto.`]:[]};
+  }
+  const inside=(p:Point)=>p.x>=9&&p.x<=viewport.width-9&&p.y>=9&&p.y<=viewport.height-40;
+  const fits=(r:Rect)=>r.x>=9&&r.y>=9&&r.x+r.w<=viewport.width-9&&r.y+r.h<=viewport.height-40;
+  /** Every geometrically possible position of one cota, with the cost that does not depend on other cotas. */
+  function candidates(req:Request,expanded:boolean){
+    const out:{d:Dimension;cost:number}[]=[];
     const text=dimensionText(req.valueMm),width=text.length*DIMENSION_FONT_SIZE*0.61+10;
-    let best:Dimension|undefined,bestCost=Infinity;
-    for(const expanded of [false,true]){
-      if(best)break;
+    const base={pieceId:req.pieceId,code:req.code,axis:req.axis,role:req.role,valueMm:req.valueMm};
     for(const edge of req.edges){
       const dx=edge.b.x-edge.a.x,dy=edge.b.y-edge.a.y,length=Math.hypot(dx,dy);
       if(length<0.05){
         // The measured axis points into the camera. Use a named leader, never a fictitious length.
-        const depthText=`${req.role} ${text}`,depthWidth=depthText.length*DIMENSION_FONT_SIZE*.61+10;
+        const depthWidth=req.printed.length*DIMENSION_FONT_SIZE*.61+10;
         for(const radius of [24,40,64,96,140,190])for(let direction=0;direction<16;direction++){
           const angle=direction*Math.PI/8,center={x:edge.a.x+Math.cos(angle)*(radius+depthWidth/2),y:edge.a.y+Math.sin(angle)*radius};
           const label=labelAt(center,0,depthWidth),r=label.rect;
-          if(r.x<9||r.y<9||r.x+r.w>viewport.width-9||r.y+r.h>viewport.height-40||occupied.some(other=>overlap(r,other)))continue;
           const segment:DimensionSegment={a:edge.a,b:{x:Math.max(r.x,Math.min(edge.a.x,r.x+r.w)),y:Math.max(r.y,Math.min(edge.a.y,r.y+r.h))},kind:'leader'};
-          if(protectedNotes.some(other=>segmentHitsRect(segment.a,segment.b,other)))continue;
-          if(previousLines.some(s=>dimensionMarkHitsRect(s,r,2))||dimensions.some(d=>dimensionMarkHitsRect(segment,d.label.rect,2)))continue;
-          const cost=radius+pieceRects.filter(other=>overlap(r,other)).length*100;
-          if(cost<bestCost){bestCost=cost;best={pieceId:req.pieceId,code:req.code,axis:req.axis,role:req.role,valueMm:req.valueMm,text:depthText,mode:'depth',localStart:edge.localStart,localEnd:edge.localEnd,segments:[segment],label};}
+          out.push({d:{...base,text:req.printed,mode:'depth',localStart:edge.localStart,localEnd:edge.localEnd,segments:[segment],label},cost:radius+pieceRects.filter(other=>overlap(r,other)).length*100});
         }
         continue;
       }
@@ -152,14 +178,10 @@ export function makeDimensions(f:Furniture,anchor:(pieceId:string,local:Vec3)=>P
         const normal={x:-u.y*side,y:u.x*side};
         for(const offset of (expanded?[8,12,16,20,24,28,34,40,48,58,66,78,88,101,114,130,146,164,182,202,222]:[12,22,34,48,66,88,114,146,182,222])){
           const a=add(edge.a,normal,offset),b=add(edge.b,normal,offset),middle={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-          if([a,b].some(p=>p.x<9||p.x>viewport.width-9||p.y<9||p.y>viewport.height-40))continue;
           const baseShifts=length>width+16?[0,-length*.2,length*.2]:[-(length+width)/2-8,(length+width)/2+8];
           const shifts=expanded?[...new Set([...baseShifts,0,-width/2,width/2,-width,width,-width*1.5,width*1.5,-length*.4,length*.4,-(length+width)/2-8,(length+width)/2+8])]:baseShifts;
           for(const shift of shifts){
             const center=add(add(middle,normal,14),u,shift),label=labelAt(center,angle,width),r=label.rect;
-            if(r.x<9||r.y<9||r.x+r.w>viewport.width-9||r.y+r.h>viewport.height-40||occupied.some(other=>overlap(r,other)))continue;
-            // Prefer clear paper. AABB overlap is a cost, not proof that the label covers a face.
-            const geometryOverlap=pieceRects.filter(other=>overlap(r,other,1)).length;
             const segments:DimensionSegment[]=[
               {a:add(edge.a,normal,3),b:add(a,normal,4),kind:'extension'},
               {a:add(edge.b,normal,3),b:add(b,normal,4),kind:'extension'},
@@ -167,42 +189,89 @@ export function makeDimensions(f:Furniture,anchor:(pieceId:string,local:Vec3)=>P
             ];
             for(const p of [a,b])segments.push({a:add(add(p,u,-3),normal,-3),b:add(add(p,u,3),normal,3),kind:'tick'});
             if(shift)segments.push({a:middle,b:add(middle,u,shift),kind:'leader'});
-            if(segments.some(s=>protectedNotes.some(other=>segmentHitsRect(s.a,s.b,other,1))))continue;
-            if(noteLeaders.some(s=>segmentHitsRect(s.a,s.b,r,3)))continue;
-            // Keep complete measurement endpoints and ticks outside every other text mask.
-            if(previousLines.some(s=>dimensionMarkHitsRect(s,r,2))||segments.some(s=>dimensions.some(d=>dimensionMarkHitsRect(s,d.label.rect,2))))continue;
+            // Prefer clear paper. AABB overlap is a cost, not proof that the label covers a face.
+            const geometryOverlap=pieceRects.filter(other=>overlap(r,other,1)).length;
             const crossings=segments.filter(s=>pieceRects.some(other=>segmentHitsRect(s.a,s.b,other,0))).length;
-            const textCrossings=segments.filter(s=>occupied.some(other=>segmentHitsRect(s.a,s.b,other,1))).length+previousLines.filter(s=>segmentHitsRect(s.a,s.b,r,2)).length;
-            const cost=offset+Math.abs(shift)*.25+crossings*12+textCrossings*65+geometryOverlap*100;
-            if(cost<bestCost){bestCost=cost;best={pieceId:req.pieceId,code:req.code,axis:req.axis,role:req.role,valueMm:req.valueMm,text,mode:'linear',localStart:edge.localStart,localEnd:edge.localEnd,segments,label};}
+            out.push({d:{...base,text,mode:'linear',localStart:edge.localStart,localEnd:edge.localEnd,segments,label},cost:offset+Math.abs(shift)*.25+crossings*12+geometryOverlap*100});
           }
         }
       }
     }
+    return out;
+  }
+  /** Outside the paper is never acceptable; the other faults are what the layout resolves. */
+  const onPaper=(d:Dimension)=>fits(d.label.rect)&&(d.mode==='depth'||d.segments.filter(s=>s.kind==='dimension').every(s=>inside(s.a)&&inside(s.b)));
+  function faults(d:Dimension){
+    const r=d.label.rect;let n=0;
+    if(d.mode==='linear'){
+      if(d.segments.some(s=>protectedNotes.some(other=>segmentHitsRect(s.a,s.b,other,1))))n++;
+      if(noteLeaders.some(s=>segmentHitsRect(s.a,s.b,r,3)))n++;
+    }else if(protectedNotes.some(other=>segmentHitsRect(d.segments[0].a,d.segments[0].b,other)))n++;
+    if(occupied.some(other=>overlap(r,other)))n++;
+    // Keep complete measurement endpoints and ticks outside every other text mask.
+    if(previousLines.some(s=>dimensionMarkHitsRect(s,r,2))||d.segments.some(s=>dimensions.some(other=>dimensionMarkHitsRect(s,other.label.rect,2))))n++;
+    return n;
+  }
+  const textCrossings=(d:Dimension)=>d.mode==='depth'?0:d.segments.filter(s=>occupied.some(other=>segmentHitsRect(s.a,s.b,other,1))).length+previousLines.filter(s=>segmentHitsRect(s.a,s.b,d.label.rect,2)).length;
+  /** Cheapest free position; `relaxed` takes the least obstructive one when no free position exists. */
+  function best(req:Request,relaxed=false){
+    let found:Dimension|undefined,cost=Infinity;
+    for(const expanded of [false,true]){
+      if(found)break;
+      for(const option of candidates(req,expanded)){
+        if(!onPaper(option.d))continue;
+        const n=faults(option.d);if(n&&!relaxed)continue;
+        const total=option.cost+textCrossings(option.d)*65+n*1000;
+        if(total<cost){cost=total;found=option.d;}
+      }
     }
-    if(best){dimensions.push(best);occupied.push(best.label.rect);previousLines.push(...best.segments);}
-    else missing.push(`${req.code} (${req.role})`);
+    return found;
   }
-  const warnings=missing.length?[`No hay espacio legible para todas las cotas: ${missing.slice(0,8).join(', ')}${missing.length>8?` y ${missing.length-8} más`:''}. Revisá el zoom o las notas; no se exportará un plano incompleto.`]:[];
-  for(const d of dimensions){
-    const choice=choices.find(c=>c.pieceId===d.pieceId&&c.role===d.role);
-    const placement=f.presentation?.dimensionOffsets?.find(ref=>ref.view===view&&ref.role===d.role&&choice?.pieceIds.includes(ref.pieceId));
-    if(!placement)continue;
-    const dx=placement.offset[0]*viewport.width,dy=placement.offset[1]*viewport.height;
+  const moved=(d:Dimension,dx:number,dy:number):Dimension=>{
     const shift=(p:Point)=>({x:p.x+dx,y:p.y+dy});
-    d.label={...d.label,center:shift(d.label.center),rect:{...d.label.rect,x:d.label.rect.x+dx,y:d.label.rect.y+dy}};
-    d.segments=d.segments.map(s=>({...s,a:s.kind==='extension'||(d.mode==='depth'&&s.kind==='leader')?s.a:shift(s.a),b:shift(s.b)}));
+    return {...d,label:{...d.label,center:shift(d.label.center),rect:{...d.label.rect,x:d.label.rect.x+dx,y:d.label.rect.y+dy}},
+      segments:d.segments.map(s=>({...s,a:s.kind==='extension'||(d.mode==='depth'&&s.kind==='leader')?s.a:shift(s.a),b:shift(s.b)}))};
+  };
+  /** A moved cota stays where it was put when that is free; otherwise it goes to the nearest free position. */
+  function placeMoved(req:Request,[dx,dy]:[number,number]){
+    const origin=best(req)||best(req,true);if(!origin)return undefined;
+    const wanted=moved(origin,dx,dy),target=wanted.label.center;
+    const free=(d:Dimension)=>onPaper(d)&&!faults(d);
+    if(free(wanted))return wanted;
+    let found:Dimension|undefined,distance=Infinity;
+    const consider=(d:Dimension)=>{const k=Math.hypot(d.label.center.x-target.x,d.label.center.y-target.y);if(k<distance&&free(d)){distance=k;found=d;}};
+    for(const step of [6,12,18,24,32,40,50,60,75,90])for(let i=0;i<16;i++)consider(moved(wanted,Math.cos(i*Math.PI/8)*step,Math.sin(i*Math.PI/8)*step));
+    if(!found)for(const expanded of [false,true])for(const option of candidates(req,expanded)){consider(option.d);consider(moved(option.d,dx,dy));}
+    return found||(onPaper(wanted)?wanted:origin);
   }
-  const manualWarnings:string[]=[];
+  // Equal measures form one class; the cota of a moved member is placed first, then the rest avoid it.
+  const classes:Request[][]=[];
+  for(const req of requests){const found=classes.find(group=>sameMeasure(group[0],req));if(found)found.push(req);else classes.push([req]);}
+  for(const group of classes)group.sort((a,b)=>Number(!!b.offset)-Number(!!a.offset)||a.code.localeCompare(b.code,undefined,{numeric:true})||a.pieceId.localeCompare(b.pieceId)||a.axis-b.axis);
+  for(const group of [...classes.filter(g=>g[0].offset),...classes.filter(g=>!g[0].offset)]){
+    let placed:Dimension|undefined;
+    for(const req of group){placed=req.offset?placeMoved(req,req.offset):best(req);if(placed)break;}
+    placed??=best(group[0],true);
+    if(!placed){missing.push(`${group[0].code} (${group[0].role})`);continue;}
+    const shared=[...new Set(group.map(r=>r.code).filter(code=>code!==placed!.code))];
+    if(shared.length)placed.shared=shared;
+    dimensions.push(placed);occupied.push(placed.label.rect);previousLines.push(...placed.segments);
+  }
+  // Independent check of the final sheet: only a cota without any free position remains flagged.
+  const problems:string[]=[];
   for(const d of dimensions){
-    const r=d.label.rect;
-    if(r.x<8||r.y<8||r.x+r.w>viewport.width-8||r.y+r.h>viewport.height-35)manualWarnings.push(`${d.code}: la cota movida queda fuera de la vista.`);
-    if(d.segments.some(s=>protectedNotes.some(note=>segmentHitsRect(s.a,s.b,note,0))))manualWarnings.push(`${d.code}: la cota cruza una nota. Movela antes de exportar.`);
-    if(dimensions.some(other=>other!==d&&(other.segments.some(s=>dimensionMarkHitsRect(s,r,1))||d.segments.some(s=>dimensionMarkHitsRect(s,other.label.rect,1)))))manualWarnings.push(`${d.code}: el texto de una cota tapa marcas de otra. Mové la cota o restablecé su posición.`);
-    if(obstacles.some(other=>overlap(r,other,0))||dimensions.some(other=>other!==d&&overlap(r,other.label.rect,0)))manualWarnings.push(`${d.code}: hay una cota superpuesta. Movela o restablecé su posición.`);
+    const r=d.label.rect,issues:string[]=[];
+    if(d.segments.some(s=>protectedNotes.some(note=>segmentHitsRect(s.a,s.b,note,0))))issues.push('cruza una nota');
+    if(dimensions.some(other=>other!==d&&(other.segments.some(s=>dimensionMarkHitsRect(s,r,1))||d.segments.some(s=>dimensionMarkHitsRect(s,other.label.rect,1)))))issues.push('tapa marcas de otra');
+    if(obstacles.some(other=>overlap(r,other,0))||dimensions.some(other=>other!==d&&overlap(r,other.label.rect,0)))issues.push('queda superpuesta');
+    if(issues.length){d.issue=`${d.code} ${d.role}: ${issues.join(' y ')}`;problems.push(d.issue);}
   }
+  const warnings=[
+    ...(problems.length?[`Cotas sin lugar libre: ${problems.slice(0,6).join('; ')}${problems.length>6?` y ${problems.length-6} más`:''}. Se imprimen igual donde menos tapan; para despejarlas bajá el zoom u ocultá alguna cota.`]:[]),
+    ...(missing.length?[`Cotas que no entran en la vista: ${missing.slice(0,8).join(', ')}${missing.length>8?` y ${missing.length-8} más`:''}. Sus medidas siguen en la tabla; bajá el zoom para dibujarlas.`]:[]),
+  ];
   dimensions.sort((a,b)=>a.pieceId.localeCompare(b.pieceId)||a.axis-b.axis);
-  return {dimensions,warnings:[...warnings,...new Set(manualWarnings)]};
+  return {dimensions,warnings};
 }
 
 export function moveDimension(f:Furniture,pieceId:string,role:Dimension['role'],view:'front'|'back',offset:[number,number]){
