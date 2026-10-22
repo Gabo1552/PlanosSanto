@@ -170,6 +170,36 @@ class WorkshopTest < Minitest::Test
   assert_raises(PlanosSanto::ExportError){service.validate(draft)}
  end
 
+ def test_ux2_audit_lists_every_independent_reason_and_keeps_first_as_reason
+  service,draft=order;row=draft['rows'][0]
+  row.merge!('orientationConfirmed'=>false,'reviewNote'=>'','grainAxis'=>'u','dimensionRule'=>'explicit_cut','cutBase'=>3500,'cutHeight'=>600)
+  blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
+  assert_equal blocked['reasons'].first,blocked['reason'];assert_operator blocked['reasons'].length,:>=,3
+  assert_includes blocked['reasons'][0],'Falta confirmar orientación'
+  assert blocked['reasons'].any? { |r| r.include?('justificación') }
+  assert blocked['reasons'].any? { |r| r.include?('dirección de veta') }
+  refute blocked['reasons'].any? { |r| r.include?('no entra') },'Las medidas inválidas no se comparan con la placa'
+  row.merge!('reviewNote'=>'Medidas sintéticas revisadas para la prueba')
+  blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
+  assert blocked['reasons'].any? { |r| r.include?('mide 3.500 × 600 mm y la placa aprobada es 3.000 × 2.000 mm') },blocked['reasons'].inspect
+ end
+ def test_ux2_check_and_export_errors_name_the_piece_and_show_values
+  service,draft=order;row=draft['rows'][1];row['materialConfirmed']=false
+  error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+  assert_equal "#{row['detail']} (#{row['id']}): Falta confirmar material.",error.message
+  row['materialConfirmed']=true;row['axes']=[0,2]
+  error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa aprobada tiene 19,05 mm\.\z/,error.message)
+  draft['profile']['decimal']=';'
+  assert_includes assert_raises(PlanosSanto::ExportError){service.validate(draft)}.message,'Perfil del archivo para la maderera'
+ end
+ def test_ux2_draft_errors_say_how_to_recover
+  _service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  stale=draft.merge('fingerprint'=>'otro');assert_includes assert_raises(PlanosSanto::ExportError){workshop.save_plan(stale)}.message,'usá «Preparar de nuevo»'
+  partial=draft.merge('rows'=>draft['rows'].first(1));assert_includes assert_raises(PlanosSanto::ExportError){workshop.save_plan(partial)}.message,'mismas piezas'
+  error=assert_raises(PlanosSanto::ExportError){workshop.add_item({'name'=>'X'},99)};assert_includes error.message,'volvé a abrirla'
+ end
+
  def test_rectangular_mirrors_are_not_consolidated_as_same_orientation
   @model.entities[0].entities[0].transformation=Geom::Transformation.scale(-1,1,1)
   @session.scan;@session.generate(['1']);service,draft=order;draft['rows'].each { |row| row['detail']='Pieza igual' }
