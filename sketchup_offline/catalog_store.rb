@@ -180,7 +180,7 @@ module PlanosSanto
           write_backup(name,original)
         end
         Tempfile.create(['.catalog-','.json'],@directory) do |file|
-          file.write(bytes);file.flush;file.fsync;file.close;File.rename(file.path,@path)
+          file.binmode;file.write(bytes);file.flush;file.fsync;file.close;File.rename(file.path,@path)
         end
         result
       ensure
@@ -196,7 +196,7 @@ module PlanosSanto
       raise ExportError,'La carpeta de copias de seguridad no puede ser un enlace.' if File.symlink?(backups)
       FileUtils.mkdir_p(backups);temporary=File.join(backups,".#{name}.tmp")
       begin
-        File.open(temporary,File::WRONLY|File::CREAT|File::EXCL,0o600) { |f| f.write(original);f.flush;f.fsync }
+        File.open(temporary,File::WRONLY|File::CREAT|File::EXCL|File::BINARY,0o600) { |f| f.write(original);f.flush;f.fsync }
         raise ExportError,'No se pudo verificar la copia de seguridad; la biblioteca no se modificó.' unless Digest::SHA256.file(temporary).hexdigest==Digest::SHA256.hexdigest(original)
         File.rename(temporary,File.join(backups,name))
       ensure
@@ -244,7 +244,7 @@ module PlanosSanto
     end
     def export(target)
       raise ExportError,'Elegí un archivo .json nuevo.' unless File.extname(target).downcase=='.json'
-      File.open(target,File::WRONLY|File::CREAT|File::EXCL,0o600) { |file| file.write(JSON.pretty_generate(read));file.flush;file.fsync }
+      File.open(target,File::WRONLY|File::CREAT|File::EXCL|File::BINARY,0o600) { |file| file.write(JSON.pretty_generate(read));file.flush;file.fsync }
     rescue Errno::EEXIST
       raise ExportError,'Ese archivo ya existe; no se sobrescribió.'
     end

@@ -268,7 +268,7 @@ module PlanosSanto
           'edgeTotals'=>OrderProposal.edge_totals(rows,@catalog) { |row| dimensions(row) },
           'sourceRows'=>rows,'physicalIds'=>rows.map { |row| row['id'] },'physicalQuantity'=>rows.length,'textRows'=>grouped.length}
       end
-      File.write(File.join(staging,'manifest.json'),JSON.pretty_generate(manifest));raise ExportError,'Ya existe esa exportación; no se reemplazó.' if File.exist?(target);File.rename(staging,target)
+      File.binwrite(File.join(staging,'manifest.json'),JSON.pretty_generate(manifest));raise ExportError,'Ya existe esa exportación; no se reemplazó.' if File.exist?(target);File.rename(staging,target)
       {'directory'=>target,'lots'=>batches.length,'physicalQuantity'=>draft['rows'].count { |row| row['include'] },'production_ready'=>false}
     rescue Encoding::UndefinedConversionError,Encoding::InvalidByteSequenceError
       raise ExportError,'El texto no se puede representar en la codificación seleccionada.'

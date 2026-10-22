@@ -236,7 +236,7 @@ module PlanosSanto
         # Same verified temporary-then-rename backup as the catalog.
         CatalogStore.new(directory:@directory).write_backup("maderera-profiles-#{revision}-#{SecureRandom.hex(6)}.json",File.binread(@path)) if File.file?(@path)
         Tempfile.create(['.maderera-profiles-','.json'],@directory) do |file|
-          file.write(bytes);file.flush;file.fsync;file.close;File.rename(file.path,@path)
+          file.binmode;file.write(bytes);file.flush;file.fsync;file.close;File.rename(file.path,@path)
         end
         result
       ensure
