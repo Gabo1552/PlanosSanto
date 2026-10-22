@@ -33,8 +33,8 @@ describe('Controles de cámara de guía A4',()=>{
   it('orienta el exterior al frente marcado y el interior desde el lado opuesto, sin guardar cámaras',()=>{
     const f=ensureGuide(createDemo().furniture[0]),pitch=defaultCamera.pitch;
     expect(markedFront(f)).toBeUndefined();expect(guideCamera(f,'front')).toEqual(defaultCamera);expect(guideCamera(f,'back')).toEqual({yaw:-180,pitch});
-    f.naming={moduleCode:'',bases:[],reference:{upAxis:2,frontAxis:0,frontSign:1,confirmed:false}};expect(frontCamera(f)).toEqual(defaultCamera);
-    f.naming.reference!.confirmed=true;expect(guideCamera(f,'front')).toEqual({yaw:90,pitch});expect(guideCamera(f,'back')).toEqual({yaw:-90,pitch});
+    f.naming={moduleCode:'',bases:[],reference:{upAxis:2,frontAxis:2,frontSign:1,confirmed:true}};expect(markedFront(f)).toBeUndefined();expect(frontCamera(f)).toEqual(defaultCamera);
+    f.naming.reference={upAxis:2,frontAxis:0,frontSign:1,confirmed:true};expect(guideCamera(f,'front')).toEqual({yaw:90,pitch});expect(guideCamera(f,'back')).toEqual({yaw:-90,pitch});
     f.naming.reference={upAxis:2,frontAxis:1,frontSign:-1,confirmed:true};expect(frontCamera(f)).toEqual(defaultCamera);
     // A group turned 90° keeps its local front: −Y local looks along +X in the model.
     f.referenceTransform=new Matrix4().makeRotationZ(Math.PI/2).toArray();expect(frontCamera(f)).toEqual({yaw:90,pitch});

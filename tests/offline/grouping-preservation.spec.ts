@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
+import {toMuebles,toPlanos} from './fixtures/modules';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {readFile,mkdir} from 'node:fs/promises';
@@ -36,9 +37,10 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 test('agrupar nueve instancias con nombres diferentes solo cambia la presentación; guardar y reabrir conserva nombres físicos, bases, cámara y notas',async({page},info)=>{
  await boot(page,info.outputDir);const initial=await snapshot();
  await expect(page.locator('[data-piece-row]')).toHaveCount(9);
- await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('24');
+ await toPlanos(page);await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('24');
  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota física del lateral derecho');
  await save(page);const baseline=await snapshot();expect(baseline.names).toEqual(initial.names);expect(baseline.simulatedSaves).toBe(1);
+ await toMuebles(page);
  await page.getByRole('checkbox',{name:'Agrupar componentes iguales',exact:true}).check();await expect(page.locator('[data-piece-row]')).toHaveCount(1);await expect(page.locator('[data-piece-row]')).toContainText('×9');
  await save(page);const grouped=await snapshot();expect(requests.at(-1)).toMatchObject({saveFile:true});expect(grouped.simulatedSaves).toBe(2);
  expect(grouped.names).toEqual(baseline.names);expect(grouped.definitions).toEqual(initial.definitions);expect(grouped.geometryHash).toBe(initial.geometryHash);

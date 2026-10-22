@@ -5,6 +5,7 @@ import {readFile,mkdir,copyFile,writeFile,readdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {toMuebles,toPlanos} from './fixtures/modules';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 let saveRequests:unknown[],saveReplies:Reply[],actions:Map<string,string>;
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,errors:string[];
@@ -76,11 +77,24 @@ test('configuración integrada detecta cambios externos y muestra texto sin ejec
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre del grupo',{exact:true})).toHaveValue('Alacena externa');
 });
 
+// Gabriel: the obra could not be typed while a guide was open (the field showed only complete codes).
+test('la abreviatura se escribe letra por letra con un mueble abierto y recalcula los nombres; Planos no edita nombres',async({page},info)=>{
+ await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+ await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral');
+ const code=page.getByLabel('Abreviatura de la obra');await expect(code).toBeEditable();
+ await code.pressSequentially('v');await expect(code).toHaveValue('V');await expect(page.getByText('La obra lleva dos letras',{exact:false})).toBeVisible();
+ await code.pressSequentially('f');await expect(code).toHaveValue('VF');await expect(page.locator('tbody tr').first()).toContainText('VF M01 Lateral');
+ await code.press('Backspace');await expect(code).toHaveValue('V');await expect(page.locator('tbody tr').first()).not.toContainText('VF M01');await code.pressSequentially('f');
+ await toPlanos(page);await expect(page.getByLabel('Abreviatura de la obra')).toBeHidden();await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveCount(0);
+ await expect(page.getByRole('table',{name:'Piezas del mueble'})).toContainText('VF M01 Lateral');await expect(page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true})).toHaveCount(0);
+ await toMuebles(page);await expect(page.locator('[data-dimension]')).toHaveCount(0);await expect(page.getByLabel('Abreviatura de la obra')).toHaveValue('VF');
+});
+
 test('grupo y pieza conservan notas/códigos y Undo revierte la operación completa',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota original que debe conservarse');
+ await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota original que debe conservarse');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- const before=await snapshot();await page.getByLabel('Nombre del grupo',{exact:true}).fill('M08 Alacena');await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral derecho');
+ await toMuebles(page);const before=await snapshot();await page.getByLabel('Nombre del grupo',{exact:true}).fill('M08 Alacena');await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral derecho');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  const after=await snapshot();expect(after.guide.furniture[0].notes).toEqual(before.guide.furniture[0].notes);expect(after.guide.furniture[0].pieces.map(p=>[p.id,p.code])).toEqual(before.guide.furniture[0].pieces.map(p=>[p.id,p.code]));
  expect(after.names['1']).toBe('M08 Alacena');expect(after.names['11']).toBe('Lateral derecho');expect(after.geometryHash).toBe(before.geometryHash);
@@ -98,7 +112,7 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  await page.getByLabel('Módulo de este mueble').fill('M02');
  await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
  expect((await snapshot()).operations).toEqual([]);
- await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();
+ await toPlanos(page);await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();
  const original=await page.locator('[data-piece] polygon, polygon[data-piece]').first().getAttribute('points');
  await page.getByRole('slider',{name:'Giro horizontal',exact:true}).press('ArrowRight');
  expect(await page.locator('polygon[data-piece]').first().getAttribute('points')).not.toBe(original);
@@ -178,7 +192,7 @@ test('guardar SKP y exportar sin regenerar tolera revisiones internas y sigue bl
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await page.getByLabel('Nombre del grupo',{exact:true}).fill('M01 Estantería');
  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral guardado');
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
+ await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
  await page.getByLabel('Texto de la nota').fill('Alinear antes de fijar');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía y archivo SketchUp guardados.',{exact:true})).toBeVisible();
  const saved=await snapshot();expect(saved.simulatedSaves).toBe(1);expect(saved.definitionGuids).not.toEqual(before.definitionGuids);expect(saved.geometryHash).toBe(before.geometryHash);
@@ -186,7 +200,7 @@ test('guardar SKP y exportar sin regenerar tolera revisiones internas y sigue bl
  const {execFileSync}=await import('node:child_process');const pdfPath=resolve(info.outputDir,'PlanosSanto-A4.pdf');
  const pdfText=execFileSync('pdftotext',['-raw',pdfPath,'-'],{encoding:'utf8'});expect(pdfText).toContain('Lateral guardado');expect(pdfText).toContain('Alinear antes de fijar');
  expect(execFileSync('pdfinfo',[pdfPath],{encoding:'utf8'})).toMatch(/Pages:\s+2/);
- await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral definitivo');
+ await toMuebles(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral definitivo');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía y archivo SketchUp guardados.',{exact:true})).toBeVisible();
  const resaved=await snapshot();expect(resaved.simulatedSaves).toBe(2);expect(resaved.guide.revision).toBe(2);expect(resaved.geometryHash).toBe(before.geometryHash);expect(resaved.guide.furniture[0].notes).toEqual(saved.guide.furniture[0].notes);
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
@@ -236,16 +250,16 @@ test('herramientas visibles, medidas completas y dibujo junto al nombre a 1000 p
  const diagram=await page.locator('.diagram').boundingBox(),name=await page.getByLabel('Nombre P02',{exact:true}).boundingBox();
  expect(name!.y).toBeGreaterThanOrEqual(0);expect(name!.y+name!.height).toBeLessThanOrEqual(760);expect(diagram!.x+diagram!.width).toBeLessThanOrEqual(name!.x);
  await expect(page.locator('[data-piece-row="1/13/12"] .piece-measures')).toContainText('Largo');await expect(page.locator('[data-piece-row="1/13/12"] .piece-measures')).toContainText('19,05');
- const width=diagram!.width;await page.getByRole('button',{name:'Ocultar muebles',exact:true}).click();await expect(page.locator('.left-panel')).toBeHidden();
- expect((await page.locator('.diagram').boundingBox())!.width).toBeGreaterThan(width+150);
- await page.getByRole('button',{name:'Mostrar muebles',exact:true}).click();await expect(page.locator('.left-panel')).toBeVisible();
+ // Planos A4 drops the furniture chooser: its drawing takes the freed width.
+ const width=diagram!.width;await toPlanos(page);await expect(page.locator('.left-panel')).toBeHidden();
+ expect((await page.locator('.diagram').boundingBox())!.width).toBeGreaterThan(width);
  const points=await page.locator('polygon[data-piece]').first().getAttribute('points');
  await page.getByRole('button',{name:'Rotar con el mouse',exact:true}).click();
  await expect(page.getByRole('button',{name:'Seleccionar P01',exact:true})).toHaveCount(0);
  await page.locator('.diagram').scrollIntoViewIfNeeded();const box=await page.locator('[data-label="P01"] rect').boundingBox();
  await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+45,box!.y+box!.height/2-8,{steps:4});await page.mouse.up();
  expect(await page.locator('polygon[data-piece]').first().getAttribute('points')).not.toBe(points);
- await page.getByRole('button',{name:'Seleccionar piezas',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeFocused();
+ await page.getByRole('button',{name:'Seleccionar piezas',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await expect(page.locator('[data-piece-row="1/11"]')).toHaveAttribute('aria-selected','true');await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Mover cotas',exact:true}).click();await expect(page.locator('.diagram')).toHaveAttribute('data-layout','sheet');
  await page.getByRole('button',{name:'Seleccionar piezas',exact:true}).click();
  await page.screenshot({path:'artifacts/piezas-visor-063-1000px.png',fullPage:false});
@@ -254,7 +268,7 @@ test('herramientas visibles, medidas completas y dibujo junto al nombre a 1000 p
 
 test('clic sobre geometría encuadrada selecciona la pieza y guarda la flecha en coordenadas locales',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.locator('.diagram').scrollIntoViewIfNeeded();
+ await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.locator('.diagram').scrollIntoViewIfNeeded();
  const hit=await page.locator('polygon[data-piece]').evaluateAll(nodes=>{
   for(const node of [...nodes].reverse()){
    const polygon=node as SVGPolygonElement,svg=polygon.ownerSVGElement!;
@@ -283,7 +297,7 @@ test('componentes iguales: nombre/ID compartidos, cantidad 2, notas físicas, gu
  await expect(page.locator('[data-piece-row]')).toContainText('×2');await expect(page.locator('[data-label="P01"]')).toHaveCount(2);await expect(page.locator('[data-label="P02"]')).toHaveCount(0);
  await page.getByLabel('Nombre P01',{exact:true}).fill('PT');await expect(page.locator('.selected-piece-summary')).toContainText('2 piezas iguales');
  await page.getByRole('button',{name:'Seleccionar P01, pieza 2 de 2',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeFocused();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01, pieza 2 de 2',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Indicación anclada solo en esta pieza');
+ await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01, pieza 2 de 2',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Indicación anclada solo en esta pieza');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  const stored=await snapshot();expect(stored.names['11']).toBe('VF M01 PT');expect(stored.names['12']).toBe('VF M01 PT');expect(stored.names['21']).toBe(before.names['21']);expect(stored.geometryHash).toBe(before.geometryHash);
  expect(stored.guide.furniture[0].groupIdentical).toBe(true);expect(stored.guide.furniture[0].pieces.map(p=>p.code)).toEqual(['P01','P02']);expect(stored.guide.furniture[0].notes[0]).toMatchObject({pieceId:'1/13/12'});
@@ -431,7 +445,7 @@ test('interior conserva la tabla agrupada y las instancias físicas al cambiar d
  const saved=await snapshot();expect(saved.geometryHash).toBe(before.geometryHash);expect(saved.guide.furniture[0].groupIdentical).toBe(true);
  await page.reload();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await expect(page.getByRole('checkbox',{name:'Agrupar componentes iguales',exact:true})).toBeChecked();
- await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.locator('[data-label="P01"]')).toHaveCount(2);await expect(page.locator('[data-piece-row]')).toHaveCount(1);
+ await toPlanos(page);await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.locator('[data-label="P01"]')).toHaveCount(2);await expect(page.locator('[data-piece-row]')).toHaveCount(1);
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
  const {execFileSync}=await import('node:child_process');const text=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'}).replace(/\s+/g,' ');expect(text).toContain('P01');expect(text).toContain('VISTA EXTERIOR');expect(text).toContain('VISTA INTERIOR');
  expect((await snapshot()).geometryHash).toBe(before.geometryHash);

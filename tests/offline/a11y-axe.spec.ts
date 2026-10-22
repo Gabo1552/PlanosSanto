@@ -95,6 +95,7 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
  test(`axe ${w}px: ayuda`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir);await generate(page);
+  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Planos A4',exact:true}).click();
   await page.getByRole('button',{name:'Ayuda: Vistas configurables',exact:true}).click();
   const popup=page.getByRole('dialog',{name:'Vistas configurables',exact:true});await expect(popup).toBeVisible();
   await audit(page,'ayuda',popup);

@@ -45,7 +45,7 @@ test('a 1366×768 los avisos de guardar y de bloqueo quedan a la vista aunque se
  await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('Completá el nombre de cada pieza');
  expect(await inViewport(page,'.ux-notices .ux-notice.error')).toBe(true);
  await alert.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral');
- await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));await page.locator('.notes-panel .hint').first().click();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);
+ await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));await page.locator('.parts-instructions').first().click();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);
  await expect(page.getByRole('status').filter({hasText:'Guía guardada'})).toBeVisible();expect(await inViewport(page,'.ux-notices .ux-notice')).toBe(true);
 });
 
@@ -65,7 +65,8 @@ test('un cuelgue de SketchUp ofrece Analizar de nuevo; el foco vuelve al botón 
  await expect(page.locator('.ux-busy')).toHaveCount(0);await expect(saveButton).toBeFocused();
  await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();hang=true;await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();await expect(page.locator('.ux-busy')).toBeVisible();
  await page.clock.fastForward(121_000);const alert=page.getByRole('alert');await expect(alert).toContainText('SketchUp no respondió');
- hang=false;const scans=count('scan');await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);
+ // The help popover stays open over the notice in the shorter Muebles page: close it first, as the operator would.
+ hang=false;const scans=count('scan');await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Atajos y diagnóstico'})).toHaveCount(0);await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);
 });
 
 test('el riel conserva el foco durante una operación y explica el bloqueo al tabular o hacer clic',async({page},info)=>{
