@@ -4,6 +4,25 @@ Fecha: 2026-10-22 · Rama: `claude/noche-orden-repo` (desde `claude/ux-extras-08
 
 > Este informe **no mueve ni borra nada**. Todos los comandos de la sección 6 son una propuesta para revisión humana.
 
+## 0. Estado de ejecución (actualizado 2026-10-22)
+
+Con aprobación del usuario se aplicó **una parte reducida** del plan. Solo se usó `git mv`, no hubo ningún `git rm`.
+
+| Hecho | Detalle |
+|---|---|
+| Archivados en `docs/historico/loops/` | `planos-santo-arranque`, `-loop-nombres`, `-loop-pintado-073`, `-loop-toolbar-082`, `-loop-ux-082`, `-loop-experiencia-084` y `-loop-ux-085` (133 archivos) |
+| Archivado en `docs/historico/` | `PLAN_DESARROLLO_EXTENSION.md`, con su enlace actualizado en `README.md` |
+| Enlace corregido | `sketchup_offline/PRUEBA_SKETCHUP_2026.md`, que apuntaba a `INSTALACION_RBZ.md` de `loop-nombres`. Ese archivo no entra en el RBZ |
+| `.gitignore` | Las rutas privadas de los 6 loops movidos que tenían reglas en la raíz ahora apuntan a la ruta nueva. Se agregaron las reglas genéricas de la sección 5. Se probó con `git check-ignore` sobre archivos ficticios en cada ruta privada: todas quedan ignoradas |
+| Verificación | `build-offline` (RBZ 0.8.10, CRC OK), `test-offline-ruby`, `tsc --noEmit` y `vitest` (172/172): todo en verde |
+
+**Pendiente, sin ejecutar:**
+
+- Paso 6.1: reubicar los validadores. Por eso `planos-santo-ocl-066/` y `planos-santo-loop-068/` siguen en la raíz.
+- `git rm --cached` de los 4 `.pyc`. Siguen versionados aunque ahora estén ignorados.
+- Excluir `ux`, `backups`, `baseline`, `state` y `referencia` en `scripts/package-hito1-fixes.py`. Hoy ese script no corre porque exige la versión 0.8.9. **Antes de reactivarlo hay que agregar esa exclusión**, porque los loops archivados ahora están dentro de `docs/`.
+- `scripts/package-paint-validation.py` con `KIND` `toolbar`, `ux`, `photo` o `flows`: sigue apuntando a las rutas viejas de 4 loops archivados. Esos paquetes (0.8.2–0.8.6) ya no se pueden reproducir sin actualizar las rutas.
+
 ## 1. Resumen ejecutivo
 
 | Hecho medido | Valor |
