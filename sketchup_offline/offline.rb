@@ -857,10 +857,17 @@ module PlanosSanto
         service=SmartPaint.new(@model,catalog:CatalogStore.new(directory:directory))
         @smart_state={'active'=>false,'mode'=>options['mode'],'changed'=>false,'queuedCount'=>0,'message'=>''}
         generation=@tool_generation || 0
+        # Hito 7 (PINTURA-04/07): recientes y cuentagotas de la vista eligen sin instalar.
+        advanced={select_material:lambda { |catalog_id,mode| tool_guard!(generation);smart_select_material(catalog_id,mode) },
+          recents:lambda { |mode| generation==(@tool_generation || 0) ? smart_recent_materials(mode) : [] },
+          eyedropper_key:smart_settings['eyedropperKey'] || 'alt'}
+        # Only the keywords the installed Tool accepts (a Tool without Hito 7 keeps working).
+        accepted=SmartPaintTool.instance_method(:initialize).parameters
+        advanced.select! { |key,_| accepted.any? { |type,name| type==:keyrest || name==key } }
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
           guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
           remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
-          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing)
+          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing,**advanced)
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -897,6 +904,26 @@ module PlanosSanto
         (@smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
       when 'smart_tool_stop'
         stop_smart_tool
+      # Hito 7: opciones de vista del pincel inmediato. No detienen la herramienta,
+      # no escriben entidades y no marcan el análisis como desactualizado.
+      when 'smart_tool_view'
+        active!
+        raise ExportError,'Opción de vista inválida.' unless data.is_a?(Hash) && data.keys==['highlightMissing'] && [true,false].include?(data['highlightMissing'])
+        @smart_tool.set_view_options('highlightMissing'=>data['highlightMissing']) if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? && @smart_tool.respond_to?(:set_view_options)
+        {'toolState'=>smart_state}
+      when 'smart_toggle_transparency'
+        active! # PINTURA-14: opción de vista, sin operación ni Undo.
+        raise ExportError,'Esta versión de SketchUp no permite cambiar la transparencia desde el pincel.' unless SmartPaintTool.respond_to?(:toggle_transparency)
+        value=SmartPaintTool.toggle_transparency(@model)==true
+        @smart_state=(@smart_state || {}).merge('transparency'=>value)
+        {'transparency'=>value,'toolState'=>smart_state}
+      when 'smart_eyedropper_key'
+        active! # PINTURA-07: tecla sostenida del cuentagotas.
+        key=data.is_a?(Hash) ? data['key'] : nil
+        raise ExportError,'Elegí Alt o Mayús para el cuentagotas.' unless %w[alt shift].include?(key)
+        remember_smart_settings(smart_settings.merge('eyedropperKey'=>key))
+        @smart_tool.eyedropper_key=key if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? && @smart_tool.respond_to?(:eyedropper_key=)
+        {'settings'=>smart_settings,'toolState'=>smart_state}
       when 'smart_palette_compact'
         raise ExportError,'Tamaño de paleta inválido.' unless [true,false].include?(data['compact'])
         target=@request_dialog || @dialog
@@ -1017,7 +1044,8 @@ module PlanosSanto
       end
     end
 
-    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials].freeze
+    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials recentMaterials eyedropperKey].freeze
+    RECENT_MATERIALS_MAX=6
 
     def smart_state
       (@smart_state || {'active'=>false,'changed'=>false,'queuedCount'=>0,'message'=>''}).merge('changed'=>@smart_changed==true)
@@ -1051,6 +1079,13 @@ module PlanosSanto
         last=settings['lastMaterials'];last=last.is_a?(Hash) ? last.slice('sheet','edge').select { |_,id| id.is_a?(String) && !id.empty? && id.length<=200 } : {}
         last.empty? ? settings.delete('lastMaterials') : settings['lastMaterials']=last
       end
+      # Hito 7 (PINTURA-04): hasta 6 ids de catálogo únicos por modo; lo demás se descarta.
+      if settings.key?('recentMaterials')
+        recent=settings['recentMaterials']
+        recent=recent.is_a?(Hash) ? recent.slice('sheet','edge').filter_map { |mode,ids| ids=ids.is_a?(Array) ? ids.select { |id| id.is_a?(String) && !id.empty? && id.length<=200 }.uniq.first(RECENT_MATERIALS_MAX) : [];[mode,ids] unless ids.empty? }.to_h : {}
+        recent.empty? ? settings.delete('recentMaterials') : settings['recentMaterials']=recent
+      end
+      settings.delete('eyedropperKey') if settings.key?('eyedropperKey') && !%w[alt shift].include?(settings['eyedropperKey'])
       settings
     rescue JSON::ParserError, ArgumentError, SyntaxError
       {}
@@ -1060,14 +1095,22 @@ module PlanosSanto
       return unless Sketchup.respond_to?(:write_default)
       settings=options.slice(*SMART_SETTING_KEYS)
       settings['scope']='unique' if settings.key?('scope') # consent for every copy never survives
-      previous=smart_settings;last=previous['lastMaterials'] || {}
+      previous=smart_settings;last=previous['lastMaterials'] || {};recent=previous['recentMaterials'] || {}
+      # The recents list and the eyedropper key are never taken blindly from options.
+      settings.delete('recentMaterials');settings['eyedropperKey']=previous['eyedropperKey'] unless %w[alt shift].include?(settings['eyedropperKey'])
+      settings.delete('eyedropperKey') unless settings['eyedropperKey']
       if options['immediate']==true || options['immediatePiece']==true
         # Sheet forces one edge per click; it must not forget the edge preference.
         settings['edgeCount']=previous['edgeCount'] || 1 if options['mode']=='sheet'
         # Tab (PINTURA-06): last catalog id per mode; the UUID belongs to the model.
-        last=last.merge(options['mode']=>options['catalogId']) if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty?
+        if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty? && options['catalogId'].length<=200
+          last=last.merge(options['mode']=>options['catalogId'])
+          # PINTURA-04: the chosen id moves to the front, unique, at most 6 per mode.
+          recent=recent.merge(options['mode']=>([options['catalogId']]+(recent[options['mode']] || [])).uniq.first(RECENT_MATERIALS_MAX))
+        end
       end
       settings['lastMaterials']=last unless last.empty?
+      settings['recentMaterials']=recent unless recent.empty?
       bytes=JSON.generate('schema'=>2,'settings'=>settings)
       raise ExportError,'Preferencias de paleta demasiado grandes.' if bytes.bytesize>4096
       Sketchup.write_default('PlanosSanto',SMART_SETTINGS_KEY,SMART_SETTINGS_PREFIX+Base64.strict_encode64(bytes))
@@ -1101,6 +1144,44 @@ module PlanosSanto
       options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
       remember_smart_settings(options);@quick_options=options
       options
+    end
+
+    # Hito 7 (PINTURA-04/07): material chosen from the view (recents strip or
+    # eyedropper). Same validation as the palette, but never installs.
+    def smart_select_material(catalog_id,mode)
+      raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
+      raise ExportError,'Elegí un material de la paleta.' unless catalog_id.is_a?(String) && !catalog_id.empty?
+      options,=smart_quick_options({'mode'=>mode,'catalogId'=>catalog_id},install:false)
+      remember_smart_settings(options);@quick_options=options
+      options
+    end
+
+    # Recents strip: remembered ids of the mode that are ready in THIS model, with
+    # the catalog name and the native colour [r,g,b]. Never installs; a failing
+    # item is skipped so one broken entry never hides the others.
+    def smart_recent_materials(mode)
+      return [] unless %w[sheet edge].include?(mode)
+      ids=(smart_settings['recentMaterials'] || {})[mode] || []
+      return [] if ids.empty?
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      service=paint_materials;items=CatalogStore.new(directory:directory).read['items'] || []
+      natives=@model.respond_to?(:materials) ? @model.materials.to_a : []
+      ids.filter_map do |id|
+        state=service.state(id)
+        next unless state.is_a?(Hash) && state['state']=='ready' && !state['materialUuid'].to_s.empty?
+        item=items.find { |row| row['id']==id && row['kind']==mode }
+        next unless item
+        native=natives.find { |material| MaterialResolver.observe_binding(material).dig('binding','uuid')==state['materialUuid'] }
+        next unless native && native.respond_to?(:color) && native.color
+        color=native.color;rgb=color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3)
+        next unless rgb.length==3 && rgb.all? { |value| value.is_a?(Numeric) }
+        {'catalogId'=>id,'materialUuid'=>state['materialUuid'].to_s,'name'=>item['name'].to_s,'color'=>rgb.map { |value| value.to_i.clamp(0,255) }}
+      rescue StandardError
+        nil
+      end
+    rescue StandardError => error
+      warn("Planos Santo: no se pudieron leer los materiales recientes: #{error.class}")
+      []
     end
 
     # One click-time log per process; its folder is the Planos Santo data folder.
