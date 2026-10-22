@@ -239,6 +239,34 @@ class NocheIntegracionTest < Minitest::Test
     assert_equal false,@controller.send(:analysis_state)['stale']
   end
 
+  # Hito 7 × Hito 2 (pendiente de COORDINACION.md): an archived item leaves the
+  # paint palette unless this model already uses it; a broken index hides nothing.
+  def palette_load_with(archived)
+    editor!
+    items=%w[activa archivada-en-uso archivada].map { |id| {'id'=>id,'name'=>id,'kind'=>'sheet'} }
+    store=Object.new;store.define_singleton_method(:read) { {'schema'=>1,'revision'=>4,'items'=>items} }
+    visuals=Object.new;visuals.define_singleton_method(:status) { {'materials'=>[{'id'=>'m1','binding'=>{'catalogId'=>'archivada-en-uso','uuid'=>'u','kind'=>'sheet'}}]} }
+    states=Object.new;states.define_singleton_method(:states) { {} }
+    library=Object.new;library.define_singleton_method(:archived_ids) { archived.call }
+    PlanosSanto::CatalogStore.stub(:new,store) do
+      PlanosSanto::MaterialLibrary.stub(:new,visuals) do
+        @controller.stub(:paint_materials,states) do
+          @controller.stub(:material_thumbnails,{}) do
+            @controller.stub(:management_library,library) { request('smart_palette_load') }
+          end
+        end
+      end
+    end
+  end
+  def test_archived_items_leave_the_paint_palette_unless_the_model_uses_them
+    reply=palette_load_with(-> { %w[archivada archivada-en-uso] })
+    assert_nil reply['error']
+    assert_equal %w[activa archivada-en-uso],reply['result']['catalog']['items'].map { |item| item['id'] }
+    assert_equal 4,reply['result']['catalog']['revision']
+    reply=palette_load_with(-> { raise PlanosSanto::ExportError,'Índice dañado' })
+    assert_equal %w[activa archivada-en-uso archivada],reply['result']['catalog']['items'].map { |item| item['id'] }
+  end
+
   # Barra rápida × Hito 6: the toolbar runs outside handle(); switching to a
   # non-paint destination stops the pincel and reports the paint reason.
   def test_toolbar_switch_after_painting_keeps_the_paint_reason
