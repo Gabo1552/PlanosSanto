@@ -105,8 +105,12 @@ Las resoluciones en sí no rompieron nada. Las regresiones encontradas están en
    si ocurre, ignorar el tipo `materials` mientras la herramienta pinta.
 3. **Prueba inestable bajo carga:** `photo-experience.spec.ts › Foto 085: crear textura privada…`
    falló 1 vez en 4 corridas completas (Escape no cerró «Material desde una foto»); en aislado pasó
-   15/15. Hipótesis sin verificar: el Escape llega mientras el panel está `busy` y
-   `PhotoMaterialPanel` lo ignora en silencio. No se tocó: no se pudo reproducir de forma determinista.
+   15/15. En la segunda tanda pasó lo mismo con `material-hito7.spec.ts › paquete .zip…`
+   (Escape apenas visible el modal «Revisar paquete de materiales»; 15/15 en aislado).
+   Hipótesis común sin verificar: los modales ignoran Escape mientras están `busy` y la prueba
+   lo aprieta antes de que termine la carga. **Recomendación:** que la prueba espere el modal
+   no ocupado (`aria-busy="false"`) antes de Escape. No se tocó: no se pudo reproducir de forma
+   determinista.
 4. Con la corrección QA-INT-01 la franja aparece **en el primer clic**, no al detener la
    herramienta. Es coherente con el aviso «documento invalidado» que ya se emitía en ese
    clic, pero conviene confirmarlo visualmente en SketchUp (casos 1.1 y 2.6).
@@ -157,3 +161,12 @@ Final, sobre el último commit, dos pasadas completas seguidas:
 Pruebas nuevas: `sketchup_offline/test/noche_integracion_test.rb` (9, en el runner Ruby),
 `tests/noche-integracion.test.ts` (6), `tests/offline/noche-integracion.spec.ts` (2) y una
 aserción nueva en `tests/offline/hito2-pincel.spec.ts`.
+
+### Segunda tanda (sobre `0d81cc8`, dos pasadas completas seguidas)
+
+| Paso | Pasada 1 | Pasada 2 |
+|---|---|---|
+| `tsc` / `eslint` / build | OK | OK |
+| `vitest` | 322/322 | 322/322 |
+| Ruby offline | todas en verde | todas en verde |
+| Playwright offline | 218/219 (falla inestable: pendiente 3) | **219/219** |
