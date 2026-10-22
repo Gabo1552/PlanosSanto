@@ -126,13 +126,11 @@ test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un
  await notice.getByRole('button',{name:'Abrir Biblioteca y pedidos',exact:true}).click();await expect(page.getByRole('dialog',{name:'Biblioteca y pedidos'})).toBeVisible();
 });
 
-test('con la guía sin guardar, Pintar y Pintura avanzada siguen en el orden de tabulación y explican el bloqueo',async({page},info)=>{
+test('con la guía sin guardar, Pintar y Pintura avanzada siguen habilitados (pintar no depende de la guía)',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Nombre pendiente');
- for(const name of ['Pintar placas y cantos','Pintura avanzada']){const button=page.getByRole('button',{name,exact:true});await expect(button).toHaveAttribute('aria-disabled','true');await expect(button).not.toHaveAttribute('disabled','');await expect(button).toHaveAccessibleDescription(/Guardá la guía antes de pintar/);}
+ for(const name of ['Pintar placas y cantos','Pintura avanzada']){const button=page.getByRole('button',{name,exact:true});await expect(button).not.toHaveAttribute('aria-disabled','true');await expect(button).toBeEnabled();}
  const paint=page.getByRole('button',{name:'Pintar placas y cantos',exact:true});await paint.focus();await expect(paint).toBeFocused();
- await paint.click({force:true});await expect(page.getByRole('alert')).toContainText('No se puede pintar. Guardá la guía antes de pintar.');await expect(page.getByRole('dialog',{name:'Pintar placas y cantos'})).toHaveCount(0);
- await page.getByRole('alert').getByRole('button',{name:'Cerrar aviso',exact:true}).click();await paint.focus();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);
- await expect(page.locator('.ux-busy')).toHaveCount(0);await expect(paint).not.toHaveAttribute('aria-disabled','true');await expect(paint).toBeFocused();
+ await paint.click();await expect(page.getByRole('alert').filter({hasText:'No se puede pintar'})).toHaveCount(0);
 });
 
 test('una advertencia sticky no se arrastra a otra sección',async({page},info)=>{

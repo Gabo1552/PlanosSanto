@@ -124,7 +124,8 @@ class SupplierOrderCoverageTest < Minitest::Test
     assert_includes reasons(svc,d),'El canto principal (1) no cubre el espesor de la placa: ancho sin cargar y espesor 19,05 mm.'
     cat=catalog(second:true);cat['items'][0]['compatibleIds']=[cat['items'][1]['id']];svc=service(cat);d=draft(svc,cat)
     d['rows'][0].merge!('secondaryId'=>cat['items'][2]['id'],'edgeMap'=>[1,2,0,0])
-    assert_includes reasons(svc,d),'Confirmá compatibilidad placa/canto secundario (2) en la biblioteca.'
+    # Sin canto fijo por placa: un canto aprobado que cubre el espesor vale aunque no figure en compatibleIds.
+    assert_empty reasons(svc,d).grep(/compatibilidad/)
     d['rows'][0]['secondaryId']=d['rows'][0]['principalId'];refute_empty reasons(svc,d).grep(/deben ser distintos/)
     d['rows'][0].merge!('secondaryId'=>nil,'edgeMap'=>[1,3,0,0]);refute_empty reasons(svc,d).grep(/Mapa de cantos inválido/)
     d['rows'][0]['edgeMap']=[1,0,0];refute_empty reasons(svc,d).grep(/Mapa de cantos inválido/)

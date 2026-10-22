@@ -24,15 +24,12 @@ export function rowDimensions(row:Pick<OrderRow,'axes'|'dimensionRule'|'cutBase'
  if(row.dimensionRule==='explicit_cut')return row.cutBase&&row.cutHeight&&row.cutBase>0&&row.cutHeight>0?[row.cutBase,row.cutHeight]:null;
  return row.axes?[geometry.lengths[row.axes[0]],geometry.lengths[row.axes[1]]]:null;
 }
-/** Motivos por los que un canto no sirve para la placa elegida, en el orden de Ruby (ancho y después compatibilidad), o null si es compatible. */
+/** Motivo físico por el que un canto no sirve para la placa elegida (no cubre el espesor), o null si sirve. Cualquier canto aprobado vale: no hay canto fijo por placa. */
 export function edgeIncompatibility(edge:CatalogItem,board:CatalogItem|undefined,thickness:number|null){
- if(!board)return null;const reasons:string[]=[],t=thickness??board.thicknessMm;
- if(edge.widthMm===null)reasons.push('ancho sin cargar');else if(t!==null&&edge.widthMm+0.1<t)reasons.push(`no cubre el espesor de ${mm(t)} mm`);
- if(!board.compatibleIds.includes(edge.id))reasons.push('sin compatibilidad cargada en la biblioteca');
- return reasons.length?reasons.join('; '):null;
+ if(!board)return null;const t=thickness??board.thicknessMm;
+ if(edge.widthMm===null)return 'ancho sin cargar';
+ return t!==null&&edge.widthMm+0.1<t?`no cubre el espesor de ${mm(t)} mm`:null;
 }
-/** Indica si el motivo se corrige en la ficha de la placa (compatibilidad) y no en la del canto. */
-export const fixInBoard=(reason:string)=>reason.includes('sin compatibilidad');
 export type RowField='material'|'principalId'|'secondaryId'|'edgeMap'|'grainAxis'|'grainPolicy'|'dimensions';
 export type RowWarnings=Partial<Record<RowField,string[]>>;
 const sideNames=['Arriba','Abajo','Izquierda','Derecha'];

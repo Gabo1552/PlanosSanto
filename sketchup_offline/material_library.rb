@@ -165,7 +165,7 @@ module PlanosSanto
       if File.file?(@path)
         backups = File.join(@directory, 'backups')
         FileUtils.mkdir_p(backups)
-        File.open(File.join(backups, "material-assets-#{SecureRandom.hex(8)}.json"), File::WRONLY | File::CREAT | File::EXCL, 0o600) { |f| f.write(File.binread(@path)); f.flush; f.fsync }
+        File.open(File.join(backups, "material-assets-#{SecureRandom.hex(8)}.json"), File::WRONLY | File::CREAT | File::EXCL | File::BINARY, 0o600) { |f| f.write(File.binread(@path)); f.flush; f.fsync }
       end
       atomic_write(@path, bytes)
     end
@@ -476,7 +476,7 @@ module PlanosSanto
       raise ExportError,'Índice de fichas archivadas demasiado grande.' if bytes.bytesize>STATES_MAX
       if File.file?(states_path)
         backups=File.join(@directory,'backups');FileUtils.mkdir_p(backups)
-        File.open(File.join(backups,"material-states-#{SecureRandom.hex(8)}.json"),File::WRONLY|File::CREAT|File::EXCL,0o600) { |f| f.write(File.binread(states_path));f.flush;f.fsync }
+        File.open(File.join(backups,"material-states-#{SecureRandom.hex(8)}.json"),File::WRONLY|File::CREAT|File::EXCL|File::BINARY,0o600) { |f| f.write(File.binread(states_path));f.flush;f.fsync }
       end
       atomic_write(states_path,bytes)
     end

@@ -1,3 +1,15 @@
+# Entrega 0.8.15 — pintar sin ventanas y sin pasos previos, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.15-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.14:
+- «Pintar» de la barra pinta sin abrir ventanas: el modo y el material se eligen en la vista 3D o en la bandeja Materiales de SketchUp.
+- Ya no aparece el error de copia de seguridad en Windows al modificar la biblioteca.
+- Se puede pintar sin analizar, y el análisis se rehace solo.
+- El canto ya no está atado a la placa.
+
+Validar con `docs/validacion-0815/ENCARGO_SESION_LOCAL_0815.md`. Producción no aprobada.
+
+---
+
 # Entrega 0.8.14 — corrección del F0 nativo de la 0.8.13 (fotos rechazadas), PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.14-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.13:

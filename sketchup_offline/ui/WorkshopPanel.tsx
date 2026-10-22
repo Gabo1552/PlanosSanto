@@ -3,7 +3,7 @@ import {request} from './bridge';
 import EdgeReview from './EdgeReview';
 import {orderProjection} from '../../lib/orderPreview';
 import {mm} from '../../lib/model';
-import {applySummary,blockedField,boardOf,bulkNotice,detailCodeWarning,edgeAmounts,edgeIncompatibility,edgeTotals,fixInBoard,equivalentRows,formatMetres,linkEdge,materialLabel,plural,proposalNotice,proposalReview,proposalStatus,rotationBlock,rowDimensions,rowThickness,rowWarnings,type ApplyResult,type BlockField,type CopyGroups,type EdgeLink,type ProposalRow,type ProposalSummary,type RowField} from './workshopRules';
+import {applySummary,blockedField,boardOf,bulkNotice,detailCodeWarning,edgeAmounts,edgeIncompatibility,edgeTotals,equivalentRows,formatMetres,linkEdge,materialLabel,plural,proposalNotice,proposalReview,proposalStatus,rotationBlock,rowDimensions,rowThickness,rowWarnings,type ApplyResult,type BlockField,type CopyGroups,type EdgeLink,type ProposalRow,type ProposalSummary,type RowField} from './workshopRules';
 import MaderaProfilePanel,{BudgetView,UsableWarnings} from './MaderaProfilePanel';
 import CatalogV2Tools,{ItemV2Tools,ThicknessOptions} from './CatalogV2Tools';
 import {thicknessMismatch,type Budget,type UsableWarning} from './maderaRules';
@@ -133,7 +133,7 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
  const warning=(field:RowField,action?:ReactNode)=>warnings[field]?.length?<small className="workshop-field-error" id={`workshop-warn-${field}`}>{warnings[field]!.join(' ')}{action}</small>:null;
  const edgeOptions=(current:string|null)=>{const groups=allowedEdges.map(edge=>({edge,reason:edgeIncompatibility(edge,board,thickness)}));const ok=groups.filter(g=>!g.reason),bad=groups.filter(g=>g.reason);
   return <>{ok.map(({edge})=><option key={edge.id} value={edge.id}>{materialLabel(edge)}</option>)}{!!bad.length&&<optgroup label="No compatibles con la placa elegida">{bad.map(({edge,reason})=><option key={edge.id} value={edge.id}>{materialLabel(edge)} · {reason}</option>)}</optgroup>}{current&&!allowedEdges.some(e=>e.id===current)&&<option value={current}>Canto sin aprobar o eliminado</option>}</>;};
- const libraryLink=(key:'principalId'|'secondaryId')=>{const edge=allowedEdges.find(e=>e.id===row?.[key]),reason=edge&&edgeIncompatibility(edge,board,thickness);if(!edge||!reason||!board)return null;const target=fixInBoard(reason)?board:edge;
+ const libraryLink=(key:'principalId'|'secondaryId')=>{const edge=allowedEdges.find(e=>e.id===row?.[key]),reason=edge&&edgeIncompatibility(edge,board,thickness);if(!edge||!reason||!board)return null;const target=edge;
   return <><button type="button" className="workshop-link workshop-field-action" disabled={busy} aria-describedby={dirty?'workshop-catalog-save-help':undefined} onClick={()=>openInCatalog(target.id)}>Revisar {target.name} en la biblioteca</button>{dirty&&<span id="workshop-catalog-save-help" className="workshop-hint"> Antes de abrirla se guarda el borrador del pedido.</span>}</>;};
  const rotation=row?rotationBlock(row,board):null;
  const equivalents=plan&&row?equivalentRows(plan,row):[],skipped=skip.rowId===row?.id?skip.ids:[],others=plan&&row?plan.rows.filter(item=>item.id!==row.id&&!equivalents.includes(item)):[],chosen=extra.rowId===row?.id?extra.ids:[];

@@ -95,6 +95,12 @@ module PlanosSanto
     def onTransactionAbort(_model);@bump.call;end
     def onTransactionEmpty(_model);@bump.call;end
   end
+  # Pintura en vista: SketchUp's Materials tray -> brush material. Duck-typed
+  # MaterialsObserver (SketchUp calls onMaterialSetCurrent on any object).
+  class PaintMaterialsObserver
+    def initialize(&block);@callback=block;end
+    def onMaterialSetCurrent(_materials,material);@callback.call(material);end
+  end
 
   # Copies of each definition in the model, rebuilt once per transaction
   # generation. Walks instances only (never faces) and never writes.
@@ -137,13 +143,18 @@ module PlanosSanto
     # Hito 7 callbacks (nil = feature off): select_material.(catalog_id,'sheet'|'edge')
     # -> complete immediate options without installing (ExportError if not ready);
     # recents.(mode) -> up to 6 ready materials; eyedropper_key 'alt'|'shift'.
-    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil, timing:nil, select_material:nil, recents:nil, eyedropper_key:nil)
+    # Pintura en vista (toolbar, no windows): swatches.(mode) -> library materials
+    # usable for the mode (ready or installable); pick_material.(catalog_id,mode)
+    # -> options, installing when needed (an explicit choice); native_material.(material)
+    # -> options for a material chosen in SketchUp's Materials tray (ExportError if unusable).
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil, timing:nil, select_material:nil, recents:nil, eyedropper_key:nil, swatches:nil, pick_material:nil, native_material:nil)
       @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode;@timing=timing
       @clock=clock || lambda { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
       @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
       @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil);@occurrences=OccurrenceIndex.new(model)
       @copy_triangles=[]
       @select_material=select_material;@recents_source=recents;@recents=[];@eyedropper_key=self.class.eyedropper_key!(eyedropper_key || 'alt')
+      @swatches_source=swatches;@pick_material=pick_material;@native_material=native_material;@strip_rows=[]
       @sampling=false;@depth=0;@stack_key=nil;@stack_count=1;@missing=false;@missing_state=nil;@hidden_by_tool=[]
     end
     COPY_DRAW_LIMIT=200
@@ -159,6 +170,7 @@ module PlanosSanto
     def copy(value);JSON.parse(JSON.generate(value));end
     def immediate?;@options['immediate']==true || @options['immediatePiece']==true;end
     def observe!
+      observe_materials!
       return if @observer || !@model.respond_to?(:add_observer)
       @observer=PaintGenerationObserver.new { @generation+=1 }
       @model.add_observer(@observer)
@@ -166,17 +178,55 @@ module PlanosSanto
       @observer=nil
     end
     def unobserve!
+      unobserve_materials!
       return unless @observer
       @model.remove_observer(@observer) if @model.respond_to?(:remove_observer)
       @observer=nil # only once removed: a failed removal is retried, never leaked
     rescue StandardError
       nil
     end
+    # Pintura en vista: SketchUp's Materials tray chooses the brush material.
+    def observe_materials!
+      return if @materials_observer || !@native_material || !@model.respond_to?(:materials)
+      materials=@model.materials
+      return unless materials.respond_to?(:add_observer)
+      observer=PaintMaterialsObserver.new { |material| native_material_chosen(material) }
+      @materials_observer=observer if materials.add_observer(observer)
+    rescue StandardError
+      @materials_observer=nil
+    end
+    def unobserve_materials!
+      return unless @materials_observer
+      materials=@model.materials
+      materials.remove_observer(@materials_observer) if materials.respond_to?(:remove_observer)
+      @materials_observer=nil
+    rescue StandardError
+      nil
+    end
+    def in_view?;!@swatches_source.nil?;end
+    def material_missing?;%w[sheet edge].include?(@options['mode']) && @options['materialUuid'].to_s.empty?;end
+    NO_MATERIAL='Elegí un material: clic en una muestra de la tira de abajo o en la bandeja Materiales de SketchUp.'.freeze
+    def native_material_chosen(material)
+      return false unless @native_material && @active && immediate? && material
+      verify_guard!
+      options=@native_material.call(material)
+      raise ExportError,'No se pudo usar ese material para pintar.' unless options.is_a?(Hash) && %w[sheet edge].include?(options['mode'])
+      adopt_options!(options)
+      name=(material.respond_to?(:display_name) ? material.display_name : material.name).to_s
+      emit("Material activo: #{name} (bandeja Materiales). Hacé clic en una pieza.")
+      invalidate(@model.active_view) if @model.respond_to?(:active_view)
+      true
+    rescue StandardError=>error
+      emit('No se cambió el material.',error:error.is_a?(ExportError) ? error.message : 'No se pudo usar el material de la bandeja.')
+      false
+    end
     def activate
       observe!
       @generation+=1 # transactions while inactive were not observed
       refresh_recents!
-      @active=true;emit(immediate? ? 'Hacé clic en una pieza para pintar. Escape termina.' : 'Elegí una cara. Mayús agrega caras; Enter aplica la selección. Esc cancela.')
+      @active=true
+      return emit(NO_MATERIAL) if immediate? && in_view? && material_missing?
+      emit(immediate? ? 'Hacé clic en una pieza para pintar. Escape termina.' : 'Elegí una cara. Mayús agrega caras; Enter aplica la selección. Esc cancela.')
     end
     def deactivate(view)
       unobserve!;stop_sampling;@depth=0;@stack_key=nil;@active=false;clear;emit('Herramienta desactivada.');invalidate(view)
@@ -294,8 +344,13 @@ module PlanosSanto
       scale=ui_scale;klass=point_class
       x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
       color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
-      if @strip_hover && (row=@recents[@strip_hover])
-        return view.draw_text(klass.new(x,y,0),"#{row['name']} · clic o #{@strip_hover+1}",{color:color.call([30,30,30]),size:11})
+      if @strip_hover && (row=@strip_rows[@strip_hover])
+        text="#{row['name']} · clic#{@strip_hover<RECENT_LIMIT ? " o #{@strip_hover+1}" : ''}"
+        text+=' · se instala al elegirlo' if row['state']=='installable'
+        return view.draw_text(klass.new(x,y,0),text,{color:color.call([30,30,30]),size:11})
+      end
+      if @bar_hover && (item=bar_items.find { |key,| key==@bar_hover })
+        return view.draw_text(klass.new(x,y,0),bar_hint(item.first),{color:color.call([30,30,30]),size:11})
       end
       return unless @hover
       info=material_info;sample=@hover['sample']
@@ -523,10 +578,21 @@ module PlanosSanto
     def onMouseMove(_flags,x,y,view)
       @mouse=[x,y];key=nil
       verify_guard!
+      # Pintura en vista: over the mode bar there is no piece pick at all.
+      if (key=bar_hit(view,x,y))
+        @bar_hover=key;@strip_hover=nil;@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+        emit(bar_hint(key),hover: :clear)
+        return invalidate(view)
+      end
+      @bar_hover=nil
       # PINTURA-04: over the recents strip there is no piece pick at all.
       if (index=strip_index(view,x,y))
         @strip_hover=index;@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
-        emit("Reciente #{index+1}: #{@recents[index]['name']}. Clic o tecla #{index+1} para usarlo; no pinta.",hover: :clear)
+        row=@strip_rows[index]
+        message=if index<@recents.length then "Reciente #{index+1}: #{row['name']}. Clic o tecla #{index+1} para usarlo; no pinta."
+                else "#{row['name']}. Clic para usarlo#{row['state']=='installable' ? ' (se instala en el modelo)' : ''}; no pinta."
+                end
+        emit(message,hover: :clear)
         return invalidate(view)
       end
       @strip_hover=nil
@@ -585,8 +651,14 @@ module PlanosSanto
     end
     def onLButtonDown(flags,x,y,view)
       if immediate?
+        if (key=bar_hit(view,x,y))
+          bar_click(key);return invalidate(view)
+        end
         if (index=strip_index(view,x,y))
           choose_recent(index);return invalidate(view)
+        end
+        if material_missing? && !(@sampling || sample_flag?(flags))
+          emit(NO_MATERIAL);return invalidate(view)
         end
         # The held key also travels in the click flags: a lost keyUp/keyDown never turns a sample into paint.
         return sample_click(view,x,y) if @sampling || sample_flag?(flags)
@@ -653,8 +725,10 @@ module PlanosSanto
       destination=@options['mode']=='sheet' ? 'edge' : 'sheet'
       missing="Elegí #{destination=='edge' ? 'un canto' : 'una placa'} en la paleta para usar Tab."
       options=@switch_mode && @switch_mode.call(destination)
+      options=blank_options(destination) if !options.is_a?(Hash) && in_view?
       return emit(missing) unless options.is_a?(Hash)
       clear;@last_error=nil;@options=copy(options).merge('scope'=>'unique','allowShared'=>false);refresh_recents!
+      return emit("#{MODE_LABELS[destination]}. #{NO_MATERIAL}") if material_missing?
       emit("#{MODE_LABELS[destination]}. Hacé clic en una pieza; Tab vuelve al otro modo.")
     rescue ExportError=>error
       emit('No se cambió de modo.',error:error.message)
@@ -833,19 +907,40 @@ module PlanosSanto
     def material_mode;{'sheet'=>'sheet','edge'=>'edge'}[@options['mode']];end
     def recents_on?;immediate? && !@recents_source.nil? && !@select_material.nil? && !material_mode.nil?;end
     def refresh_recents!
-      @recents=[]
+      @recents=[];@strip_rows=[]
       return unless recents_on?
       list=@recents_source.call(material_mode)
       @recents=(list.is_a?(Array) ? list : []).select { |row| row.is_a?(Hash) && row['catalogId'].is_a?(String) && !row['catalogId'].empty? }.first(RECENT_LIMIT).map do |row|
         {'catalogId'=>row['catalogId'],'materialUuid'=>row['materialUuid'].to_s,'name'=>row['name'].to_s,'color'=>row['color'].is_a?(Array) ? row['color'].first(3).map(&:to_i) : nil}
       end
+      @strip_rows=@recents.map { |row| row.merge('state'=>'ready') }
+      refresh_swatches!
     rescue StandardError
-      @recents=[]
+      @recents=[];@strip_rows=[]
+    end
+    # Pintura en vista: after the recents, the library materials of the mode, so
+    # the strip is the material chooser (no palette). Read with the recents only.
+    SWATCH_LIMIT=24
+    def refresh_swatches!
+      return unless in_view?
+      list=@swatches_source.call(material_mode)
+      seen=@strip_rows.map { |row| row['catalogId'] }
+      (list.is_a?(Array) ? list : []).each do |row|
+        break if @strip_rows.length>=SWATCH_LIMIT
+        next unless row.is_a?(Hash) && row['catalogId'].is_a?(String) && !row['catalogId'].empty? && !seen.include?(row['catalogId'])
+        seen << row['catalogId']
+        @strip_rows << {'catalogId'=>row['catalogId'],'materialUuid'=>row['materialUuid'].to_s,'name'=>row['name'].to_s,
+                        'color'=>row['color'].is_a?(Array) ? row['color'].first(3).map(&:to_i) : nil,'state'=>row['state']=='installable' ? 'installable' : 'ready'}
+      end
+    rescue StandardError
+      nil
     end
     def strip_rects(view)
-      return [] unless recents_on? && !@recents.empty? && view.respond_to?(:draw2d) && view.respond_to?(:vpheight)
+      return [] unless recents_on? && !@strip_rows.empty? && view.respond_to?(:draw2d) && view.respond_to?(:vpheight)
       size=STRIP_SIZE*ui_scale;bottom=view.vpheight.to_f-STRIP_MARGIN
-      @recents.each_index.map { |index| left=STRIP_MARGIN+index*(size+STRIP_GAP);[left,bottom-size,left+size,bottom] }
+      count=@strip_rows.length
+      count=[count,((view.vpwidth.to_f-2*STRIP_MARGIN+STRIP_GAP)/(size+STRIP_GAP)).floor].min if view.respond_to?(:vpwidth)
+      (0...[count,0].max).map { |index| left=STRIP_MARGIN+index*(size+STRIP_GAP);[left,bottom-size,left+size,bottom] }
     rescue StandardError
       []
     end
@@ -856,28 +951,96 @@ module PlanosSanto
       rects=strip_rects(view);return if rects.empty?
       klass=point_class;quads=Object.const_defined?(:GL_QUADS) ? Object.const_get(:GL_QUADS) : 7
       loop=Object.const_defined?(:GL_LINE_LOOP) ? Object.const_get(:GL_LINE_LOOP) : 2;width=view.respond_to?(:line_width=)
+      lines=Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1
       rects.each_with_index do |(left,top,right,bottom),index|
         corners=[[left,top],[right,top],[right,bottom],[left,bottom]].map { |x,y| klass.new(x,y,0) }
-        row=@recents[index];active=!row['materialUuid'].empty? && row['materialUuid']==@options['materialUuid']
+        row=@strip_rows[index];active=!row['materialUuid'].empty? && row['materialUuid']==@options['materialUuid']
         view.drawing_color=rgba(row['color'] || [200,200,200],255);view.draw2d(quads,corners)
         view.line_width=(active ? 2 : 1) if width
         view.drawing_color=rgba(active ? [0,0,0] : [128,128,128],255);view.draw2d(loop,corners)
+        # Not yet in this model: a diagonal says «se instala al elegirlo».
+        view.draw2d(lines,[klass.new(left,bottom,0),klass.new(right,top,0)]) if row['state']=='installable'
       end
       view.line_width=1 if width
-      view.draw_text(klass.new(STRIP_MARGIN,rects.first[1]-18*ui_scale,0),'Recientes · clic o 1–6',{size:10}) if view.respond_to?(:draw_text)
+      label=in_view? ? 'Materiales · clic para elegir (1–6 recientes)' : 'Recientes · clic o 1–6'
+      view.draw_text(klass.new(STRIP_MARGIN,rects.first[1]-18*ui_scale,0),label,{size:10}) if view.respond_to?(:draw_text)
     rescue StandardError
       nil
     end
     def choose_recent(index)
-      row=recents_on? && @recents[index]
+      row=recents_on? && @strip_rows[index]
       return false unless row
       verify_guard!
-      options=@select_material.call(row['catalogId'],material_mode)
-      raise ExportError,'No se pudo preparar el material reciente. Elegilo en la paleta.' unless options.is_a?(Hash) && options['mode']==material_mode
+      install=row['state']=='installable' || row['materialUuid'].empty?
+      options=install && @pick_material ? @pick_material.call(row['catalogId'],material_mode) : @select_material.call(row['catalogId'],material_mode)
+      raise ExportError,'No se pudo preparar el material elegido.' unless options.is_a?(Hash) && options['mode']==material_mode
       adopt_options!(options)
       emit("Material activo: #{row['name']}. Hacé clic en una pieza.");true
     rescue StandardError=>error
-      emit('No se cambió el material.',error:error.message);true
+      emit('No se cambió el material.',error:error.is_a?(ExportError) ? error.message : 'No se pudo preparar el material elegido.');true
+    end
+    # Pintura en vista: mode bar drawn at the top-left of the view (Pieza / Canto,
+    # and 1 · 2 · 4 cantos in edge mode). No piece pick under it.
+    BAR_HEIGHT=24
+    BAR_GAP=4
+    BAR_MARGIN=12
+    def bar_items
+      return [] unless in_view? && immediate? && %w[sheet edge].include?(@options['mode'])
+      items=[['sheet','Pieza',64],['edge','Canto',64]]
+      items+=EDGE_COUNTS.map { |count| ["count#{count}",count.to_s,28] } if @options['mode']=='edge'
+      items
+    end
+    def bar_rects(view)
+      return [] unless view.respond_to?(:draw2d)
+      scale=ui_scale;left=BAR_MARGIN.to_f;top=BAR_MARGIN.to_f;height=BAR_HEIGHT*scale
+      bar_items.map do |key,label,width|
+        right=left+width*scale;rect=[left,top,right,top+height];left=right+BAR_GAP*scale
+        [key,label,rect]
+      end
+    rescue StandardError
+      []
+    end
+    def bar_hit(view,x,y)
+      found=bar_rects(view).find { |_key,_label,(left,top,right,bottom)| x>=left && x<=right && y>=top && y<=bottom }
+      found && found.first
+    end
+    def bar_active?(key)
+      key==@options['mode'] || (@options['mode']=='edge' && key=="count#{edge_count}")
+    end
+    def bar_hint(key)
+      return "#{edge_label(key.delete_prefix('count').to_i)} por clic (Ctrl+Tab también cambia)." if key.start_with?('count')
+      key=='sheet' ? 'Pieza: pinta las dos caras grandes de la placa (Tab cambia de modo).' : 'Canto: pinta los cantos de la pieza (Tab cambia de modo).'
+    end
+    def bar_click(key)
+      verify_guard!
+      key.start_with?('count') ? set_edge_count(key.delete_prefix('count').to_i) : switch_to(key)
+    rescue StandardError=>error
+      emit('No se cambió el modo.',error:error.is_a?(ExportError) ? error.message : 'No se pudo cambiar el modo.')
+    end
+    def switch_to(destination)
+      return emit("#{MODE_LABELS[destination]} ya está activo.") if destination==@options['mode']
+      switch_mode
+    end
+    # Same options with the destination mode and no material (in-view only).
+    def blank_options(mode)
+      copy(@options).reject { |key,_| %w[catalogId materialUuid].include?(key) }
+        .merge('mode'=>mode,'paintScope'=>mode=='sheet' ? 'piece' : 'face','immediatePiece'=>mode=='sheet',
+               'edgeCount'=>mode=='sheet' ? 1 : (EDGE_COUNTS.include?(@options['edgeCount']) ? @options['edgeCount'] : 1))
+    end
+    def draw_bar(view)
+      rects=bar_rects(view);return if rects.empty?
+      klass=point_class;quads=Object.const_defined?(:GL_QUADS) ? Object.const_get(:GL_QUADS) : 7
+      loop=Object.const_defined?(:GL_LINE_LOOP) ? Object.const_get(:GL_LINE_LOOP) : 2
+      rects.each do |key,label,(left,top,right,bottom)|
+        corners=[[left,top],[right,top],[right,bottom],[left,bottom]].map { |x,y| klass.new(x,y,0) }
+        active=bar_active?(key);hover=@bar_hover==key
+        view.drawing_color=rgba(active ? [25,72,61] : hover ? [235,242,236] : [250,250,248],235);view.draw2d(quads,corners)
+        view.drawing_color=rgba(active ? [25,72,61] : [120,128,124],255);view.draw2d(loop,corners)
+        next unless view.respond_to?(:draw_text)
+        view.draw_text(klass.new(left+8*ui_scale,top+5*ui_scale,0),label,{size:10,color:(Sketchup::Color.new(*(active ? [255,255,255] : [30,30,30])) rescue nil)}.compact)
+      end
+    rescue StandardError
+      nil
     end
     # PINTURA-11: arrows down/up walk the stack; the hover event is sent at once.
     def change_depth(delta,view)
@@ -1176,6 +1339,7 @@ module PlanosSanto
       end
       draw_tooltip(view)
       draw_strip(view)
+      draw_bar(view)
       return if @triangles.nil? || @triangles.empty?
       view.drawing_color=immediate? ? hover_color(110) : 'orange'
       view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@triangles)
