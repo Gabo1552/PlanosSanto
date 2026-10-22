@@ -183,8 +183,12 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
  async function sample(){if(!quickMode&&settings.side==='both')throw new Error('Elegí Frente o Dorso para tomar un material sin ambigüedad.');if(tool.active||tool.changed)await stop();setSampleMode(true);setAllowShared(false);await accept(await request<Result>('smart_sample_start',{side:quickMode?'front':settings.side}));}
  async function leave(destination?:'catalog'|'visuals'){await stop();if(compact&&!quickMode)await request('smart_palette_compact',{compact:false});if(destination)onManage(destination);else onClose();}
  const kind=settings.mode==='edge'?'edge':settings.mode==='remove_edge'?'sheet':settings.mode==='replace'?settings.replacementKind:'sheet';
- const materials=useMemo(()=>loaded?.catalog.items.filter(item=>usableForPainting(item,loaded)&&item.kind===kind&&(!favorites||item.favorite)&&`${item.name} ${item.sku} ${item.supplier}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es'))).sort((a,b)=>Number(b.id===settings.catalogId)-Number(a.id===settings.catalogId)||Number(b.favorite)-Number(a.favorite))||[],[loaded,kind,favorites,query,settings.catalogId]);
- const recentItems=useMemo(()=>recentIds.flatMap(id=>{const item=loaded?.catalog.items.find(item=>item.id===id&&usableForPainting(item,loaded)&&item.kind===kind);return item?[item]:[];}),[recentIds,loaded,kind]);
+ // Archived library items (Hito 7) stay paintable when chosen explicitly, but leave the browse lists.
+ const [archivedIds,setArchivedIds]=useState<string[]>([]);
+ useEffect(()=>{let alive=true;request<{archivedIds?:unknown}>('material_extras').then(result=>{if(alive&&Array.isArray(result?.archivedIds))setArchivedIds(result.archivedIds.filter((id):id is string=>typeof id==='string'));}).catch(()=>{});return()=>{alive=false;};},[loaded]);
+ const hidden=useCallback((item:CatalogItem)=>archivedIds.includes(item.id)&&item.id!==settings.catalogId,[archivedIds,settings.catalogId]);
+ const materials=useMemo(()=>loaded?.catalog.items.filter(item=>!hidden(item)&&usableForPainting(item,loaded)&&item.kind===kind&&(!favorites||item.favorite)&&`${item.name} ${item.sku} ${item.supplier}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es'))).sort((a,b)=>Number(b.id===settings.catalogId)-Number(a.id===settings.catalogId)||Number(b.favorite)-Number(a.favorite))||[],[hidden,loaded,kind,favorites,query,settings.catalogId]);
+ const recentItems=useMemo(()=>recentIds.flatMap(id=>{const item=loaded?.catalog.items.find(item=>item.id===id&&!hidden(item)&&usableForPainting(item,loaded)&&item.kind===kind);return item?[item]:[];}),[hidden,recentIds,loaded,kind]);
  const showMaterials=settings.mode!=='remove_edge'||restorePlate;
  const selected=loaded?.catalog.items.find(item=>item.id===settings.catalogId&&usableForPainting(item,loaded)&&item.kind===kind);
  const bound=loaded?.visuals.materials.find(material=>material.binding?.catalogId===selected?.id&&material.binding?.kind===kind&&!material.issues?.length&&(!sampledMaterialUuid||material.binding.uuid===sampledMaterialUuid));
@@ -220,7 +224,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
  },[loaded,settings,bound,selectedPaintable,selectedState,invalidSettings,quickIntent,run,accept,rememberRecent,applyPaintData,quickMode]);
  const chooseQuick=async(item:CatalogItem)=>{await change({mode:item.kind==='edge'?'edge':'sheet',catalogId:item.id,sourceMaterialUuid:''});};
  // Catalog items of this kind that cannot paint yet, with their real cause.
- const attention=useMemo(()=>loaded?.paintStates?loaded.catalog.items.filter(item=>item.kind===kind&&loaded.paintStates?.[item.id]&&!PAINTABLE.has(loaded.paintStates[item.id].state)&&`${item.name} ${item.sku} ${item.supplier}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es'))):[],[loaded,kind,query]);
+ const attention=useMemo(()=>loaded?.paintStates?loaded.catalog.items.filter(item=>!hidden(item)&&item.kind===kind&&loaded.paintStates?.[item.id]&&!PAINTABLE.has(loaded.paintStates[item.id].state)&&`${item.name} ${item.sku} ${item.supplier}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es'))):[],[hidden,loaded,kind,query]);
  async function assignColor(item:CatalogItem){
   const values=rgb(colors[item.id]||'#d9d4c7');if(!values)throw new Error('Elegí un color válido.');
   const result=await request<Result&{assigned?:unknown}>('smart_assign_color',{catalogId:item.id,rgb:values,confirmed:true});
