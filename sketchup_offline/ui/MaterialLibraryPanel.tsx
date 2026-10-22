@@ -67,7 +67,7 @@ const groupIcon:Record<GroupKey,string>={sheet:'sheet',edge:'edge',other:'other'
 function Thumbnail({uri,name}:{uri?:string|null;name:string}){
  const [failed,setFailed]=useState(false);
  useEffect(()=>{setFailed(false);},[uri]);
- return safeImage(uri)&&!failed?<img className="material-card-image" src={uri} alt={`Miniatura real de ${name}`} onError={()=>setFailed(true)} loading="lazy"/>:<div className="material-card-placeholder"><span aria-hidden="true">▧</span><span>Sin miniatura disponible</span></div>;
+ return safeImage(uri)&&!failed?<img className="material-card-image" src={uri} alt={`Miniatura real de ${name}`} onError={()=>setFailed(true)} loading="lazy" decoding="async"/>:<div className="material-card-placeholder"><span aria-hidden="true">▧</span><span>Sin miniatura disponible</span></div>;
 }
 function nativeColor(color?:number[]|null){return color?.length===3&&color.every(value=>Number.isFinite(value)&&value>=0&&value<=255)?`rgb(${color.join(',')})`:undefined;}
 

@@ -86,7 +86,7 @@
 .material-tile-visual.kind-sheet{background-color:#cdbb9f}
 .material-tile-visual.kind-edge{background-color:#c9cbd8}
 .material-tile-visual.has-color{background-image:none}
-.material-tile-visual img{width:100%;height:100%;object-fit:cover;display:block}
+.material-tile-visual img{width:100%;height:100%;object-fit:cover;object-position:center;display:block;image-rendering:auto}
 .material-tile-kind{position:absolute;top:5px;right:5px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#fff;background:var(--material-other);box-shadow:0 1px 2px #0004}
 .material-tile-kind.kind-sheet{background:var(--material-sheet)}
 .material-tile-kind.kind-edge{background:var(--material-edge)}
@@ -109,6 +109,8 @@
 .material-library-empty button{margin-top:10px}
 .material-library-footnote{font-size:12px;color:var(--material-muted);border-top:1px solid var(--material-line);padding-top:12px;margin-top:24px!important}
 .material-card-image,.material-card-placeholder{display:block;width:100%;height:128px;object-fit:cover;border-radius:4px;background:#efeee9}
+/* 0.8.18: 512 px thumbnails, smoothed (never pixelated) when the tile is larger. */
+.material-card-image{image-rendering:auto;object-position:center}
 .material-card-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;color:#5f665f;gap:7px;font-size:12px;border:1px dashed #cbd1c8}
 .material-card-placeholder>span:first-child{font-size:28px;line-height:1}
 .material-status-chip{display:inline-block;align-self:flex-start;font-size:12px;font-weight:700;line-height:1.4;padding:3px 8px;border-radius:15px;margin-top:3px}
@@ -137,7 +139,7 @@
 .material-color-field input[type=color]{width:42px;height:34px;padding:2px;border:1px solid #b6bfb6;border-radius:5px;background:#fff}
 .visual-material-library .material-color-field input:not([type]){width:110px}
 .material-color-field .material-field-hint{flex-basis:100%}
-.material-color-swatch{width:26px;height:26px;border-radius:4px;border:1px solid #0003;background:#e6e3dc;background-size:cover}
+.material-color-swatch{width:26px;height:26px;border-radius:4px;border:1px solid #0003;background:#e6e3dc;background-size:cover;background-position:center;image-rendering:auto}
 .material-color-value{font-family:Consolas,monospace;font-size:13px}
 .material-kind-field{display:flex;align-items:center;gap:8px}
 .material-subtabs{display:flex;gap:4px;margin:18px 0 12px;border-bottom:1px solid var(--material-line)}

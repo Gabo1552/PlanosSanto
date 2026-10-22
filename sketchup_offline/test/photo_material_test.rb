@@ -310,24 +310,113 @@ class PhotoMaterialTest < Minitest::Test
     assert_empty called-IMAGE_REP_API,"métodos de ImageRep fuera de la API documentada: #{called-IMAGE_REP_API}"
     refute Sketchup::ImageRep.method_defined?(:resize),'el doble no debe inventar métodos que SketchUp no tiene'
   end
-  def test_large_photo_preview_is_sampled_with_set_data_to_at_most_256_pixels
+  # 0.8.18 (calidad visual, «que no sea tan pixelado»): 512 px, not 256.
+  def test_large_photo_preview_is_averaged_with_set_data_to_at_most_512_pixels
     result=pick('Textura 1200.jpg',PhotoFixture.jpeg(1200,1200))
     assert_equal [1200,1200],[result['widthPx'],result['heightPx']]
     assert_operator Sketchup::ImageRep.set_data_calls,:>=,1
     info=@service.image_info(Base64.decode64(result['preview'].split(',',2).last))
-    assert_equal [256,256],[info['widthPx'],info['heightPx']]
+    assert_equal [512,512],[info['widthPx'],info['heightPx']]
     wide=pick('Panorámica.jpg',PhotoFixture.jpeg(1000,300))
     info=@service.image_info(Base64.decode64(wide['preview'].split(',',2).last))
-    assert_equal [256,77],[info['widthPx'],info['heightPx']]
+    assert_equal [512,154],[info['widthPx'],info['heightPx']]
+    small=pick('Chica.jpg',PhotoFixture.jpeg(300,200))
+    info=@service.image_info(Base64.decode64(small['preview'].split(',',2).last))
+    assert_equal [300,200],[info['widthPx'],info['heightPx']],'nunca se agranda una foto chica'
   end
-  def test_thumbnail_sampling_keeps_native_byte_order_and_row_padding
-    source=Sketchup::ImageRep.new
+  def rep(width,height,bits,padding,pixels)
+    Sketchup::ImageRep.new.set_data(width,height,bits,padding,pixels.b)
+  end
+  def checker(size,bits,cell=1)
+    bytes=bits/8;black="\x00".b*bytes;white="\xff".b*bytes
+    rows=Array.new(size) { |y| Array.new(size) { |x| ((x/cell)+(y/cell)).even? ? black : white }.join }
+    padding=(4-(size*bytes)%4)%4
+    rep(size,size,bits,padding,rows.map { |row| row+"\x00".b*padding }.join)
+  end
+  def test_thumbnail_averages_blocks_keeps_native_byte_order_and_row_padding
     # 4x2, 24 bpp, padding 0: pixel (x,y) = [x, y, 9] in native order.
     pixels=(0..1).flat_map { |y| (0..3).flat_map { |x| [x,y,9] } }.pack('C*')
-    source.set_data(4,2,24,0,pixels)
-    thumb=@service.thumbnail_rep(source,2,1)
+    thumb=@service.thumbnail_rep(rep(4,2,24,0,pixels),2,1)
     assert_equal [2,1,24,2],[thumb.width,thumb.height,thumb.bits_per_pixel,thumb.row_padding]
-    assert_equal [0,0,9,2,0,9,0,0],thumb.data.unpack('C*'),'vecino más cercano por fila, BGR intacto y fila rellenada a 4 bytes'
+    # Block 1: mean of x 0,1 = 0.5 -> 1; block 2: x 2,3 = 2.5 -> 3; y 0,1 -> 1; the third byte stays 9.
+    assert_equal [1,1,9,3,1,9,0,0],thumb.data.unpack('C*'),'promedio por bloque, BGR intacto y fila rellenada a 4 bytes'
+    # 32 bpp keeps the 4th byte (alpha) and its own order.
+    pixels=[10,20,30,40, 30,40,50,60, 50,60,70,80, 70,80,90,100].pack('C*')
+    thumb=@service.thumbnail_rep(rep(2,2,32,0,pixels),1,1)
+    assert_equal [40,50,60,70],thumb.data.unpack('C*')
+    assert_equal 0,thumb.row_padding
+  end
+  def test_thumbnail_of_a_checkerboard_is_flat_grey_not_aliased
+    [24,32].each do |bits|
+      # Even blocks (2x2, 4x4) hold as much black as white: exactly grey.
+      # A 3x3 block holds 4 and 5: 113/142, never the 0/255 of a nearest sample.
+      [[1024,512,127..128],[1000,512,127..128],[64,16,127..128],[1500,512,113..142]].each do |size,target,range|
+        values=@service.thumbnail_rep(checker(size,bits),target,target).data.bytes
+        bytes=bits/8;padding=(4-(target*bytes)%4)%4
+        values=values.each_slice(target*bytes+padding).flat_map { |row| row.first(target*bytes) }
+        assert_equal target*target*bytes,values.length
+        assert values.all? { |value| range.cover?(value) },"ajedrez #{size}->#{target} a #{bits} bits: #{values.minmax.inspect}"
+      end
+    end
+    # Squares of 2 px reduced 4x: every 4x4 block holds two black and two white squares.
+    values=@service.thumbnail_rep(checker(512,32,2),128,128).data.bytes
+    assert values.all? { |value| value.between?(127,128) },"ajedrez de 2 px: #{values.minmax.inspect}"
+  end
+  def test_thumbnail_matches_an_exact_box_average_with_padding
+    random=Random.new(18)
+    [[37,23,24,9,6],[37,23,32,9,6],[50,50,24,7,7],[5,3,24,2,1],[300,200,32,1,1]].each do |width,height,bits,out_w,out_h|
+      bytes=bits/8;padding=(4-(width*bytes)%4)%4;stride=width*bytes+padding
+      source=Array.new(height) { random.bytes(width*bytes)+"\x00".b*padding }.join
+      thumb=@service.thumbnail_rep(rep(width,height,bits,padding,source),out_w,out_h)
+      step=[(width.to_f/out_w).round,(height.to_f/out_h).round].min
+      out_pad=(4-(out_w*bytes)%4)%4
+      expected=(0...out_h).flat_map do |y|
+        top=[y*height/out_h,height-step].min
+        (0...out_w).flat_map do |x|
+          left=[x*width/out_w,width-step].min
+          (0...bytes).map do |channel|
+            sum=0;step.times { |j| step.times { |i| sum+=source.getbyte((top+j)*stride+(left+i)*bytes+channel) } }
+            (sum+step*step/2)/(step*step)
+          end
+        end+[0]*out_pad
+      end
+      actual=thumb.data.bytes
+      assert_equal expected.length,actual.length
+      assert_operator actual.zip(expected).map { |a,b| (a-b).abs }.max,:<=,1,"#{width}x#{height}@#{bits} -> #{out_w}x#{out_h}"
+    end
+  end
+  def test_sixteen_megapixel_photo_is_reduced_in_well_under_two_seconds
+    width=height=4000;bytes=4
+    row=Random.new(16).bytes(width*bytes)
+    source=rep(width,height,32,0,row*height)
+    started=Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    thumb=@service.thumbnail_rep(source,512,512)
+    elapsed=Process.clock_gettime(Process::CLOCK_MONOTONIC)-started
+    assert_equal [512,512],[thumb.width,thumb.height]
+    assert_equal 512*512*4,thumb.data.bytesize
+    assert_operator elapsed,:<,2.0,"16 MP -> 512 px tardó #{elapsed.round(2)} s"
+  end
+  def test_thumbnail_limits_are_512_pixels_and_documented_bytes
+    assert_equal 512,PlanosSanto::PhotoMaterial::THUMBNAIL_SIDE
+    assert_equal 1_114_624,PlanosSanto::PhotoMaterial::MAX_THUMBNAIL,'512×512 RGBA sin compresión + filtros + 64 KiB de cabeceras'
+    assert_equal 1_114_624,PlanosSanto::SkmImport::MAX_PREVIEW
+    assert_equal 24*1024*1024,PlanosSanto::PhotoMaterial::THUMBNAIL_BUDGET
+    source=File.read(File.expand_path('../photo_material.rb',__dir__),encoding:'UTF-8')
+    refute_match(/x\*rep\.width\/width\)\*bytes/,source,'sin vecino más cercano')
+  end
+  def test_material_thumbnail_is_written_at_512_and_falls_back_to_256
+    created=create(pick)
+    material=@model.materials.first
+    assert_equal [512],material.thumbnail_sizes
+    asset=created['catalog']['items'].first.dig('observed','photo','thumbnailAsset')
+    info=@service.image_info(File.binread(File.join(@directory,'photo-assets',asset)))
+    assert_equal [512,512],[info['widthPx'],info['heightPx']]
+    legacy=PhotoFixture::Material.new(77,'Viejo');legacy.thumbnail_max=256
+    bytes=@service.thumbnail_bytes(legacy)
+    assert_equal [512,256],legacy.thumbnail_sizes,'si SketchUp rechaza 512, usa 256'
+    assert_equal [256,256],@service.image_info(bytes).values_at('widthPx','heightPx')
+    broken=PhotoFixture::Material.new(78,'Roto');broken.thumbnail_failure=true
+    assert_raises(PlanosSanto::ExportError) { @service.thumbnail_bytes(broken) }
   end
   def test_nil_without_pixel_proof_never_accepts_dimensions_alone
     [{proof:false},{data:nil},{data:''},{data:'truncated'},{bits:0},{bits:7},{bits:24.0},{bits:136},{padding:-1},{padding:4}].each do |options|

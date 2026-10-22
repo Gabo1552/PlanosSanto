@@ -396,13 +396,14 @@ module PlanosSanto
       x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
       # Near the bottom strip the tooltip goes above the cursor, inside the view.
       y=@mouse[1]-40*scale if view.respond_to?(:vpheight) && y+40*scale>view.vpheight.to_f
-      color=lambda { |rgb| text_color(rgb) }
+      x=x.round;y=y.round;line=(16*scale).round # whole pixels: sharp text
+      color=lambda { |rgb| text_options(11).merge(color:text_color(rgb)) }
       if @strip_hover && (row=@strip_rows[@strip_hover])
         text="#{row['name']} · clic#{@strip_hover<@recents.length ? " o #{@strip_hover+1}" : ''}"
         text+=' · se instala al elegirlo' if row['state']=='installable'
-        return view.draw_text(klass.new(x,y,0),text,{color:color.call([30,30,30]),size:11})
+        return view.draw_text(klass.new(x,y,0),text,color.call([30,30,30]))
       end
-      return view.draw_text(klass.new(x,y,0),bar_hint(@bar_hover),{color:color.call([30,30,30]),size:11}) if @bar_hover
+      return view.draw_text(klass.new(x,y,0),bar_hint(@bar_hover),color.call([30,30,30])) if @bar_hover
       return unless @hover
       info=material_info;sample=@hover['sample']
       line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],sample ? 'Cuentagotas' : mode_short]
@@ -413,10 +414,10 @@ module PlanosSanto
       line2=if sample then bad ? @sample_reason.to_s : "Tomar: #{sample['name']}"
             else blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
             end
-      view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
-      view.draw_text(klass.new(x,y+16*scale,0),line2,{color:color.call(bad ? [200,0,0] : [0,128,0]),size:11})
+      view.draw_text(klass.new(x,y,0),line1,color.call([30,30,30]))
+      view.draw_text(klass.new(x,y+line,0),line2,color.call(bad ? [200,0,0] : [0,128,0]))
       line3=missing_line(@hover['pieceId']) # F-PINT-C
-      view.draw_text(klass.new(x,y+32*scale,0),line3,{color:color.call(line3.start_with?('Falta') ? [200,0,0] : [0,128,0]),size:11}) if line3
+      view.draw_text(klass.new(x,y+2*line,0),line3,color.call(line3.start_with?('Falta') ? [200,0,0] : [0,128,0])) if line3
     rescue StandardError
       nil
     end
@@ -1005,7 +1006,7 @@ module PlanosSanto
     # Palette brush only (the view brush draws its own strip in draw_ui).
     def strip_rects(view)
       return [] unless recents_on? && !ui_on? && !@strip_rows.empty? && view.respond_to?(:draw2d) && view.respond_to?(:vpheight)
-      size=STRIP_SIZE*ui_scale;bottom=view.vpheight.to_f-STRIP_MARGIN
+      size=(STRIP_SIZE*ui_scale).round;bottom=view.vpheight.to_i-STRIP_MARGIN # whole pixels
       count=@strip_rows.length
       count=[count,((view.vpwidth.to_f-2*STRIP_MARGIN+STRIP_GAP)/(size+STRIP_GAP)).floor].min if view.respond_to?(:vpwidth)
       (0...[count,0].max).map { |index| left=STRIP_MARGIN+index*(size+STRIP_GAP);[left,bottom-size,left+size,bottom] }
@@ -1017,21 +1018,15 @@ module PlanosSanto
     end
     def draw_strip(view)
       rects=strip_rects(view);return if rects.empty?
-      klass=point_class;quads=Object.const_defined?(:GL_QUADS) ? Object.const_get(:GL_QUADS) : 7
-      loop=Object.const_defined?(:GL_LINE_LOOP) ? Object.const_get(:GL_LINE_LOOP) : 2;width=view.respond_to?(:line_width=)
-      lines=Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1
-      rects.each_with_index do |(left,top,right,bottom),index|
-        corners=[[left,top],[right,top],[right,bottom],[left,bottom]].map { |x,y| klass.new(x,y,0) }
+      rects.each_with_index do |rect,index|
         row=@strip_rows[index];active=!row['materialUuid'].empty? && row['materialUuid']==@options['materialUuid']
-        view.drawing_color=rgba(row['color'] || [200,200,200],255);view.draw2d(quads,corners)
-        view.line_width=(active ? 2 : 1) if width
-        view.drawing_color=rgba(active ? [0,0,0] : [128,128,128],255);view.draw2d(loop,corners)
-        # Not yet in this model: a diagonal says «se instala al elegirlo».
-        view.draw2d(lines,[klass.new(left,bottom,0),klass.new(right,top,0)]) if row['state']=='installable'
+        fill(view,rect,row['color'] || [200,200,200])
+        outline(view,rect,active ? [0,0,0] : [128,128,128],active ? 2 : 1)
+        # Not yet in this model: a corner mark says «se instala al elegirlo».
+        corner_mark(view,rect) if row['state']=='installable'
       end
-      view.line_width=1 if width
       label=in_view? ? 'Materiales · clic para elegir (1–6 recientes)' : 'Recientes · clic o 1–6'
-      view.draw_text(klass.new(STRIP_MARGIN,rects.first[1]-18*ui_scale,0),label,{size:10}) if view.respond_to?(:draw_text)
+      view.draw_text(point_class.new(STRIP_MARGIN,(rects.first[1]-18*ui_scale).round,0),label,text_options(10)) if view.respond_to?(:draw_text)
     rescue StandardError
       nil
     end
@@ -1077,10 +1072,25 @@ module PlanosSanto
     def ui_on?;in_view? && immediate? && %w[sheet edge remove_edge].include?(@options['mode']);end
     def edge_modes?;%w[edge remove_edge].include?(@options['mode']);end
     def strip_on?;ui_on? && %w[sheet edge].include?(@options['mode']);end
-    # Approximate text width in pixels: SketchUp's text_bounds when present.
+    # 0.8.18 (calidad visual): draw_text sizes are pixels on Windows and are not
+    # scaled by SketchUp, while the bars are (UI.scale_factor). Every label is
+    # size × UI.scale_factor, rounded to a whole pixel, in the system UI font.
+    def font_px(size);[(size*ui_scale).round,1].max;end
+    def ui_font
+      return @ui_font if defined?(@ui_font)
+      @ui_font=defined?(Sketchup) && Sketchup.respond_to?(:platform) && Sketchup.platform==:platform_win ? 'Segoe UI' : nil
+    end
+    def text_options(size,bold=false)
+      options={size:font_px(size)};options[:bold]=true if bold
+      options[:font]=ui_font if ui_font
+      options
+    end
+    def text_constant(name);Object.const_defined?(name) ? Object.const_get(name) : nil;end
+    # Text width in pixels: View#text_bounds (SketchUp 2020+) measured with the
+    # same options used to draw; an estimate only without it.
     def text_width(view,text,size=TEXT_SIZE,bold=false)
       if view.respond_to?(:text_bounds)
-        bounds=view.text_bounds(point_class.new(0,0,0),text,{size:size,bold:bold})
+        bounds=view.text_bounds(point_class.new(0,0,0),text.to_s,text_options(size,bold))
         return bounds.width.to_f if bounds.respond_to?(:width)
       end
       text.to_s.length*size*0.68*ui_scale
@@ -1162,10 +1172,24 @@ module PlanosSanto
           bands[:empty]=[none_w+3*inset,top+strip_h/2,"No hay #{@options['mode']=='edge' ? 'cantos' : 'placas'} en la biblioteca: agregalos desde Materiales."]
         end
       end
-      layout={bands:bands,items:items}
+      layout=whole_pixels(bands,items)
       @ui_layout=[key,layout];layout
     rescue StandardError
       nil
+    end
+    # Every band and item edge on a whole pixel (UI.scale_factor 1.25 or 1.5
+    # gives fractions): fills stay sharp and neighbours share the same edge.
+    def whole_pixels(bands,items)
+      rounded=bands.to_h do |name,value|
+        case name
+        when :top,:sub,:strip then [name,value.map(&:round)]
+        when :sub_label then [name,[value[0],value[1].round,value[2].round]]
+        when :empty then [name,[value[0].round,value[1].round,value[2]]]
+        when :top_bottom then [name,value.round]
+        else [name,value]
+        end
+      end
+      {bands:rounded,items:items.map { |kind,key,rect,label| [kind,key,rect.map(&:round),label] }}
     end
     def inside?(rect,x,y)
       rect && x>=rect[0] && x<=rect[2] && y>=rect[1] && y<=rect[3]
@@ -1244,13 +1268,30 @@ module PlanosSanto
     def corners(left,top,right,bottom)
       klass=point_class;[[left,top],[right,top],[right,bottom],[left,bottom]].map { |x,y| klass.new(x,y,0) }
     end
+    # 0.8.18 (calidad visual): a fill covers whole pixels (GL_QUADS on integer
+    # corners); a line of width w runs w/2 inside the edge, so a 1 px or 3 px line
+    # sits on pixel centres (.5) and a 2 px one on pixel edges: never a line
+    # smeared over two half-lit rows by the view's anti-aliasing.
     def fill(view,rect,rgb,alpha=255)
-      view.drawing_color=rgba(rgb,alpha);view.draw2d(gl(:GL_QUADS,7),corners(*rect))
+      view.drawing_color=rgba(rgb,alpha);view.draw2d(gl(:GL_QUADS,7),corners(*rect.map(&:round)))
     end
     def outline(view,rect,rgb,width=1)
+      left,top,right,bottom=rect.map(&:round);inset=width/2.0
       view.line_width=width if view.respond_to?(:line_width=)
-      view.drawing_color=rgba(rgb,255);view.draw2d(gl(:GL_LINE_LOOP,2),corners(*rect))
+      view.drawing_color=rgba(rgb,255);view.draw2d(gl(:GL_LINE_LOOP,2),corners(left+inset,top+inset,right-inset,bottom-inset))
       view.line_width=1 if view.respond_to?(:line_width=)
+    end
+    # Vertical 1 px separator on the last pixel column left of x.
+    def separator(view,x,top,bottom,rgb)
+      view.line_width=1 if view.respond_to?(:line_width=)
+      view.drawing_color=rgba(rgb,255)
+      view.draw2d(gl(:GL_LINES,1),[point_class.new(x.round-0.5,top.round,0),point_class.new(x.round-0.5,bottom.round,0)])
+    end
+    # «Se instala al elegirlo»: a small white square in the top-right corner
+    # (a quad, not a triangle with an anti-aliased diagonal).
+    def corner_mark(view,rect)
+      left,top,right,bottom=rect.map(&:round);size=[(10*ui_scale).round,[right-left,bottom-top].min/2].min
+      fill(view,[right-size,top,right,top+size],[255,255,255],235)
     end
     # Readable text on any swatch colour (perceived luminance).
     def contrast(rgb)
@@ -1262,17 +1303,23 @@ module PlanosSanto
     rescue StandardError
       rgb
     end
-    # Centred label: SketchUp's align options when present, else an estimated left.
+    # Label on whole pixels. With View#text_bounds (2020+) the centred text is
+    # measured and drawn from its rounded left edge (TextAlignLeft), so the
+    # glyphs never start on half a pixel; without it, TextAlignCenter at a
+    # rounded centre; without both constants, an estimated left.
     def draw_label(view,text,cx,cy,rgb,size:TEXT_SIZE,bold:false,align: :center)
       return unless view.respond_to?(:draw_text)
-      options={size:size,color:text_color(rgb)};options[:bold]=true if bold
-      if Object.const_defined?(:TextAlignCenter) && Object.const_defined?(:TextVerticalAlignCenter)
-        options[:align]=Object.const_get(align==:center ? :TextAlignCenter : :TextAlignLeft)
-        options[:vertical_align]=Object.const_get(:TextVerticalAlignCenter)
-        return view.draw_text(point_class.new(cx,cy,0),text,options)
+      options=text_options(size,bold).merge(color:text_color(rgb))
+      left_align=text_constant(:TextAlignLeft);center_align=text_constant(:TextAlignCenter);middle=text_constant(:TextVerticalAlignCenter)
+      if middle && left_align && (align!=:center || view.respond_to?(:text_bounds))
+        left=align==:center ? cx-text_width(view,text,size,bold)/2.0 : cx
+        return view.draw_text(point_class.new(left.round,cy.round,0),text,options.merge(align:left_align,vertical_align:middle))
+      end
+      if middle && center_align
+        return view.draw_text(point_class.new(cx.round,cy.round,0),text,options.merge(align:center_align,vertical_align:middle))
       end
       left=align==:center ? cx-text_width(view,text,size,bold)/2 : cx
-      view.draw_text(point_class.new(left,cy-size*0.7*ui_scale,0),text,options)
+      view.draw_text(point_class.new(left.round,(cy-font_px(size)*0.7).round,0),text,options)
     end
     def draw_ui(view)
       layout=ui_layout(view);return unless layout
@@ -1299,7 +1346,7 @@ module PlanosSanto
       when :tab
         active=bar_active?(key)
         fill(view,rect,active ? ORANGE : hover ? BAND_HOVER : BAND,active ? 255 : 245)
-        view.drawing_color=rgba(BAND_LINE,255);view.draw2d(gl(:GL_LINES,1),[point_class.new(right,top,0),point_class.new(right,bottom,0)])
+        separator(view,right,top,bottom,BAND_LINE)
         draw_label(view,fit_text(view,label,width-12*s),cx,cy,active ? [255,255,255] : LIGHT_TEXT)
       when :count
         active=bar_active?(key)
@@ -1309,18 +1356,13 @@ module PlanosSanto
       when :none
         active=material_missing?
         fill(view,rect,[250,250,250])
-        view.drawing_color=rgba([214,212,208],255)
-        view.draw2d(gl(:GL_TRIANGLES,4),[point_class.new(left,bottom,0),point_class.new(right,bottom,0),point_class.new(left,top+(bottom-top)*0.35,0)])
         outline(view,rect,active ? ORANGE : hover ? [255,255,255] : [120,112,104],active ? 3 : 1)
         draw_label(view,fit_text(view,label,width-12*s),cx,cy,DARK_TEXT)
       when :cell
         row=@strip_rows[key];color=row['color'] || [200,200,200]
         active=!row['materialUuid'].to_s.empty? && row['materialUuid']==@options['materialUuid']
-        fill(view,rect,color)
-        if row['state']=='installable' # not in this model yet: a corner mark
-          view.drawing_color=rgba([255,255,255],230)
-          view.draw2d(gl(:GL_TRIANGLES,4),[point_class.new(right-12*s,top,0),point_class.new(right,top,0),point_class.new(right,top+12*s,0)])
-        end
+        fill(view,rect,color) # one flat quad per swatch: the material colour, nothing tessellated
+        corner_mark(view,rect) if row['state']=='installable' # not in this model yet
         outline(view,rect,active ? ORANGE : hover ? [255,255,255] : BAND_LINE,active ? 3 : hover ? 2 : 1)
         draw_label(view,fit_text(view,label,width-14*s),cx,cy,contrast(color),bold:active)
       when :nav
