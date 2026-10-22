@@ -748,6 +748,30 @@ module PlanosSanto
             workshop.export_order(data.fetch('plan'),path)
           end
         end
+      # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
+      when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','skm_commit_typed'
+        active!
+        mutating=%w[maderera_profile_save maderera_profile_approve maderera_profile_activate catalog_add_preset catalog_variant skm_commit_typed].include?(action)
+        raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.' if mutating && @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
+        directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+        workshop=Workshop.new(@model,@session,directory:directory)
+        result=case action
+        when 'maderera_profiles_load' then workshop.maderera_profiles
+        when 'maderera_profile_save' then workshop.save_maderera_profile(data.fetch('profile'),data.fetch('revision'))
+        when 'maderera_profile_approve' then workshop.approve_maderera_profile(data.fetch('id'),data.fetch('version'),data.fetch('revision'))
+        when 'maderera_profile_activate' then workshop.activate_maderera_profile(data['id'],data.fetch('revision'))
+        when 'catalog_presets' then workshop.presets
+        when 'catalog_add_preset' then workshop.add_preset(data.fetch('presetId'),data['name'],data.fetch('revision'))
+        when 'catalog_variant' then workshop.add_variant(data.fetch('id'),data.fetch('thicknessMm'),data.fetch('revision'),name:data['name'])
+        when 'skm_commit_typed'
+          committed=skm_importer.commit(data.fetch('token'),data.fetch('selectedIds'),data.fetch('revision'),confirmed:data['confirmed']==true,renames:data.fetch('renames',{}),
+            kinds:data.fetch('kinds',{}),apply_suggestions:data['applySuggestions']==true)
+          @skm_preview_active=false
+          committed.merge(skm_library)
+        end
+        notify_material_library_changed(action) if %w[catalog_add_preset catalog_variant skm_commit_typed].include?(action)
+        result
+      # --- fin Hito 4 ---
       when 'material_photo_pick'
         active!
         clean_for_paint!
@@ -843,7 +867,8 @@ module PlanosSanto
         end
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
-        {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
+        visuals=MaterialLibrary.new(@model,catalog:catalog,directory:directory).status
+        {'catalog'=>without_archived(catalog.read,visuals),'visuals'=>visuals,
          'paintStates'=>paint_materials.states,
          'settings'=>smart_settings,'toolState'=>smart_view_state,'thumbnails'=>material_thumbnails}
       when 'smart_material_prepare'
@@ -1152,6 +1177,20 @@ module PlanosSanto
       options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
       remember_smart_settings(options);@quick_options=options
       options
+    end
+
+    # QA integración (Hito 7 × Hito 2): an archived item leaves the paint palette
+    # unless this model already uses it. A broken archive index never hides the palette.
+    def without_archived(catalog,visuals)
+      archived=begin
+        management_library.archived_ids
+      rescue StandardError => error
+        warn("Planos Santo: no se pudo leer el índice de fichas archivadas: #{error.class}")
+        []
+      end
+      return catalog if archived.empty? || !catalog['items'].is_a?(Array)
+      used=(visuals['materials'] || []).filter_map { |material| material.is_a?(Hash) ? material.dig('binding','catalogId') : nil }
+      catalog.merge('items'=>catalog['items'].reject { |item| archived.include?(item['id']) && !used.include?(item['id']) })
     end
 
     # Hito 7 (PINTURA-04/07): material chosen from the view (recents strip or

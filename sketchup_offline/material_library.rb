@@ -821,8 +821,11 @@ module PlanosSanto
       reject!('el paquete tiene demasiadas compatibilidades.') if total>MAX_COMPATIBLE_TOTAL
       items.each do |item|
         reject!('canto compatible inexistente o de otro tipo.') unless item['compatibleIds'].all? { |id| id.is_a?(String) && kinds[id]=='edge' }
+        # Hito 4: packages of schema-1 libraries migrate explicitly; variant links are foreign references.
+        item.merge!('variantOf'=>nil,'notes'=>'','suggested'=>nil) if item.keys.sort==CatalogStore::FIELDS_V1.sort
+        item['variantOf']=nil
         begin
-          @catalog.validate({'schema'=>1,'revision'=>0,'items'=>[item.merge('compatibleIds'=>[])]})
+          @catalog.validate({'schema'=>CatalogStore::SCHEMA,'revision'=>0,'items'=>[item.merge('compatibleIds'=>[])]})
         rescue ExportError => error
           reject!("fichas inválidas (#{error.message})")
         end

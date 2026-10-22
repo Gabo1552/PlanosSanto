@@ -297,6 +297,22 @@ class PavEyedropperTest < Minitest::Test
   end
 end
 
+class PavStaleTest < Minitest::Test
+  include PavFixture
+  def setup;build_fixture;paint_sheet_on_board!;end
+  def test_eyedropper_recents_depth_menu_toggles_and_transparency_never_report_a_change
+    @board.entities[2].material=@edge
+    build_tool(tool_options('sheet'))
+    @tool.onKeyDown(18,1,0,@view);click_on(@doors[0],2);@tool.onKeyUp(18,1,0,@view)
+    @tool.onKeyDown(49,1,0,@view)
+    stack!(entry(@doors[0],1),entry(@doors[1],1));@tool.onMouseMove(0,400,300,@view);@tool.onKeyDown(40,1,0,@view);@tool.onKeyDown(38,1,0,@view)
+    @tool.set_view_options('highlightMissing'=>true);@tool.set_view_options('highlightMissing'=>false)
+    menu=PavMenu.new;@tool.getMenu(menu,0,400,300,@view)
+    assert_empty @model.operations
+    assert @events.none? { |event| event['changed']==true },'una acción sin escritura marcó el análisis como desactualizado'
+  end
+end
+
 class PavDepthTest < Minitest::Test
   include PavFixture
   def setup;build_fixture;end
@@ -312,6 +328,15 @@ class PavDepthTest < Minitest::Test
     assert_nil @events.last['error'];assert @events.last['changed'];assert_equal undo+1,@model.undo_states.length
     assert faces_of(@doors[1]).first(2).all? { |face| face.material.equal?(@sheet) }
     assert @board.entities.first(2).none? { |face| face.material.equal?(@sheet) };assert_same @board,@doors[0].definition
+  end
+  # F-PINT-A + PINTURA-11: the piece behind, shared and already painted, is a no-op.
+  def test_depth_click_on_an_already_painted_shared_piece_is_a_no_op
+    paint_sheet_on_board!;build_tool(tool_options('sheet'))
+    stack!(entry(@doors[0],1),entry(@doors[1],1));@tool.onMouseMove(0,400,300,@view);@tool.onKeyDown(40,1,0,@view)
+    assert_equal '1/12',@tool.status['hover']['pieceId']
+    undo=@model.undo_states.length;@tool.onLButtonDown(0,400,300,@view)
+    assert_nil @events.last['error'];assert_equal false,@events.last['changed']
+    assert_equal undo,@model.undo_states.length;assert_empty @model.operations;assert @doors.all? { |door| door.definition.equal?(@board) }
   end
   def test_up_arrow_wraps_and_a_single_piece_has_no_depth
     build_tool(tool_options('sheet'))

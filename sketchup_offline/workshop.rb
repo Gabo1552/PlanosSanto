@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 require_relative 'catalog_store'
 require_relative 'supplier_order'
+require_relative 'maderera_profile'
 require_relative 'ocl_reader'
 require_relative 'order_proposal'
 require_relative 'guide_store'
@@ -10,11 +11,11 @@ module PlanosSanto
     DICT='PlanosSantoPedidos'
     KEY='draft_v1'
     def initialize(model,session,directory: CatalogStore.default_directory)
-      @model=model;@session=session;@catalog=CatalogStore.new(directory:directory)
+      @model=model;@session=session;@catalog=CatalogStore.new(directory:directory);@profiles=MaderaProfileStore.new(directory:directory)
     end
     def catalog
-      data=@catalog.read
-      {'catalog'=>data,'conflicts'=>@catalog.conflicts(data)}
+      _bytes,parsed,data=@catalog.load
+      {'catalog'=>data,'conflicts'=>@catalog.conflicts(data),'migration'=>@catalog.migration(parsed)}
     end
     def save_catalog(items,revision);data=@catalog.save(items,revision);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
     def import_catalog(data,revision);data=@catalog.import(data,revision);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
@@ -25,6 +26,41 @@ module PlanosSanto
       save_catalog(current['items'],revision)
     end
     def export_catalog(target);@catalog.export(target);{'path'=>target};end
+    PRESETS=File.join(__dir__,'presets-taller.json')
+    # MATERIALES-02: shipped suggestions, read-only and validated before use.
+    def presets
+      data=JSON.parse(File.read(PRESETS))
+      valid=data.is_a?(Hash) && data['schema']==1 && data['presets'].is_a?(Array) && data['presets'].all? do |preset|
+        preset.is_a?(Hash) && preset.keys.sort==%w[id kind label values] && %w[sheet edge].include?(preset['kind']) && preset['values'].is_a?(Hash) &&
+          (preset['values'].keys-%w[thicknessMm widthMm lengthMm grain]).empty? && preset['values'].values.all? { |v| v.nil? || [true,false].include?(v) || (v.is_a?(Numeric) && v>0 && v<=100000) }
+      end
+      raise ExportError,'Los valores sugeridos del taller están dañados; reinstalá la extensión.' unless valid
+      {'note'=>data['note'],'presets'=>data['presets']}
+    rescue JSON::ParserError,SystemCallError
+      raise ExportError,'Los valores sugeridos del taller están dañados; reinstalá la extensión.'
+    end
+    def add_preset(preset_id,name,revision)
+      preset=presets['presets'].find { |row| row['id']==preset_id };raise ExportError,'Ese valor sugerido no existe.' unless preset
+      current=@catalog.read
+      raise ExportError,'La biblioteca cambió en otra ventana: volvé a abrirla y repetí el alta del material.' unless current['revision']==revision
+      name=name.to_s.strip.empty? ? preset['label'] : name
+      raise ExportError,'Ya existe un material con ese nombre en la biblioteca.' if current['items'].any? { |item| item['name'].unicode_normalize(:nfc).downcase==@catalog.text(name).downcase }
+      item=@catalog.suggested_item(name,preset['kind'],preset['values'],'preset',{'source'=>'preset','presetId'=>preset['id']},preset_id:preset['id'])
+      save_catalog(current['items']+[item],revision)
+    end
+    def add_variant(base_id,thickness,revision,name: nil)
+      current=@catalog.read
+      raise ExportError,'La biblioteca cambió en otra ventana: volvé a abrirla y repetí la variante.' unless current['revision']==revision
+      item=@catalog.variant_item(current['items'].find { |row| row['id']==base_id },thickness,name)
+      raise ExportError,'Ya existe un material con ese nombre en la biblioteca.' if current['items'].any? { |row| row['name'].unicode_normalize(:nfc).downcase==item['name'].downcase }
+      save_catalog(current['items']+[item],revision)
+    end
+    def maderera_profiles
+      {'profiles'=>@profiles.read,'template'=>MaderaProfile.template}
+    end
+    def save_maderera_profile(profile,revision);@profiles.save(profile,revision);maderera_profiles;end
+    def approve_maderera_profile(id,version,revision);@profiles.approve(id,version,revision);maderera_profiles;end
+    def activate_maderera_profile(id,revision);@profiles.activate(id,revision);maderera_profiles;end
     def order
       @session.check_current!
       catalog=@catalog.read;report=nil
@@ -32,7 +68,7 @@ module PlanosSanto
       service=SupplierOrder.new(@session.document,@session.fingerprint,catalog,
         edge_review:lambda { |row,geometry| OclReader.verify_edge_mapping(read.call,row,geometry,catalog) },
         source_review:lambda { |row,geometry| verify_native_source(read.call,row,geometry,catalog) },
-        material_proposal:lambda { |id| native_proposal(read.call,id,catalog) })
+        material_proposal:lambda { |id| native_proposal(read.call,id,catalog) },maderera:active_maderera)
       service.detail_codes=codes;@read=read;@order_catalog=catalog
       service
     end
@@ -41,6 +77,12 @@ module PlanosSanto
       OrderProposal.codes(@session.document,GuideStore.new(@model).read)
     rescue ExportError
       {}
+    end
+    # A damaged profile file never blocks orders: it only shows in its own screen.
+    def active_maderera
+      @profiles.active
+    rescue ExportError
+      nil
     end
     def native_piece(report,id)
       report['pieces'].find { |piece| piece['path'].join('/')==id }
@@ -102,7 +144,7 @@ module PlanosSanto
       raw=@model.get_attribute(DICT,KEY)
       if !reset && raw.is_a?(String) && raw.bytesize<=8*1024*1024
         stored=JSON.parse(raw)
-        if stored['fingerprint']==current['fingerprint'] && stored['catalogRevision']==current['catalogRevision']
+        if stored['fingerprint']==current['fingerprint'] && stored['catalogRevision']==current['catalogRevision'] && stored['maderera']==current['maderera']
           current.merge!(stored.slice('rows','profile','edgeLinks','detailCode'))
           current['rows'].each { |row| unless row.key?('edgeResolution');row.merge!('edgeResolution'=>nil,'edgeBindings'=>[],'edgeOverrideReason'=>'','edgesConfirmed'=>false);end }
         end
@@ -120,6 +162,7 @@ module PlanosSanto
     def current_draft!(draft,service=order)
       current=service.proposal
       raise ExportError,'El borrador quedó desactualizado porque cambió el modelo o la biblioteca: usá «Preparar de nuevo».' unless draft.is_a?(Hash) && draft['fingerprint']==current['fingerprint'] && draft['catalogRevision']==current['catalogRevision']
+      raise ExportError,'El perfil de maderera en uso cambió: usá «Preparar de nuevo» y revisá las medidas.' unless draft['maderera']==current['maderera']
       raise ExportError,'El borrador no tiene las mismas piezas que el modelo: usá «Preparar de nuevo».' unless draft['rows'].is_a?(Array) && draft['rows'].map { |r| r.is_a?(Hash) && r['id'] }.sort_by(&:to_s)==current['rows'].map { |r| r['id'] }.sort
       raise ExportError,'El borrador viene de otra versión de Planos Santo: usá «Preparar de nuevo».' unless draft['rows'].all? { |row| row.is_a?(Hash) && row.keys.sort==SupplierOrder::ROW_KEYS.sort }
       OrderProposal.check_extras!(draft)
@@ -150,7 +193,7 @@ module PlanosSanto
     def save_plan(draft)
       # Drafts may be unfinished. Preserve exact source linkage, never certify them.
       current_draft!(draft)
-      value=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','rows','profile','edgeLinks','detailCode'))
+      value=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','maderera','rows','profile','edgeLinks','detailCode'))
       raise ExportError,'Borrador demasiado grande.' if value.bytesize>8*1024*1024
       started=false
       begin
@@ -164,7 +207,7 @@ module PlanosSanto
     end
     def audit(draft)
       errors=order.validate(draft,collect_errors:true)
-      {'blocked'=>errors,'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| row.slice('id','detail','excludeReason') },'production_ready'=>false}
+      {'blocked'=>errors,'warnings'=>order.warnings(draft),'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| row.slice('id','detail','excludeReason') },'production_ready'=>false}
     end
     def check(draft)
       service=order

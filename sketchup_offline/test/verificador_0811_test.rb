@@ -73,6 +73,38 @@ module PlanosSanto
   module MaterialResolver
     def self.observe_binding(material);{ 'binding' => material.binding };end
   end
+  # Hito 3: el doble devuelve borradores nuevos y registra si alguien intentó guardar.
+  class Workshop
+    class << self;attr_accessor :rows, :saved;end
+    def initialize(_model, _session, directory:);end
+    def plan(_reset);{ 'plan' => { 'rows' => Workshop.rows } };end
+    def save_plan(_plan);Workshop.saved = true;end
+    def propose(draft, _ids)
+      rows = draft['rows'].select { |row| row['include'] }
+      { 'plan' => draft.merge('proposed' => true),
+        'proposal' => { 'summary' => { 'proposed' => rows.length, 'kept' => 0, 'abstained' => 0, 'bulkReady' => rows.count { |row| row['ok'] }, 'review' => rows.count { |row| !row['ok'] } } } }
+    end
+    def confirm_bulk(draft, _ids)
+      raise 'confirmar sin proponer' unless draft['proposed']
+      rows = draft['rows'].select { |row| row['include'] }
+      { 'plan' => draft, 'confirmed' => rows.select { |row| row['ok'] }.map { |row| row['id'] },
+        'review' => rows.reject { |row| row['ok'] }.map { |row| { 'id' => row['id'], 'reasons' => row['reasons'] } } }
+    end
+  end
+  module OrderReferences
+    class << self;attr_accessor :result;end
+    def self.partial(_model, _workshop);result;end
+  end
+  # ARQ-01: con y sin caché el árbol tiene que ser el mismo; el doble permite romperlo.
+  class Exporter
+    class << self;attr_accessor :calls, :diverge;end
+    def initialize(_model, cache:);@cache = cache;end
+    def tree
+      Exporter.calls << @cache
+      warnings = ['Herraje (material de tipo herraje en OpenCutList): no se tesela ni entra en el despiece.'] * 2
+      { 'roots' => [{ 'id' => 'M01' }, { 'id' => 'M02' }], 'warnings' => warnings + (Exporter.diverge && @cache ? ['distinto'] : []) }
+    end
+  end
 end
 
 load File.expand_path('../../docs/validacion-0811/verificar_0811_sketchup.rb', __dir__)
@@ -130,7 +162,11 @@ class VerifyModel
   def set_attribute(*_args);raise 'escritura prohibida';end
 end
 class VerifyController
-  def initialize(watch: nil, session: nil);@model_watch = watch;@session = session;end
+  def initialize(watch: nil, session: nil, settings: {});@model_watch = watch;@session = session;@settings = settings;end
+
+  private
+
+  def smart_settings;@settings;end
 end
 
 class Verificador0811Test < Minitest::Test
@@ -158,6 +194,9 @@ class Verificador0811Test < Minitest::Test
     PlanosSanto::MaterialLibrary.records = []
     PlanosSanto::MaterialPackage.result = nil
     PlanosSanto::SmartPaint.calls = []
+    PlanosSanto::Workshop.rows = [];PlanosSanto::Workshop.saved = false
+    PlanosSanto::OrderReferences.result = nil
+    PlanosSanto::Exporter.calls = [];PlanosSanto::Exporter.diverge = false
   end
 
   def teardown
@@ -407,6 +446,66 @@ class Verificador0811Test < Minitest::Test
     assert result['integridad']['passed']
     assert_match(/no está cargado/, result['modelWatch']['error'])
     assert result['cursores']['ok']
-    assert_equal %w[cursores integridad modelWatch perfilMaderera tiemposPincel], result.keys.sort
+    assert_equal %w[ajustesPincel cursores integridad modelWatch perfilMaderera tiemposPincel], result.keys.sort
+  end
+
+  def test_pedido_propone_y_confirma_en_bloque_sin_guardar
+    reasons = ['Placa con veta: revisala en la vista 2D.']
+    PlanosSanto::Workshop.rows = (1..10).map { |i| { 'id' => "r#{i}", 'include' => i != 10, 'ok' => i > 2, 'reasons' => i > 2 ? [] : reasons } }
+    PlanosSanto.instance_variable_set(:@offline_controller, VerifyController.new(session: Object.new))
+    before = disk_state
+    result = V.pedido
+    assert_equal 9, result['filasIncluidas']
+    assert_equal 7, result['confirmables']
+    assert_equal 2, result['enRevision']
+    assert_equal 22.2, result['porcentajeRevision']
+    refute result['cumple']
+    assert_equal({ reasons.first => 2 }, result['motivosRevision'])
+    refute PlanosSanto::Workshop.saved
+    assert_equal before, disk_state
+  end
+
+  def test_pedido_exige_analisis_abierto_y_porcentaje_dentro_del_objetivo
+    assert_match(/analizá/, assert_raises(RuntimeError) { V.pedido }.message)
+    PlanosSanto::Workshop.rows = (1..5).map { |i| { 'id' => "r#{i}", 'include' => true, 'ok' => i > 1, 'reasons' => i > 1 ? [] : ['Cuadrada'] } }
+    PlanosSanto.instance_variable_set(:@offline_controller, VerifyController.new(session: Object.new))
+    assert V.pedido['cumple']
+    PlanosSanto::Workshop.rows = []
+    assert_nil V.pedido['cumple']
+  end
+
+  def test_referencias_parciales_cuentan_pendientes_y_lotes
+    PlanosSanto.instance_variable_set(:@offline_controller, VerifyController.new(session: Object.new))
+    PlanosSanto::OrderReferences.result = { 'references' => { 'a' => { 'lot' => 2 }, 'b' => { 'lot' => 1 }, 'c' => { 'lot' => 2 } }, 'pending' => [], 'excluded' => ['x'] }
+    result = V.referencias_parciales
+    assert_equal [3, 0, 1], result.values_at('conReferencia', 'pendientes', 'excluidas')
+    assert_equal [1, 2], result['lotes']
+    assert result['lotesDefinitivos']
+    PlanosSanto::OrderReferences.result = { 'references' => { 'a' => {} }, 'pending' => ['b'], 'excluded' => [] }
+    result = V.referencias_parciales
+    assert_equal [], result['lotes']
+    refute result['lotesDefinitivos']
+  end
+
+  def test_analisis_compara_cache_y_cuenta_herrajes
+    result = V.analisis(repeticiones: 2)
+    assert_equal [true, true, false, false], PlanosSanto::Exporter.calls
+    assert result['equivalente']
+    assert_equal 2, result['avisosHerraje']
+    assert_equal 2, result['muebles']
+    PlanosSanto::Exporter.diverge = true
+    refute V.analisis(repeticiones: 1)['equivalente']
+  end
+
+  def test_ajustes_pincel_lee_recientes_y_tecla
+    settings = { 'recentMaterials' => { 'sheet' => %w[a b c], 'edge' => %w[d] }, 'eyedropperKey' => 'shift', 'edgeCount' => 4, 'lastMaterials' => { 'sheet' => 'a' } }
+    PlanosSanto.instance_variable_set(:@offline_controller, VerifyController.new(settings: settings))
+    result = V.ajustes_pincel
+    assert_equal({ 'sheet' => 3, 'edge' => 1 }, result['recientes'])
+    assert result['maximoPorModo']
+    assert_equal 'shift', result['teclaCuentagotas']
+    assert_equal 4, result['cantosPorClic']
+    PlanosSanto.instance_variable_set(:@offline_controller, VerifyController.new)
+    assert_equal 'alt (por defecto)', V.ajustes_pincel['teclaCuentagotas']
   end
 end

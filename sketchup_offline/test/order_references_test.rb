@@ -54,6 +54,17 @@ class OrderReferencesTest < Minitest::Test
   full.each { |id,value| assert_equal value,result['references'][id].reject { |key,_| %w[lot grain].include?(key) } }
   assert_empty result['pending'];assert_equal [ids[1]],result['excluded'];assert_equal 1,result['references'][ids[0]]['lot']
  end
+ def test_valid_rows_carry_the_module_piece_code_of_the_txt_detail
+  plan=draft;ids=plan['rows'].map { |row| row['id'] }
+  plan['rows'][1]['orientationConfirmed']=false
+  @workshop.save_plan(plan)
+  @workshop.define_singleton_method(:codes) { {ids[0]=>'M03·P07',ids[1]=>'M03·P08'} }
+  result=PlanosSanto::OrderReferences.partial(@model,@workshop)
+  assert_equal 'M03·P07',result['references'][ids[0]]['code']
+  assert_equal 'M03·P07 Pieza',PlanosSanto::OrderProposal.detail_text({'detailCode'=>'module_piece'},{'id'=>ids[0],'detail'=>'Pieza'},@workshop.codes)
+  @workshop.define_singleton_method(:codes) { {ids[0]=>''} }
+  refute PlanosSanto::OrderReferences.partial(@model,@workshop)['references'][ids[0]].key?('code'),'un código repetido o ausente no se inventa'
+ end
  def test_stale_catalog_refuses_instead_of_printing_old_references
   @workshop.save_plan(draft)
   catalog=@store.read;@store.save(catalog['items'],catalog['revision'])

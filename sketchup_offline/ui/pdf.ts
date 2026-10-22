@@ -43,8 +43,8 @@ function ensureGlyphs(font:PDFFont,text:string){
   for(const char of text)if(!'\n\t\r'.includes(char)&&!available.has(char.codePointAt(0)!))throw new A4FitError(undefined,{reason:`El PDF no puede representar el carácter «${char}».`,kind:'glyph',character:char});
 }
 /** One row of the reviewed supplier order. A plain string is the legacy text-only contract. */
-/** `lot` is the 1-based supplier TXT lot (board, thickness and edge roles); `grain` the board grain (true: runs along `base`). */
-export type OrderReference={text:string;board?:string;edgeMap?:number[];principal?:string|null;secondary?:string|null;base?:number;height?:number;lot?:number;grain?:boolean|null};
+/** `code` is the module·piece code of the saved guide (OrderProposal.codes, the TXT detail code). `lot` is the 1-based supplier TXT lot (board, thickness and edge roles); `grain` the board grain (true: runs along `base`). */
+export type OrderReference={text:string;board?:string;edgeMap?:number[];principal?:string|null;secondary?:string|null;base?:number;height?:number;lot?:number;grain?:boolean|null;code?:string};
 export type OrderReferences=Record<string,string|OrderReference>;
 /** F-DESP-B (`order_references_partial`): rows that validate, included rows still under review and excluded rows. */
 export type PartialReferences={references:Record<string,OrderReference>;pending:string[];excluded:string[]};
