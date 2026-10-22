@@ -11,19 +11,22 @@ type Call={action:string;data:Record<string,unknown>};
 type Hover={pieceId:string;faceId:string;name?:string;side?:string;sharedCount?:number;scope?:string;edgeCount?:number;expandedFaceIds?:string[];verdict?:{ok:boolean;reason?:string|null}};
 type Tool={active:boolean;mode?:string;queuedCount:number;options?:Record<string,unknown>;hover?:Hover|null;error?:string;message?:string};
 let calls:Call[],tool:Tool;
+// Retrasa (y opcionalmente hace fallar) el próximo smart_quick_start del doble.
+let quickHook:(()=>Promise<'fail'|void>)|undefined;
 const item=(id:string,kind='sheet')=>({id,name:id==='photo'?'Roble foto QA':id==='edge'?'Canto QA':id==='edge2'?'Canto negro QA':'Placa QA',kind,approved:true,sku:'',supplier:'',favorite:false,thicknessMm:18,widthMm:1200,lengthMm:2400,grain:false,compatibleIds:[],price:null,sourceHash:'0'.repeat(64),updatedAt:'2026-10-22',observed:{}});
 const sheetOptions={mode:'sheet',catalogId:'sheet',materialUuid:'sheet-uuid',scope:'unique',immediate:true,immediatePiece:true,paintScope:'piece',side:'both'};
 const edgeOptions={mode:'edge',catalogId:'edge',materialUuid:'edge-uuid',scope:'unique',immediate:true,immediatePiece:false,paintScope:'piece',side:'both',edgeCount:1};
 async function boot(page:Page,folder:string,{props={},settings={},active}:{props?:Record<string,unknown>;settings?:Record<string,unknown>;active?:Record<string,unknown>}={}){
- calls=[];tool=active?{active:true,mode:String(active.mode),queuedCount:0,options:active}:{active:false,mode:'sheet',queuedCount:0};
+ calls=[];quickHook=undefined;tool=active?{active:true,mode:String(active.mode),queuedCount:0,options:active}:{active:false,mode:'sheet',queuedCount:0};
  await mkdir(folder,{recursive:true});
  const temp=await mkdtemp(join(tmpdir(),'planos-hito2-entry-'));
  const entry=join(temp,'palette-entry.jsx');
  await writeFile(entry,`import React from ${JSON.stringify(resolve('node_modules/react'))};import {createRoot} from ${JSON.stringify(resolve('node_modules/react-dom/client'))};import Palette from ${JSON.stringify(resolve('sketchup_offline/ui/SmartPaintPalette.tsx'))};createRoot(document.getElementById('root')).render(React.createElement(Palette,{quickMode:true,initialCompact:true,...window.paletteProps,onClose:()=>{},onManage:()=>{},onApplied:()=>{},onCreateMaterial:()=>{}}));`);
  await build({entryPoints:[entry],absWorkingDir:process.cwd(),outfile:resolve(folder,'app.js'),bundle:true,minify:true,format:'iife',platform:'browser',target:'chrome109',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}}).finally(()=>rm(temp,{recursive:true,force:true}));
  await page.exposeFunction('hitoSetTool',(state:Tool)=>{tool=state;});
- await page.exposeFunction('immediateRequest',(raw:string)=>{
+ await page.exposeFunction('immediateRequest',async(raw:string)=>{
   const message=JSON.parse(raw),{action,data}=message;calls.push({action,data});let result:unknown;
+  if(action==='smart_quick_start'&&quickHook){const hook=quickHook;quickHook=undefined;if(await hook()==='fail')return {version:1,id:message.id,result:null,error:'Fallo simulado de SketchUp'};}
   if(action==='diagnostic')result={extensionVersion:release.version};
   else if(action==='smart_palette_load')result={catalog:{schema:1,revision:1,items:[item('photo'),item('sheet'),item('edge','edge'),item('edge2','edge')]},visuals:{materials:['photo','sheet','edge','edge2'].map(id=>({id,name:id+' real QA',hasTexture:false,color:[113,81,55],binding:{uuid:id+'-uuid',catalogId:id,kind:id.startsWith('edge')?'edge':'sheet'},issues:[]}))},settings:{scope:'unique',...settings},toolState:tool};
   else if(action==='smart_palette_compact')result={compact:data.compact};
@@ -160,4 +163,57 @@ test('hito2: paleta compacta 680x320 y 360 sin scroll horizontal ni solapamiento
   await expect(edgeGroup(page)).toBeVisible();await expect(scopeGroup(page)).toBeVisible();
   await page.screenshot({path:`artifacts/hito2-paleta-canto-${width}-SINTETICA.png`,fullPage:true});
  }
+});
+
+const hold=()=>{let release:(value?:'fail')=>void=()=>{};const gate=new Promise<'fail'|void>(resolve=>{release=resolve;});return {gate,release};};
+const hover4={pieceId:'1/11',faceId:'101',name:'Puerta 3',side:'both',sharedCount:4,scope:'unique',edgeCount:1,expandedFaceIds:['101','102'],verdict:{ok:true,reason:null}};
+
+test('hito2 (H1): un push unique viejo durante «Todas» en vuelo no gana a la respuesta all',async({page},info)=>{
+ await boot(page,info.outputDir,{active:sheetOptions});
+ await push(page,{active:true,mode:'sheet',queuedCount:0,options:sheetOptions,hover:hover4});
+ const {gate,release}=hold();quickHook=()=>gate;
+ const all=scopeGroup(page).getByRole('button',{name:'Todas las iguales (4)',exact:true}),only=scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true});
+ await all.click();await expect.poll(()=>starts().length).toBe(1);expect(starts()[0].data).toMatchObject({scope:'all',allowShared:true});
+ // Hover anterior a la respuesta, todavía con scope unique.
+ await page.evaluate(state=>{window.dispatchEvent(new CustomEvent('planos-santo-smart-paint',{detail:state}));},{active:true,mode:'sheet',queuedCount:0,options:sheetOptions,hover:hover4});
+ await expect(all).toHaveAttribute('aria-pressed','true');
+ release();await expect.poll(()=>tool.options?.scope).toBe('all');
+ await expect(all).toHaveAttribute('aria-pressed','true');await expect(only).toHaveAttribute('aria-pressed','false');
+ await page.waitForTimeout(1200);await expect(all).toHaveAttribute('aria-pressed','true');
+ await expect(page.getByText('Pinta todas las copias de la definición con un solo Undo.',{exact:true})).toBeVisible();
+});
+
+test('hito2 (H1): cargar la paleta con la herramienta activa en all muestra «Todas» y el sondeo no lo baja',async({page},info)=>{
+ await boot(page,info.outputDir,{active:{...sheetOptions,scope:'all'}});
+ const all=scopeGroup(page).getByRole('button',{name:/^Todas las iguales/});
+ await expect(all).toHaveAttribute('aria-pressed','true');await expect(scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true})).toHaveAttribute('aria-pressed','false');
+ await page.waitForTimeout(1200);expect(requests('smart_tool_status').length).toBeGreaterThan(0);await expect(all).toHaveAttribute('aria-pressed','true');
+ expect(starts()).toHaveLength(0);
+});
+
+test('hito2 (H2): si falla el envío y Ruby ya bajó a unique, queda «Solo esta» y el siguiente no autoriza',async({page},info)=>{
+ await boot(page,info.outputDir,{active:edgeOptions});
+ await push(page,{active:true,mode:'edge',queuedCount:0,options:edgeOptions,hover:hover4});
+ const all=scopeGroup(page).getByRole('button',{name:'Todas las iguales (4)',exact:true}),only=scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true});
+ await all.click();await expect.poll(()=>starts().length).toBe(1);await expect(all).toHaveAttribute('aria-pressed','true');
+ const {gate,release}=hold();quickHook=()=>gate;
+ await edgeGroup(page).getByRole('button',{name:'4 cantos',exact:true}).click();await expect.poll(()=>starts().length).toBe(2);expect(starts()[1].data).toMatchObject({scope:'all',allowShared:true,edgeCount:4});
+ // Mientras tanto Ruby bajó a unique (Tab en el modelo) y la solicitud falla.
+ await push(page,{active:true,mode:'edge',queuedCount:0,options:edgeOptions,hover:hover4});
+ // Antes del próximo sondeo (1 s): la UI no puede depender de él para bajar «Todas».
+ release('fail');await expect(page.getByText(/Fallo simulado de SketchUp/)).toBeVisible();
+ await expect(only).toHaveAttribute('aria-pressed','true',{timeout:300});await expect(all).toHaveAttribute('aria-pressed','false',{timeout:300});
+ await edgeGroup(page).getByRole('button',{name:'2 cantos opuestos',exact:true}).click();await expect.poll(()=>starts().length).toBe(3);
+ expect(starts()[2].data).toMatchObject({scope:'unique',edgeCount:2});expect(starts()[2].data.allowShared).not.toBe(true);
+ await expect(only).toHaveAttribute('aria-pressed','true');
+});
+
+test('hito2 (H3): «Solo esta» ya elegida no envía nada, con la herramienta detenida o activa',async({page},info)=>{
+ await boot(page,info.outputDir);
+ const only=scopeGroup(page).getByRole('button',{name:'Solo esta',exact:true});
+ await expect(only).toHaveAttribute('aria-pressed','true');await only.click();await page.waitForTimeout(300);
+ expect(starts()).toHaveLength(0);expect(requests('smart_tool_start')).toHaveLength(0);expect(requests('smart_tool_stop')).toHaveLength(0);
+ await expect(page.getByText('Elegí un material de la paleta.',{exact:true})).toHaveCount(0);await expect(page.getByText('○ Detenido',{exact:true})).toBeVisible();
+ await choose(page,'Placa QA');await expect.poll(()=>starts().length).toBe(1);
+ await only.click();await page.waitForTimeout(300);expect(starts()).toHaveLength(1);expect(requests('smart_tool_stop')).toHaveLength(0);
 });
