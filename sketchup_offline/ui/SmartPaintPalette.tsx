@@ -49,7 +49,9 @@ function ModeGlyph({mode}:{mode:Mode|'sample'}){
  return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[mode]}/></svg>;
 }
 export default function SmartPaintPalette({onClose,onManage,onApplied,quickIntent,initialCompact=false,initialCatalogId,onCreateMaterial,onAssignPhoto,autoStart=false,quickMode=false}:{quickMode?:boolean;autoStart?:boolean;onCreateMaterial?:()=>void;onAssignPhoto?:(target:PaintTarget)=>void;initialCatalogId?:string;initialCompact?:boolean;quickIntent?:QuickIntent;onClose:()=>void;onManage:(destination:'catalog'|'visuals')=>void;onApplied:(scan:unknown,warning?:string)=>void}){
- const [loaded,setLoaded]=useState<Loaded>(),[settings,setSettings]=useState<Settings>(quickMode?{...defaults,...immediateDefaults}:defaults),[tool,setTool]=useState<ToolState>({active:false}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[allowShared,setAllowShared]=useState(false),[query,setQuery]=useState(''),[favorites,setFavorites]=useState(false),[compact,setCompact]=useState(initialCompact),[restorePlate,setRestorePlate]=useState(false),[sampleMode,setSampleMode]=useState(false),[sampledMaterialUuid,setSampledMaterialUuid]=useState(''),[recentIds,setRecentIds]=useState<string[]>([]),[installing,setInstalling]=useState(''),[colors,setColors]=useState<Record<string,string>>({});
+ const [loaded,setLoaded]=useState<Loaded>(),[settings,setSettings]=useState<Settings>(quickMode?{...defaults,...immediateDefaults}:defaults),[tool,setTool]=useState<ToolState>({active:false}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[allowShared,setAllowShared]=useState(false),[query,setQuery]=useState(''),[favorites,setFavorites]=useState(false),[compact,setCompact]=useState(initialCompact),[restorePlate,setRestorePlate]=useState(false),[sampleMode,setSampleMode]=useState(false),[sampledMaterialUuid,setSampledMaterialUuid]=useState(''),[recentIds,setRecentIds]=useState<string[]>([]),[installing,setInstalling]=useState(''),[colors,setColors]=useState<Record<string,string>>({}),[shareAll,setShareAll]=useState(false);
+ // Hito 2 · PINTURA-02: «Todas las iguales» es la autorización del propio toggle (DISENO §1). Vive solo en
+ // la paleta inmediata, nunca en settings, y vuelve a «Solo esta» con cada cambio de material/modo o cierre.
  // Latest palette data for callbacks that run after awaits (avoids stale closures).
  const loadedRef=useRef<Loaded|undefined>(undefined);useEffect(()=>{loadedRef.current=loaded;},[loaded]);
  const [libraryRevision,setLibraryRevision]=useState(0),appliedLibraryRevision=useRef(0),libraryRefreshError=useRef<string|undefined>(undefined);
@@ -91,6 +93,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
  const acceptState=useCallback((state:ToolState)=>{
   const loaded=loadedRef.current;
   setTool(state);
+  if(quickMode&&(!state.active||state.options?.scope!=='all'))setShareAll(false);
   if(state.active)setSampleMode(state.mode==='sample');
   if(state.requiresSharedReview)setAllowShared(false);
   if(state.options&&state.mode!=='sample'){
@@ -100,7 +103,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
     ...(['sheet','edge','remove_edge','replace'].includes(options.mode||'')?{mode:options.mode}:{}),
     ...(options.paintScope==='face'||options.paintScope==='piece'?{paintScope:options.paintScope}:{}),
     ...(edgeCountOf(options.edgeCount)&&(!quickMode||edgeModes(options.mode))?{edgeCount:options.edgeCount}:{}),
-    ...(options.scope==='unique'||options.scope==='all'?{scope:options.scope}:{}),
+    ...(!quickMode&&(options.scope==='unique'||options.scope==='all')?{scope:options.scope}:{}),
     ...(options.side==='front'||options.side==='back'||options.side==='both'?{side:options.side}:{}),
     ...(typeof options.batch==='boolean'?{batch:options.batch}:{}),
     ...(Array.isArray(options.axes)&&options.axes.length===2&&options.axes.every(axis=>Number.isInteger(axis)&&axis>=0&&axis<=2)&&options.axes[0]!==options.axes[1]?{axes:options.axes}:{}),
@@ -136,7 +139,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
  useEffect(()=>{function update(event:Event){const state=(event as CustomEvent<ToolState>).detail;if(state&&typeof state.active==='boolean')acceptState(state);}window.addEventListener('planos-santo-smart-paint',update);return()=>window.removeEventListener('planos-santo-smart-paint',update);},[acceptState]);
  useEffect(()=>{if(!loaded||!quickIntent||appliedQuick.current>=quickIntent.sequence)return;appliedQuick.current=quickIntent.sequence;
   void run(async()=>{
-   setAllowShared(false);setQuery('');setFavorites(false);
+   setAllowShared(false);setShareAll(false);setQuery('');setFavorites(false);
    if(quickIntent.action==='sheet'||quickIntent.action==='edge'||quickIntent.action==='remove_edge'){
     const mode=quickIntent.action,kind=mode==='edge'?'edge':'sheet';if(mode!==settings.mode)setSampledMaterialUuid('');setSampleMode(false);setRestorePlate(false);
     setSettings(previous=>({...previous,mode,sourceMaterialUuid:'',catalogId:mode!=='remove_edge'&&loaded.catalog.items.some(item=>item.id===previous.catalogId&&usableForPainting(item,loaded)&&item.kind===kind)?previous.catalogId:''}));
@@ -155,20 +158,20 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
    setNotice(quickIntent.action==='sample'&&!quickMode&&settings.side==='both'&&!quickIntent.toggleOff?'Elegí Frente o Dorso en Cara del cuentagotas. No se tomó ningún material.':quickIntent.message|| (quickIntent.toggleOff?'Herramienta detenida; se cancelaron las caras en espera.':(quickMode?'Elegí un material y pintá las piezas del modelo.':'Paleta rápida: revisá material, cara y alcance antes de activar.')));
   });
  },[loaded,quickIntent,run,accept,settings,sampledMaterialUuid,rememberRecent,quickMode]);
- async function change(patch:Partial<Settings>){
+ async function change(patch:Partial<Settings>,share?:boolean){
   autoStartDone.current=true;const wasActive=tool.active,queued=tool.queuedCount||0;
   if(!quickMode&&(tool.active||tool.changed))await stop();
   const changingMaterial=('catalogId' in patch&&patch.catalogId!==settings.catalogId)||('mode' in patch&&patch.mode!==settings.mode);
   if('mode' in patch||'catalogId' in patch||'sourceMaterialUuid' in patch){setSampleMode(false);if(changingMaterial)setSampledMaterialUuid('');}
+  const nextShare=quickMode&&!changingMaterial&&(share??shareAll);if(quickMode)setShareAll(nextShare);
   const next={...settings,...patch,...(quickMode?{...immediateDefaults,immediatePiece:(patch.mode||settings.mode)==='sheet'}:{})};setSettings(next);setAllowShared(false);
   if(!quickMode&&patch.catalogId&&loaded?.catalog.items.some(item=>item.id===patch.catalogId&&usableForPainting(item,loaded)))rememberRecent(patch.catalogId);
   if(!quickMode&&patch.catalogId&&loaded?.paintStates?.[patch.catalogId]?.state==='installable'){
    const chosen=loaded.catalog.items.find(item=>item.id===patch.catalogId);
    if(chosen&&(chosen.kind==='sheet'||chosen.kind==='edge')){setInstalling(`Instalando «${chosen.name}» en este modelo…`);try{const result=await request<PrepareResult>('smart_material_prepare',{catalogId:chosen.id,mode:chosen.kind});applyPaintData(result.paintStates,result.visuals);if(result.prepared.installed)setNotice(result.prepared.message);}finally{setInstalling('');}}
   }
-  if(!quickMode||(!wasActive&&!('catalogId' in patch&&!!patch.catalogId)))return;
+  if(!quickMode||(!wasActive&&!('catalogId' in patch&&!!patch.catalogId)&&share===undefined))return;
   if(queued)setNotice('Se canceló la selección pendiente antes de cambiar la pintura.');
-  if(next.scope!=='unique'){setNotice('Herramienta detenida. Revisá y autorizá nuevamente las ocurrencias compartidas; la selección pendiente se canceló.');return;}
   const nextKind=next.mode==='edge'?'edge':'sheet',item=loaded?.catalog.items.find(item=>item.id===next.catalogId&&item.kind===nextKind&&usableForPainting(item,loaded));
   const state=item?loaded?.paintStates?.[item.id]:undefined,stateReady=!!state&&PAINTABLE.has(state.state);
   const visual=loaded?.visuals.materials.find(material=>material.binding?.catalogId===item?.id&&material.binding?.kind===nextKind&&!material.issues?.length&&(!sampledMaterialUuid||changingMaterial||material.binding.uuid===sampledMaterialUuid));
@@ -177,12 +180,12 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
   const hasMaterial=!!visual?.binding||stateReady;
   if(next.mode==='replace'||!axesValid||!['face','piece'].includes(next.paintScope)||![1,2,4].includes(next.edgeCount)||(next.mode!=='remove_edge'&&!hasMaterial)||(next.mode==='remove_edge'&&next.catalogId&&!hasMaterial)){
    if(quickMode&&'mode' in patch&&patch.mode!==settings.mode&&!next.catalogId){if(tool.active)await stop();setSettings(next);setSampleMode(false);setNotice('Elegí el material para este modo.');return;}
-   if(quickMode){const chosen=loaded?.catalog.items.find(candidate=>candidate.id===next.catalogId),reason=chosen&&loaded?.paintStates?.[chosen.id];setSettings(settings);setSampledMaterialUuid(sampledMaterialUuid);setSampleMode(tool.mode==='sample');throw new Error(reason?.message||(chosen&&chosen.kind!==nextKind?`«${chosen.name}» es ${chosen.kind==='edge'?'un canto':'una placa'}; elegí el modo correspondiente.`:'Elegí un material de la paleta.'));}
+   if(quickMode){const chosen=loaded?.catalog.items.find(candidate=>candidate.id===next.catalogId),reason=chosen&&loaded?.paintStates?.[chosen.id];setSettings(settings);setShareAll(shareAll);setSampledMaterialUuid(sampledMaterialUuid);setSampleMode(tool.mode==='sample');throw new Error(reason?.message||(chosen&&chosen.kind!==nextKind?`«${chosen.name}» es ${chosen.kind==='edge'?'un canto':'una placa'}; elegí el modo correspondiente.`:'Elegí un material de la paleta.'));}
    setNotice('Elegí un material asociado y revisá los ajustes antes de activar. La selección pendiente se canceló.');return;
   }
   if(item&&state?.state==='installable')setInstalling(`Instalando «${item.name}» en este modelo…`);
-  try{await accept(await request<Result>('smart_quick_start',{mode:next.mode,catalogId:item?.id||'',materialUuid:visual?.binding?.uuid||'',paintScope:next.paintScope,...(edgeModes(next.mode)?{edgeCount:next.edgeCount}:{}),side:next.side,axes:next.axes,batch:next.batch,scope:'unique',...(quickMode?{immediate:true,immediatePiece:next.mode==='sheet'}:{})}));}
-  catch(error){if(quickMode){setSettings(settings);setSampledMaterialUuid(sampledMaterialUuid);setSampleMode(tool.mode==='sample');}throw error;}
+  try{await accept(await request<Result>('smart_quick_start',{mode:next.mode,catalogId:item?.id||'',materialUuid:visual?.binding?.uuid||'',paintScope:next.paintScope,...(edgeModes(next.mode)?{edgeCount:next.edgeCount}:{}),side:next.side,axes:next.axes,batch:next.batch,scope:nextShare?'all':'unique',...(nextShare?{allowShared:true}:{}),...(quickMode?{immediate:true,immediatePiece:next.mode==='sheet'}:{})}));}
+  catch(error){if(quickMode){setSettings(settings);setShareAll(shareAll);setSampledMaterialUuid(sampledMaterialUuid);setSampleMode(tool.mode==='sample');}throw error;}
   finally{setInstalling('');}
   if(quickMode&&item)rememberRecent(item.id);
   if(queued)setNotice('Selección pendiente cancelada. Herramienta lista con la nueva pintura.');
@@ -237,7 +240,7 @@ export default function SmartPaintPalette({onClose,onManage,onApplied,quickInten
   <header><div><span className="smart-eyebrow">PLANOS SANTO</span><h1 id="smart-paint-title">Pintado directo</h1></div><div className="immediate-header-actions">{onCreateMaterial&&<button type="button" className="primary" disabled={busy} onClick={()=>void run(async()=>{autoStartDone.current=true;await stop();onCreateMaterial();})}>+ Material</button>}<button type="button" title="Cerrar paleta y terminar el pintado" aria-label="Cerrar paleta" disabled={busy} onClick={()=>void run(()=>leave())}>×</button></div></header>
   <div className="immediate-controls"><nav aria-label="Modos de pintado directo">{([['sheet','Pintar pieza'],['edge','Pintar canto']] as const).map(([mode,label])=><button type="button" key={mode} disabled={busy||!loaded} aria-pressed={!sampleMode&&settings.mode===mode} onClick={()=>void run(()=>change({mode,catalogId:loaded?.catalog.items.some(item=>item.id===settings.catalogId&&usableForPainting(item,loaded)&&item.kind===mode)?settings.catalogId:'',sourceMaterialUuid:''}))}><ModeGlyph mode={mode}/>{label}</button>)}</nav><label className="immediate-search"><span className="sr-only">Buscar material</span><input type="search" aria-label="Buscar material de pintado directo" placeholder="Buscar material…" value={query} onChange={event=>setQuery(event.target.value)}/></label><details className="immediate-more"><summary aria-label="Más herramientas de pintura">···</summary><div><button type="button" disabled={busy||!loaded} onClick={()=>void run(()=>sample())}>Tomar material</button><button type="button" disabled={busy||!loaded} onClick={()=>void run(()=>change({mode:'remove_edge',catalogId:'',sourceMaterialUuid:''}))}>Quitar canto</button><button type="button" disabled={busy} onClick={()=>void run(()=>leave('catalog'))}>Biblioteca</button><button type="button" disabled={busy} onClick={()=>void run(()=>leave('visuals'))}>Importar SKM / asociar</button></div></details></div>
   <section className="immediate-current" aria-label="Material activo en la paleta">{selected?<><span className="immediate-current-swatch">{rasterPreview(loaded?.thumbnails?.[selected.id])?<img src={rasterPreview(loaded?.thumbnails?.[selected.id])} alt=""/>:<span style={bound&&swatch(bound)?{backgroundColor:swatch(bound)}:undefined}/>}</span><strong>{selected.name}</strong></>:<strong>{sampleMode?'Tomá un material del modelo':settings.mode==='remove_edge'?'Quitar canto':'Elegí un material'}</strong>}<span className={tool.active?'immediate-active':'immediate-idle'}>{tool.active?'● Pintando':'○ Detenido'}</span>{selected&&!tool.active&&!sampleMode&&settings.mode!=='remove_edge'&&<button type="button" className="primary" disabled={busy||!selectedPaintable} onClick={()=>void run(()=>chooseQuick(selected))}>Pintar</button>}{tool.active&&<button type="button" disabled={busy} onClick={()=>void run(async()=>{await stop();})}>Terminar</button>}</section>
-  {!sampleMode&&<div className="immediate-options">{edgeModes(settings.mode)&&<div className="immediate-segmented" role="group" aria-label="Cantos por clic"><span aria-hidden="true">Cantos</span>{([1,2,4] as const).map(count=><button type="button" key={count} aria-label={edgeLabel(count)} title={edgeLabel(count)} aria-pressed={settings.edgeCount===count} disabled={busy||!loaded} onClick={()=>void run(()=>change({edgeCount:count}))}>{count}</button>)}</div>}</div>}
+  {!sampleMode&&<div className="immediate-options">{edgeModes(settings.mode)&&<div className="immediate-segmented" role="group" aria-label="Cantos por clic"><span aria-hidden="true">Cantos</span>{([1,2,4] as const).map(count=><button type="button" key={count} aria-label={edgeLabel(count)} title={edgeLabel(count)} aria-pressed={settings.edgeCount===count} disabled={busy||!loaded} onClick={()=>void run(()=>change({edgeCount:count}))}>{count}</button>)}</div>}<div className="immediate-segmented" role="group" aria-label="Alcance del clic"><button type="button" aria-pressed={!shareAll} disabled={busy||!loaded} onClick={()=>void run(()=>change({},false))}>Solo esta</button><button type="button" aria-pressed={shareAll} title="Pinta la definición: todas sus copias cambian juntas" disabled={busy||!loaded||(!tool.active&&!selected&&settings.mode!=='remove_edge')} onClick={()=>void run(()=>change({},true))}>Todas las iguales ({typeof tool.hover?.sharedCount==='number'?tool.hover.sharedCount:'—'})</button></div>{shareAll&&<small className="immediate-scope-warning">Pinta todas las copias de la definición con un solo Undo.</small>}</div>}
   <section className="immediate-library" aria-label="Materiales disponibles para pintar">{loaded?materials.map(quickCard):<p role="status">Cargando materiales…</p>}{loaded&&!materials.length&&<p>No hay materiales de este tipo listos para pintar. Agregá uno desde una foto o importá un SKM.</p>}</section>
   {attention.length>0&&<section className="paint-attention" aria-label="Materiales que necesitan atención"><span>Necesitan atención</span><ul>{attention.map(attentionRow)}</ul></section>}
   {recentItems.length>1&&<section className="immediate-recents" aria-label="Materiales usados recientemente"><span>Recientes</span>{recentItems.map(item=><button type="button" key={item.id} disabled={busy} aria-pressed={settings.catalogId===item.id} onClick={()=>void run(()=>chooseQuick(item))}>{item.name}</button>)}</section>}
