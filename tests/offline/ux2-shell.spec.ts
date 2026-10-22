@@ -104,9 +104,10 @@ test('el foco vuelve a Aplicar renombrado, las advertencias no se releen enteras
  const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('');await expect(page.locator('.warnings').first()).toBeVisible();
  await expect(page.locator('.warnings')).not.toHaveAttribute('role','status');await expect(page.locator('.sr-only[role=status]').filter({hasText:/advertencias? en la hoja/})).toHaveCount(1);
  await name.fill('Lateral');
- await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');await current.focus();
- const style=await current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});
- expect(style.style).toBe('solid');expect(style.outline).not.toBe(style.background);
+ await page.keyboard.press('Alt+3');const current=rail(page,'Muebles');await expect(current).toHaveAttribute('aria-current','page');
+ // Alt+3 mueve el foco de forma asíncrona al cambiar de módulo: se reenfoca el riel hasta que el estilo de foco quede estable.
+ const focused=async()=>{await current.focus();return current.evaluate(node=>{const css=getComputedStyle(node);return {outline:css.outlineColor,style:css.outlineStyle,background:getComputedStyle(node.closest('nav')!).backgroundColor};});};
+ await expect.poll(async()=>(await focused()).style).toBe('solid');const style=await focused();expect(style.outline).not.toBe(style.background);
 });
 
 test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un aviso que lleva al pedido',async({page},info)=>{
