@@ -99,17 +99,19 @@ module PlanosSanto
   class OccurrenceIndex
     LIMIT=20000
     attr_reader :builds
-    def initialize(model);@model=model;@builds=0;end
+    def initialize(model,limit:LIMIT);@model=model;@limit=limit;@builds=0;@truncated=false;end
+    # Past the limit the index is partial: counts are a lower bound ("N+").
+    def truncated?;@truncated;end
     def paths(definition,generation)
       build(generation) unless @paths && @generation==generation
       @paths[definition] || []
     end
     def build(generation)
-      @generation=generation;@builds+=1;@paths={}.compare_by_identity;count=0
+      @generation=generation;@builds+=1;@paths={}.compare_by_identity;@truncated=false;count=0
       walk=lambda do |entities,prefix|
         entities.each do |entity|
           next unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
-          return if (count+=1)>LIMIT
+          return @truncated=true if (count+=1)>@limit
           path=prefix+[entity];(@paths[entity.definition] ||= []) << path
           walk.call(entity.is_a?(Sketchup::Group) ? entity.entities : entity.definition.entities,path) if prefix.length<32
         end
@@ -152,13 +154,15 @@ module PlanosSanto
       @observer=nil
     end
     def unobserve!
-      observer=@observer;@observer=nil
-      @model.remove_observer(observer) if observer && @model.respond_to?(:remove_observer)
+      return unless @observer
+      @model.remove_observer(@observer) if @model.respond_to?(:remove_observer)
+      @observer=nil # only once removed: a failed removal is retried, never leaked
     rescue StandardError
       nil
     end
     def activate
       observe!
+      @generation+=1 # transactions while inactive were not observed
       @active=true;emit(immediate? ? 'Hacé clic en una pieza para pintar. Escape termina.' : 'Elegí una cara. Mayús agrega caras; Enter aplica la selección. Esc cancela.')
     end
     def deactivate(view)
@@ -167,7 +171,7 @@ module PlanosSanto
     def suspend(view);invalidate(view);end
     def resume(view);invalidate(view);end
     def update_options(options)
-      @options=copy(options);clear;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
+      @options=copy(options);clear;@last_error=nil;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
     end
     def status
       {'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch')}
@@ -176,8 +180,8 @@ module PlanosSanto
     # after the previous hover event, else pending until a timer or the next
     # event. hover::clear -> deduplicated but immediate. Anything else
     # (clicks, errors, options, activate/stop) is sent at once and drops the pending.
-    def emit(message,error:nil,changed:nil,hover:false)
-      event=status.merge('message'=>message)
+    def emit(message,error:nil,changed:nil,hover:false,extra:nil)
+      event=status.merge(extra || {}).merge('message'=>message)
       event['error']=error if error || immediate?
       event['changed']=changed unless changed.nil?
       @last_error=error if error && !hover
@@ -202,7 +206,7 @@ module PlanosSanto
     end
     def signature(event)
       hover=event['hover'] || {};verdict=hover['verdict'] || {}
-      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode']]
+      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],hover['sharedTruncated'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode']]
     end
     def schedule_flush
       return if @flush_scheduled || !(defined?(UI) && UI.respond_to?(:start_timer))
@@ -218,8 +222,9 @@ module PlanosSanto
       @on_event.call(event)
     end
     # ---- In-view feedback (ARQ-10 stage 1): status bar, tooltip, color, cursor.
-    def scope_label(count=nil)
+    def scope_label(count=nil,truncated=false)
       return scope=='all' ? 'Todas las iguales' : 'Solo esta' unless count
+      count="#{count}+" if truncated
       scope=='all' ? "Todas las iguales (#{count})" : "Solo esta (de #{count})"
     end
     def mode_short
@@ -242,7 +247,7 @@ module PlanosSanto
       label=MODE_LABELS[@options['mode']].to_s
       label+=" · #{edge_label(edge_count)}" if @options['mode']=='edge'
       info=material_info
-      parts=[label,info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material'),scope_label((@hover && @hover['sharedCount']) || @shared_count)]
+      parts=[label,info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material'),@hover ? scope_label(@hover['sharedCount'],@hover['sharedTruncated']) : scope_label(@shared_count,@shared_truncated)]
       parts << "último error: #{@last_error}" if @last_error
       text=parts.join(' · ')
       return if text==@status_text
@@ -270,7 +275,7 @@ module PlanosSanto
       klass=defined?(Geom::Point3d) ? Geom::Point3d : Sketchup::Point
       x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
       info=material_info
-      line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'])].join(' · ')
+      line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'],@hover['sharedTruncated'])].join(' · ')
       line2=blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
       color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
       view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
@@ -296,11 +301,13 @@ module PlanosSanto
       name=cursor_name;id=name && self.class.cursor_id(name)
       return false unless id && defined?(UI) && UI.respond_to?(:set_cursor)
       UI.set_cursor(id);true
+    rescue StandardError
+      false
     end
     def invalidate(view);view.invalidate if view && view.respond_to?(:invalidate);end
     def clear
       @service.cancel
-      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@copy_triangles=[];@queued_targets=[];@queued_overlays={}
+      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@copy_triangles=[];@queued_targets=[];@queued_overlays={}
     end
     def verify_guard!
       raise ExportError,'El modelo o la guía cambió. Volvé a abrir el pintado.' if @guard && @guard.call==false
@@ -392,8 +399,9 @@ module PlanosSanto
         # Pick-local feedback only: no inventory, geometry classification,
         # catalog I/O, UUID validation or mutation until the actual click.
         @target=target;@preview=nil;@copy_triangles=[]
-        copies=copies_of(target);@shared_count=[copies.length,1].max
-        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>[copies.length,1].max}
+        copies=copies_of(target);@shared_count=[copies.length,1].max;@shared_truncated=@occurrences.truncated?
+        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>@shared_count}
+        @hover['sharedTruncated']=true if @shared_truncated
         verdict=verdict_for(target)
         if verdict
           @hover['expandedFaceIds']=verdict['expandedFaceIds'];@hover['verdict']={'ok'=>verdict['ok'],'reason'=>verdict['reason']}
@@ -449,20 +457,23 @@ module PlanosSanto
       @hover['expandedFaceIds']=ids if @hover
     end
     def onMouseMove(_flags,x,y,view)
-      @mouse=[x,y]
+      @mouse=[x,y];key=nil
       verify_guard!
       target=hit(view,x,y)
       unless target
-        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
         @service.cancel;emit('Apuntá a una cara de una pieza.',hover: :clear);invalidate(view);return
       end
       key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds'],@generation]
+      # An unexpected failure is not recomputed on every move: only a new key retries.
+      return invalidate(view) if key==@failed_key
       unless key==@hit_key
-        hover!(target);@hit_key=key
+        @failed_key=nil;hover!(target);@hit_key=key
       end
       invalidate(view)
     rescue StandardError=>error
       @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+      @failed_key=error.is_a?(ExportError) ? nil : key
       @service.cancel;emit('No se puede preparar esta cara.',error:error.message,hover: :clear);invalidate(view)
     end
     def authorized!(result)
@@ -508,7 +519,7 @@ module PlanosSanto
         @pick_cache=nil
         target=hit(view,x,y)
         return unless target
-        @shared_count=[copies_of(target).length,1].max
+        @shared_count=[copies_of(target).length,1].max;@shared_truncated=@occurrences.truncated?
         verdict=verdict_for(target)
         # The hover verdict only anticipates a refusal: the service validates everything again.
         raise ExportError,verdict['reason'] if verdict && !verdict['ok']
@@ -555,7 +566,7 @@ module PlanosSanto
     def cycle_edge_count(backwards=false)
       return emit('Los cantos por clic se eligen en modo canto (Tab cambia de modo).') unless %w[edge remove_edge].include?(@options['mode'])
       position=EDGE_COUNTS.index(@options.fetch('edgeCount',1)) || 0
-      clear;@options['edgeCount']=EDGE_COUNTS[(position+(backwards ? -1 : 1))%EDGE_COUNTS.length]
+      clear;@last_error=nil;@options['edgeCount']=EDGE_COUNTS[(position+(backwards ? -1 : 1))%EDGE_COUNTS.length]
       @remember.call(copy(@options)) if @remember
       emit("#{edge_label(@options['edgeCount'])} por clic. Revisá el resaltado antes de hacer clic.")
     end
@@ -567,7 +578,7 @@ module PlanosSanto
       missing="Elegí #{destination=='edge' ? 'un canto' : 'una placa'} en la paleta para usar Tab."
       options=@switch_mode && @switch_mode.call(destination)
       return emit(missing) unless options.is_a?(Hash)
-      clear;@options=copy(options).merge('scope'=>'unique','allowShared'=>false)
+      clear;@last_error=nil;@options=copy(options).merge('scope'=>'unique','allowShared'=>false)
       emit("#{MODE_LABELS[destination]}. Hacé clic en una pieza; Tab vuelve al otro modo.")
     rescue ExportError=>error
       emit('No se cambió de modo.',error:error.message)
@@ -579,12 +590,12 @@ module PlanosSanto
       index=choices.index { |choice| choice['materialUuid']==@options['materialUuid'] } || (backwards ? 0 : -1)
       chosen=choices[(index+(backwards ? -1 : 1))%choices.length]
       return emit('El material seleccionado ya está activo.') if chosen['materialUuid']==@options['materialUuid']
-      clear
+      clear;@last_error=nil
       @options.merge!(chosen.slice('catalogId','materialUuid'))
       @options['allowShared']=false
       @options['scope']='unique' if immediate?
-      event=status.merge('requiresSharedReview'=>!immediate?,'message'=>immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.")
-      @on_event.call(event) if @on_event
+      # Instant, through the limiter: drops a stale pending hover and resets the signature.
+      emit(immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.",extra:{'requiresSharedReview'=>!immediate?})
     end
     def onKeyDown(key,repeat,flags,view)
       if key==27
@@ -610,9 +621,18 @@ module PlanosSanto
     rescue StandardError=>error
       @service.cancel;emit('No se aplicó la selección.',error:error.message);invalidate(view)
     end
-    def onCancel(_reason,view)
-      stop(view)
-      @model.select_tool(nil) if @model.respond_to?(:select_tool)
+    # SketchUp reasons: 0 Escape, 1 tool reselected, 2 Undo. Ctrl+Z (which the
+    # messages recommend) must keep the operator in the brush.
+    def onCancel(reason,view)
+      case reason
+      when 2
+        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+        @generation+=1;invalidate(view)
+      when 1 then nil
+      else
+        stop(view)
+        @model.select_tool(nil) if @model.respond_to?(:select_tool)
+      end
     end
     def stop(view=nil)
       unobserve!;clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')

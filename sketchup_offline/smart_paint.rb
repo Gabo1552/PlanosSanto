@@ -132,6 +132,13 @@ module PlanosSanto
         node=snapshot[:index][target['pieceId']]
         raise ExportError,'Elegí una pieza hoja válida.' unless node && node['role']=='piece'
         request_data=data['immediate']==true ? data.merge('axes'=>@native.automatic_axes(node)) : data
+        # Copies may carry different non-uniform scales: one click must mean the
+        # same faces in every occurrence, or it would paint a broad face as an edge.
+        if data['immediate']==true && data['scope']=='all'
+          @native.affected_paths(node,snapshot).each do |path|
+            raise ExportError,'Las copias tienen distinta orientación de espesor; usá Solo esta.' unless @native.automatic_axes(snapshot[:index].fetch(path))==request_data['axes']
+          end
+        end
         faces=target['faceIds'].map { |id| @native.faces(node).find { |f| @native.face_id(f)==id } || (raise ExportError,'La cara ya no pertenece a la pieza.') }
         faces=@native.expanded_faces(node,faces,request_data)
         mode=data['mode']=='replace' ? data['replacementKind'] : data['mode']

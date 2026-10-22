@@ -2,6 +2,7 @@
 # Hito 2 (pincel diario) with API doubles only: real SmartPaint/NativePaint and
 # SmartPaintTool over synthetic boards. Nothing here claims SketchUp execution.
 require 'minitest/autorun'
+require 'minitest/mock'
 require 'tmpdir'
 require_relative 'names_double'
 require_relative '../../sketchup/planos_santo/exporter'
@@ -397,7 +398,7 @@ class Hito2VerdictTest < Minitest::Test
     @model.observers.first.onTransactionCommit(@model)
     hover_on(@doors[1]);assert_equal 2,@tool.verdicts.calls;assert_equal 2,axes
     %i[onTransactionUndo onTransactionRedo onTransactionAbort onTransactionEmpty].each { |name| @model.observers.first.public_send(name,@model) }
-    assert_equal 5,@tool.generation
+    assert_equal 6,@tool.generation # activate + five transactions
     @tool.deactivate(@view);assert_empty @model.observers
   end
   def test_a_geometry_edit_committed_elsewhere_invalidates_the_cached_verdict
@@ -410,7 +411,7 @@ class Hito2VerdictTest < Minitest::Test
   def test_own_click_advances_the_generation_even_without_observers
     paint_sheet_on_board!;@model.define_singleton_method(:respond_to?) { |name,*rest| name.to_s=~/observer/ ? false : super(name,*rest) }
     build_tool(tool_options('edge','edgeCount'=>1));hover_on(@doors[1]);click_on(@doors[1])
-    assert_equal 1,@tool.generation;assert_equal 1,@applied
+    assert_equal 2,@tool.generation;assert_equal 1,@applied # activate + own click
   end
 end
 
@@ -480,5 +481,101 @@ class Hito2TimingTest < Minitest::Test
     _,err=capture_io { click_on(@doors[0]) }
     assert_match(/Planos Santo pincel/,err);assert_equal 1,log.entries.length;assert_nil @events.last['error']
     assert_equal({'count'=>0,'p50'=>nil,'p95'=>nil,'max'=>nil,'last'=>nil},PlanosSanto::PaintTimingLog.new(directory:nil).summary)
+  end
+end
+
+# Revisión Ruby del Hito 2: escalas por copia, limitador, Undo, índice truncado y errores.
+class Hito2ReviewTest < Minitest::Test
+  include Hito2Fixture
+  def setup
+    build_fixture;paint_sheet_on_board!;UI.hito2_timers=[];UI.hito2_set=[];Sketchup.hito2_status_texts=[];@now=0.0
+    @selections=[];selections=@selections;@model.define_singleton_method(:select_tool) { |tool| selections << tool }
+  end
+  def now;-> { @now };end
+  def tool!(options,**extra)
+    build_tool(options,clock:now,**extra);selections=@selections;@model.define_singleton_method(:select_tool) { |tool| selections << tool };@tool
+  end
+  def hovers;@events.select { |event| event['hover'] && event['message'].start_with?('Clic para pintar') };end
+  def test_all_copies_with_a_different_thickness_orientation_are_refused_without_undo
+    # Door 2 stretched along z: its thinnest axis becomes y, so face 102 is broad there.
+    @doors[1].transformation=Geom::Transformation.translation(60,0,0)*Geom::Transformation.scale(1,1,40)
+    before=@board.entities.map { |face| [face.material,face.back_material] };undo=@model.undo_states.length;operations=@model.operations.length
+    error=assert_raises(PlanosSanto::ExportError) { @smart.apply_immediate(edge_request(@doors[0],'102',count:1,scope:'all',allowShared:true)) }
+    assert_equal 'Las copias tienen distinta orientación de espesor; usá Solo esta.',error.message
+    assert_equal before,@board.entities.map { |face| [face.material,face.back_material] }
+    assert_equal undo,@model.undo_states.length;assert_equal operations,@model.operations.length
+    tool!(tool_options('edge','edgeCount'=>1,'scope'=>'all','allowShared'=>true));click_on(@doors[0])
+    assert_match(/distinta orientación de espesor/,@events.last['error']);assert_equal undo,@model.undo_states.length
+    assert @smart.apply_immediate(edge_request(@doors[0],'102',count:1))['changed'] # Solo esta still works
+  end
+  def test_arrow_material_goes_through_the_limiter_and_drops_the_stale_pending_hover
+    other={'catalogId'=>'otra','materialUuid'=>'otra-uuid','name'=>'Otra'}
+    @smart.define_singleton_method(:material_choices) { |_data| [other] }
+    tool!(tool_options('sheet'))
+    hover_on(@doors[0]);@now=0.05;hover_on(@doors[1]);assert_equal 1,hovers.length
+    @now=0.06;@tool.onKeyDown(39,1,0,@view)
+    event=@events.last;assert_equal 'Material activo: Otra. Hacé clic en otra pieza.',event['message'];assert_equal false,event['requiresSharedReview']
+    UI.hito2_timers.each { |timer| timer.last.call };assert_equal 1,hovers.length # stale pending never sent
+    @now=0.5;hover_on(@doors[0]);assert_equal 2,hovers.length;assert_equal '1/11',hovers.last['hover']['pieceId']
+  end
+  def test_undo_cancel_keeps_the_tool_reselect_does_nothing_and_escape_stops
+    tool!(tool_options('sheet'));hover_on(@doors[0]);generation=@tool.generation
+    @tool.onCancel(1,@view);refute_nil @tool.status['hover'];assert_equal generation,@tool.generation
+    @tool.onCancel(2,@view)
+    assert_nil @tool.status['hover'];assert_equal generation+1,@tool.generation;assert @tool.status['active']
+    assert_empty @selections;assert_equal 1,@model.observers.length
+    hover_on(@doors[0]);refute_nil @tool.status['hover']
+    @tool.onCancel(0,@view);refute @tool.status['active'];assert_equal [nil],@selections;assert_empty @model.observers
+  end
+  def test_truncated_occurrence_index_marks_the_shared_count_as_partial
+    index=PlanosSanto::OccurrenceIndex.new(@model,limit:2)
+    assert_equal 1,index.paths(@board,0).length;assert index.truncated?
+    full=PlanosSanto::OccurrenceIndex.new(@model);assert_equal 4,full.paths(@board,0).length;refute full.truncated?
+    tool!(tool_options('edge','edgeCount'=>2));@tool.instance_variable_set(:@occurrences,index)
+    hover_on(@doors[0])
+    assert_equal true,@tool.status['hover']['sharedTruncated'];assert_equal true,@events.last['hover']['sharedTruncated']
+    @tool.draw(@view);assert_equal 'Puerta 1 · 2 cantos · Solo esta (de 1+)',@view.texts[-2][1]
+    assert_match(/Solo esta \(de 1\+\)\z/,Sketchup.hito2_status_texts.last)
+    tool!(tool_options('edge'));hover_on(@doors[0]);refute @tool.status['hover'].key?('sharedTruncated')
+  end
+  def test_unexpected_hover_errors_are_not_recomputed_until_the_key_changes
+    tool!(tool_options('sheet'));calls=0
+    @tool.verdicts.define_singleton_method(:for) { |*_args,**_kw| calls+=1;raise NoMethodError,'fallo interno' }
+    3.times { |i| @now=i;hover_on(@doors[0]) }
+    assert_equal 1,calls;assert_equal 'fallo interno',@events.last['error'];assert_nil @tool.status['hover']
+    @now=5;hover_on(@doors[1]);assert_equal 2,calls
+    @now=6;hover_on(@doors[0]);assert_equal 3,calls
+    @model.observers.first.onTransactionCommit(@model);@now=7;hover_on(@doors[0]);assert_equal 4,calls
+  end
+  def test_failed_remove_observer_keeps_the_observer_for_a_later_retry
+    tool!(tool_options('sheet'));fail_once=true;model=@model
+    @model.define_singleton_method(:remove_observer) { |observer| (fail_once=false;raise 'API ocupada') if fail_once;observers.delete(observer);true }
+    @tool.deactivate(@view);assert_equal 1,@model.observers.length
+    @tool.activate;assert_equal 1,model.observers.length # no second observer
+    @tool.deactivate(@view);assert_empty @model.observers
+  end
+  def test_activate_advances_the_generation
+    tool!(tool_options('sheet'));generation=@tool.generation
+    @tool.deactivate(@view);@tool.activate;assert_equal generation+1,@tool.generation
+  end
+  def test_last_error_is_cleared_by_options_and_keyboard_mode_or_material_changes
+    other={'catalogId'=>'otra','materialUuid'=>'otra-uuid','name'=>'Otra'}
+    @smart.define_singleton_method(:material_choices) { |_data| [other] }
+    tool!(tool_options('edge'),switch_mode:lambda { |mode| mode=='edge' ? tool_options('edge') : tool_options('sheet') })
+    block=lambda do # a fresh split board each time: the click is refused with a reason
+      @board=Fixture.board_definition;@board.entities.each_with_index { |f,i| f.define_singleton_method(:persistent_id) { 100+i };f.material=@sheet;f.back_material=@sheet }
+      @doors.each { |door| door.definition=@board };split_x_min_side!;@model.observers.each { |o| o.onTransactionCommit(@model) }
+      click_on(@doors[0]);assert_match(/último error/,Sketchup.hito2_status_texts.last)
+    end
+    block.call
+    @tool.update_options(tool_options('edge'));refute_match(/último error/,Sketchup.hito2_status_texts.last)
+    block.call;@tool.onKeyDown(9,1,0,@view);refute_match(/último error/,Sketchup.hito2_status_texts.last) # Tab
+    @tool.update_options(tool_options('edge'));block.call;@tool.onKeyDown(9,1,PlanosSanto::SmartPaintTool::CTRL_MASK,@view)
+    refute_match(/último error/,Sketchup.hito2_status_texts.last) # Ctrl+Tab
+    @tool.update_options(tool_options('edge'));block.call;@tool.onKeyDown(39,1,0,@view);refute_match(/último error/,Sketchup.hito2_status_texts.last) # arrows
+  end
+  def test_set_cursor_failure_falls_back_to_the_native_cursor
+    tool!(tool_options('sheet'));hover_on(@doors[0])
+    UI.stub(:set_cursor,lambda { |_id| raise 'sin cursor' }) { assert_equal false,@tool.onSetCursor }
   end
 end
