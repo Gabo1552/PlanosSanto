@@ -31,7 +31,7 @@ async function boot(page:Page,folder:string,options:{conflict?:boolean;badThumbn
   else if(action==='skm_preview'){
    if(options.malformed)return {version:1,id:msg.id,result:null,error:'El archivo no es un ZIP válido. La biblioteca no cambió.'};
    result={token:'synthetic-import-token',revision:catalog.revision,rows:rows.map(row=>({...row,status:catalog.items.some(item=>item.observed.skmSha256===row.sha256)?'duplicate':row.status}))};
-  }else if(action==='skm_commit'){
+  }else if(action==='skm_commit_typed'){
    const ids=data.selectedIds as string[],renames=data.renames as Record<string,string>;
    const selected=rows.filter(row=>ids.includes(row.id));
    const items=selected.map(row=>candidate(row,renames[row.id]||row.name));catalog={...catalog,revision:catalog.revision+1,items:[...catalog.items,...items]};
@@ -57,21 +57,21 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 
 test('35 candidatos con miniaturas se importan sin aprobar; repetir detecta duplicados y no toca el modelo',async({page},info)=>{
  await boot(page,info.outputDir);await preview(page);const modal=page.getByRole('dialog',{name:'Revisar importación de materiales'});
- await expect(modal.getByRole('checkbox')).toHaveCount(35);await expect(modal.getByRole('img',{name:/Miniatura real/})).toHaveCount(35);await expect(modal).toContainText('Sugerencia sin verificar: Canto');
+ await expect(modal.getByRole('checkbox',{name:/^Importar /})).toHaveCount(35);await expect(modal.getByRole('img',{name:/Miniatura real/})).toHaveCount(35);await expect(modal).toContainText('Sugerencia sin verificar: Canto');
  await page.screenshot({path:info.outputPath('import-35-SINTETICO.png'),fullPage:true});
  await modal.getByRole('button',{name:'Importar 35 pendientes',exact:true}).click();await expect(modal).toHaveCount(0);
  await expect(page.getByRole('article',{name:/Material /})).toHaveCount(35);expect(catalog.items.every(item=>!item.approved&&item.kind==='unknown'&&item.thicknessMm===null&&item.grain===null)).toBe(true);
  const forbidden=['catalog_install','paint_apply','smart_tool_start','skm_install','save','pdf','order_export'];expect(calls.some(call=>forbidden.includes(call.action))).toBe(false);
  await page.getByRole('searchbox',{name:'Buscar materiales del taller'}).fill('Catno QA 13');await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toHaveCount(1);await expect(page.getByRole('article',{name:'Material Catno QA 13',exact:true})).toContainText('Tipo pendiente');
  await preview(page);await expect(modal).toContainText('35 duplicados');await expect(modal.getByRole('button',{name:'Importar 0 pendientes',exact:true})).toBeDisabled();
- await modal.getByRole('button',{name:'Cancelar importación',exact:true}).click();expect(catalog.items).toHaveLength(35);expect(calls.filter(call=>call.action==='skm_commit')).toHaveLength(1);
+ await modal.getByRole('button',{name:'Cancelar importación',exact:true}).click();expect(catalog.items).toHaveLength(35);expect(calls.filter(call=>call.action==='skm_commit_typed')).toHaveLength(1);
 });
 
 test('conflicto requiere un nombre explícito o excluir la fila; Escape cancela sin crear candidatos',async({page},info)=>{
  await boot(page,info.outputDir,{conflict:true});await preview(page);const modal=page.getByRole('dialog',{name:'Revisar importación de materiales'});
  await modal.getByRole('checkbox',{name:'Importar QA001.skm',exact:true}).check();await expect(modal.getByRole('button',{name:'Importar 35 pendientes',exact:true})).toBeDisabled();
  await modal.getByRole('textbox',{name:'Resolver nombre QA001.skm',exact:true}).fill('Material QA 01 alternativa');await expect(modal.getByRole('button',{name:'Importar 35 pendientes',exact:true})).toBeEnabled();
- await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(catalog.items).toHaveLength(1);expect(calls.filter(call=>call.action==='skm_commit')).toHaveLength(0);expect(calls.some(call=>call.action==='skm_cancel')).toBe(true);
+ await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(catalog.items).toHaveLength(1);expect(calls.filter(call=>call.action==='skm_commit_typed')).toHaveLength(0);expect(calls.some(call=>call.action==='skm_cancel')).toBe(true);
  await expect(page.getByRole('button',{name:'Importar biblioteca',exact:true})).toBeFocused();
 });
 
@@ -86,7 +86,7 @@ test('miniatura externa se sustituye por placeholder y favorito persiste sin alt
 
 test('archivo malformado informa recuperación y no sustituye la biblioteca ni abre importación',async({page},info)=>{
  await boot(page,info.outputDir,{malformed:true});await page.getByRole('button',{name:'Importar biblioteca',exact:true}).click();await page.getByRole('button',{name:'Desde ZIP o archivo SKM',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('El archivo no es un ZIP válido');await expect(page.getByRole('dialog',{name:'Revisar importación de materiales'})).toHaveCount(0);expect(catalog.items).toHaveLength(0);expect(calls.some(call=>call.action==='skm_commit')).toBe(false);
+ await expect(page.getByRole('alert')).toContainText('El archivo no es un ZIP válido');await expect(page.getByRole('dialog',{name:'Revisar importación de materiales'})).toHaveCount(0);expect(catalog.items).toHaveLength(0);expect(calls.some(call=>call.action==='skm_commit_typed')).toBe(false);
 });
 
 

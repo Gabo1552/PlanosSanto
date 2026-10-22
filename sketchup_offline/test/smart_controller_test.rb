@@ -54,7 +54,7 @@ class SmartControllerTest < Minitest::Test
   def test_palette_load_and_preferences_are_readonly_and_never_persist_consent_or_project_uuid
     before=Marshal.dump(@model.attributes)
     loaded=@controller.dispatch('smart_palette_load',{})
-    assert_equal 1,loaded['catalog']['schema'];assert loaded['visuals']['materials'].any?
+    assert_equal PlanosSanto::CatalogStore::SCHEMA,loaded['catalog']['schema'];assert loaded['visuals']['materials'].any?
     assert_empty Sketchup.smart_prefs;assert_empty @model.operations
     start
     saved=@controller.smart_settings
