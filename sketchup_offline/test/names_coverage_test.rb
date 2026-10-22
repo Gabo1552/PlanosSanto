@@ -213,6 +213,15 @@ class NamesCoverageTest < Minitest::Test
     assert_match(/no aceptó/,assert_raises(PlanosSanto::ExportError){manager.apply(data(p))}.message)
     refute manager.instance_variable_get(:@applying),'El cerrojo se libera aunque falle'
   end
+  def test_apply_aborts_when_a_piece_is_locked_after_validation
+    p=@manager.preview('1');lock=->(*) { @base.locked_for_names=true }
+    @manager.stub(:validate_shared_batch!,lock) do
+      assert_match(/bloqueada/,assert_raises(PlanosSanto::ExportError){@manager.apply(data(p))}.message)
+    end
+    assert_equal :abort,@model.operations.last[0],'La operación ya iniciada se revierte'
+    assert_equal ['Lateral - Blanco','Base'],[@left.name,@base.name];assert_empty @left.names_attributes
+    refute @manager.instance_variable_get(:@applying)
+  end
   def test_apply_refuses_guide_that_would_exceed_limit
     guide={'version'=>1,'revision'=>0,'selection'=>['1'],'furniture'=>[{'id'=>'1','explosion'=>0,'zoom'=>1,'notes'=>[],
       'pieces'=>[{'id'=>'1/11','name'=>'Viejo','code'=>'P01'}]}]}
