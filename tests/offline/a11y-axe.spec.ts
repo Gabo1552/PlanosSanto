@@ -6,6 +6,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {openDetail} from './fixtures/order-detail';
 
 // Auditoría WCAG 2.2 AA con axe-core sobre el controlador Ruby real con dobles sintéticos de SketchUp
 // (mismo puente que names.spec.ts / ux-taller.spec.ts). Cualquier violación nueva rompe el spec;
@@ -134,8 +135,24 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
   await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false}}]);
   const panel=await openWorkshop(page);
   await audit(page,'biblioteca',panel);
-  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();
+  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();
   await audit(page,'pedido-taller',panel);
+ });
+
+ // 0.8.19: vista principal de la maderera (optimización, diagramas, total de cantos) con el detalle por pieza plegado.
+ test(`axe ${w}px: pedido a maderera optimizado`,async({page},info)=>{
+  await page.setViewportSize({width:w,height:h});
+  await boot(page,info.outputDir);const today=new Date().toISOString().slice(0,10);
+  const [board,strip]=await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:true,price:{amount:9000,currency:'ARS',unit:'placa',date:today,source:'Lista sintética'}}},{name:'Canto auditoría',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}}]);
+  const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
+  await expect(panel.getByRole('region',{name:'Optimización de placas'})).toBeVisible();await expect(panel.getByLabel('Pieza del pedido')).toBeHidden();
+  await audit(page,'pedido-maderera-problemas',panel);
+  await openDetail(panel);const select=panel.getByLabel('Pieza del pedido');
+  for(const id of await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value))){await select.selectOption(id);await page.getByLabel('Placa del pedido').selectOption(board.id);await page.getByLabel('Canto principal (1) del pedido').selectOption(strip.id);await page.getByLabel('Arriba · canto del pedido').selectOption('1');}
+  await expect(panel.locator('#workshop-problems-summary')).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
+  await panel.locator('details.workshop-piece-detail > summary').click();await expect(select).toBeHidden();
+  await expect(panel.getByRole('region',{name:'Optimización de placas'}).getByRole('img',{name:/^Placa 1 de 1/})).toBeVisible();
+  await audit(page,'pedido-maderera-optimizado',panel);
  });
 
  test(`axe ${w}px: revisión de cantos`,async({page},info)=>{
@@ -145,7 +162,7 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
    {name:'Placa observable',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false}},
    {name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}},
    {name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22}}]);
-  const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
+  const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);
   // 0.8.16: los cantos se leen solos de las caras; solo los materiales sin vínculo piden elegir el canto.
   const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});await expect(links).toBeVisible();
   await expect(panel.getByRole('list',{name:'Avisos de los cantos del modelo'})).toBeVisible();

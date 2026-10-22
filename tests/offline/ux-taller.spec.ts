@@ -5,6 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {openDetail} from './fixtures/order-detail';
 
 // UX del taller (biblioteca, pedido, cantos y revisión de materiales) sobre el controlador real con dobles sintéticos de SketchUp.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
@@ -38,7 +39,7 @@ async function openOrder(page:Page){
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
- await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
+ await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
 }
 // Las cinco casillas de 0.8.15: ya no existen.
 const verifications=['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con la maderera','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'];

@@ -5,6 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {openDetail} from './fixtures/order-detail';
 
 // UX2 del taller: cantos por SKU, avisos en vivo, piezas equivalentes, auditoría completa y «Ver en el modelo».
 // Controlador Ruby real con dobles sintéticos de SketchUp; no se abre ni se escribe ningún SKP.
@@ -42,7 +43,7 @@ async function saveGuide(page:Page){
 async function openOrder(page:Page){
  await saveGuide(page);
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
- await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
+ await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
 }
 const board={sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false};
 const edge={supplier:'Prueba',thicknessMm:.8};
@@ -69,7 +70,7 @@ test('cantos del pedido: metros por SKU en vivo, canto angosto marcado y ficha i
  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
  await top.selectOption('1');await page.getByLabel('Izquierda · canto del pedido').selectOption('1');
  const table=edges.getByRole('table',{name:'Cantos del pedido: metros lineales por SKU'});await expect(table.locator('tbody tr')).toHaveCount(1);
- await expect(table.locator('tbody th')).toContainText('Canto ancho · CB-22');await expect(table.locator('tbody td').first()).toHaveText(/^\d+,\d{3} m$/);await expect(table.locator('tbody td').nth(1)).toHaveText('2');
+ await expect(table.locator('tbody th')).toContainText('Canto ancho · CB-22');await expect(table.locator('tbody td').first()).toHaveText(/^\d+,\d{3} m$/);await expect(table.locator('tbody td').nth(1)).toHaveText(/^\d+,\d{3} m$/);await expect(table.locator('tbody td').nth(2)).toHaveText(/^\d+ metros?$/);await expect(table.locator('tbody td').nth(3)).toHaveText('2');
  await expect(page.getByRole('img',{name:/Vista 2D orientada para maderera: base [\d.,]+ × altura [\d.,]+ mm; arriba: canto principal CB-22, [\d.,]+ mm; abajo: sin canto; izquierda: canto principal CB-22/})).toBeVisible();
  await principal.selectOption(narrow.id);await expect(principal).toHaveAttribute('aria-invalid','true');
  const describedBy=await principal.getAttribute('aria-describedby');expect(describedBy).toBeTruthy();

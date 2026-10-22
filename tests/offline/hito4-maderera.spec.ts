@@ -5,6 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {openDetail} from './fixtures/order-detail';
 
 // Hito 4: perfil de maderera versionado, presupuesto en tres columnas con servicios, alta desde valores sugeridos y variantes de espesor.
 // Controlador Ruby real con dobles sintéticos de SketchUp; no se abre ni se escribe ningún SKP.
@@ -42,7 +43,7 @@ async function saveGuide(page:Page){
 async function openOrder(page:Page){
  await saveGuide(page);
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
- await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
+ await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
 }
 async function fillOrder(page:Page,panel:ReturnType<Page['getByRole']>,sheetId:string,stripId:string){
  const select=panel.getByLabel('Pieza del pedido');
@@ -78,13 +79,17 @@ test('perfil de maderera: se guarda, se usa en pedidos sin aprobar y el presupue
  const use=panel.getByRole('button',{name:'Usar en pedidos',exact:true});await expect(use).toBeEnabled();
  const saved=actions.find(a=>a.action==='maderera_profile_save')!.data as {profile:Record<string,unknown>};expect(saved.profile).not.toHaveProperty('approved');expect(saved.profile).not.toHaveProperty('version');
  await use.click();expect(actions.some(a=>a.action==='maderera_profile_approve')).toBe(false);const stop=panel.getByRole('button',{name:'Dejar de usar',exact:true});await expect(stop).toBeEnabled();await expect(entry).toContainText('En uso en pedidos');
- await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
+ await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
  await fillOrder(page,panel,sheet.id,strip.id);
  const budget=panel.getByRole('region',{name:'Presupuesto con desperdicio · Maderera sintética v 1'});await expect(budget).toBeVisible();
  const table=budget.getByRole('table',{name:'Presupuesto estimado por material'});
- await expect(table.locator('thead th')).toHaveText(['Material','Neto','Con desperdicio (15 %)','A comprar (placas enteras / metros)','Estado']);
+ // 0.8.19: con formato de placa, «con desperdicio» y «a comprar» salen de la optimización estimada; los cantos siguen con el 15 %.
+ await expect(table.locator('thead th')).toHaveText(['Material','Neto','Con desperdicio (placas optimizadas; cantos 15 %)','A comprar (placas enteras / metros)','Estado']);
  const rows=table.locator('tbody tr');await expect(rows).toHaveCount(2);
  const plate=rows.filter({hasText:'Placa presupuesto'});await expect(plate.locator('td').nth(0)).toHaveText(/^\d+,\d{3} m²ARS [\d.]+,\d{2}$/);await expect(plate.locator('td').nth(2)).toHaveText(/^\d+ placas?ARS [\d.]+,\d{2}$/);await expect(plate.locator('td').nth(3)).toHaveText('Vigente');
+ await expect(plate.locator('th')).toContainText('según la optimización');await expect(plate.locator('td').nth(2)).toHaveText(/^1 placaARS [\d.]+,\d{2}$/);
+ const optim=panel.getByRole('region',{name:'Optimización de placas'});await expect(optim).toContainText('Optimización estimada');await expect(optim).toContainText('refilado de 10 mm por lado y disco (kerf) de 3 mm del perfil «Maderera sintética» v 1');
+ await expect(optim.getByRole('img',{name:/^Placa 1 de 1: 3 piezas, aprovechamiento [\d,]+\s?%/})).toBeVisible();
  await expect(rows.filter({hasText:'Canto presupuesto'}).locator('td').nth(2)).toHaveText(/^\d+,00 mARS [\d.]+,\d{2}$/);
  await expect(table.locator('tfoot tr')).toContainText('Total vigente');await expect(table.locator('tfoot td').nth(2)).toHaveText(/^ARS [\d.]+,\d{2}$/);
  const services=budget.getByRole('table',{name:'Servicios de la maderera'});await expect(services.locator('tbody th')).toHaveText(['Corte','Canteado']);
