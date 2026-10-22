@@ -110,7 +110,8 @@ test('paquete .zip: exporta con aviso y la importación exige renombrar el confl
  await expect(modal).toHaveCount(0);await expect(page.getByText('2 fichas importadas del paquete',{exact:false})).toBeVisible();
  expect(requests('material_package_commit')[0].data).toEqual({token:'pkg-token',revision:3,selectedIds:['p1','p2'],renames:{p2:'Roble foto QA importado'},confirmed:true});
  await expect(page.getByRole('article',{name:'Material Roble foto QA importado',exact:true})).toHaveCount(1);await expect(trigger).toBeFocused();
- await trigger.click();await expect(modal).toBeVisible();await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(requests('material_package_cancel')).toHaveLength(1);await expect(trigger).toBeFocused();
+ // El modal se monta antes de que termine la revisión del paquete; mientras dura, Escape no lo cierra (a propósito).
+ await trigger.click();await expect(modal).toBeVisible();await expect(page.locator('.visual-material-library')).toHaveAttribute('aria-busy','false');await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(requests('material_package_cancel')).toHaveLength(1);await expect(trigger).toBeFocused();
  expect(requests('material_package_commit')).toHaveLength(1);expect(errors).toEqual([]);
 });
 
