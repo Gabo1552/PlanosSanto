@@ -75,3 +75,16 @@ body.standalone-paint-body{margin:0;background:#f6f5f0}
 .immediate-palette .immediate-footer>.immediate-verdict.blocked{color:#8d2f25;font-weight:650;white-space:normal;text-align:right;line-height:1.3}
 .immediate-palette .immediate-keys{margin:0;font-size:10px;line-height:1.3;color:#62736a}
 @media(max-width:520px){.immediate-palette .immediate-segmented button{padding:3px 8px}.immediate-palette .immediate-segmented button[aria-pressed=true]{padding:2px 7px}.immediate-palette .immediate-footer>.immediate-verdict{max-width:50%}}
+/* H7 · revisión de lo que falta, cuentagotas temporal y pick en profundidad (DISENO_H7_PINCEL §6) */
+.immediate-palette .immediate-review{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;max-width:100%}
+.immediate-palette .immediate-review button{min-height:27px;padding:3px 10px;white-space:nowrap}
+.immediate-palette .immediate-review button[aria-pressed=true]{border-color:#8d2f25;background:#fbece8;color:#6f251d;padding:2px 9px}
+.immediate-palette .immediate-review-counts{font-size:11px;line-height:1.3;color:#6f251d;min-width:0;overflow-wrap:anywhere}
+.immediate-palette .immediate-footer{flex-wrap:wrap;row-gap:2px}
+.immediate-palette .immediate-footer>p{flex:1 1 auto;min-width:0}
+.immediate-palette .immediate-footer>.immediate-depth{color:#1c5944;font-weight:650;max-width:100%}
+.immediate-palette .immediate-footer>.immediate-summary{color:#37513e;max-width:100%}
+.immediate-palette .immediate-sample-key{display:grid;gap:3px;margin:4px 0 0;padding:0;border:0;min-width:0}
+.immediate-palette .immediate-sample-key legend{padding:0;font-size:11px;font-weight:700;color:#4c6655}
+.immediate-palette .immediate-sample-key label{flex-direction:row;align-items:center;gap:7px;margin:0;min-height:26px;font-size:12px;cursor:pointer}
+.immediate-palette .immediate-sample-key input[type=radio]{width:15px;height:15px;min-height:0;margin:0;padding:0;flex:none;accent-color:#19483d}
