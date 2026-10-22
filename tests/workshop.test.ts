@@ -13,11 +13,12 @@ describe('Sugerencias auditables de nombres',()=>{
   const f=createDemo().furniture[0],before=JSON.stringify(f),suggestions=nameSuggestions(f,{upAxis:2,frontAxis:1,frontSign:-1,confirmed:false},true);
   expect(suggestions.every(s=>s.confidence==='unclassified')).toBe(true);expect(JSON.stringify(f)).toBe(before);
  });
- it('sugiere laterales pero deja horizontales y frentes para revisión explícita',()=>{
+ it('sugiere laterales, piso y tapa estructurales pero deja estantes y frentes para revisión explícita',()=>{
   const f=createDemo().furniture[0],suggestions=nameSuggestions(f,{upAxis:2,frontAxis:1,frontSign:-1,confirmed:true},true);
   expect(suggestions.filter(s=>s.base==='Lateral')).toHaveLength(2);expect(suggestions.filter(s=>s.base==='Lateral').every(s=>s.confidence==='high')).toBe(true);
   expect(suggestions.find(s=>s.ids.includes('m-estante'))?.confidence).toBe('review');
-  expect(suggestions.find(s=>s.ids.includes('m-base'))?.confidence).toBe('review');
+  // 0.8.19: el piso apoyado en la base, entre laterales, es geométrico; el estante sigue en revisión.
+  expect(suggestions.find(s=>s.ids.includes('m-base'))?.confidence).toBe('high');
   expect(nameSuggestions(f,{upAxis:2,frontAxis:1,frontSign:-1,confirmed:true})).toEqual([]);
  });
  it('grupos de iguales conservan un nombre y todas las identidades físicas',()=>{
