@@ -11,7 +11,7 @@ import { makeScene, layoutWarnings, type View } from '../../lib/scene';
 import { request } from './bridge';
 import {isQuickIntent,moduleShortcuts,noticeActionFor,shortcutFor,type QuickIntent} from './quickActions';
 import {ensureRuntime} from './runtime';
-import { countPieces, editsFor, guideIssues, mergeGuide, modelGuidOf, type Generated, type Guide } from './guide';
+import { countPieces, editsFor, guideIssues, mergeGuide, modelGuidOf, withoutCodeHistory, type Generated, type Guide } from './guide';
 import { createOfflinePdf, decode64, encode64, type OrderReferences } from './pdf';
 import regularFont from '../assets/DejaVuSans.ttf';
 import monoFont from '../assets/DejaVuSansMono.ttf';
@@ -23,6 +23,7 @@ import PaintPanel from './PaintPanel';
 import SmartPaintPalette,{type PaintTarget} from './SmartPaintPalette';
 import WorkshopPanel from './WorkshopPanel';
 import NameSuggestions from './NameSuggestions';
+import CodePlanDialog from './CodePlanDialog';
 import NameBatchPreview,{type NameBatchCheck,type NameBatchRow} from './NameBatchPreview';
 import A4SheetPreview from './A4SheetPreview';
 import GuideViews,{ensureGuide} from './GuideViews';
@@ -64,6 +65,8 @@ export default function App(){
   const [nameBatch,setNameBatch]=useState<{rows:NameBatchRow[];check:NameBatchCheck;source:Project}>();
   const editSnapshot=useRef<{id:string;bases:{id:string;base:string}[];dirty:boolean}|undefined>(undefined);
   const highlightSequence=useRef(0);
+  // DESPIECE-01: pieces without saved code per furniture and furniture renumbered since the last save (sent as renumber:true).
+  const [showCodePlan,setShowCodePlan]=useState(false),[unsavedCodes,setUnsavedCodes]=useState<Record<string,string[]>>({}),[renumbered,setRenumbered]=useState<ReadonlySet<string>>(new Set()),codePlanTrigger=useRef<HTMLButtonElement>(null);
   const [showSuggestions,setShowSuggestions]=useState(false),[printMaterials,setPrintMaterials]=useState(false);
   const workshopTrigger=useRef<HTMLButtonElement>(null),suggestionsTrigger=useRef<HTMLButtonElement>(null);
   const [showWorkshop,setShowWorkshop]=useState(false),[workshopTab,setWorkshopTab]=useState<'catalog'|'order'>('catalog'),[workshopDirty,setWorkshopDirty]=useState(false);
@@ -141,7 +144,7 @@ export default function App(){
     setProject(previous=>previous?{...previous,furniture:previous.furniture.map(f=>f.id===furniture?.id?change(f):f)}:previous);markDirty();
   }
   const acceptScan=useCallback((result:Scan,mode?:'all'|'selected')=>{
-    heldScan.current=undefined;editSnapshot.current=undefined;setNameBatch(undefined);setContextChanged(false);setModelAnalysisStale(false);setWorkCode(result.guide.workCode||'');setPieceQuery('');setOnlySelected(false);setEditingPieceId('');setHideFurniture(false);setScan(result);setProject(undefined);setOrphans({});setDirty(false);setPicking(undefined);
+    heldScan.current=undefined;editSnapshot.current=undefined;setNameBatch(undefined);setContextChanged(false);setModelAnalysisStale(false);setWorkCode(result.guide.workCode||'');setPieceQuery('');setOnlySelected(false);setEditingPieceId('');setHideFurniture(false);setScan(result);setProject(undefined);setOrphans({});setRenumbered(new Set());setDirty(false);setPicking(undefined);
     const available=new Set(allIds(result.tree.roots));
     const stored=result.guide.selection.filter(id=>available.has(id));
     const roots=result.tree.roots.filter(n=>n.children.length>0&&countPieces(n)>0).map(n=>n.id);
@@ -191,8 +194,8 @@ export default function App(){
       const result=await request<Generated>('generate',{ids:selectedIds});
       const merged=mergeGuide(result.document,result.guide);
       merged.project.furniture=merged.project.furniture.map(f=>ensureGuide(withNaming(f,workCode)));
-      setDestination(target);setIds(selectedIds);setProject(merged.project);setOrphans(merged.orphans);setRevision(result.guide.revision);setFingerprint(result.fingerprint);
-      const unsaved=editsFor(merged.project,merged.orphans).some(f=>JSON.stringify(f)!==JSON.stringify(result.guide.furniture.find(saved=>saved.id===f.id)));
+      setDestination(target);setIds(selectedIds);setProject(merged.project);setOrphans(merged.orphans);setUnsavedCodes(merged.unsaved);setRenumbered(new Set());setRevision(result.guide.revision);setFingerprint(result.fingerprint);
+      const unsaved=editsFor(merged.project,merged.orphans).some(f=>JSON.stringify(f)!==JSON.stringify(withoutCodeHistory(result.guide.furniture.find(saved=>saved.id===f.id))));
       setPieceQuery('');setOnlySelected(false);setFurnitureId(merged.project.furniture[0].id);setPieceId('');setNoteId('');setPicking(undefined);setDirty(unsaved);
       await request('dirty',{value:unsaved});setMessage('Guías generadas. Revisá las piezas, agregá tus indicaciones y guardá la guía.');
     });
@@ -206,9 +209,9 @@ export default function App(){
       const source=projectOverride||project;
       const prepared={...source,furniture:source.furniture.map(f=>ensureGuide(normalizeNaming(replacement?.id===f.id?replacement:f,workCode)))};
       for(const f of prepared.furniture){const issues=namingIssues(f,workCode);if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
-      const result=await request<{guide:Guide;modelSaved:boolean;path:string;fingerprint:string;document:RawDocument}>('save',{furniture:editsFor(prepared,orphans),revision,saveFile,syncNames,workCode,closeAfterSave});
+      const result=await request<{guide:Guide;modelSaved:boolean;path:string;fingerprint:string;document:RawDocument}>('save',{furniture:editsFor(prepared,orphans,renumbered),revision,saveFile,syncNames,workCode,closeAfterSave});
       const stored=mergeGuide(result.document,result.guide);
-      stored.project.furniture=stored.project.furniture.map(ensureGuide);setProject(stored.project);setOrphans(stored.orphans);setFingerprint(result.fingerprint);setRevision(result.guide.revision);setDirty(false);setFilePending(!result.modelSaved);
+      stored.project.furniture=stored.project.furniture.map(ensureGuide);setProject(stored.project);setOrphans(stored.orphans);setUnsavedCodes(stored.unsaved);setRenumbered(new Set());setFingerprint(result.fingerprint);setRevision(result.guide.revision);setDirty(false);setFilePending(!result.modelSaved);
       if(result.modelSaved)setMessage('Guía y archivo SketchUp guardados.');else setMessage('Guía guardada en el modelo abierto. Falta guardar el archivo .skp para conservarla al cerrar.',{label:'Guardar SKP',kind:'save'},'warning');
     });
   }
@@ -222,7 +225,7 @@ export default function App(){
       if(selectionChanged){setError('La selección cambió. Pulsá Generar guías para actualizar los muebles del PDF.',{label:'Generar guías',kind:'generate'});return;}
       const references=printMaterials?await request<OrderReferences>('order_references'):undefined;
       const bytes=await createOfflinePdf(project,decode64(regularFont),decode64(monoFont),decode64(logo),references);
-      const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint,furniture:editsFor(project,orphans),base64:encode64(bytes)});
+      const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint,furniture:editsFor(project,orphans,renumbered),base64:encode64(bytes)});
       if(result.cancelled)setMessage('Exportación cancelada.',undefined,'info');else setMessage(`PDF A4 guardado: ${result.path}`);
     });
   }
@@ -232,7 +235,7 @@ export default function App(){
     return changes.filter(row=>row.currentName!==row.name&&row.changed!==false).map(row=>{const f=source.furniture.find(f=>f.id===row.id||f.pieces.some(p=>p.id===row.id))!,prefix=workCode?`${workCode} ${f.naming?.moduleCode||''} `:'',isRoot=f.id===row.id,canExclude=!!row.currentName.trim()&&(isRoot||!prefix||row.currentName.startsWith(prefix)&&!!row.currentName.slice(prefix.length).trim());return {id:row.id,currentName:row.currentName,name:row.name,furniture:f.name,furnitureId:f.id,moduleCode:f.naming?.moduleCode||undefined,code:isRoot?'Grupo':pieceCodeMap(f).get(row.id)||'Pieza',canExclude,warning:(row.affectedPaths?.length||0)>1?`Instancia compartida: ${row.affectedPaths!.length} rutas afectadas. Deben mantener nombres compatibles.`:undefined};});
   }
   function selectedBatch(ids:string[]){if(!nameBatch)return project!;const included=new Set(ids);return {...nameBatch.source,furniture:nameBatch.source.furniture.map(f=>{const originals=new Map(nameBatch.rows.filter(row=>!included.has(row.id)).map(row=>[row.id,row.currentName])),prefix=workCode?`${workCode} ${f.naming?.moduleCode||''} `:'';return withNaming({...f,...(originals.has(f.id)?{name:originals.get(f.id)!,groupName:originals.get(f.id)!}:{}),naming:f.naming?{...f.naming,bases:f.naming.bases.map(base=>originals.has(base.id)?{...base,base:prefix?originals.get(base.id)!.slice(prefix.length):originals.get(base.id)!}:base)}:undefined},workCode);})};}
-  async function checkNameBatch(source:Project){return await request<NameBatchCheck&{rows?:{id:string;currentName:string;name:string;affectedPaths?:string[];changed?:boolean}[]}>('guide_names_preview',{furniture:editsFor(source,orphans),revision,workCode});}
+  async function checkNameBatch(source:Project){return await request<NameBatchCheck&{rows?:{id:string;currentName:string;name:string;affectedPaths?:string[];changed?:boolean}[]}>('guide_names_preview',{furniture:editsFor(source,orphans,renumbered),revision,workCode});}
   async function openNameBatch(){if(!project||!syncNames||contextChanged||modelAnalysisStale||draftHidden!==null)return;await run('Revisando lote de nombres…',async()=>{const source={...project,furniture:project.furniture.map(f=>ensureGuide(normalizeNaming(f,workCode)))};try{const result=await checkNameBatch(source);setNameBatch({source,rows:batchRows(source,result.rows),check:{...result,blocked:!!result.blockers?.length}});}catch(value){setNameBatch({source,rows:batchRows(source),check:{blocked:true,blockers:[value instanceof Error?value.message:String(value)]}});}});}
   async function reviewNameBatch(ids:string[]){await run('Revisando selección del lote…',async()=>{try{const check=await checkNameBatch(selectedBatch(ids));setNameBatch(previous=>previous?{...previous,check:{...check,blocked:!!check.blockers?.length}}:previous);}catch(value){setNameBatch(previous=>previous?{...previous,check:{blocked:true,blockers:[value instanceof Error?value.message:String(value)]}}:previous);}});}
   async function confirmNameBatch(ids:string[]){const source=selectedBatch(ids);let checked=false;await run('Verificando nombres antes de guardar…',async()=>{const result=await checkNameBatch(source);if(result.blockers?.length)throw new Error(result.blockers.join(' '));checked=true;});if(!checked)return false;return await save(false,undefined,source);}
@@ -365,7 +368,7 @@ export default function App(){
   const saveBlock=blockReason('save'),exportBlock=blockReason('export'),paintBlock=blockReason('paint'),navBlock=blockReason('nav'),toolsBlock=blockReason('tools');
   const guidePending=contextChanged||modelAnalysisStale?'Análisis desactualizado':dirty?'Guía sin guardar':filePending?'Falta guardar el SKP':undefined;
   const pending:Record<Module,string|undefined>={home:undefined,materials:libraryDirty?'Cambios de biblioteca sin guardar':undefined,furniture:guidePending,order:workshopDirty?'Biblioteca o pedido sin guardar':undefined,guides:guidePending};
-  const dialogOpen=showSmartPaint||showPhotoMaterial||showPaint||showMaterials||showWorkshop||showSuggestions||!!nameBatch||!!pendingConfirm;
+  const dialogOpen=showSmartPaint||showPhotoMaterial||showPaint||showMaterials||showWorkshop||showSuggestions||showCodePlan||!!nameBatch||!!pendingConfirm;
   function runNoticeAction(action:NoticeAction){setError('');setMessage('');if(action.kind==='analyze')void analyze();else if(action.kind==='generate')void generate();else if(action.kind==='save')void save(false,undefined,undefined,true);else if(action.kind==='workshop')openWorkshop('order');else if(action.module)navigateModule(action.module);}
   function openWorkshop(tab:'catalog'|'order'){if(toolsBlock){setError(`No se puede abrir Biblioteca y pedidos. ${toolsBlock}.`);return;}setWorkshopTab(tab);setShowWorkshop(true);}
   const helpTrigger=useRef<HTMLSpanElement>(null),diagnosticOutput=useRef<HTMLPreElement>(null),[copyStatus,setCopyStatus]=useState('');
@@ -385,6 +388,7 @@ export default function App(){
     <div id="module-content" className="offline-app">
 
     {nameBatch&&<NameBatchPreview rows={nameBatch.rows} check={nameBatch.check} busy={!!busy} error={error} onReview={reviewNameBatch} onConfirm={confirmNameBatch} onClose={()=>{setNameBatch(undefined);const trigger=batchTrigger.current;if(trigger&&!trigger.disabled)trigger.focus();else if(trigger&&busy)focusAfterBusy.current=trigger;else document.querySelector<HTMLElement>('.ux-module-heading')?.focus();}}/>}
+    {showCodePlan&&furniture&&<CodePlanDialog furniture={furniture} unsaved={unsavedCodes[furniture.id]||[]} references={previewReferences} loadReferences={()=>request<OrderReferences>('order_references')} onClose={()=>{setShowCodePlan(false);codePlanTrigger.current?.focus();}} onApply={(codes,renumber)=>{changeFurniture(f=>({...f,pieces:f.pieces.map(p=>codes[p.id]?{...p,code:codes[p.id]}:p)}));if(renumber)setRenumbered(old=>new Set([...old,furniture.id]));setShowCodePlan(false);codePlanTrigger.current?.focus();setMessage('Códigos aplicados. Guardá la guía para conservarlos.');}}/>}
     {showSuggestions&&furniture&&<NameSuggestions furniture={furniture} workCode={workCode} onConfirm={f=>save(false,f)} busy={!!busy} error={error} syncNames={syncNames} onClose={()=>{setShowSuggestions(false);suggestionsTrigger.current?.focus();}}/>}
     {showWorkshop&&<WorkshopPanel initialCatalogId={catalogFocus} initialTab={workshopTab} onDirtyChange={setWorkshopDirty} onClose={()=>{setShowWorkshop(false);setCatalogRefresh(value=>value+1);workshopTrigger.current?.focus();}}/>}
     {showPaint&&<PaintPanel initialPieceId={paintPieceId} onClose={()=>{setShowPaint(false);paintTrigger.current?.focus();}} onApplied={acceptPaintScan}/>}
@@ -427,7 +431,7 @@ export default function App(){
             </div>
             <div className="assembly-inspector">
               <section className="parts-config" aria-label="Configuración de grupos y piezas">
-                <div className="table-heading"><h2><span>02</span> Grupos y piezas</h2><HelpPopover title="Nombres y medidas"><p>Tocá una pieza del dibujo para encontrarla en el listado. También podés buscar por ID o nombre y usar las flechas para recorrer las piezas.</p><p>Escribí solo el nombre de la pieza, por ejemplo Lateral. Obra y módulo se agregan automáticamente. Al guardar se actualizan en SketchUp si Sincronizar nombres está activado.</p><p>Las medidas están en milímetros y no se editan acá. Buscar, filtrar o resaltar no quita piezas del PDF.</p></HelpPopover><button ref={batchTrigger} disabled={!!busy||draftHidden!==null||!syncNames||contextChanged||modelAnalysisStale} onClick={()=>void openNameBatch()}>Aplicar renombrado</button><button ref={suggestionsTrigger} className="suggest-names" aria-label="Proponer nombres por geometría…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowSuggestions(true)}>Proponer nombres</button></div>
+                <div className="table-heading"><h2><span>02</span> Grupos y piezas</h2><HelpPopover title="Nombres y medidas"><p>Tocá una pieza del dibujo para encontrarla en el listado. También podés buscar por ID o nombre y usar las flechas para recorrer las piezas.</p><p>Escribí solo el nombre de la pieza, por ejemplo Lateral. Obra y módulo se agregan automáticamente. Al guardar se actualizan en SketchUp si Sincronizar nombres está activado.</p><p>Las medidas están en milímetros y no se editan acá. Buscar, filtrar o resaltar no quita piezas del PDF.</p></HelpPopover><button ref={batchTrigger} disabled={!!busy||draftHidden!==null||!syncNames||contextChanged||modelAnalysisStale} onClick={()=>void openNameBatch()}>Aplicar renombrado</button><button ref={suggestionsTrigger} className="suggest-names" aria-label="Proponer nombres por geometría…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowSuggestions(true)}>Proponer nombres</button><button ref={codePlanTrigger} className="code-plan-open" aria-label="Codificar despiece…" disabled={!!busy||draftHidden!==null} onClick={()=>setShowCodePlan(true)}>Codificar despiece</button></div>
                 <div className="group-configuration"><label>Nombre del grupo<input aria-label="Nombre del grupo" maxLength={80} disabled={!!busy} value={furniture.name} onChange={e=>{const name=e.target.value;changeFurniture(f=>withNaming({...f,name,groupName:name},workCode,moduleFromName(name)||f.naming?.moduleCode||''));}}/></label><div className="module-configuration"><label>Módulo<input aria-label="Módulo de este mueble" placeholder="M01" value={furniture.naming?.moduleCode||''} disabled={!!busy} maxLength={4} onChange={e=>changeFurniture(f=>withNaming(f,workCode,e.target.value.toUpperCase()))}/></label><p>Obra <strong>{workCode||'sin completar'}</strong><br/>Nombre: {workCode||'[obra]'} {furniture.naming?.moduleCode||'[módulo]'} + pieza</p></div></div>
                 {piece&&<div className="selected-piece-summary" aria-live="polite"><span className="selected-code">{selectedRow?.code||piece.code}</span><div><strong>{selectedRow&&selectedRow.quantity>1?`${selectedRow.quantity} piezas iguales`:'Pieza seleccionada'}</strong><span>{piece.name}</span></div><div className="piece-navigation"><button aria-label="Pieza anterior" disabled={!!busy||pieceIndex<=0} onClick={()=>selectPiece(rows[pieceIndex-1].id,true,true)}>‹</button><small>{pieceIndex+1}/{rows.length}</small><button aria-label="Pieza siguiente" disabled={!!busy||pieceIndex>=rows.length-1} onClick={()=>selectPiece(rows[pieceIndex+1].id,true,true)}>›</button></div></div>}
                 <div className="piece-grouping"><label><input type="checkbox" aria-label="Agrupar componentes iguales" disabled={!!busy||(!repeated&&!furniture.groupIdentical)} checked={furniture.groupIdentical||false} onChange={e=>{const groupIdentical=e.target.checked;setPieceQuery('');setEditingPieceId('');changeFurniture(f=>withNaming({...f,groupIdentical},workCode));}}/><span>Agrupar componentes iguales<small>{repeated?`${repeated} ${repeated===1?'grupo de repetidos':'grupos de repetidos'} · mismo componente, medidas y material`:'No hay componentes repetidos compatibles'}</small></span></label><HelpPopover title="Piezas iguales"><p>Una fila, un nombre y un ID para los componentes iguales de este mueble. La cantidad indica cuántas piezas hay y el ID se repite en cada una en ambas vistas.</p><p>Se muestra el nombre de la primera pieza como referencia. Agrupar no cambia los nombres de las instancias en SketchUp. Si editás el nombre de la fila, ese cambio sí se aplica a todas sus piezas al guardar. Se mantienen las medidas y todas las geometrías. Las notas siguen en la pieza física donde las anclaste.</p><p>Se exige misma definición, medidas y material. Las piezas con escalas locales distintas o espejadas en distinto sentido quedan separadas. Desactivar recupera los IDs y nombres individuales; si editaste el nombre de la fila, se conservan esos cambios explícitos.</p></HelpPopover></div><div className="parts-search"><label>Buscar piezas<div className="search-field"><input type="search" aria-label="Buscar piezas" placeholder="ID o nombre de la pieza" value={pieceQuery} onChange={e=>setPieceQuery(e.target.value)}/>{pieceQuery&&<button aria-label="Limpiar búsqueda" onClick={()=>setPieceQuery('')}>×</button>}</div></label><div className="parts-filter"><div role="group" aria-label="Filtrar piezas"><button aria-pressed={!onlySelected} onClick={()=>setOnlySelected(false)}>Todas</button><button aria-pressed={onlySelected} onClick={()=>setOnlySelected(true)}>Seleccionada</button></div><span role="status">{visiblePieces.length} de {rows.length}{furniture.groupIdentical?' tipos':''}</span></div></div>

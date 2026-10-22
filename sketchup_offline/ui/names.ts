@@ -41,3 +41,30 @@ export function nameChangeKind(before:string,after:string):'same'|'prefix'|'base
   const diff=nameDiff(before,after);if(diff.same)return 'same';
   return cleanName(before)&&diff.suffix&&(/^\s/u.test(diff.suffix)||/\s$/u.test(diff.changed||diff.removed))?'prefix':'base';
 }
+// DESPIECE-01 «Codificar despiece»: workshop order placa → espesor → largo → ancho.
+// Pure: it proposes codes; the guide store decides whether saved codes may change.
+export type CodePiece={id:string;name:string;code:string;dimensions:readonly number[];metadata?:{material?:{id:string;name:string}|null}};
+export type CodePlanRow={id:string;name:string;board:string;dimensions:[number,number,number];before:string;after:string;changed:boolean};
+const CODE_RE=/^P\d{2,4}$/u,formatCode=(n:number)=>`P${String(n).padStart(2,'0')}`;
+const collator=new Intl.Collator('es',{numeric:true,sensitivity:'base'});
+// Order reference board (supplier sheet) per piece id: a plain string or {board?,text}.
+export function referenceBoard(references?:Record<string,string|{board?:string;text:string}>){
+  if(!references)return undefined;
+  return (id:string)=>{const value=references[id];return typeof value==='string'?value:value?(value.board||value.text):'';};
+}
+export function codePlan(pieces:readonly CodePiece[],{saved,renumber,board}:{saved:ReadonlySet<string>|readonly string[];renumber:boolean;board?:(pieceId:string)=>string}):CodePlanRow[]{
+  const savedIds=new Set(saved);
+  const rows=pieces.map(p=>({id:p.id,name:p.name,before:p.code,dimensions:[p.dimensions[0]||0,p.dimensions[1]||0,p.dimensions[2]||0] as [number,number,number],
+    board:cleanName(board?.(p.id)||p.metadata?.material?.name||p.metadata?.material?.id||'')}));
+  rows.sort((a,b)=>(!a.board!==!b.board?(a.board?-1:1):collator.compare(a.board,b.board))||b.dimensions[2]-a.dimensions[2]||b.dimensions[0]-a.dimensions[0]||b.dimensions[1]-a.dimensions[1]||collator.compare(a.before,b.before)||collator.compare(a.id,b.id));
+  if(rows.length>9999)throw new Error('Se agotaron los códigos de la guía: un mueble admite hasta 9999 piezas.');
+  // Saved, valid and not repeated codes stay (by number, so P001 also blocks P01); the rest get the lowest free number.
+  const kept=new Set<number>(),keep=new Set<string>();
+  if(!renumber)for(const row of rows){const n=Number(row.before.slice(1));if(savedIds.has(row.id)&&CODE_RE.test(row.before)&&n>0&&!kept.has(n)){kept.add(n);keep.add(row.id);}}
+  let next=1;
+  return rows.map(row=>{
+    let after=row.before;
+    if(!keep.has(row.id)){while(kept.has(next))next++;if(next>9999)throw new Error('Se agotaron los códigos de la guía. Usá «Renumerar todas las piezas».');after=formatCode(next++);}
+    return {...row,after,changed:after!==row.before};
+  });
+}
