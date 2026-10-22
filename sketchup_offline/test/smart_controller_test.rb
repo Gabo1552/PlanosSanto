@@ -145,7 +145,7 @@ class SmartControllerTest < Minitest::Test
     @controller.instance_variable_set(:@dialog,dialog)
     assert @controller.dispatch('smart_palette_compact',{'compact'=>true})['compact']
     refute @controller.dispatch('smart_palette_compact',{'compact'=>false})['compact']
-    assert_equal [[440,760],[1440,920]],sizes
+    assert_equal [[440,760],PlanosSanto::OfflineController::MAIN_INITIAL_SIZE],sizes # ARQ-06: no fixed 1440x920
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('smart_palette_compact',{'compact'=>'true'}) }
   end
   def test_corrupt_saved_preferences_do_not_change_model_or_prevent_palette

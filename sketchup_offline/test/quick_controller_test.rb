@@ -177,7 +177,7 @@ class QuickControllerTest < Minitest::Test
   def test_principal_expands_existing_dialog_and_opens_guides_without_discarding_dirty_edits
     @controller.show;ready
     window=dialog;@controller.open_main
-    assert_same window,dialog;assert_equal [1440,920],dialog.sizes.last
+    assert_same window,dialog;assert_empty dialog.sizes # ARQ-06: keeps the operator's size
     assert_equal 'home',@controller.dispatch('ui_ready',{})['intent']['action']
     @controller.instance_variable_set(:@dirty,true)
     @controller.open_main

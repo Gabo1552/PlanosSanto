@@ -173,4 +173,106 @@ class Hito6ControllerTest < Minitest::Test
     controller.send(:mark_stale,'paint');controller.model_watch_changed(['model'])
     assert_empty dialog.events('planos-santo-analysis-state')
   end
+
+  # ARQ-07
+  def test_opening_materials_or_order_prepares_the_context_without_scanning
+    Hito6ScanCounter.count=0
+    controller=PlanosSanto::OfflineController.new;controller.instance_variable_set(:@dialog,Hito6DialogDouble.new)
+    controller.instance_variable_set(:@quick_intent,{'sequence'=>3,'action'=>'materials'})
+    loading=controller.dispatch('ui_loading',{})
+    assert_equal false,loading['ready'];assert_equal 'materials',loading['intent']['action']
+    assert_equal 'materials',controller.dispatch('ui_ready',{})['intent']['action']
+    assert controller.dispatch('catalog_load',{}).key?('catalog')
+    assert_equal 0,Hito6ScanCounter.count
+    assert_same @model,controller.instance_variable_get(:@model_watch).model
+    assert_raises(PlanosSanto::ExportError) { controller.dispatch('order_plan',{}) }
+    assert_equal 0,Hito6ScanCounter.count
+  end
+  def test_loading_never_replaces_an_existing_session
+    session=@controller.instance_variable_get(:@session)
+    @controller.dispatch('ui_loading',{})
+    assert_same session,@controller.instance_variable_get(:@session);assert_equal 1,Hito6ScanCounter.count
+  end
+
+  # ARQ-06
+  def window(action,data,source=@dialog)
+    @controller.handle(JSON.generate('version'=>1,'id'=>action,'action'=>action,'data'=>data),source:source)
+    JSON.parse(JSON.parse(source.scripts.last[/JSON\.parse\((".*")\)\)\z/,1]))
+  end
+  def test_first_open_fits_80_percent_of_the_screen_once_and_remembers
+    reply=window('window_fit',{'screenWidth'=>1366,'screenHeight'=>728})
+    assert_equal true,reply['result']['fitted']
+    assert_equal [[1093,582]],@dialog.sizes;assert_equal [[137,73]],@dialog.positions
+    reply=window('window_fit',{'screenWidth'=>1366,'screenHeight'=>728})
+    assert_equal false,reply['result']['fitted'];assert_equal 1,@dialog.sizes.length
+    assert_match(/Pantalla inválida/,window('window_fit',{'screenWidth'=>'x','screenHeight'=>728})['error'])
+  end
+  def test_fold_shrinks_returns_focus_to_sketchup_and_unfold_restores_the_user_size
+    @dialog.size=[1200,800]
+    assert_equal true,window('window_fold',{'folded'=>true})['result']['folded']
+    assert_equal [[420,120]],@dialog.sizes;assert_equal 1,Sketchup.hito6_focus
+    window('window_fold',{'folded'=>false})
+    assert_equal [1200,800],@dialog.sizes.last;assert_equal 1,Sketchup.hito6_focus
+    assert_match(/inválid/,window('window_fold',{'folded'=>'sí'})['error'])
+  end
+  def test_compact_palette_restores_the_previous_editor_size_not_a_fixed_one
+    @dialog.size=[1000,650]
+    window('smart_palette_compact',{'compact'=>true});window('smart_palette_compact',{'compact'=>false})
+    assert_equal [[440,760],[1000,650]],@dialog.sizes
+  end
+  def test_reset_windows_forgets_the_layout_and_refits_open_windows
+    window('window_fit',{'screenWidth'=>1920,'screenHeight'=>1040});@dialog.sizes.clear;@dialog.positions.clear
+    palette=Hito6DialogDouble.new;@controller.instance_variable_set(:@palette_dialog,palette)
+    @controller.reset_windows
+    assert_equal [[1536,832]],@dialog.sizes;assert_equal [[192,104]],@dialog.positions
+    assert_equal [[680,320]],palette.sizes
+    assert_equal 1,@dialog.events('planos-santo-window-reset').length
+    assert_equal false,window('window_fit',{'screenWidth'=>1920,'screenHeight'=>1040})['result']['fitted']
+    # Closed editor: the next open fits again.
+    @controller.instance_variable_set(:@dialog,nil);@controller.reset_windows
+    @controller.instance_variable_set(:@dialog,@dialog)
+    assert_equal true,window('window_fit',{'screenWidth'=>1920,'screenHeight'=>1040})['result']['fitted']
+  end
+
+  # F-ARQ-A
+  def each_node(nodes,&block);nodes.each { |node| block.call(node);each_node(node['children'],&block) };end
+  def test_scan_reply_carries_no_meshes_and_generate_sends_them_for_the_chosen_furniture
+    scan=@controller.dispatch('scan',{});meshes=[]
+    each_node(scan['tree']['roots']) { |node| meshes << node['mesh'] if node['mesh'] }
+    refute_empty meshes
+    assert meshes.all? { |mesh| mesh=={'vertices'=>[],'triangles'=>[],'deferred'=>true} }
+    generated=@controller.dispatch('generate',{'ids'=>['1']});real=[]
+    each_node(generated['document']['furniture']) { |node| real << node['mesh'] if node['mesh'] }
+    refute_empty real;assert real.all? { |mesh| mesh['vertices'].any? && mesh['triangles'].any? }
+    assert_equal ['1'],generated['document']['furniture'].map { |root| root['id'] }
+  end
+  def chunks(dialog)
+    dialog.scripts.select { |script| script.include?('receiveChunk') }.map { |script| JSON.parse(JSON.parse(script[/receiveChunk\(JSON\.parse\((".*")\)\)\z/,1])) }
+  end
+  def test_large_replies_travel_in_utf8_safe_parts_that_rebuild_the_exact_reply
+    @controller.define_singleton_method(:reply_chunk_bytes) { 64 }
+    @controller.handle(JSON.generate('version'=>1,'id'=>'big','action'=>'scan','data'=>{}),source:@dialog)
+    parts=chunks(@dialog)
+    assert_operator parts.length,:>,3
+    assert parts.all? { |part| part['id']=='big' && part['total']==parts.length && part['data'].bytesize<=64 }
+    assert_equal (0...parts.length).to_a,parts.map { |part| part['index'] }
+    reply=JSON.parse(parts.map { |part| part['data'] }.join)
+    assert_equal 'big',reply['id'];assert_nil reply['error'];assert_match(/sintético/,reply['result']['tree']['modelName'])
+    refute @dialog.scripts.any? { |script| script.include?('PlanosSantoBridge.receive(') && script.include?('"big"') }
+  end
+  def test_small_replies_keep_a_single_script
+    @controller.handle(JSON.generate('version'=>1,'id'=>'chico','action'=>'diagnostic','data'=>{}),source:@dialog)
+    assert_empty chunks(@dialog);assert_includes @dialog.scripts.last,'PlanosSantoBridge.receive('
+  end
+  def test_replies_over_the_cap_become_a_clear_error_and_are_measured
+    @controller.define_singleton_method(:reply_max_bytes) { 300 }
+    @controller.handle(JSON.generate('version'=>1,'id'=>'tope','action'=>'scan','data'=>{}),source:@dialog)
+    reply=JSON.parse(JSON.parse(@dialog.scripts.last[/JSON\.parse\((".*")\)\)\z/,1]))
+    assert_nil reply['result'];assert_match(/supera el tope/,reply['error']);assert_match(/menos muebles/,reply['error'])
+    @controller.define_singleton_method(:reply_max_bytes) { 48*1024*1024 }
+    @controller.handle(JSON.generate('version'=>1,'id'=>'diag','action'=>'diagnostic','data'=>{}),source:@dialog)
+    stats=JSON.parse(JSON.parse(@dialog.scripts.last[/JSON\.parse\((".*")\)\)\z/,1]))['result']['replyStats']
+    capped=stats.find { |entry| entry['action']=='scan' }
+    assert_equal true,capped['capped'];assert_operator capped['bytes'],:>,300;assert_operator capped['ms'],:>=,0
+  end
 end

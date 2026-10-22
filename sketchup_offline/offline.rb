@@ -167,7 +167,6 @@ module PlanosSanto
       else
         show
       end
-      @dialog.set_size(1440,920) if @dialog && @dialog.respond_to?(:set_size)
     end
 
     def show
@@ -177,9 +176,11 @@ module PlanosSanto
         return
       end
       @ui_ready=false
+      # ARQ-06: no forced size. SketchUp remembers the user's size and position
+      # (preferences_key); the first open is fitted to 80 % of the screen by the UI.
       @dialog = UI::HtmlDialog.new(dialog_title: 'Planos Santo', preferences_key: 'PlanosSantoOffline',
-                                   scrollable: true, resizable: true, width: 1440, height: 920,
-                                   min_width: 420, min_height: 480, style: UI::HtmlDialog::STYLE_DIALOG)
+                                   scrollable: true, resizable: true, width: MAIN_INITIAL_SIZE[0], height: MAIN_INITIAL_SIZE[1],
+                                   min_width: MAIN_FOLDED_SIZE[0], min_height: MAIN_FOLDED_SIZE[1], style: UI::HtmlDialog::STYLE_DIALOG)
       @dialog.set_file(File.join(__dir__, 'ui', 'index.html'))
       @dialog.add_action_callback('request') do |_context, raw|
         source=@dialog
@@ -197,8 +198,77 @@ module PlanosSanto
           unwatch_model!;forget_analysis!
         end
       end
+      @folded_size=nil;@compact_size=nil
       @dialog.show
-      @dialog.set_size(1440,920) if @dialog.respond_to?(:set_size)
+    end
+
+    MAIN_INITIAL_SIZE=[1100,680].freeze # fits 1366x768 before the first fit
+    MAIN_FOLDED_SIZE=[420,120].freeze
+    MAIN_COMPACT_SIZE=[440,760].freeze
+    PALETTE_SIZE=[680,320].freeze
+    WINDOW_LAYOUT_KEY='window_layout_v1'
+
+    def window_screen(data)
+      width=data['screenWidth'];height=data['screenHeight']
+      valid=[width,height].all? { |value| value.is_a?(Integer) && value.between?(320,16_384) }
+      raise ExportError,'Pantalla inválida para ajustar la ventana.' unless valid
+      [width,height]
+    end
+
+    def fit_window(window,screen)
+      return unless window
+      size=screen ? screen.map { |value| (value*0.8).round } : MAIN_INITIAL_SIZE
+      window.set_size(*size) if window.respond_to?(:set_size)
+      window.set_position(*screen.zip(size).map { |total,used| ((total-used)/2.0).round }) if screen && window.respond_to?(:set_position)
+    end
+
+    def window_fitted?
+      Sketchup.respond_to?(:read_default) && Sketchup.read_default('PlanosSanto',WINDOW_LAYOUT_KEY,'')=='fitted'
+    end
+
+    def remember_window_fitted(value)
+      Sketchup.write_default('PlanosSanto',WINDOW_LAYOUT_KEY,value) if Sketchup.respond_to?(:write_default)
+    end
+
+    # First open only: later opens keep what SketchUp remembered for the user.
+    def window_fit(data)
+      @screen=window_screen(data)
+      return {'fitted'=>false} unless @request_dialog && @request_dialog.equal?(@dialog) && !window_fitted?
+      fit_window(@dialog,@screen)
+      remember_window_fitted('fitted')
+      {'fitted'=>true}
+    end
+
+    # «Plegar» leaves a small strip and gives the keyboard back to the model.
+    def window_fold(folded)
+      raise ExportError,'Estado de plegado inválido.' unless [true,false].include?(folded)
+      window=@dialog
+      return {'folded'=>false} unless window
+      if folded
+        @folded_size ||= window.respond_to?(:get_size) ? window.get_size : nil
+        window.set_size(*MAIN_FOLDED_SIZE) if window.respond_to?(:set_size)
+        Sketchup.focus if Sketchup.respond_to?(:focus)
+      else
+        size=@folded_size;@folded_size=nil
+        size ? window.set_size(*size) : fit_window(window,@screen)
+      end
+      {'folded'=>folded}
+    end
+
+    # Menu «Restablecer ventanas»: forget remembered layout and refit open windows.
+    def reset_windows
+      remember_window_fitted('')
+      @folded_size=nil;@compact_size=nil
+      if @dialog
+        fit_window(@dialog,@screen)
+        remember_window_fitted('fitted') if @screen
+        emit_to(@dialog,'planos-santo-window-reset',{'screen'=>!@screen.nil?})
+      end
+      @palette_dialog.set_size(*PALETTE_SIZE) if @palette_dialog && @palette_dialog.respond_to?(:set_size)
+      true
+    rescue StandardError => error
+      warn("Planos Santo: no se pudieron restablecer las ventanas: #{error.class}")
+      false
     end
 
     # This window is independent of the guide editor; opening it never scans or
@@ -215,6 +285,18 @@ module PlanosSanto
       end
       watch_model!
       clean_for_paint!
+    end
+
+    # ARQ-07: Materiales and Maderera open without scanning. The editor gets a
+    # model context like the palette does; an existing session is never replaced.
+    def ensure_editor_context!
+      observe_context
+      return if @session
+      model=Sketchup.active_model
+      return unless model
+      @model=model;@context_invalid=false
+      @session=NativeSession.new(@model)
+      watch_model!
     end
 
     def show_palette
@@ -237,7 +319,6 @@ module PlanosSanto
         unwatch_model! unless @dialog
       end
       window.show
-      window.set_size(680,320) if window.respond_to?(:set_size)
     end
 
     def emit_to(window,event,data)
@@ -301,9 +382,79 @@ module PlanosSanto
       prepared['installed'] ? result.merge(paint_palette_state) : result
     end
 
+    # F-ARQ-A: every reply is measured; above the cap it becomes a clear error,
+    # and large ones travel in parts (one execute_script each) so CEF never
+    # receives a single huge script. bridge.ts rebuilds and validates them.
+    REPLY_CHUNK_BYTES=1024*1024
+    REPLY_MAX_BYTES=48*1024*1024
+    REPLY_WARN_BYTES=8*1024*1024
+    REPLY_STATS_LIMIT=20
+    def reply_chunk_bytes;REPLY_CHUNK_BYTES;end
+    def reply_max_bytes;REPLY_MAX_BYTES;end
+
     def reply(id, result: nil, error: nil)
       payload = JSON.generate({ 'version' => 1, 'id' => id, 'result' => result, 'error' => error })
-      (@request_dialog || @dialog)&.execute_script("window.PlanosSantoBridge.receive(JSON.parse(#{JSON.generate(payload)}))")
+      bytes=payload.bytesize
+      capped=bytes>reply_max_bytes
+      if capped
+        payload=JSON.generate({ 'version' => 1, 'id' => id, 'result' => nil,
+          'error' => "La respuesta de SketchUp supera el tope de #{reply_mib(reply_max_bytes)} MB (#{reply_mib(bytes)} MB). Generá menos muebles a la vez o revisá herrajes con mucha geometría." })
+      end
+      parts=deliver_reply(@request_dialog || @dialog,id,payload)
+      record_reply(bytes,parts,capped)
+    end
+
+    def deliver_reply(target,id,payload)
+      return 0 unless target
+      if payload.bytesize<=reply_chunk_bytes
+        target.execute_script("window.PlanosSantoBridge.receive(JSON.parse(#{JSON.generate(payload)}))")
+        return 1
+      end
+      parts=reply_parts(payload)
+      parts.each_with_index do |data,index|
+        chunk=JSON.generate({ 'version' => 1, 'id' => id, 'index' => index, 'total' => parts.length, 'data' => data })
+        target.execute_script("window.PlanosSantoBridge.receiveChunk(JSON.parse(#{JSON.generate(chunk)}))")
+      end
+      parts.length
+    end
+
+    # Byte slices that never cut a UTF-8 character.
+    def reply_parts(payload)
+      limit=[reply_chunk_bytes,16].max;parts=[];offset=0
+      while offset<payload.bytesize
+        size=[limit,payload.bytesize-offset].min
+        size-=1 until payload.byteslice(offset,size).valid_encoding?
+        parts << payload.byteslice(offset,size);offset+=size
+      end
+      parts
+    end
+
+    def reply_mib(bytes);(bytes/1024.0/1024).round(1);end
+
+    def record_reply(bytes,parts,capped)
+      started=@request_started
+      ms=started ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC)-started)*1000).round : nil
+      (@reply_stats ||= []) << {'action'=>@request_action,'bytes'=>bytes,'ms'=>ms,'parts'=>parts,'capped'=>capped}
+      @reply_stats.shift while @reply_stats.length>REPLY_STATS_LIMIT
+      warn("Planos Santo: respuesta #{@request_action} de #{reply_mib(bytes)} MB en #{ms} ms (#{parts} partes).") if bytes>REPLY_WARN_BYTES
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo medir la respuesta: #{error.class}")
+    end
+
+    # F-ARQ-A: the scan tree only needs to know which nodes are pieces. Meshes
+    # travel with generate, for the chosen furniture only; the session keeps them.
+    DEFERRED_MESH={'vertices'=>[].freeze,'triangles'=>[].freeze,'deferred'=>true}.freeze
+    def light_scan(result)
+      tree=result['tree']
+      result.merge('tree'=>tree.merge('roots'=>light_nodes(tree['roots'])))
+    end
+
+    def light_nodes(nodes)
+      nodes.map do |node|
+        copy=node.merge('children'=>light_nodes(node['children']))
+        copy['mesh']=DEFERRED_MESH if node['mesh']
+        copy
+      end
     end
 
     # Only the human choice is unbounded. JS resumes its working deadline on return,
@@ -329,7 +480,9 @@ module PlanosSanto
       @request_dialog=source || @dialog
       id = nil
       raise ExportError, 'Solicitud demasiado grande.' unless raw.is_a?(String) && raw.bytesize <= 45 * 1024 * 1024
+      @request_started=Process.clock_gettime(Process::CLOCK_MONOTONIC);@request_action=nil
       msg = JSON.parse(raw); id = msg['id']
+      @request_action=msg['action'].to_s[0,40] if msg.is_a?(Hash)
       raise ExportError, 'Protocolo de extensión incompatible.' unless msg['version'] == 1 && id.is_a?(String) && id.length <= 100 && msg['action'].is_a?(String)
       data = msg['data'] || {}
       if msg['action'] == 'dirty' || msg['action'] == 'workshop_dirty'
@@ -470,7 +623,9 @@ module PlanosSanto
         {'rows'=>rows,'warnings'=>[],'blockers'=>[]}
       when 'ui_loading'
         @ui_ready=false
-        {'ready'=>false}
+        ensure_editor_context!
+        # Peek only: ui_ready/quick_action_ack consume the intent.
+        {'ready'=>false,'intent'=>@quick_intent}
       when 'quick_action_ack'
         sequence=data['sequence']
         raise ExportError,'Confirmación de acceso inválida.' unless sequence.is_a?(Integer) && sequence>0
@@ -495,7 +650,7 @@ module PlanosSanto
         @dirty = false
         watch_model!
         mark_fresh!
-        result
+        light_scan(result)
       when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_edges','order_audit','ocl_open'
         active!
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
@@ -691,7 +846,16 @@ module PlanosSanto
         raise ExportError,'Tamaño de paleta inválido.' unless [true,false].include?(data['compact'])
         target=@request_dialog || @dialog
         if target && target.respond_to?(:set_size)
-          target.set_size(*(target.equal?(@palette_dialog) ? (data['compact'] ? [680,320] : [680,760]) : data['compact'] ? [440,760] : [1440,920]))
+          if target.equal?(@palette_dialog)
+            target.set_size(*(data['compact'] ? PALETTE_SIZE : [680,760]))
+          elsif data['compact']
+            @compact_size ||= target.respond_to?(:get_size) ? target.get_size : nil
+            target.set_size(*MAIN_COMPACT_SIZE)
+          else
+            # ARQ-06: back to the operator's size, never a fixed 1440x920.
+            size=@compact_size;@compact_size=nil
+            size ? target.set_size(*size) : fit_window(target,@screen)
+          end
         end
         {'compact'=>data['compact']}
       when 'paint_cancel'
@@ -784,11 +948,15 @@ module PlanosSanto
         @session.validate_export(data.fetch('furniture'))
         raise ExportError, 'Regenerá la guía antes de exportar.' unless data['fingerprint'] == @session.fingerprint
         save_pdf(data.fetch('base64'))
+      when 'window_fit'
+        window_fit(data)
+      when 'window_fold'
+        window_fold(data['folded'])
       when 'diagnostic'
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
           'layoutModulePresent' => Object.const_defined?(:Layout), 'pdfEngine' => 'pdf-lib local; no requiere LayOut',
-          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false }
+          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'replyStats' => (@reply_stats || []).last(10) }
       else
         raise ExportError, 'Acción desconocida.'
       end
