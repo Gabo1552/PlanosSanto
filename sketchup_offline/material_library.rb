@@ -433,5 +433,148 @@ module PlanosSanto
       end
       with_status ? status.merge(result) : result
     end
+
+    # --- Hito 7: duplicate and archive (MATERIALES-08/09) ---------------------
+    # Archive state lives in its own index: catalog.json keeps schema 1 untouched.
+    STATES_MAX=1024*1024
+    def states_path;File.join(@directory,'material-states.json');end
+
+    def states
+      return {'schema'=>1,'revision'=>0,'records'=>[]} unless File.exist?(states_path) || File.symlink?(states_path)
+      raise ExportError,'El índice de fichas archivadas no puede ser un enlace.' if File.symlink?(states_path)
+      raise ExportError,'Índice de fichas archivadas demasiado grande.' if File.size(states_path)>STATES_MAX
+      data=JSON.parse(File.binread(states_path))
+      valid=data.is_a?(Hash) && data.keys.sort==%w[records revision schema] && data['schema']==1 && data['revision'].is_a?(Integer) && data['revision']>=0 && data['records'].is_a?(Array) && data['records'].length<=5000
+      ids={}
+      valid&&=data['records'].all? do |row|
+        ok=row.is_a?(Hash) && row.keys.sort==%w[archived archivedAt catalogId] && row['catalogId'].is_a?(String) && MaterialResolver::UUID.match?(row['catalogId']) &&
+          !ids.key?(row['catalogId']) && row['archived']==true && row['archivedAt'].is_a?(String) && row['archivedAt'].length<=40
+        ids[row['catalogId']]=true if ok
+        ok
+      end
+      raise ExportError,'Índice de fichas archivadas inválido; no se sobrescribió.' unless valid
+      data
+    rescue JSON::ParserError
+      raise ExportError,'Índice de fichas archivadas dañado; restaurá su copia de seguridad.'
+    end
+
+    def archived_ids;states['records'].map { |row| row['catalogId'] };end
+
+    def extras
+      existing=@catalog.read['items'].map { |item| item['id'] }
+      data=states
+      {'archivedIds'=>data['records'].map { |row| row['catalogId'] } & existing,'statesRevision'=>data['revision']}
+    end
+
+    def write_states(data)
+      bytes=JSON.pretty_generate(data)
+      raise ExportError,'Índice de fichas archivadas demasiado grande.' if bytes.bytesize>STATES_MAX
+      if File.file?(states_path)
+        backups=File.join(@directory,'backups');FileUtils.mkdir_p(backups)
+        File.open(File.join(backups,"material-states-#{SecureRandom.hex(8)}.json"),File::WRONLY|File::CREAT|File::EXCL,0o600) { |f| f.write(File.binread(states_path));f.flush;f.fsync }
+      end
+      atomic_write(states_path,bytes)
+    end
+
+    def normalized_name(value);value.to_s.unicode_normalize(:nfc).strip.downcase;end
+
+    def copy_name(base,catalog)
+      used=catalog['items'].map { |item| normalized_name(item['name']) }
+      (1..999).each do |number|
+        suffix=number==1 ? ' (copia)' : " (copia #{number})"
+        candidate=base.to_s[0,160-suffix.length].rstrip+suffix
+        return candidate unless used.include?(normalized_name(candidate))
+      end
+      raise ExportError,'No se encontró un nombre libre para la copia; escribí uno.'
+    end
+
+    # The copy shares the content-addressed visual (photo/SKM/archived SKM): no
+    # file is duplicated. It always needs its own supplier approval.
+    def duplicate(data)
+      raise ExportError,'Confirmá duplicar la ficha.' unless data.is_a?(Hash) && data['confirmed']==true
+      raise ExportError,'Nombre de copia inválido.' if data.key?('name') && !data['name'].nil? && !data['name'].is_a?(String)
+      locked(data) do |catalog,index|
+        source=catalog['items'].find { |item| item['id']==data['catalogId'] }
+        raise ExportError,'La ficha ya no existe en la biblioteca.' unless source
+        name=data['name'].nil? ? copy_name(source['name'],catalog) : @catalog.text(data['name'])
+        raise ExportError,'Escribí un nombre para la copia.' if name.empty?
+        raise ExportError,'Ya existe una ficha con ese nombre; elegí otro.' if catalog['items'].any? { |item| normalized_name(item['name'])==normalized_name(name) }
+        copy=JSON.parse(JSON.generate(source))
+        copy['id']=SecureRandom.uuid while copy['id']==source['id'] || catalog['items'].any? { |item| item['id']==copy['id'] }
+        copy.merge!('name'=>name,'approved'=>false,'favorite'=>false,'updatedAt'=>Time.now.utc.iso8601)
+        copy['observed']=copy['observed'].merge('duplicatedFrom'=>source['id'])
+        copy['sourceHash']=Digest::SHA256.hexdigest(JSON.generate(@catalog.canonical({'name'=>copy['name'],'kind'=>copy['kind'],'observed'=>copy['observed']})))
+        catalog['items'] << copy
+        @catalog.validate(catalog)
+        record=index['records'].find { |row| row['catalogId']==source['id'] }
+        previous_index=File.file?(@path) ? File.binread(@path) : nil
+        if record
+          index['records'] << record.merge('catalogId'=>copy['id'],'catalogFingerprint'=>MaterialResolver.item_fingerprint(copy))
+          index['revision']+=1
+          write_index(index)
+        end
+        begin
+          publish_catalog_locked(catalog,data['revision'])
+        rescue StandardError
+          (previous_index ? atomic_write(@path,previous_index) : File.delete(@path)) if record
+          raise
+        end
+        warnings=['La copia queda pendiente de aprobación para maderera: revisá su ficha antes de pedir.']
+        warnings << 'Comparte la foto o el SKM de la ficha original; no se duplicaron archivos.' if MaterialPolicy.photo?(copy) || MaterialPolicy.skm_import?(copy) || record
+        {'catalog'=>catalog,'catalogId'=>copy['id'],'duplicatedFrom'=>source['id'],'name'=>copy['name'],'warnings'=>warnings}
+      end
+    end
+
+    def archive_rows(catalog,ids)
+      bound=materials.map { |material| observed(material).dig('binding','catalogId') }.compact.tally
+      archived=archived_ids
+      ids.map do |id|
+        item=catalog['items'].find { |row| row['id']==id }
+        in_model=bound.fetch(id,0)
+        compatible=catalog['items'].count { |row| row['id']!=id && !archived.include?(row['id']) && row['compatibleIds'].include?(id) }
+        warnings=[]
+        warnings << "Está cargado en este modelo (#{in_model}). Archivar no lo quita del modelo ni despinta piezas." if in_model>0
+        warnings << "Es canto compatible de #{compatible} #{compatible==1 ? 'placa activa' : 'placas activas'}; el vínculo se conserva." if compatible>0
+        warnings << 'Tiene cantos compatibles; el vínculo se conserva para cuando la restaures.' if !item['compatibleIds'].empty?
+        {'catalogId'=>id,'name'=>item['name'],'inModel'=>in_model,'compatibleWith'=>compatible,'warnings'=>warnings}
+      end
+    end
+
+    # Archiving hides an item from daily lists; it never deletes the record,
+    # its private files or compatibleIds, so restoring is lossless.
+    def archive_items(data)
+      ids=data.is_a?(Hash) ? data['catalogIds'] : nil
+      raise ExportError,'Elegí una o más fichas para archivar o restaurar.' unless ids.is_a?(Array) && ids.length.between?(1,5000) && ids.uniq==ids && ids.all? { |id| id.is_a?(String) }
+      raise ExportError,'Indicá si archivar o restaurar.' unless [true,false].include?(data['archived'])
+      raise ExportError,'Vista previa inválida.' if data.key?('dryRun') && ![true,false].include?(data['dryRun'])
+      catalog=@catalog.read
+      missing=ids.reject { |id| catalog['items'].any? { |item| item['id']==id } }
+      raise ExportError,'Alguna ficha ya no existe en la biblioteca; volvé a cargarla.' unless missing.empty?
+      if data['dryRun']==true
+        raise ExportError,'La biblioteca cambió; volvé a cargarla.' unless data['revision']==catalog['revision']
+        current=archived_ids
+        changed=ids.count { |id| current.include?(id)!=data['archived'] }
+        return {'archivedIds'=>current,'changed'=>changed,'rows'=>archive_rows(catalog,ids),'noChanges'=>true,'dryRun'=>true}
+      end
+      locked(data) do |locked_catalog,_index|
+        current=states
+        rows=archive_rows(locked_catalog,ids)
+        before=current['records'].map { |row| row['catalogId'] }
+        if data['archived']
+          now=Time.now.utc.iso8601
+          ids.each { |id| current['records'] << {'catalogId'=>id,'archived'=>true,'archivedAt'=>now} unless before.include?(id) }
+        else
+          current['records'].reject! { |row| ids.include?(row['catalogId']) }
+        end
+        after=current['records'].map { |row| row['catalogId'] }
+        changed=(before-after).length+(after-before).length
+        if changed.zero?
+          next {'archivedIds'=>after,'changed'=>0,'rows'=>rows,'noChanges'=>true}
+        end
+        current['revision']+=1
+        write_states(current)
+        {'archivedIds'=>after,'changed'=>changed,'rows'=>rows}
+      end
+    end
   end
 end

@@ -364,7 +364,8 @@ module PlanosSanto
     # own palette data after the successful operation; never scan the model here.
     MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
       catalog_bind catalog_install skm_commit skm_install material_photo_create
-      material_photo_install smart_assign_color smart_material_prepare smart_quick_start].freeze
+      material_photo_install smart_assign_color smart_material_prepare smart_quick_start
+      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync].freeze
     def dispatch(action, data)
       result=dispatch_action(action,data)
       if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
@@ -393,6 +394,8 @@ module PlanosSanto
         raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.'
       end
       case action
+      when *MATERIAL_MANAGEMENT_ACTIONS
+        material_management(action,data)
       when 'palette_ready'
         active!
         @palette_ready=true
@@ -860,6 +863,48 @@ module PlanosSanto
         end
       end
       result
+    end
+
+    # --- Hito 7: gestión de materiales (bloque aislado del dispatch) ----------
+    # Duplicate/archive/package/texture/OCL-sync/focus. Never paints or touches
+    # the smart paint tool; mutations are refused while it is active.
+    MATERIAL_MANAGEMENT_ACTIONS=%w[material_extras material_duplicate material_archive
+      material_package_export material_package_preview material_package_commit material_package_cancel
+      material_texture_preview material_texture_apply material_ocl_sync viewport_focus].freeze
+    MATERIAL_MANAGEMENT_READONLY=%w[material_extras material_package_cancel viewport_focus].freeze
+    def material_management_directory
+      ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+    end
+    def management_library
+      directory=material_management_directory
+      MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory)
+    end
+    def material_management(action,data)
+      raise ExportError,'Datos de la acción inválidos.' unless data.is_a?(Hash)
+      if !MATERIAL_MANAGEMENT_READONLY.include?(action) && @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
+        raise ExportError,'Detené Pintura Inteligente antes de cambiar la biblioteca.'
+      end
+      case action
+      when 'viewport_focus'
+        # Best effort (MATERIALES-19): Sketchup.focus exists only in recent APIs.
+        if defined?(Sketchup) && Sketchup.respond_to?(:focus)
+          Sketchup.focus
+          {'focused'=>true,'method'=>'Sketchup.focus'}
+        else
+          {'focused'=>false,'method'=>'unsupported'}
+        end
+      when 'material_extras'
+        active!
+        management_library.extras
+      when 'material_duplicate'
+        active!;clean_for_paint!
+        management_library.duplicate(data)
+      when 'material_archive'
+        active!;clean_for_paint!
+        management_library.archive_items(data)
+      else
+        raise ExportError,'Acción de materiales no disponible.'
+      end
     end
 
     def clean_for_paint!
