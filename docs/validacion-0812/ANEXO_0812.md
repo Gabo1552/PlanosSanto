@@ -9,9 +9,11 @@ La 0.8.12 es la 0.8.11 de `main`, más:
 | Hito 3: correcciones de la revisión TypeScript | `WorkshopPanel.tsx` y `workshopRules.ts`: la edición queda bloqueada mientras hay una operación en curso, y las marcas de propuesta (omitir y extra) se limpian al preparar de nuevo | `tests/workshop.test.ts` y la batería completa |
 | Orden del repositorio | Siete carpetas de loops viejos y `PLAN_DESARROLLO_EXTENSION.md` pasan a `docs/historico/` (`git mv`, sin borrar). Se agregan reglas al `.gitignore` y se dejan de versionar 4 `.pyc` | build, Ruby, tsc y vitest |
 | Hito 4: cierre de la revisión | Tope de 1e9 al importe de los precios del catálogo; el borrador queda atado a la versión del perfil; en el panel del perfil, aviso de tarifa incompleta, Ctrl+S, `aria-pressed` y anuncio del tipo en lote del SKM | `catalog_schema_test`, `maderera_order_test`, `madera-rules.test.ts`, `hito4-maderera.spec.ts` |
+| Hito 6: rendimiento | `NameManager#inventory` arma la huella de caras una vez por definición y guarda sólo su SHA-256, que se compara en memoria. En el banco sintético, el clic en modo Cara o lote (no inmediato) baja de 434 a 93 ms | `inventory_cache_test.rb`, `scripts/bench-analisis.rb` |
+| Sugerencias de nombres (BUG-TS-05) | Los listones comunes (40×18, 70×18) se proponen como «Listón»; antes quedaban «Sin clasificar» | `recognition.test.ts` |
 | Verificador | `docs/validacion-0811/verificar_0811_sketchup.rb` ahora espera la versión **0.8.12** | `verificador_0811_test.rb` (29 casos) |
 
-El código del producto es el mismo que en la 0.8.11, salvo esas dos pantallas del Hito 3 y ese cierre del Hito 4.
+El código del producto es el mismo que en la 0.8.11, salvo esas dos pantallas del Hito 3, el cierre del Hito 4, la huella del inventario y la regla del listón.
 
 ## Cómo validarla
 
@@ -22,6 +24,8 @@ Seguir completa `docs/validacion-0811/GUIA_VALIDACION_0811.md`, instalando `dist
    - un perfil no aprobado no cambia medidas ni presupuesto;
    - la migración de la biblioteca v1→v2 deja una copia de seguridad;
    - un paquete con fichas v1 se importa sin error.
-3. **Hito 3:** repetir T1–T9 de la guía. Además, con «Preparar de nuevo» en medio de una operación, la tabla no se puede editar hasta que termina.
+3. **Rendimiento (R1–R11 de la guía):** repetir la medición del clic en **modo Cara o lote** (no inmediato) sobre la obra grande. Además, una vista previa con token sigue rechazando un modelo que cambió entre la vista previa y la confirmación.
+4. **Sugerencias:** en un mueble con listones de 40×18, la sugerencia dice «Listón», con revisión.
+5. **Hito 3:** repetir T1–T9 de la guía. Además, con «Preparar de nuevo» en medio de una operación, la tabla no se puede editar hasta que termina.
 
 Sin modelos, SKM, fotos, SKU ni precios reales en el informe.
