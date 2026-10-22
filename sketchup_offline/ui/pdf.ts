@@ -23,9 +23,27 @@ export function encode64(bytes:Uint8Array):string{
   let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
   return btoa(binary);
 }
+export type A4FitKind='table'|'legend'|'scale'|'header'|'glyph'|'names'|'size'|'view';
+const FIT_ACTIONS:Partial<Record<A4FitKind,string>>={table:'Agrupá piezas iguales o acortá sus nombres.',legend:'Acortá observaciones o notas.',scale:'Pasá a 1 vista.',header:'Acortá el nombre del mueble o del proyecto.',names:'Completá el nombre de cada pieza.',size:'Reducí la cantidad de muebles por PDF.'};
+/** Layout infeasibility with its cause, so the UI can suggest one concrete fix. `message` is kept verbatim. */
+export class A4FitError extends Error{
+  furniture:string;reason:string;kind:A4FitKind;action?:string;character?:string;
+  constructor(message:string,{furniture='',reason,kind,action,character}:{furniture?:string;reason:string;kind:A4FitKind;action?:string;character?:string}){
+    super(message);this.name='A4FitError';this.furniture=furniture;this.reason=reason;this.kind=kind;this.character=character;
+    this.action=action??(kind==='glyph'&&character?`Reemplazá el carácter «${character}».`:FIT_ACTIONS[kind]);
+  }
+}
 function ensureGlyphs(font:PDFFont,text:string){
   const available=new Set(font.getCharacterSet());
-  for(const char of text)if(char!=='\n'&&!available.has(char.codePointAt(0)!))throw new Error(`El PDF no puede representar el carácter «${char}». Cambiá ese carácter antes de exportar.`);
+  for(const char of text)if(char!=='\n'&&!available.has(char.codePointAt(0)!)){const message=`El PDF no puede representar el carácter «${char}». Cambiá ese carácter antes de exportar.`;throw new A4FitError(message,{reason:message,kind:'glyph',character:char});}
+}
+/** Workshop-friendly download name: '<obra>-<mueble si es uno solo>-A4-AAAA-MM-DD.pdf'. */
+export function previewFileName(project:Pick<Project,'name'|'furniture'>,date=new Date()):string{
+  const clean=(value:string)=>value.normalize('NFC').replace(/[/\\:*?"<>|\u0000-\u001f]+/g,' ').trim().replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^[-.]+|[-.]+$/g,'');
+  const day=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  const parts=[clean(project.name||''),project.furniture.length===1?clean(project.furniture[0].name||''):''].filter(Boolean);
+  const base=(parts.join('-')||'PlanosSanto').slice(0,80).replace(/[-.]+$/,'')||'PlanosSanto';
+  return `${base}-A4-${day}.pdf`;
 }
 function linesFor(text:string,width:number,font:PDFFont,size:number):string[]{
   ensureGlyphs(font,text);
@@ -125,19 +143,20 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
   pdf.setTitle(`Planos Santo · ${project.name}`);pdf.setCreator(`Planos Santo ${version} · PDF A4 offline`);
   const prepared=project.furniture.map(source=>{
     const f:Furniture={...source,presentation:{...source.presentation,guide:source.presentation?.guide||{mode:'both',hiddenPieceIds:[],sharedCamera:true,observations:''}}};
-    const fail=(reason:string):never=>{throw new Error(`${f.name}: ${reason} No se recortó información ni se agregaron hojas. Ajustá las vistas, agrupá piezas iguales o acortá textos; cualquier hoja adicional requiere aprobación.`);};
-    if(f.pieces.some(p=>!p.name.trim()))fail('Completá los nombres vacíos.');
+    const fail=(reason:string,kind:A4FitKind,action?:string):never=>{throw new A4FitError(`${f.name}: ${reason} No se recortó información ni se agregaron hojas. Ajustá las vistas, agrupá piezas iguales o acortá textos; cualquier hoja adicional requiere aprobación.`,{furniture:f.name,reason,kind,action});};
+    try{
+    if(f.pieces.some(p=>!p.name.trim()))fail('Completá los nombres vacíos.','names');
     const rows=tableRows(f,fonts.regular,references);
-    if(rows.reduce((h,r)=>h+r.height,0)>139*MM)fail('El listado no cabe legiblemente en una A4 con texto de 8 pt.');
+    if(rows.reduce((h,r)=>h+r.height,0)>139*MM)fail('El listado no cabe legiblemente en una A4 con texto de 8 pt.','table');
     for(const {piece} of rows){
-      if(fonts.regular.widthOfTextAtSize(piece.code,TABLE_FONT)>9*MM)fail(`${piece.code}: el identificador no cabe en la tabla.`);
-      for(const value of [...piece.dimensions.map(mm),String(piece.quantity)])if(fonts.regular.widthOfTextAtSize(value,TABLE_FONT)>12*MM)fail(`${piece.code}: una medida o cantidad no cabe en su columna.`);
+      if(fonts.regular.widthOfTextAtSize(piece.code,TABLE_FONT)>9*MM)fail(`${piece.code}: el identificador no cabe en la tabla.`,'table','Acortá el código de la pieza.');
+      for(const value of [...piece.dimensions.map(mm),String(piece.quantity)])if(fonts.regular.widthOfTextAtSize(value,TABLE_FONT)>12*MM)fail(`${piece.code}: una medida o cantidad no cabe en su columna.`,'table','Revisá la medida o la cantidad de esa pieza.');
     }
     const entries=sheetEntries(f);
     const legendLines=entries.flatMap(entry=>linesFor(entry,175*MM,fonts.regular,8));
     const hasObservations=!!f.presentation?.guide?.observations?.trim();
     const legendHeight=Math.max(16*MM,legendLines.length*10+14+(hasObservations?0:8*MM));
-    if(legendHeight>42*MM)fail('Las notas y observaciones no caben legiblemente debajo de las vistas. Acortá el texto o reducí la cantidad de notas.');
+    if(legendHeight>42*MM)fail('Las notas y observaciones no caben legiblemente debajo de las vistas. Acortá el texto o reducí la cantidad de notas.','legend');
     const legendTop=194*MM-legendHeight, diagramTop=44*MM, diagramBottom=legendTop-9*MM;
     const views=guideViews(f),single=views.length===1,diagramWidth=(single?177:86)*MM;
     const scale=diagramWidth/(single?640:320);
@@ -146,13 +165,14 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
       const box={x:(single?8:index===0?8:99)*MM,top:diagramTop,width:diagramWidth,height:sceneHeight*scale};
       const scene=makeScene(f,{view,layout:'sheet',width:single?640:320,height:sceneHeight});
       const warnings=[...groupedNameIssues(f),...scene.warnings];
-      if(warnings.length)fail(`${view==='front'?'Vista exterior':'Vista interior'}: ${[...new Set(warnings)].join(' ')}`);
+      if(warnings.length)fail(`${view==='front'?'Vista exterior':'Vista interior'}: ${[...new Set(warnings)].join(' ')}`,'view');
       // Printed identifiers and dimensions must remain readable after scene scaling.
-      if((scene.labels.length&&13*scale<7)||(scene.dimensions.length&&DIMENSION_FONT_SIZE*scale<7))fail('Las etiquetas o cotas quedarían por debajo de 7 pt. Elegí una sola vista.');
+      if((scene.labels.length&&13*scale<7)||(scene.dimensions.length&&DIMENSION_FONT_SIZE*scale<7))fail('Las etiquetas o cotas quedarían por debajo de 7 pt. Elegí una sola vista.','scale',single?'Reducí el zoom o la cantidad de cotas y etiquetas.':undefined);
       return {view,scene,box};
     });
-    if(linesFor(f.name,130*MM,fonts.regular,13).length>1||linesFor(project.name,130*MM,fonts.regular,9).length>1)fail('El nombre del proyecto o mueble no cabe en el encabezado. Acortalo antes de exportar.');
+    if(linesFor(f.name,130*MM,fonts.regular,13).length>1||linesFor(project.name,130*MM,fonts.regular,9).length>1)fail('El nombre del proyecto o mueble no cabe en el encabezado. Acortalo antes de exportar.','header');
     return {f,rows,legendLines,legendTop,scenes};
+    }catch(error){if(error instanceof A4FitError&&!error.furniture)error.furniture=f.name;throw error;}
   });
   for(const [pageIndex,{f,rows,legendLines,legendTop,scenes}] of prepared.entries()){
     const page=pdf.addPage([PAGE_W,PAGE_H]);page.setMediaBox(0,0,PAGE_W,PAGE_H);page.setCropBox(0,0,PAGE_W,PAGE_H);
@@ -197,6 +217,6 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
     text(page,`${pageIndex+1} / ${project.furniture.length}`,279*MM,201*MM,8,fonts.regular,GRAY);
   }
   const bytes=await pdf.save();
-  if(bytes.length>30*1024*1024)throw new Error('El PDF supera 30 MB. No se exportó un archivo incompleto.');
+  if(bytes.length>30*1024*1024){const message='El PDF supera 30 MB. No se exportó un archivo incompleto.';throw new A4FitError(message,{reason:message,kind:'size'});}
   return bytes;
 }

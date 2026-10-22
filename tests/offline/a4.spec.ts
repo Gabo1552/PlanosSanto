@@ -38,7 +38,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 
 test('A4 exterior ensamblada: cámara y zoom se guardan, reabren y exportan una hoja con medidas y nota',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();
- await page.getByLabel('Vistas en el PDF',{exact:true}).selectOption('exterior');
+ await page.getByRole('radio',{name:'Exterior',exact:true}).click();
  await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();
  const points=await page.locator('polygon[data-piece]').first().getAttribute('points');
  await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('24');await page.getByRole('slider',{name:'Zoom',exact:true}).fill('1.15');
@@ -46,17 +46,17 @@ test('A4 exterior ensamblada: cámara y zoom se guardan, reabren y exportan una 
  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear esta pieza antes de fijar');
  await page.getByLabel('Observaciones de armado',{exact:true}).fill('Revisar escuadra antes del montaje');await save(page);
  const after=await snapshot();unchanged(before,after);expect(after.guide!.furniture[0].presentation!.guide!.mode).toBe('exterior');expect(after.guide!.furniture[0].notes).toHaveLength(1);expect(after.guide!.furniture[0].presentation!.cameras!.front!.yaw).toBe(24);
- await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByLabel('Vistas en el PDF',{exact:true})).toHaveValue('exterior');
+ await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior',exact:true})).toHaveAttribute('aria-checked','true');
  await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('24');await expect(page.getByRole('slider',{name:'Zoom',exact:true})).toHaveValue('1.15');
  const output=await pdf(page,info.outputDir);expect(output.text).toContain('Alinear esta pieza antes de fijar');expect(output.text).toContain('Revisar escuadra antes del montaje');expect(output.text).toContain('P01');expect(output.text).toContain('P02');expect(output.text).toContain('609,6');expect(output.text).toContain('406,4');await copyFile(output.path,'artifacts/A4-exterior-SINTETICO.pdf');
 });
 
 test('A4 interior: previsualizar, cancelar y restaurar; ocultar una ruta anidada conserva otra instancia compartida y la tabla',async({page},info)=>{
- await boot(page,info.outputDir);const before=await snapshot();await page.getByLabel('Vistas en el PDF',{exact:true}).selectOption('interior');
+ await boot(page,info.outputDir);const before=await snapshot();await page.getByRole('radio',{name:'Interior',exact:true}).click();
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();
  await expect(page.locator('polygon[data-piece="1/13/12"]')).toHaveCount(0);expect(await page.locator('polygon[data-piece="1/11"]').count()).toBeGreaterThan(0);expect(await snapshot()).toEqual(before);
  await expect(page.getByRole('button',{name:'Guardar guía',exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeDisabled();
- await page.getByRole('button',{name:'Cancelar previsualización',exact:true}).click();expect(await page.locator('polygon[data-piece="1/13/12"]').count()).toBeGreaterThan(0);
+ await page.getByRole('button',{name:/^Cancelar previsualización/}).click();expect(await page.locator('polygon[data-piece="1/13/12"]').count()).toBeGreaterThan(0);
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Restaurar todas en la previsualización',exact:true}).click();await expect(page.getByLabel('Visible en interior 1/13/12',{exact:true})).toBeChecked();
  await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();await expect(page.locator('[data-piece-row="1/13/12"]')).toBeVisible();await save(page);
  const after=await snapshot();unchanged(before,after);expect(after.guide!.furniture[0].pieces).toHaveLength(2);expect(after.guide!.furniture[0].presentation!.guide!.hiddenPieceIds).toEqual(['1/13/12']);
@@ -65,7 +65,7 @@ test('A4 interior: previsualizar, cancelar y restaurar; ocultar una ruta anidada
 });
 
 test('A4 dos vistas: orientación compartida e interior distinto persisten en una página y Undo revierte solo ajustes',async({page},info)=>{
- await boot(page,info.outputDir);const before=await snapshot();await page.getByLabel('Vistas en el PDF',{exact:true}).selectOption('both');await page.getByLabel('Compartir cámara entre vistas',{exact:true}).check();
+ await boot(page,info.outputDir);const before=await snapshot();await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();await page.getByLabel('Compartir cámara entre vistas',{exact:true}).check();
  await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('18');
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();await save(page);
  await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('18');await page.getByRole('button',{name:'Ver exterior',exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('18');
@@ -75,7 +75,7 @@ test('A4 dos vistas: orientación compartida e interior distinto persisten en un
 });
 
 test('A4 bloquea una nota anclada a una pieza oculta y permite recuperarla sin perder su texto',async({page},info)=>{
- await boot(page,info.outputDir);await page.getByLabel('Vistas en el PDF',{exact:true}).selectOption('interior');
+ await boot(page,info.outputDir);await page.getByRole('radio',{name:'Interior',exact:true}).click();
  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Conservar la indicación de la pieza interior');
  await openVisibility(page);await page.getByLabel('Visible en interior 1/13/12',{exact:true}).uncheck();await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByRole('alert')).toContainText(/oculta|visible/i);expect(existsSync(resolve(info.outputDir,'PlanosSanto-A4.pdf'))).toBe(false);
@@ -83,7 +83,7 @@ test('A4 bloquea una nota anclada a una pieza oculta y permite recuperarla sin p
 });
 
 test('A4 composición inviable informa ajustes y no recorta notas ni genera hojas extra',async({page},info)=>{
- await boot(page,info.outputDir);await page.getByLabel('Vistas en el PDF',{exact:true}).selectOption('both');
+ await boot(page,info.outputDir);await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();
  for(let index=0;index<6;index++){
   await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill((`Indicación ${index+1}. Revisar fijaciones y alineación de todas las piezas antes de realizar el montaje. `).repeat(2).slice(0,200));
  }
@@ -105,7 +105,7 @@ test('A4 visor: los líderes se pintan antes de las máscaras y textos de cotas;
 test('A4: elegir la ruta durante 158 segundos conserva la confirmación final y el PDF',async({page},info)=>{
  // Browser-clock/transport regression only. The Ruby controller writes a synthetic
  // PDF; this test does not run SketchUp or a Windows modal dialog.
- await boot(page,info.outputDir);await page.getByLabel('Vistas en el PDF',{exact:true}).selectOption('exterior');
+ await boot(page,info.outputDir);await page.getByRole('radio',{name:'Exterior',exact:true}).click();
  const before=await snapshot();await page.clock.install();
  await page.evaluate(()=>{
   const w=window as unknown as {a4NativeRequest:(raw:string)=>Promise<{version:1;id:string;result:unknown;error:string|null}>;pdfHeld?:boolean;releasePdf?:()=>void};
