@@ -10,6 +10,7 @@ require_relative 'p1_diagnostics'
 require_relative 'ocl_reader'
 require_relative 'workshop'
 require_relative 'order_references'
+require_relative 'cutlist'
 require_relative 'material_library'
 require_relative 'native_paint'
 require_relative 'smart_paint'
@@ -836,6 +837,10 @@ module PlanosSanto
             workshop.export_order(data.fetch('plan'),path)
           end
         end
+      when 'cutlist'
+        # Vista «Piezas»: solo lectura, no escribe el modelo ni el pedido.
+        active!
+        Cutlist.for_model(@model,@session,directory:ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory)
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
       when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','skm_commit_typed'
         active!
