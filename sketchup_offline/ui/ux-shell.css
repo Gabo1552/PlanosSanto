@@ -47,3 +47,8 @@
 .ux-shell .ux-sheet-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}.ux-shell .ux-sheet-notice button{flex:none;font-size:12px}
 .ux-shell .empty-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.ux-shell .empty-lead{font-size:14px;margin-top:8px}.ux-shell .tree-empty{margin:8px 0}
 @media(max-width:1000px){.ux-last-notice>summary{padding:0 7px}}@media(max-width:700px){.ux-last-notice{display:none}}
+/* Muebles nombra y Planos dibuja: enlaces de vuelta a Muebles y listado de solo lectura. */
+.ux-shell .link-button{border:0;background:transparent;padding:0 2px;min-height:0;color:#1d4f91;text-decoration:underline;display:inline;font:inherit;cursor:pointer}
+.ux-shell .front-status{margin:8px 0 0;font-size:12px}.ux-shell .guide-front{margin:8px 0;font-size:12px}.ux-shell .naming-settings .warning{margin:6px 0 0}
+.ux-shell .parts-readonly .piece-name{display:block;font-weight:600;color:var(--navy);overflow-wrap:anywhere}.ux-shell .parts-unnamed{margin:0;border-radius:0}
+.ux-shell.destination-furniture .assembly-drawing .diagram{height:clamp(300px,60vh,760px)}

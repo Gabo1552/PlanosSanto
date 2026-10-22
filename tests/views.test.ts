@@ -34,7 +34,8 @@ describe('Dos axonometrías de la misma geometría',()=>{
     f.notes=[{id:crypto.randomUUID(),pieceId:f.pieces[0].id,anchor:[18,200,350],position:[718,32],text:'Unión desde el dorso'}];
     const snapshot=JSON.stringify(f),front=makeScene(f,{layout:'sheet'}),back=makeScene(f,{layout:'sheet',view:'back'});
     expect(front.warnings).toEqual([]);expect(back.warnings).toEqual([]);
-    expect(front.dimensions).toHaveLength(8);expect(back.dimensions).toHaveLength(0);
+    // 8 cotas by size; 3 repeat a measure in the same direction (450 depth, 700 height, 764 width): drawn once.
+    expect(front.dimensions).toHaveLength(5);expect(front.dimensions.flatMap(d=>d.shared||[]).length).toBeGreaterThanOrEqual(3);expect(back.dimensions).toHaveLength(0);
     for(const scene of [front,back]){
       expect(scene.labels.map(l=>l.code)).toEqual(f.pieces.map(p=>p.code));
       expect(scene.notes[0]).toMatchObject({marker:true,number:1,pieceId:f.notes[0].pieceId});

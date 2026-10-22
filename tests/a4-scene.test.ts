@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'vitest';
+import {Vector3} from 'three';
 import {createDemo} from '../lib/demo';
 import {applyEdit,toEdit} from '../lib/model';
 import {makeScene,guideViews,sheetView,layoutWarnings} from '../lib/scene';
@@ -21,9 +22,11 @@ describe('Guías A4 configurables: representación separada de geometría',()=>{
   const interior=makeScene(f,{view:'back'});expect(interior.faces.some(face=>face.pieceId===left.id)).toBe(false);expect(interior.faces.some(face=>face.pieceId===right.id)).toBe(true);expect(interior.labels.some(label=>label.pieceId===left.id)).toBe(false);expect(interior.dimensions.some(d=>d.pieceId===left.id)).toBe(false);
   expect(f.pieces).toHaveLength(6);expect(JSON.stringify(f)).toBe(before);f.presentation!.guide!.hiddenPieceIds=[];expect(makeScene(f,{view:'back'}).faces.some(face=>face.pieceId===left.id)).toBe(true);
  });
- it('comparte orientación, zoom y encuadre exterior aunque se oculte la pieza extrema',()=>{
+ // Planos: with a shared orientation the interior is the exterior seen from the opposite side.
+ it('comparte orientación (interior opuesto), zoom y encuadre aunque se oculte la pieza extrema',()=>{
   const f=guide();f.presentation!.cameras={front:{yaw:49,pitch:27},back:{yaw:-25,pitch:64}};f.presentation!.guide!.hiddenPieceIds=[f.pieces[0].id];f.zoom=1.12;
-  const exterior=makeScene(f),interior=makeScene(f,{view:'back'});expect(interior.camera.forward.toArray()).toEqual(exterior.camera.forward.toArray());expect(interior.scale).toBe(exterior.scale);expect(interior.cx).toBe(exterior.cx);expect(interior.cy).toBe(exterior.cy);
+  const exterior=makeScene(f),interior=makeScene(f,{view:'back'}),whole=makeScene({...f,presentation:{...f.presentation,guide:{...f.presentation!.guide!,hiddenPieceIds:[]}}},{view:'back'});
+  expect(interior.camera.forward.distanceTo(exterior.camera.forward.clone().applyAxisAngle(new Vector3(0,0,1),Math.PI))).toBeLessThan(1e-9);expect(interior.scale).toBe(whole.scale);expect(interior.cx).toBe(whole.cx);expect(interior.cy).toBe(whole.cy);
   f.presentation!.guide!.sharedCamera=false;expect(makeScene(f,{view:'back'}).camera.forward.toArray()).not.toEqual(exterior.camera.forward.toArray());
  });
  it('interior independiente parte de la misma orientación exterior sin un giro implícito de 180 grados',()=>{
@@ -47,7 +50,8 @@ describe('Bajo mesada de 17 piezas SINTÉTICO, no confundir con el SKP privado',
   const {createA4Demo}=await import('../lib/a4Demo');const {groupedNameIssues}=await import('../lib/pieceGroups');const p=createA4Demo(),f=p.furniture[0];expect(p.source).toBe('demo');expect(p.name).toContain('SINTÉTICA');expect(f.pieces).toHaveLength(17);expect(f.pieces.filter(piece=>piece.id.includes('/drawer-'))).toHaveLength(9);expect(groupedNameIssues(f)).toEqual([]);
   const before=JSON.stringify(p),exterior=makeScene(f,{layout:'sheet'}),interior=makeScene(f,{layout:'sheet',view:'back'});
   expect(exterior.labels).toHaveLength(8);expect(interior.labels).toHaveLength(7);expect(exterior.labels.reduce((n,label)=>n+(label.quantity||1),0)).toBe(17);expect(interior.labels.reduce((n,label)=>n+(label.quantity||1),0)).toBe(15);expect(makeScene(f).labels).toHaveLength(17);expect(exterior.faces.filter(face=>face.pieceId.includes('/door-')).length).toBeGreaterThan(0);expect(interior.faces.some(face=>face.pieceId.includes('/door-'))).toBe(false);
-  expect(JSON.stringify(p)).toBe(before);expect(layoutWarnings(f).join()).toContain('No hay espacio legible para todas las cotas');
+  // Since 0.8.19 equal measures are drawn once and overlaps are resolved: every cota fits.
+  expect(JSON.stringify(p)).toBe(before);expect(layoutWarnings(f).join()).not.toMatch(/cotas/i);
  });
 });
 

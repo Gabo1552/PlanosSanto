@@ -1,7 +1,9 @@
 import {explodedOffsets} from './explosion';
 import { Matrix4, Ray, Vector3 } from 'three';
 import { bounds, type Furniture, type Note, type Piece, type Vec3 } from './model';
-import {type CameraAngles} from './presentation';
+import {defaultCamera,type CameraAngles,type Presentation} from './presentation';
+import type {NamingReference} from './naming';
+import {exteriorFromOrientation} from './nameSuggestions';
 import {pieceCodeMap,pieceRows,groupedNameIssues,groupedPieces} from './pieceGroups';
 import { makeDimensions } from './dimensions';
 
@@ -19,6 +21,35 @@ export function cameraBasis(view:View='front',angles?:CameraAngles){
   }
   const up=new Vector3().crossVectors(forward,right).normalize();
   return {right,forward,up};
+}
+/** Front saved in Muebles («Proponer nombres»), in the group's local axes; a furniture never marked has none. */
+export function markedFront(f:Furniture):NamingReference|undefined{
+  const r=f.naming?.reference;
+  return r&&r.frontAxis!==r.upAxis?r:undefined;
+}
+const wrapYaw=(yaw:number)=>((yaw+540)%360)-180;
+export const oppositeCamera=(c:CameraAngles):CameraAngles=>({...c,yaw:wrapYaw(c.yaw+180)});
+/** Exterior camera of a guide: the default ¾ view turned by the naming module's yaw so it looks at the
+ *  saved front (furnitureExterior(f).yaw when saved, computed here without the proposal). */
+export function frontCamera(f:Furniture):CameraAngles{
+  const r=markedFront(f);if(!r)return defaultCamera;
+  return {yaw:wrapYaw(defaultCamera.yaw+Math.round(exteriorFromOrientation(r,f.referenceTransform).yaw)),pitch:defaultCamera.pitch};
+}
+/** Guide cameras (absolute angles): a stored camera wins; otherwise the exterior faces the marked front and the
+ *  interior looks from the opposite side. With a shared orientation the interior is the exterior turned 180°. */
+export function guideCamera(f:Furniture,view:View):CameraAngles{
+  const cameras=f.presentation?.cameras,exterior=cameras?.front||frontCamera(f);
+  if(view==='front')return exterior;
+  return f.presentation?.guide?.sharedCamera?oppositeCamera(exterior):cameras?.back||oppositeCamera(frontCamera(f));
+}
+/** Angles shown for `view`: guides use guideCamera, the web editor stores them relative to each view. */
+export const viewCamera=(f:Furniture,view:View)=>f.presentation?.guide?guideCamera(f,view):f.presentation?.cameras?.[view]||defaultCamera;
+/** Stores `angles` for `view`; a shared guide keeps the interior opposite to the exterior. */
+export function withViewCamera(f:Furniture,view:View,angles:CameraAngles):Presentation{
+  const cameras=f.presentation?.cameras;
+  if(!f.presentation?.guide?.sharedCamera)return {...f.presentation,cameras:{...cameras,[view]:angles}};
+  const front=view==='front'?angles:oppositeCamera(angles);
+  return {...f.presentation,cameras:{...cameras,front,back:oppositeCamera(front)}};
 }
 export const SHEET_VIEW={width:320,height:450,widthMm:86,topMm:42,xMm:[8,99]} as const;
 /** front/back are stable storage keys: exterior/interior in configurable guides. */
@@ -53,7 +84,7 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
   const visibleFurniture={...f,pieces:visiblePieces};
   const compact=!!f.presentation?.compact&&!guide,compactFront=compact&&view==='front';
   const origin={x:sheet?width/2:350,y:compactFront?105:sheet?height/2-10:290};
-  const {right,forward,up}=cameraBasis(guide?'front':view,guide?.sharedCamera?f.presentation?.cameras?.front:f.presentation?.cameras?.[view]);
+  const {right,forward,up}=cameraBasis(guide?'front':view,guide?guideCamera(f,view):f.presentation?.cameras?.[view]);
   const offsets = explodedOffsets(guide?{...f,explosion:0}:f);
   const transforms = new Map<string,Matrix4>();
   const points: Vector3[] = [];

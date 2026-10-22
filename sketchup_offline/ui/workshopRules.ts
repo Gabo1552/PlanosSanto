@@ -35,6 +35,15 @@ export function rowDimensions(row:Pick<OrderRow,'axes'|'dimensionRule'|'cutBase'
  if(row.dimensionRule==='explicit_cut')return row.cutBase&&row.cutHeight&&row.cutBase>0&&row.cutHeight>0?[row.cutBase,row.cutHeight]:null;
  return row.axes?[geometry.lengths[row.axes[0]],geometry.lengths[row.axes[1]]]:null;
 }
+/** Lo del perfil de maderera en uso que cambia medidas y cortes (null: sin perfil). */
+export type CutProfile={trimMm:number;kerfMm:number;dimensionRule:string;wastePercent?:number|null}|null|undefined;
+/** Medida que recibe la maderera, como SupplierOrder#dimensions: con «descontar el canto» del perfil, los cantos izquierdo y derecho acortan la base y arriba/abajo la altura. */
+export function orderSize(row:Pick<OrderRow,'axes'|'dimensionRule'|'cutBase'|'cutHeight'|'edgeMap'|'principalId'|'secondaryId'>,geometry:Pick<Geometry,'lengths'>,catalog:Catalog,profile?:CutProfile):[number,number]|null{
+ const size=rowDimensions(row,geometry);if(!size||row.dimensionRule==='explicit_cut'||profile?.dimensionRule!=='deduct_edge')return size;
+ const t=[0,1,2,3].map(i=>{const role=row.edgeMap[i],id=role===1?row.principalId:role===2?row.secondaryId:null,edge=id?find(catalog,id,'edge'):undefined;return typeof edge?.thicknessMm==='number'?edge.thicknessMm:0;});
+ const round=(value:number)=>Math.round(value*1000)/1000;
+ return [round(size[0]-t[2]-t[3]),round(size[1]-t[0]-t[1])];
+}
 /** Motivo físico por el que un canto no sirve para la pieza (más angosto que el espesor), o null. Cualquier canto vale: no hay canto fijo por placa. */
 export function edgeIncompatibility(edge:CatalogItem,board:CatalogItem|undefined,thickness:number|null){
  const t=thickness??board?.thicknessMm??null;
@@ -133,12 +142,12 @@ export function mergeNotice(merge:MergeStats|null|undefined){
  return `El modelo, la biblioteca o el perfil cambiaron: el pedido se actualizó${parts.length?` (${parts.join(', ')})`:''}.`;
 }
 export type EdgeTotal={id:string;label:string;sku:string;metres:number;sides:number;pieces:number};
-/** Metros de canto por producto, con la misma regla que Ruby: lados 0-1 suman la base y 2-3 la altura. */
-export function edgeTotals(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalog){
+/** Metros de canto por producto, con la misma regla que Ruby: lados 0-1 suman la base y 2-3 la altura (medida que recibe la maderera). */
+export function edgeTotals(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalog,profile?:CutProfile){
  const lines=new Map<string,EdgeTotal>(),pieceIds=new Map<string,Set<string>>();let missing=0,unassigned=0;
  for(const row of plan.rows){
   if(!row.include||!row.edgeMap.some(v=>v>0))continue;
-  const geometry=plan.geometry[row.id],size=geometry&&rowDimensions(row,geometry);
+  const geometry=plan.geometry[row.id],size=geometry&&orderSize(row,geometry,catalog,profile);
   if(!size){missing++;continue;}
   let lacking=false;
   row.edgeMap.forEach((role,index)=>{
@@ -150,6 +159,11 @@ export function edgeTotals(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalo
   if(lacking)unassigned++;
  }
  return {lines:[...lines.values()],missing,unassigned};
+}
+/** Canto a comprar: neto, con el margen de desperdicio del perfil y redondeado al metro entero (la unidad en que se vende). Sin perfil, sin margen. */
+export function edgePurchase(metres:number,wastePercent:number|null|undefined){
+ const margin=typeof wastePercent==='number'&&wastePercent>0?metres*wastePercent/100:0;
+ return {net:metres,withMargin:metres+margin,buy:metres>0?Math.ceil(metres+margin-1e-9):0};
 }
 /** Mismas medidas ordenadas (±0,1 mm), mismo espejado y misma forma. */
 export function equivalentRows(plan:Pick<OrderPlan,'rows'|'geometry'>,row:OrderRow){

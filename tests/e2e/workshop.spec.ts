@@ -15,10 +15,12 @@ test('edita piezas/notas, conserva anclas, reabre y exporta dos hojas A4 legible
   await expect(page.locator('tbody tr')).toHaveCount(6);
   await expect(page.locator('[data-label]')).toHaveCount(6);
   const frontPoints=await page.locator('[data-piece]').first().getAttribute('points');
+  // Guide views: the interior looks from the side opposite the front.
   await page.getByRole('button',{name:'Ver interior',exact:true}).click();
-  expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(frontPoints);
+  expect(await page.locator('[data-piece]').first().getAttribute('points')).not.toBe(frontPoints);
   await expect(page.locator('[data-label]')).toHaveCount(6);
   await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
+  expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(frontPoints);
   await page.getByRole('textbox',{name:'Nombre P01',exact:true}).fill('Costado marcado – prueba');
   await expect(page.locator('tbody tr').first()).toContainText('700');
   await page.getByRole('button',{name:'Agregar nota a P01'}).click();

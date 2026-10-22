@@ -6,6 +6,8 @@ import {resolve} from 'node:path';
 import {PDFDocument} from 'pdf-lib';
 import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
+import {toMuebles,toPlanos} from './fixtures/modules';
+import {showIds} from './ids';
 
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 // Enterprise Chromium policy blocks file:// in this host. Serve the exact packaged bytes
@@ -50,34 +52,41 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del di�
   await boot(page,info.outputDir);
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
   await expect(page.getByLabel('Nombre P01')).toBeVisible();
+  // Muebles only names pieces; cotas, views and notes live in Planos A4.
+  await expect(page.locator('[data-dimension]')).toHaveCount(0);await expect(page.getByRole('button',{name:'Agregar nota',exact:true})).toHaveCount(0);
+  await toPlanos(page);
   await expect(page.locator('[data-dimension]')).toHaveCount(2);
   await expect(page.locator('[data-dimension][data-role=espesor]')).toHaveCount(0);
   await expect(page.locator('tbody tr')).toHaveCount(2);
-  await expect(page.locator('[data-label]')).toHaveCount(2);
+  // IDs are hidden by default in the A4 and therefore in the viewer; the guide can show them.
+  await expect(page.locator('[data-label]')).toHaveCount(0);await showIds(page);await expect(page.locator('[data-label]')).toHaveCount(2);
   const originalPoints=await page.locator('[data-piece]').first().getAttribute('points');
   const dirtyBefore=calls.filter(c=>c==='dirty').length;
+  // The interior looks from the side opposite the front; switching views edits nothing.
   await page.getByRole('button',{name:'Ver interior',exact:true}).click();
-  expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(originalPoints);
+  expect(await page.locator('[data-piece]').first().getAttribute('points')).not.toBe(originalPoints);
   await expect(page.locator('tbody tr')).toHaveCount(2);
   expect(calls.filter(c=>c==='dirty').length).toBe(dirtyBefore);
   await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
+  expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(originalPoints);
   const originalMeasures=await page.locator('[data-dimension]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-mm')));
   await page.getByText('Opciones de guardado',{exact:true}).click();
   await page.getByRole('checkbox',{name:'Sincronizar nombres de grupos y piezas en SketchUp'}).uncheck();
-  await page.getByLabel('Nombre P01').fill('Costado de prueba offline');
-  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();
+  await toMuebles(page);await page.getByLabel('Nombre P01').fill('Costado de prueba offline');
+  await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();
   await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
   await page.getByLabel('Texto de la nota').fill('Alinear antes de fijar');
   const slider=page.getByRole('slider',{name:'Zoom',exact:true});
   await slider.focus();await slider.press('End');for(let i=0;i<12;i++)await slider.press('ArrowLeft');
   await expect(slider).toHaveValue('0.8');
-  await page.getByTestId('note-box').focus();await page.keyboard.press('ArrowDown');
+  // The viewer draws the A4: a note is its numbered marker, placed by the layout.
+  await expect(page.locator('[data-note-marker="1"]')).toBeVisible();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
   await expect(page.getByText('Falta guardar el archivo .skp',{exact:false})).toBeVisible();
   await page.reload();
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
   await expect(page.getByLabel('Nombre P01')).toHaveValue('Costado de prueba offline');
-  await page.getByRole('button',{name:'P01 Alinear antes de fijar',exact:true}).click();
+  await toPlanos(page);await page.getByRole('button',{name:'P01 Alinear antes de fijar',exact:true}).click();
   await expect(page.getByLabel('Texto de la nota')).toHaveValue('Alinear antes de fijar');
   await expect(page.getByRole('slider',{name:'Zoom',exact:true})).toHaveValue('0.8');
   await expect(page.locator('[data-dimension]')).toHaveCount(2);
@@ -102,7 +111,7 @@ test('Ruby bloquea exportación si la geometría cambió después de generar',as
   await expect(page.getByRole('alert')).toContainText('geometría');
 });
 
-test('notas completas: editar, arrastrar, reanclar, eliminar; selección evita padre y descendiente',async({page},info)=>{
+test('notas completas: editar, marcador numerado, reanclar, eliminar; selección evita padre y descendiente',async({page},info)=>{
   await boot(page,info.outputDir);
   const parent=page.getByRole('checkbox',{name:'Mueble de contrato',exact:false}).first();
   await page.locator('.tree > .tree-node').first().getByText('Ver contenido',{exact:true}).first().click();
@@ -110,15 +119,14 @@ test('notas completas: editar, arrastrar, reanclar, eliminar; selección evita p
   await page.getByRole('checkbox',{name:'Lateral sintético',exact:false}).first().check();
   await parent.check();
   await expect(page.getByRole('checkbox',{name:'Lateral sintético',exact:false}).first()).not.toBeChecked();
-  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
-  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
+  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await toPlanos(page);
+  await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
   await page.getByLabel('Texto de la nota').fill('Unión revisada');
-  const box=page.getByTestId('note-box');const before=await box.boundingBox();
-  await page.mouse.move(before!.x+50,before!.y+20);await page.mouse.down();await page.mouse.move(before!.x+15,before!.y+70,{steps:5});await page.mouse.up();
-  const after=await box.boundingBox();expect(after!.y).toBeGreaterThan(before!.y+30);
+  // Since 0.8.19 the viewer shows the A4: the note is the numbered marker the sheet prints, placed by the layout.
+  await expect(page.locator('[data-note-marker="1"]')).toBeVisible();
   await page.getByRole('button',{name:'Cambiar destino de la flecha',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();
   await expect(page.getByRole('button',{name:'P02 Unión revisada',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();await expect(page.getByTestId('note-box')).toHaveCount(0);
+  await page.getByRole('button',{name:'Eliminar nota',exact:true}).click();await expect(page.locator('[data-note-marker]')).toHaveCount(0);
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Falta guardar el archivo .skp',{exact:false})).toBeVisible();
 });
 
@@ -126,7 +134,7 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
   await page.setViewportSize({width:1000,height:760});await boot(page,info.outputDir);
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
   const input=page.getByLabel('Nombre P01');await expect(input).toBeVisible();const original=await input.inputValue();
-  const help=page.getByRole('button',{name:'Ayuda: Vistas configurables',exact:true});
+  await toPlanos(page);const help=page.getByRole('button',{name:'Ayuda: Vistas configurables',exact:true});
   await help.focus();await page.keyboard.press('Enter');
   const popup=page.getByRole('dialog',{name:'Vistas configurables',exact:true});await expect(popup).toBeVisible();await expect(popup).toBeFocused();
   await expect(popup).toContainText('nunca cambia la geometría ni la visibilidad del modelo original');
@@ -138,7 +146,7 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
   await page.locator('.guide-heading h2').click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button',{name:'Ayuda: Guardar guía',exact:true}).click();
   await page.getByRole('button',{name:'Cerrar ayuda: Guardar guía',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(input).toHaveValue(original);expect(calls).not.toContain('save');expect(calls).not.toContain('pdf');
+  await toMuebles(page);await expect(input).toHaveValue(original);expect(calls).not.toContain('save');expect(calls).not.toContain('pdf');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });
 
@@ -146,7 +154,8 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
 test('al cambiar muebles se regeneran las guías solas y Escape cancela el anclaje',async({page},info)=>{
   await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
   await expect(page.getByLabel('Nombre P01')).toBeVisible();
-  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.pick-hint')).toHaveCount(0);await expect(page.getByTestId('note-box')).toHaveCount(0);
+  await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.pick-hint')).toHaveCount(0);await expect(page.locator('[data-note-marker]')).toHaveCount(0);
+  await toMuebles(page);
   await page.getByRole('checkbox',{name:'Mueble repetido sintético',exact:false}).first().uncheck();
   await expect(page.locator('.furniture-tabs button')).toHaveCount(1);await expect(page.getByRole('alertdialog')).toHaveCount(0);await expect(page.locator('.selection-notice')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeEnabled();
@@ -154,7 +163,7 @@ test('al cambiar muebles se regeneran las guías solas y Escape cancela el ancla
 
 test('cotas: ocultar una, guardar/reabrir y PDF sin esa cota; restaurar con teclado y lista',async({page},info)=>{
   await boot(page,info.outputDir);
-  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await toPlanos(page);
   await expect(page.locator('[data-dimension]')).toHaveCount(2);
   const table=await page.locator('tbody').innerText();
   await page.locator('.dimension-controls>summary').click();
@@ -164,7 +173,7 @@ test('cotas: ocultar una, guardar/reabrir y PDF sin esa cota; restaurar con tecl
   expect(await page.locator('tbody').innerText()).toBe(table);
   await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.locator('[data-dimension]')).toHaveCount(1);
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Falta guardar el archivo .skp',{exact:false})).toBeVisible();
-  await page.reload();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+  await page.reload();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await toPlanos(page);
   await expect(page.locator('[data-dimension]')).toHaveCount(1);expect(await page.locator('tbody').innerText()).toBe(table);
   await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
   const pdfPath=resolve(info.outputDir,'PlanosSanto-A4.pdf');

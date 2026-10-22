@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
+import {toPlanos} from './fixtures/modules';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {readFile,mkdir} from 'node:fs/promises';
@@ -25,7 +26,7 @@ async function boot(page:Page,folder:string){
  await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
  await expect(page.getByRole('button',{name:'Generar guías (2)',exact:true})).toBeEnabled();
  await page.getByRole('checkbox',{name:/Otro mueble/}).uncheck();
- await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();
+ await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await toPlanos(page);
 }
 async function harness(page:Page,folder:string){
  const outfile=resolve(folder,'harness/harness.js');
