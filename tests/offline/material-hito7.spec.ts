@@ -12,10 +12,10 @@ const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const base=(id:string,patch:Partial<CatalogItem>):CatalogItem=>({id,name:'',kind:'sheet',sku:'',supplier:'',thicknessMm:18,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'2026-10-22T00:00:00Z',sourceHash:'0'.repeat(64),observed:{},...patch});
 let calls:Call[],items:CatalogItem[],archived:string[],revision:number,next:number;
 const requests=(action:string)=>calls.filter(call=>call.action===action);
-async function harness(page:Page,folder:string,mode:'library'|'palette'|'photo'){
- calls=[];revision=3;next=10;archived=[];
+async function harness(page:Page,folder:string,mode:'library'|'palette'|'photo',options:{archived?:string[];extraSheet?:boolean}={}){
+ calls=[];revision=3;next=10;archived=options.archived||[];
  items=[base(uuid(1),{name:'Roble foto QA',lengthMm:2600,widthMm:1830,sku:'R18',supplier:'Maderera QA',observed:{source:'photo',photo:{schema:1,designReady:true,widthPx:2000,heightPx:1000,textureScale:{verified:false,widthMm:null,heightMm:null}}}}),
-  base(uuid(2),{name:'Canto blanco QA',kind:'edge',thicknessMm:0.45,approved:true,sku:'C22',supplier:'Maderera QA',widthMm:22}),base(uuid(3),{name:'Herraje QA',kind:'unknown',thicknessMm:null})];
+  base(uuid(2),{name:'Canto blanco QA',kind:'edge',thicknessMm:0.45,approved:true,sku:'C22',supplier:'Maderera QA',widthMm:22}),base(uuid(3),{name:'Herraje QA',kind:'unknown',thicknessMm:null}),...(options.extraSheet?[base(uuid(4),{name:'Nogal archivado QA'})]:[])];
  let tool={active:false,mode:'sheet',queuedCount:0} as Record<string,unknown>;
  await mkdir(folder,{recursive:true});
  const temp=await mkdtemp(join(tmpdir(),'planos-hito7-entry-'));const entry=join(temp,'entry.jsx');
@@ -46,7 +46,7 @@ root.render(window.harnessMode==='photo'?React.createElement(Photo,{onClose:()=>
    const row={materialId:'501',name:'Roble foto QA',catalogId:uuid(1),status:data.dryRun?'updated':'updated',changes:[{key:'std_thicknesses',from:'15mm',to:'18mm',action:'update'},{key:'std_sizes',from:null,to:'2600mm x 1830mm',action:'write'}],kept:[{key:'grained',current:true,proposed:false}]};
    if(!data.dryRun&&data.planDigest!=='plan-digest-qa')return {version:1,id:message.id,result:null,error:'La vista previa de OpenCutList venció.'};
    result={dryRun:!!data.dryRun,changed:2,materials:[row],...(data.dryRun?{noChanges:true,planDigest:'plan-digest-qa'}:{})};
-  }else if(action==='smart_palette_load')result={catalog:{schema:1,revision,items},visuals:{materials:[{id:'501',designReady:true,name:'Roble foto QA',hasTexture:true,color:[113,81,55],binding:{uuid:'photo-uuid',catalogId:uuid(1),kind:'sheet'},issues:[]}]},thumbnails:{[uuid(1)]:pixel},settings:{scope:'all',axes:[0,1],batch:true,paintScope:'face',side:'front'},toolState:tool};
+  }else if(action==='smart_palette_load')result={catalog:{schema:1,revision,items},visuals:{materials:[{id:'501',designReady:true,name:'Roble foto QA',hasTexture:true,color:[113,81,55],binding:{uuid:'photo-uuid',catalogId:uuid(1),kind:'sheet'},issues:[]},...(options.extraSheet?[{id:'502',designReady:true,name:'Nogal archivado QA',hasTexture:false,color:[90,60,40],binding:{uuid:'nogal-uuid',catalogId:uuid(4),kind:'sheet'},issues:[]}]:[])]},thumbnails:{[uuid(1)]:pixel},settings:{scope:'all',axes:[0,1],batch:true,paintScope:'face',side:'front'},toolState:tool};
   else if(action==='smart_palette_compact')result={compact:data.compact};
   else if(action==='smart_quick_start'||action==='smart_tool_start'){tool={active:true,mode:'sheet',options:{...data,scope:'unique'},queuedCount:0};result={toolState:tool};}
   else if(action==='smart_tool_status')result={toolState:tool};
@@ -154,6 +154,7 @@ test('búsqueda: Escape la limpia, las flechas recorren tarjetas y "Pintar en el
  await cards.nth(0).focus();await page.keyboard.press('End');await expect(cards.nth(2)).toBeFocused();await page.keyboard.press('Home');await expect(cards.nth(0)).toBeFocused();
  await page.keyboard.press('ArrowRight');await expect(cards.nth(1)).toBeFocused();await expect(cards.nth(1)).toHaveAttribute('tabindex','0');
  await expect(page.getByRole('group',{name:'Materiales visuales del taller'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Placas',exact:true})).toHaveAccessibleDescription(/^\d+ material(es)?$/);
  await select(page,'Roble foto QA');await details(page).getByRole('button',{name:'Pintar en el modelo',exact:true}).click();
  expect(requests('__paint')[0].data).toEqual({id:uuid(1),autoStart:true});
  expect(errors).toEqual([]);
@@ -164,6 +165,14 @@ test('MATERIALES-19: tras iniciar la pintura desde la biblioteca se pide foco al
  const errors=await harness(page,info.outputDir,'palette');
  await expect.poll(()=>requests('smart_quick_start').length).toBe(1);await expect.poll(()=>requests('viewport_focus').length).toBe(1);
  const order=calls.map(call=>call.action);expect(order.indexOf('viewport_focus')).toBeGreaterThan(order.indexOf('smart_quick_start'));
+ expect(errors).toEqual([]);
+});
+
+test('paleta: una ficha archivada sale de la lista de materiales pero la elegida sigue disponible',async({page},info)=>{
+ const errors=await harness(page,info.outputDir,'palette',{archived:[uuid(4)],extraSheet:true});
+ await expect.poll(()=>requests('material_extras').length).toBeGreaterThan(0);
+ await expect(page.getByText('Roble foto QA').first()).toBeVisible();
+ await expect(page.getByText('Nogal archivado QA')).toHaveCount(0);
  expect(errors).toEqual([]);
 });
 
