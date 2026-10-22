@@ -56,7 +56,7 @@ Exclusivos de la web (no compartidos): `lib/archive`, `browser`, `http`, `pairin
 | `npx vitest run` | 172/172 | 178/178 (+6 de lib compartida) |
 | `npx tsc --noEmit` | OK | OK |
 | `npx eslint app components lib tests` | OK | OK |
-| e2e `playwright.config.ts` | **13/16**: 3 fallas de entorno | 23/23 |
+| e2e `playwright.config.ts` | **13/16**: 3 fallas de entorno | 24/24 |
 
 Las 3 fallas iniciales no eran de la app:
 
@@ -91,9 +91,15 @@ CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npx playwright 
 - Hay `lang="es-AR"`, todos los controles tienen etiqueta, los avisos usan `role="alert"` y el guardado usa `role="status"`.
 - La zona de arrastre tiene una alternativa por teclado (el botón «Elegir archivo»).
 
+### Segunda pasada (implementado, e2e en `webapp-ux.spec.ts`)
+
+8. **Notas con teclado:** al crear una nota, el foco va al comentario con el texto seleccionado, así se puede escribir directamente. `Esc` cancela el modo de anclaje, y el aviso lo indica. Al eliminar una nota, el foco vuelve a «Agregar nota» y el estado anuncia «Nota eliminada».
+9. **Selección anunciada:** el mueble activo y la nota activa llevan `aria-current`, y el código de pieza elegido lleva `aria-pressed`.
+10. **Auditoría axe-core** (WCAG 2.1 A/AA y buenas prácticas). Se corrió puntualmente con el `axe-core` 4.14 que ya trae `eslint-plugin-jsx-a11y`, sin dependencia nueva. Encontró dos problemas, ya corregidos: las dos columnas `<aside>` no tenían nombre (ahora se llaman «Muebles del proyecto» y «Notas de armado») y el código de cada nota daba 4,47:1. **Resultado: 0 violaciones** en inicio, demo, demo con nota, panel de cotas, enlace roto, error de subida y las tres páginas de `/instalar`.
+11. **Móvil (390 px):** sin scroll horizontal en ninguna pantalla.
+
 ### Pendiente (L o requiere decisión)
 
-- `Editor.tsx` es un componente de 100 líneas muy largas. Partirlo (barra superior, panel de notas, tabla) facilitaría el mantenimiento. No se hizo para no mezclar refactor con UX.
-- Al eliminar una nota, el foco se pierde. Habría que devolverlo a «Agregar nota».
-- No hay una auditoría automática con axe, porque agregar `@axe-core/playwright` suma una dependencia. Se hizo un chequeo de contraste propio en la e2e.
+- `Editor.tsx` es un componente de unas 100 líneas muy largas. Partirlo (barra superior, panel de notas, tabla) facilitaría el mantenimiento. No se hizo para no mezclar refactor con UX.
+- Si se quiere axe en CI, hay que declarar `@axe-core/playwright` como dependencia de desarrollo. Hoy solo existe como transitiva de ESLint.
 - Decidir el futuro del editor web (ver §1).
