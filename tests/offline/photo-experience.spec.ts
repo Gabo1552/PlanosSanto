@@ -47,7 +47,7 @@ async function rpc(page:Page,action:string,data:Record<string,unknown>={}){
 }
 async function openPhoto(page:Page){
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
- await page.getByRole('button',{name:'+ Material',exact:true}).click();
+ await page.getByRole('button',{name:'Crear',exact:true}).click();await page.getByRole('button',{name:'Material desde una foto…',exact:true}).click();
  return page.getByRole('dialog',{name:'Material desde una foto',exact:true});
 }
 async function choosePhoto(page:Page){
@@ -115,6 +115,7 @@ if(process.env.PLANOS_PHOTO_CAPTURE_BASELINE!=='1'){
   await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
   const card=page.getByRole('article',{name:'Material Foto QA ámbar',exact:true});await expect(card).toBeVisible();
   await card.getByRole('button').first().click();
+  await page.getByRole('dialog',{name:'Propiedades del material «Foto QA ámbar»',exact:true}).getByRole('tab',{name:'Textura',exact:true}).click();
   await page.getByRole('button',{name:'Cargar SKM en este modelo',exact:true}).click();
   // Punto 27: cargar el SKM es un clic, sin paso de confirmación.
   await expect(page.getByRole('button',{name:'Sí, cargar SKM',exact:true})).toHaveCount(0);

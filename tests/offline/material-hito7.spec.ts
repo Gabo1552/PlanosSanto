@@ -66,8 +66,13 @@ root.render(window.harnessMode==='photo'?React.createElement(Photo,{onClose:()=>
  if(mode==='library')await expect(page.getByRole('heading',{name:'Materiales del taller',exact:true})).toBeVisible();
  return errors;
 }
-const details=(page:Page)=>page.getByRole('complementary',{name:'Material seleccionado'});
-const select=(page:Page,name:string)=>page.getByRole('article',{name:`Material ${name}`,exact:true}).locator('.material-card-select').click();
+// 0.8.17: la tarjeta abre «Propiedades del material»; las acciones viven en esa ficha.
+const details=(page:Page)=>page.getByRole('dialog',{name:/^Propiedades del material/});
+async function select(page:Page,name:string,tab?:'Textura'){
+ await page.getByRole('article',{name:`Material ${name}`,exact:true}).locator('.material-card-select').click();
+ await expect(details(page)).toBeVisible();
+ if(tab)await details(page).getByRole('tab',{name:tab,exact:true}).click();
+}
 
 test('archivar oculta la ficha de la biblioteca activa en un clic, sin borrarla, y restaurar la devuelve',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
@@ -76,9 +81,11 @@ test('archivar oculta la ficha de la biblioteca activa en un clic, sin borrarla,
  await select(page,'Canto blanco QA');await details(page).getByRole('button',{name:'Archivar ficha',exact:true}).click();
  await expect(page.getByRole('group',{name:'Confirmar archivado'})).toHaveCount(0);
  expect(requests('material_archive')).toHaveLength(1);expect(requests('material_archive')[0].data).toMatchObject({catalogIds:[uuid(2)],archived:true,revision:3,statesRevision:0});expect(requests('material_archive')[0].data).not.toHaveProperty('dryRun');
+ await expect(details(page)).toHaveCount(0);
  await expect(page.getByText('archivada: no se borró la ficha ni sus archivos',{exact:false})).toBeVisible();
  await expect(page.getByRole('article',{name:'Material Canto blanco QA',exact:true})).toHaveCount(0);expect(items).toHaveLength(3);
  await page.getByRole('button',{name:'Archivados',exact:true}).click();await expect(page.getByRole('article',{name:/^Material /})).toHaveCount(1);await expect(page.getByRole('article',{name:'Material Canto blanco QA',exact:true})).toContainText('Archivada');
+ await select(page,'Canto blanco QA');await expect(details(page)).toContainText('Archivada');
  await details(page).getByRole('button',{name:'Restaurar ficha',exact:true}).click();
  await expect(page.getByText('restaurada en la biblioteca activa',{exact:false})).toBeVisible();expect(archived).toEqual([]);
  await expect(page.getByRole('button',{name:'Todos',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.getByRole('article',{name:/^Material /})).toHaveCount(3);
@@ -86,23 +93,23 @@ test('archivar oculta la ficha de la biblioteca activa en un clic, sin borrarla,
  expect(errors).toEqual([]);
 });
 
-test('duplicar propone un nombre único y la copia queda seleccionada sin aprobar',async({page},info)=>{
+test('duplicar propone un nombre único y la copia queda abierta sin aprobar',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
- await select(page,'Canto blanco QA');await details(page).getByRole('button',{name:'Duplicar ficha',exact:true}).click();
+ await select(page,'Canto blanco QA');await details(page).getByRole('button',{name:'Duplicar…',exact:true}).click();
  const name=page.getByRole('textbox',{name:'Nombre de la copia',exact:true});await expect(name).toBeFocused();await expect(name).toHaveValue('Canto blanco QA (copia)');
  await name.fill('');await expect(page.getByRole('button',{name:'Crear copia',exact:true})).toBeDisabled();
  await name.fill('Canto blanco QA 2 mm');await page.getByRole('button',{name:'Crear copia',exact:true}).click();
  await expect(page.getByText('Copia creada: «Canto blanco QA 2 mm»',{exact:false})).toBeVisible();
  expect(requests('material_duplicate')[0].data).toEqual({catalogId:uuid(2),revision:3,name:'Canto blanco QA 2 mm',confirmed:true});
- await expect(details(page).getByRole('heading',{name:'Canto blanco QA 2 mm',exact:true})).toBeVisible();expect(items.find(row=>row.name==='Canto blanco QA 2 mm')!.approved).toBe(false);
+ await expect(page.getByRole('dialog',{name:'Propiedades del material «Canto blanco QA 2 mm»',exact:true})).toBeVisible();expect(items.find(row=>row.name==='Canto blanco QA 2 mm')!.approved).toBe(false);
  expect(errors).toEqual([]);
 });
 
 test('paquete .zip: exporta con aviso y la importación exige renombrar el conflicto; Escape cancela',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
- await page.getByRole('button',{name:'Exportar paquete .zip',exact:true}).click();await expect(page.getByText('Paquete «biblioteca-taller.zip» exportado: 3 fichas y 4 archivos verificados.',{exact:false})).toBeVisible();
+ await page.getByRole('button',{name:'Más acciones',exact:true}).click();await page.getByRole('button',{name:'Exportar paquete .zip…',exact:true}).click();await expect(page.getByText('Paquete «biblioteca-taller.zip» exportado: 3 fichas y 4 archivos verificados.',{exact:false})).toBeVisible();
  expect(requests('material_package_export')[0].data).toEqual({includeArchived:false});
- const trigger=page.getByRole('button',{name:'Importar paquete .zip',exact:true});await trigger.click();
+ const trigger=page.getByRole('button',{name:'Importar',exact:true});await trigger.click();await page.getByRole('button',{name:'Paquete de biblioteca (.zip)…',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Revisar paquete de materiales'});await expect(modal).toBeVisible();await expect(modal).toBeFocused();
  await expect(modal).toContainText('1 nuevas');await expect(modal).toContainText('1 ya en la biblioteca');await expect(modal.getByRole('checkbox',{name:'Importar ficha Canto blanco QA',exact:true})).toBeDisabled();
  await modal.getByRole('checkbox',{name:'Importar ficha Roble foto QA',exact:true}).check();await expect(modal.getByRole('button',{name:'Importar 2 fichas',exact:true})).toBeDisabled();
@@ -110,7 +117,7 @@ test('paquete .zip: exporta con aviso y la importación exige renombrar el confl
  await expect(modal).toHaveCount(0);await expect(page.getByText('2 fichas importadas del paquete',{exact:false})).toBeVisible();
  expect(requests('material_package_commit')[0].data).toEqual({token:'pkg-token',revision:3,selectedIds:['p1','p2'],renames:{p2:'Roble foto QA importado'},confirmed:true});
  await expect(page.getByRole('article',{name:'Material Roble foto QA importado',exact:true})).toHaveCount(1);await expect(trigger).toBeFocused();
- await trigger.click();await expect(modal).toBeVisible();
+ await trigger.click();await page.getByRole('button',{name:'Paquete de biblioteca (.zip)…',exact:true}).click();await expect(modal).toBeVisible();
  // While the panel is busy Escape is ignored on purpose: wait until it is idle.
  await expect(page.locator('.visual-material-library')).toHaveAttribute('aria-busy','false');await expect(modal.getByRole('button',{name:'Cerrar vista previa del paquete',exact:true})).toBeEnabled();await page.keyboard.press('Escape');await expect(modal).toHaveCount(0);expect(requests('material_package_cancel')).toHaveLength(1);await expect(trigger).toBeFocused();
  expect(requests('material_package_commit')).toHaveLength(1);expect(errors).toEqual([]);
@@ -118,8 +125,8 @@ test('paquete .zip: exporta con aviso y la importación exige renombrar el confl
 
 test('escala y giro: el candado sigue la proporción, girar intercambia lados y aplicar exige verificar',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
- await select(page,'Roble foto QA');await details(page).getByRole('button',{name:'Ajustar escala y giro',exact:true}).click();
- const dialog=page.getByRole('dialog',{name:'Ajustar escala y giro de textura'});await expect(dialog).toBeFocused();
+ await select(page,'Roble foto QA','Textura');await details(page).getByRole('button',{name:'Ajustar escala y giro',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Ajustar escala y giro de textura'});await expect(dialog).toBeFocused();await expect(details(page)).toHaveCount(0);
  await expect(dialog.getByRole('checkbox',{name:'Mantener proporción de la textura',exact:true})).toBeChecked();
  await dialog.getByRole('spinbutton',{name:'Ancho de textura ajustada',exact:true}).fill('1300');await expect(dialog.getByRole('spinbutton',{name:'Alto de textura ajustada',exact:true})).toHaveValue('650');
  await expect(dialog).toContainText('se repite 2 veces a lo largo y 2,82 a lo ancho');
@@ -130,13 +137,16 @@ test('escala y giro: el candado sigue la proporción, girar intercambia lados y 
  expect(requests('material_texture_preview')[0].data).toEqual({catalogId:uuid(1),widthMm:650,heightMm:1300,rotation:90});
  await apply.click();await expect(dialog).toHaveCount(0);await expect(page.getByText('Textura ajustada y verificada en 1 material del modelo.',{exact:false})).toBeVisible();
  expect(requests('material_texture_apply')[0].data).toEqual({catalogId:uuid(1),widthMm:650,heightMm:1300,rotation:90,materialIds:['501'],revision:3,assetRevision:2,confirmed:true});
+ // Al cerrar el ajuste vuelve la ficha, en la pestaña Textura.
+ await expect(details(page).getByRole('tab',{name:'Textura',exact:true})).toHaveAttribute('aria-selected','true');
  expect(errors).toEqual([]);
 });
 
 test('OpenCutList: un clic sincroniza, lista lo que cambió y conserva los valores del usuario',async({page},info)=>{
  const errors=await harness(page,info.outputDir,'library');
- await select(page,'Herraje QA');await expect(details(page).getByRole('button',{name:'Sincronizar con OpenCutList',exact:true})).toBeDisabled();
- await select(page,'Roble foto QA');await details(page).getByRole('button',{name:'Sincronizar con OpenCutList',exact:true}).click();
+ await select(page,'Herraje QA','Textura');await expect(details(page).getByRole('button',{name:'Sincronizar con OpenCutList',exact:true})).toBeDisabled();
+ await page.keyboard.press('Escape');await expect(details(page)).toHaveCount(0);
+ await select(page,'Roble foto QA','Textura');await details(page).getByRole('button',{name:'Sincronizar con OpenCutList',exact:true}).click();
  await expect(page.getByText('OpenCutList sincronizado: 2 cambios',{exact:false})).toBeVisible();await expect(page.getByText('Se conservaron 1 valor cargado por el usuario.',{exact:false})).toBeVisible();
  expect(requests('material_ocl_sync')).toHaveLength(1);expect(requests('material_ocl_sync')[0].data).toEqual({catalogId:uuid(1),dryRun:false});
  const result=page.getByRole('group',{name:'Cambios en OpenCutList'});await expect(result).toBeFocused();
@@ -153,13 +163,14 @@ test('búsqueda: Escape la limpia, las flechas recorren tarjetas y "Pintar en el
  const cards=page.locator('.material-card-select');await expect(cards.nth(0)).toHaveAttribute('tabindex','0');await expect(cards.nth(1)).toHaveAttribute('tabindex','-1');
  await cards.nth(0).focus();await page.keyboard.press('End');await expect(cards.nth(2)).toBeFocused();await page.keyboard.press('Home');await expect(cards.nth(0)).toBeFocused();
  await page.keyboard.press('ArrowRight');await expect(cards.nth(1)).toBeFocused();await expect(cards.nth(1)).toHaveAttribute('tabindex','0');
+ // Flecha abajo: la tarjeta más cercana de la fila siguiente (otro grupo).
+ await page.keyboard.press('ArrowDown');await expect(cards.nth(2)).toBeFocused();await page.keyboard.press('ArrowUp');await expect(cards.nth(1)).toBeFocused();
  await expect(page.getByRole('group',{name:'Materiales visuales del taller'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Placas',exact:true})).toHaveAccessibleDescription(/^\d+ material(es)?$/);
- await select(page,'Roble foto QA');await details(page).getByRole('button',{name:'Pintar en el modelo',exact:true}).click();
- expect(requests('__paint')[0].data).toEqual({id:uuid(1),autoStart:true});
+ await select(page,'Roble foto QA','Textura');await details(page).getByRole('button',{name:'Pintar en el modelo',exact:true}).click();
+ expect(requests('__paint')[0].data).toEqual({id:uuid(1),autoStart:true});await expect(details(page)).toHaveCount(0);
  expect(errors).toEqual([]);
 });
-
 test('MATERIALES-19: tras iniciar la pintura desde la biblioteca se pide foco al viewport',async({page},info)=>{
  await page.setViewportSize({width:680,height:320});
  const errors=await harness(page,info.outputDir,'palette');
