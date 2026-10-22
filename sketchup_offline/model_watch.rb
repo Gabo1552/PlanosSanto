@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 require 'digest'
 require 'set'
+require 'securerandom'
 
 module PlanosSanto
   # Watches native model, selection and material changes. Callbacks only record
@@ -66,10 +67,17 @@ module PlanosSanto
 
     def detach
       return self unless @observers
-      @observers.each { |target, observer| target.remove_observer(observer) if target.respond_to?(:remove_observer) }
-      @observers = nil
-      acknowledge
+      @observers.each do |target, observer|
+        target.remove_observer(observer) if target.respond_to?(:remove_observer)
+      rescue StandardError => e
+        warn("Planos Santo: no se pudo quitar un observer (#{e.class})")
+      end
       self
+    ensure
+      if @observers
+        @observers = nil
+        acknowledge
+      end
     end
 
     def attached?
@@ -101,6 +109,10 @@ module PlanosSanto
       id = @timers.start_timer(@delay, false) { fire(id) }
       @timer = id
       nil
+    rescue StandardError => e
+      # Never raise into SketchUp from an observer callback; one note may be lost.
+      warn("Planos Santo: no se pudo programar la revisión del modelo (#{e.class})")
+      nil
     end
 
     def pending_kinds
@@ -131,7 +143,8 @@ module PlanosSanto
       # Only materials in use count (via faces/instances): installing an unused
       # material in the model never makes the analysis stale.
       result = [top, state[:list], guide.is_a?(String) ? guide : guide.inspect]
-      result << 'overflow' if state[:overflow]
+      # A partial walk could hide changes: an overflowed fingerprint never matches.
+      result << ['overflow', SecureRandom.hex(8)] if state[:overflow]
       result
     end
 
@@ -172,7 +185,9 @@ module PlanosSanto
       definition = e.respond_to?(:definition) ? e.definition : nil
       entities = group?(e) && e.respond_to?(:entities) ? e.entities : definition.respond_to?(:entities) ? definition.entities : nil
       return nil unless entities
-      id = entities.object_id
+      # Ruby proxies of Entities may differ per call; the definition's entityID
+      # is stable within the session, so repeated components are walked once.
+      id = definition.respond_to?(:entityID) ? [:definition, definition.entityID] : entities.object_id
       return state[:defs][id] if state[:defs].key?(id)
       index = state[:defs][id] = state[:list].length
       entry = [definition.respond_to?(:name) ? definition.name.to_s : nil, nil]
@@ -205,7 +220,7 @@ module PlanosSanto
     end
 
     def self.round(value)
-      value.is_a?(Numeric) ? Float(value).round(6) : value.to_s
+      value.is_a?(Numeric) ? Float(value).round(6) + 0.0 : value.to_s
     end
 
     def self.container?(e)

@@ -43,6 +43,11 @@ module PlanosSanto
     def context_changed(model,replaced:false)
       return unless @model
       if @model.equal?(model) && !replaced && !@context_invalid
+        # Back on the analyzed model: observe it again and catch what changed meanwhile.
+        if @model_watch.nil? && @session
+          watch_model!
+          check_analysis
+        end
         return unless @smart_state && @smart_state['contextChanged']
         smart_event('active'=>false,'queuedCount'=>0,'contextChanged'=>false,'contextRestored'=>true,'error'=>nil)
         return
@@ -195,8 +200,9 @@ module PlanosSanto
         unless @palette_dialog
           @skm_import=nil;@skm_preview_active=false;@photo_material=nil;@photo_preview_active=false
           stop_smart_tool(refresh:false);@session=nil
-          unwatch_model!;forget_analysis!
+          unwatch_model!
         end
+        forget_analysis! # the analysis state belongs to the editor window
       end
       @folded_size=nil;@compact_size=nil
       @dialog.show
@@ -208,18 +214,33 @@ module PlanosSanto
     PALETTE_SIZE=[680,320].freeze
     WINDOW_LAYOUT_KEY='window_layout_v1'
 
+    # Screen = [width,height,left,top] of the monitor holding the window
+    # (availLeft/availTop place it on a secondary monitor).
     def window_screen(data)
       width=data['screenWidth'];height=data['screenHeight']
       valid=[width,height].all? { |value| value.is_a?(Integer) && value.between?(320,16_384) }
       raise ExportError,'Pantalla inválida para ajustar la ventana.' unless valid
-      [width,height]
+      left,top=%w[screenLeft screenTop].map { |key| data[key].is_a?(Integer) && data[key].abs<=65_536 ? data[key] : 0 }
+      [width,height,left,top]
+    end
+
+    # Size reported by the UI (outerWidth/outerHeight): HtmlDialog#get_size may
+    # be missing, so it is the fallback to restore the operator's size.
+    def reported_window_size(data)
+      size=[data['windowWidth'],data['windowHeight']]
+      size.all? { |value| value.is_a?(Integer) && value.between?(100,16_384) } ? size : nil
+    end
+
+    def current_window_size(window,data)
+      (window.respond_to?(:get_size) && window.get_size) || reported_window_size(data)
     end
 
     def fit_window(window,screen)
       return unless window
-      size=screen ? screen.map { |value| (value*0.8).round } : MAIN_INITIAL_SIZE
+      size=screen ? screen[0,2].map { |value| (value*0.8).round } : MAIN_INITIAL_SIZE
       window.set_size(*size) if window.respond_to?(:set_size)
-      window.set_position(*screen.zip(size).map { |total,used| ((total-used)/2.0).round }) if screen && window.respond_to?(:set_position)
+      return unless screen && window.respond_to?(:set_position)
+      window.set_position(*[0,1].map { |i| screen[i+2]+((screen[i]-size[i])/2.0).round })
     end
 
     def window_fitted?
@@ -233,19 +254,23 @@ module PlanosSanto
     # First open only: later opens keep what SketchUp remembered for the user.
     def window_fit(data)
       @screen=window_screen(data)
-      return {'fitted'=>false} unless @request_dialog && @request_dialog.equal?(@dialog) && !window_fitted?
+      return {'fitted'=>false} unless @request_dialog && @request_dialog.equal?(@dialog)
+      # Closed while folded: SketchUp remembers the strip, so refit on reopen.
+      size=reported_window_size(data)
+      reopened_folded=size && size[1]<=MAIN_FOLDED_SIZE[1]+60
+      return {'fitted'=>false} if window_fitted? && !reopened_folded
       fit_window(@dialog,@screen)
       remember_window_fitted('fitted')
       {'fitted'=>true}
     end
 
     # «Plegar» leaves a small strip and gives the keyboard back to the model.
-    def window_fold(folded)
+    def window_fold(folded,data={})
       raise ExportError,'Estado de plegado inválido.' unless [true,false].include?(folded)
       window=@dialog
       return {'folded'=>false} unless window
       if folded
-        @folded_size ||= window.respond_to?(:get_size) ? window.get_size : nil
+        @folded_size ||= current_window_size(window,data)
         window.set_size(*MAIN_FOLDED_SIZE) if window.respond_to?(:set_size)
         Sketchup.focus if Sketchup.respond_to?(:focus)
       else
@@ -451,7 +476,7 @@ module PlanosSanto
 
     def light_nodes(nodes)
       nodes.map do |node|
-        copy=node.merge('children'=>light_nodes(node['children']))
+        copy=node.merge('children'=>light_nodes(node.fetch('children',[]) || []))
         copy['mesh']=DEFERRED_MESH if node['mesh']
         copy
       end
@@ -849,7 +874,7 @@ module PlanosSanto
           if target.equal?(@palette_dialog)
             target.set_size(*(data['compact'] ? PALETTE_SIZE : [680,760]))
           elsif data['compact']
-            @compact_size ||= target.respond_to?(:get_size) ? target.get_size : nil
+            @compact_size ||= current_window_size(target,data)
             target.set_size(*MAIN_COMPACT_SIZE)
           else
             # ARQ-06: back to the operator's size, never a fixed 1440x920.
@@ -951,7 +976,7 @@ module PlanosSanto
       when 'window_fit'
         window_fit(data)
       when 'window_fold'
-        window_fold(data['folded'])
+        window_fold(data['folded'],data)
       when 'diagnostic'
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
@@ -1109,7 +1134,10 @@ module PlanosSanto
 
     # Runs from the debounced timer, never from an observer callback.
     def check_analysis
-      return unless @analysis_session && @analysis_fingerprint && @dialog
+      return unless @analysis_session && @dialog
+      # No baseline (fingerprint failed at scan): be conservative on any change.
+      return mark_stale('model') unless @analysis_fingerprint || @analysis_stale
+      return unless @analysis_fingerprint
       # Already stale and the analyzed session was replaced (own write): it can
       # only become fresh by reanalyzing, so skip the walk (painting bursts).
       return if @analysis_stale && !@analysis_session.equal?(@session)

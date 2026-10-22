@@ -15,10 +15,15 @@ export async function ensureRuntime(){assertRuntimeVersion(await request<Runtime
 export async function fitWindowOnce(){
   const screen=typeof window!=='undefined'?window.screen:undefined;
   if(!screen||!(screen.availWidth>0)||!(screen.availHeight>0))return;
-  try{await request('window_fit',{screenWidth:Math.round(screen.availWidth),screenHeight:Math.round(screen.availHeight)});}
+  // availLeft/availTop (Chromium) place the window on the monitor that holds it.
+  const offset=screen as Screen&{availLeft?:number;availTop?:number};
+  try{await request('window_fit',{screenWidth:Math.round(screen.availWidth),screenHeight:Math.round(screen.availHeight),
+    screenLeft:Math.round(offset.availLeft||0),screenTop:Math.round(offset.availTop||0),...windowSize()});}
   catch{/* the window keeps its remembered size */}
 }
+// HtmlDialog#get_size may be missing: the current size travels with the request.
+function windowSize(){return {windowWidth:Math.round(window.outerWidth||window.innerWidth),windowHeight:Math.round(window.outerHeight||window.innerHeight)};}
 export async function setWindowFolded(folded:boolean){
-  const result=await request<{folded?:unknown}>('window_fold',{folded});
+  const result=await request<{folded?:unknown}>('window_fold',{folded,...windowSize()});
   return result?.folded===true;
 }

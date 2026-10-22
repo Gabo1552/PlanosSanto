@@ -276,4 +276,39 @@ class Hito6ControllerTest < Minitest::Test
     capped=stats.find { |entry| entry['action']=='scan' }
     assert_equal true,capped['capped'];assert_operator capped['bytes'],:>,300;assert_operator capped['ms'],:>=,0
   end
+
+  # Revisión Ruby
+  def test_returning_to_the_analyzed_model_observes_it_again_and_checks_what_changed
+    other=NamesFixture.model
+    @controller.context_changed(other)
+    assert_nil @controller.instance_variable_get(:@model_watch);assert_empty @observers
+    face.material=@model.materials[2]
+    @controller.context_changed(@model)
+    assert @controller.instance_variable_get(:@model_watch).attached?;assert_equal 1,@observers.length
+    assert_equal true,stale_events.last['stale']
+  end
+  def test_without_a_baseline_fingerprint_any_change_is_stale
+    PlanosSanto::ModelWatch.stub(:fingerprint,->(_model) { raise IOError,'falla' }) do
+      @controller.dispatch('scan',{})
+      @controller.model_watch_changed(['model'])
+    end
+    assert_equal true,stale_events.last['stale']
+  end
+  def test_fold_uses_the_size_reported_by_the_ui_when_get_size_is_missing
+    dialog=@dialog;dialog.singleton_class.send(:undef_method,:get_size)
+    window('window_fold',{'folded'=>true,'windowWidth'=>1234,'windowHeight'=>777})
+    window('window_fold',{'folded'=>false,'windowWidth'=>420,'windowHeight'=>120})
+    assert_equal [[420,120],[1234,777]],@dialog.sizes
+  end
+  def test_reopening_a_window_closed_while_folded_refits_it
+    window('window_fit',{'screenWidth'=>1366,'screenHeight'=>728});@dialog.sizes.clear
+    reply=window('window_fit',{'screenWidth'=>1366,'screenHeight'=>728,'windowWidth'=>420,'windowHeight'=>120})
+    assert_equal true,reply['result']['fitted'];assert_equal [[1093,582]],@dialog.sizes
+    reply=window('window_fit',{'screenWidth'=>1366,'screenHeight'=>728,'windowWidth'=>1093,'windowHeight'=>582})
+    assert_equal false,reply['result']['fitted']
+  end
+  def test_first_fit_centers_on_the_monitor_that_holds_the_window
+    window('window_fit',{'screenWidth'=>1920,'screenHeight'=>1040,'screenLeft'=>-1920,'screenTop'=>0})
+    assert_equal [[-1728,104]],@dialog.positions
+  end
 end

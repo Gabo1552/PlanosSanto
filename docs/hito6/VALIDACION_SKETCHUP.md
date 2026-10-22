@@ -59,6 +59,8 @@ Rama: `claude/noche-hito6-arquitectura` · Entregables: ARQ-02, ARQ-03, ARQ-06, 
 | 4.4 | Pulsar **Desplegar**. | La ventana vuelve al tamaño anterior. | |
 | 4.5 | Abrir Pintar en la ventana principal (modo compacto) y volver. | Vuelve al tamaño que tenía la ventana, no a uno fijo. | |
 | 4.6 | Arrastrar la ventana fuera de la pantalla. Ir a Extensiones › Planos Santo › **Restablecer ventanas**. | La ventana vuelve centrada al 80 % y desplegada. La paleta vuelve a 680x320. | |
+| 4.8 | Plegar y cerrar la ventana plegada; volver a abrir. | Se reabre ajustada al 80 %, no como franja. Verificar si `UI::HtmlDialog#get_size` existe en 2026 (si no, se usa el tamaño `outerWidth/outerHeight` que informa la UI). | |
+| 4.9 | Primera apertura con SketchUp en un monitor secundario (también a la izquierda del principal). | La ventana se centra en ese monitor (`availLeft/availTop`). | |
 | 4.7 | Probar en el monitor 4K al 150 %. | Confirmar que `set_size` y `set_position` usan las mismas unidades lógicas que `screen.availWidth`. Si el tamaño sale al 150 % o al 66 %, abrir un ticket para corregir con `UI.scale_factor`. | |
 
 ## 5. ARQ-07: Materiales y Maderera sin análisis

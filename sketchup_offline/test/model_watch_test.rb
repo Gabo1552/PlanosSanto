@@ -218,4 +218,23 @@ class ModelWatchFingerprintTest < Minitest::Test
     assert_match(/\A\h{64}\z/,PlanosSanto::ModelWatch.fingerprint(model))
     assert_includes PlanosSanto::ModelWatch.snapshot(model).flatten,'overflow'
   end
+  def test_detach_survives_a_failing_remove_observer_and_drops_every_observer
+    watch=PlanosSanto::ModelWatch.new(@model,on_change:->(_kinds) {},timers:WatchTimers.new).attach
+    @model.define_singleton_method(:remove_observer) { |_o| raise IOError,'modelo cerrado' }
+    watch.detach
+    refute watch.attached?;assert_equal 1,@model.selection.removed;assert_equal 1,@model.materials.removed
+  end
+  def test_a_failing_timer_never_raises_into_sketchup
+    timers=Object.new;def timers.start_timer(*_args);raise IOError,'sin timers';end;def timers.stop_timer(_id);end
+    PlanosSanto::ModelWatch.new(@model,on_change:->(_kinds) {},timers:timers).attach
+    @model.observers[0].onTransactionCommit(@model)
+  end
+  def test_repeated_components_are_walked_once_even_with_fresh_entities_proxies
+    definition=WatchDefinition.new('Puerta',[WatchFace.new(@oak)])
+    items=definition.entities.instance_variable_get(:@items)
+    definition.define_singleton_method(:entities) { WatchEntities.new(items) }
+    definition.define_singleton_method(:entityID) { 4242 }
+    model=WatchModel.new([WatchInstance.new(1,definition),WatchInstance.new(2,definition)])
+    assert_equal 1,PlanosSanto::ModelWatch.snapshot(model)[1].length
+  end
 end
