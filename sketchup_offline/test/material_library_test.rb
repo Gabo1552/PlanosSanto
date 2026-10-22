@@ -221,6 +221,9 @@ class MaterialLibraryTest < Minitest::Test
     catalog=@catalog.read;catalog['items'][0]['approved']=false;@catalog.save(catalog['items'],1)
     @library.bind(request.merge('revision'=>2))
     assert_equal @sheet['id'],binding['catalogId'];assert_equal 1,@model.starts
+    # 0.8.16: «lista para maderera» es la ficha completa; la casilla aprobada ya no cuenta.
+    assert_equal PlanosSanto::CatalogStore.complete?(@catalog.read['items'][0]),@library.status['materials'][0]['supplierReady']
+    catalog=@catalog.read;catalog['items'][0]['sku']='';@catalog.save(catalog['items'],catalog['revision'])
     refute @library.status['materials'][0]['supplierReady']
   end
 

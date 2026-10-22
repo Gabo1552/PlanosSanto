@@ -77,15 +77,9 @@ module PlanosSanto
         %w[sku supplier].each { |key| text(row[key]) }
         %w[thicknessMm widthMm lengthMm].each { |key| value=row[key];raise ExportError,'Medida inválida en biblioteca.' unless value.nil? || (value.is_a?(Numeric) && value.finite? && value>0 && value<=100000) }
         raise ExportError,'Veta sin resolver.' unless [nil,true,false].include?(row['grain'])
+        # `approved` stays in the file only for compatibility with 0.8.15 and older: it no longer filters or blocks anything.
         %w[favorite approved].each { |key| raise ExportError,'Estado de biblioteca inválido.' unless [true,false].include?(row[key]) }
         raise ExportError,'Compatibilidades inválidas.' unless row['compatibleIds'].is_a?(Array) && row['compatibleIds'].length<=5000 && row['compatibleIds'].uniq==row['compatibleIds'] && row['compatibleIds'].all? { |id| id.is_a?(String) }
-        if row['approved']
-          raise ExportError,'Para aprobar, completá tipo, SKU, proveedor y espesor.' if row['kind']=='unknown' || row['sku'].strip.empty? || row['supplier'].strip.empty? || row['thicknessMm'].nil?
-          if row['kind']=='sheet'
-            raise ExportError,'Para aprobar una placa, completá formato y veta.' if row['widthMm'].nil? || row['lengthMm'].nil? || row['grain'].nil?
-          end
-          raise ExportError,'Para aprobar un canto, completá su ancho.' if row['kind']=='edge' && row['widthMm'].nil?
-        end
         if row['price']
           p=row['price'];raise ExportError,'Precio incompleto.' unless p.is_a?(Hash) && p.keys.sort==%w[amount currency date source unit] && p['amount'].is_a?(Numeric) && p['amount'].finite? && p['amount']>0 && p['amount']<=1e9
           %w[currency source unit].each { |key| raise ExportError,'Falta moneda, unidad o fuente del precio.' if text(p[key]).empty? }
@@ -107,10 +101,35 @@ module PlanosSanto
       raise ExportError,'Ficha base de variante inválida.' unless row['variantOf'].nil? || (row['variantOf'].is_a?(String) && row['variantOf'].match?(/\A[0-9a-f-]{36}\z/))
       suggested=row['suggested']
       return if suggested.nil?
+      # Provenance only (where the prefilled values came from): it never blocks a ficha.
       raise ExportError,'Sugerencias de ficha inválidas.' unless suggested.is_a?(Hash) && suggested.keys.sort==%w[fields presetId source] && SUGGESTION_SOURCES.include?(suggested['source']) &&
         suggested['fields'].is_a?(Array) && suggested['fields'].uniq==suggested['fields'] && suggested['fields'].all? { |key| SUGGESTABLE.include?(key) } && (suggested['presetId'].nil? || text(suggested['presetId'],80)==suggested['presetId'])
-      # Approving is the explicit review of every suggested value.
-      raise ExportError,'La ficha tiene valores sugeridos sin revisar: revisalos antes de aprobarla.' if row['approved']
+    end
+    # Ficha completa (0.8.16): the data an order needs, computed, never ticked by hand.
+    # Placa: SKU, espesor, largo, ancho y veta definida. Canto: ancho.
+    def self.missing(item)
+      return ['tipo'] unless item.is_a?(Hash) && %w[sheet edge].include?(item['kind'])
+      measure=->(key) { item[key].is_a?(Numeric) && item[key].finite? && item[key]>0 }
+      if item['kind']=='sheet'
+        out=[]
+        out << 'SKU' if item['sku'].to_s.strip.empty?
+        out << 'espesor' unless measure.call('thicknessMm')
+        out << 'largo' unless measure.call('lengthMm')
+        out << 'ancho' unless measure.call('widthMm')
+        out << 'veta' unless [true,false].include?(item['grain'])
+        out
+      else
+        measure.call('widthMm') ? [] : ['ancho']
+      end
+    end
+    def self.complete?(item);missing(item).empty?;end
+    # The 0.8.15 reader rejected an «approved» ficha without its old required data. The flag is kept
+    # only while it still satisfies that rule, so an older Planos Santo can keep reading the file.
+    def self.legacy_approved?(row)
+      return false unless row['approved']==true && row['suggested'].nil? && row['kind']!='unknown' && !row['sku'].to_s.strip.empty? && !row['supplier'].to_s.strip.empty? && !row['thicknessMm'].nil?
+      return false if row['kind']=='sheet' && (row['widthMm'].nil? || row['lengthMm'].nil? || row['grain'].nil?)
+      return false if row['kind']=='edge' && row['widthMm'].nil?
+      true
     end
     def new_item(name,kind,observed={})
       observed={'source'=>'manual','record'=>SecureRandom.uuid} if observed.empty?
@@ -171,7 +190,11 @@ module PlanosSanto
         raise ExportError,'Otra ventana está guardando la biblioteca.' unless lock.flock(File::LOCK_EX|File::LOCK_NB)
         original,parsed,current=load;raise ExportError,'La biblioteca cambió en otra ventana. Volvé a cargarla.' unless current['revision']==revision
         result=yield(JSON.parse(JSON.generate(current)))
-        result['revision']=revision+1;validate(result);bytes=JSON.pretty_generate(result)
+        result['revision']=revision+1
+        if result['items'].is_a?(Array)
+          result['items']=result['items'].map { |row| row.is_a?(Hash) && row['approved']==true && !self.class.legacy_approved?(row) ? row.merge('approved'=>false) : row }
+        end
+        validate(result);bytes=JSON.pretty_generate(result)
         raise ExportError,'La biblioteca supera 8 MiB.' if bytes.bytesize>MAX_BYTES
         if original
           pending=migration(parsed)

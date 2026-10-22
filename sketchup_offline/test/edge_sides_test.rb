@@ -91,19 +91,20 @@ class EdgeSidesTest < Minitest::Test
   report=R.from_diagnostic(@input);@row['edgeBindings'] << {'observedId'=>'edge-c','catalogId'=>'cat-c'};@catalog['items'] << {'id'=>'cat-c','kind'=>'edge','approved'=>true}
   assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(report,@row,@g,@catalog)}
  end
- def test_real_source_change_blocks_whole_export_and_manifest_keeps_face_evidence
+ def test_edges_export_without_rereading_faces_and_manifest_records_their_source
+  # 0.8.16: la lectura de caras propone el pedido; exportar no la repite ni pide origen observado/manual.
+  # Que el modelo se haya repintado lo detecta Workshop#export_order al cruzar con la propuesta (workshop_coverage_test).
   @catalog['items'].each { |edge| edge.merge!('widthMm'=>22,'thicknessMm'=>0.8,'sku'=>edge['id']) }
-  @catalog['revision']=1;@catalog['items'] << {'id'=>'sheet','kind'=>'sheet','approved'=>true,'thicknessMm'=>18,'widthMm'=>2000,'lengthMm'=>3000,'grain'=>false,'compatibleIds'=>%w[cat-a cat-b]}
+  @catalog['revision']=1;@catalog['items'] << {'id'=>'sheet','kind'=>'sheet','sku'=>'MEL-18','thicknessMm'=>18,'widthMm'=>2000,'lengthMm'=>3000,'grain'=>false}
   node={'id'=>'1/11','name'=>'Pieza sintética','children'=>[],'mesh'=>{'vertices'=>[[0,0,0],[700,450,18]],'triangles'=>[]},'metadata'=>{'localBounds'=>@g['bounds'],'worldTransform'=>Geom::Transformation.new.to_a,'rectangular'=>true}}
-  service=PlanosSanto::SupplierOrder.new({'furniture'=>[node]},'synthetic',@catalog,edge_review:lambda { |row,g| R.verify_edge_mapping(@report,row,g,@catalog) });draft=service.proposal
-  draft['rows'][0].merge!(@row).merge!('materialId'=>'sheet','grainPolicy'=>'locked','grainAxis'=>'none','grainConfirmed'=>true,'dimensionRule'=>'finished_accepted','orientationConfirmed'=>true,'materialConfirmed'=>true,'dimensionsConfirmed'=>true,'edgesConfirmed'=>true,'reviewNote'=>'Caso sintético, verificar formato','edgeResolution'=>'observed')
+  service=PlanosSanto::SupplierOrder.new({'furniture'=>[node]},'synthetic',@catalog);draft=service.proposal
+  draft['rows'][0].merge!(@row).merge!('materialId'=>'sheet','grainPolicy'=>'locked','dimensionRule'=>'finished_accepted')
+  assert_equal %w[edge-a none edge-b none],map,'La lectura de caras sigue disponible para proponer'
   Dir.mktmpdir do |directory|
    result=service.export(draft,directory);manifest=JSON.parse(File.read(File.join(result['directory'],'manifest.json')))
-   evidence=manifest['lots'][0]['edgeEvidence']['1/11'];assert_equal ['face-3'],evidence['sides'][0]['faceIds'];refute evidence['confirmed'];refute manifest['production_ready']
+   assert_equal({'1/11'=>'manual'},manifest['lots'][0]['edgeSource']);refute manifest['production_ready']
    assert system('python3','planos-santo-loop-068/scripts/validar_txt_maderera.py',File.join(result['directory'],'lote-01.txt'),out:File::NULL)
-   @report['pieces'][0]['faces'][3]['front_material_id']='board'
-   assert_raises(PlanosSanto::ExportError){service.export(draft,directory)};assert_equal 1,Dir.children(directory).length
+   assert_equal %w[1 0 2 0],File.read(File.join(result['directory'],'lote-01.txt')).chomp.split("\t")[5,4]
   end
  end
-
 end

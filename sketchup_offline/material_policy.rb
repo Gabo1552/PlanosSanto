@@ -2,6 +2,7 @@
 require 'json'
 require 'digest'
 require_relative 'material_resolver'
+require_relative 'catalog_store'
 
 module PlanosSanto
   # Paint permission and supplier approval are independent. Design readiness
@@ -174,7 +175,9 @@ module PlanosSanto
     def self.warnings(item)
       return [] unless photo?(item) || skm_import?(item)
       warnings=[]
-      warnings << 'Listo para diseño; falta validar la ficha comercial antes de maderera.' unless item['approved']==true
+      # Ficha completa (0.8.16) is computed from its data; nothing is approved by hand.
+      missing=CatalogStore.missing(item)
+      warnings << "Listo para diseño; para pedirlo a la maderera falta completar #{missing.join(', ')}." unless missing.empty?
       scale=photo?(item) ? photo(item)['textureScale'] : nil
       warnings << 'Escala de textura sin verificar; la foto no determina medidas físicas ni garantiza repetición sin juntas.' if photo?(item) && !(scale.is_a?(Hash) && scale['verified']==true)
       warnings

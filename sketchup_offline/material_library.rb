@@ -113,7 +113,7 @@ module PlanosSanto
             'color' => color && color.respond_to?(:red) ? [color.red, color.green, color.blue] : nil,
             'hasTexture' => material.respond_to?(:texture) && !material.texture.nil?,
             'designReady' => !observed(material)['binding'].nil? && binding_issues(material, catalog, duplicates).empty?,
-            'supplierReady' => catalog['items'].any? { |item| item['id']==observed(material).dig('binding','catalogId') && item['approved']==true },
+            'supplierReady' => catalog['items'].any? { |item| item['id']==observed(material).dig('binding','catalogId') && CatalogStore.complete?(item) },
             'binding' => observed(material)['binding'], 'issues' => binding_issues(material, catalog, duplicates),
             'commercialIssues' => commercial_issues(material, catalog) }
         end,
@@ -122,7 +122,7 @@ module PlanosSanto
           available = MaterialPolicy.paintable?(item,directory:@directory)
           { 'catalogId' => item['id'], 'available' => available, 'assetHash' => record && record['assetHash'],
             'assetName' => record && record['assetName'], 'status' => available ? 'available' : 'needs_review',
-            'designReady' => MaterialPolicy.paintable?(item,directory:@directory), 'supplierReady' => item['approved']==true, 'warnings' => MaterialPolicy.warnings(item) }
+            'designReady' => MaterialPolicy.paintable?(item,directory:@directory), 'supplierReady' => CatalogStore.complete?(item), 'warnings' => MaterialPolicy.warnings(item) }
         end, 'issues' => [] }
     end
 
@@ -603,7 +603,9 @@ module PlanosSanto
     def ocl_sync(data)
       raise ExportError,'Solicitud de sincronización inválida.' unless data.is_a?(Hash) && [true,false].include?(data.fetch('dryRun',false))
       dry_run=data.fetch('dryRun',false)
-      raise ExportError,'Confirmá la sincronización con OpenCutList.' unless dry_run || data['confirmed']==true
+      # 0.8.16 (punto 27): one click applies. It only writes empty keys or keys Planos Santo wrote before,
+      # never values typed in OpenCutList, in a single operation that Ctrl+Z undoes; no confirmation step.
+      raise ExportError,'Solicitud de sincronización inválida.' unless data['planDigest'].nil? || data['planDigest'].is_a?(String)
       catalog=@catalog.read
       wanted=data['catalogId']
       raise ExportError,'La ficha ya no existe en la biblioteca.' if wanted && !catalog['items'].any? { |item| item['id']==wanted }
@@ -622,8 +624,8 @@ module PlanosSanto
       end
       digest=Digest::SHA256.hexdigest(JSON.generate([catalog['revision'],rows]))
       return {'dryRun'=>true,'changed'=>rows.count { |row| !row['changes'].empty? },'materials'=>rows,'planDigest'=>digest,'noChanges'=>true} if dry_run
-      # The applied plan must be exactly the one the operator reviewed.
-      raise ExportError,'Los materiales o la ficha cambiaron desde la vista previa; volvé a revisar la sincronización.' unless data['planDigest']==digest
+      # A caller that showed a preview still gets exactly that plan applied, or nothing.
+      raise ExportError,'Los materiales o la ficha cambiaron desde la vista previa; volvé a sincronizar.' unless data['planDigest'].nil? || data['planDigest']==digest
       changing=targets.zip(rows).select { |_pair,row| !row['changes'].empty? || !row['kept'].empty? }
       return {'dryRun'=>false,'changed'=>0,'materials'=>rows,'noChanges'=>true} if changing.none? { |_pair,row| !row['changes'].empty? }
       raise ExportError,'No se pudo iniciar la operación.' if @model.start_operation('Planos Santo — sincronizar OpenCutList',true)==false

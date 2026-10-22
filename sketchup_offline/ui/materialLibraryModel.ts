@@ -1,4 +1,5 @@
 import type {CatalogItem} from './WorkshopPanel';
+import {catalogComplete} from './workshopRules';
 
 // Pure helpers of the material library (Hito 7). No bridge, no DOM: tested by vitest.
 export type LibraryFilter='all'|'sheet'|'edge'|'other'|'review'|'archived';
@@ -7,7 +8,7 @@ export const searchText=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/
 function matchesFilter(item:CatalogItem,filter:LibraryFilter,archived:ReadonlySet<string>){
  if(filter==='archived')return archived.has(item.id);
  if(archived.has(item.id))return false;
- if(filter==='review')return !item.approved;
+ if(filter==='review')return !catalogComplete(item);
  if(filter==='sheet'||filter==='edge')return item.kind===filter;
  if(filter==='other')return !['sheet','edge'].includes(item.kind);
  return true;

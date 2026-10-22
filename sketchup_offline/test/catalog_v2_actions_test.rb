@@ -57,7 +57,9 @@ class CatalogV2ActionsTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { dispatch('catalog_variant',{'id'=>sheet['id'],'thicknessMm'=>18,'revision'=>3}) }
     assert_raises(PlanosSanto::ExportError) { dispatch('catalog_variant',{'id'=>sheet['id'],'thicknessMm'=>-1,'revision'=>3}) }
     pending=store.read['items'].last.merge('sku'=>'MB25','approved'=>true)
-    assert_raises(PlanosSanto::ExportError) { store.save(store.read['items'][0..-2]+[pending],3) }
+    saved=store.save(store.read['items'][0..-2]+[pending],3)
+    refute saved['items'].last['approved'],'La marca vieja no se guarda junto a valores precargados (0.8.15 no lo leería)'
+    assert PlanosSanto::CatalogStore.complete?(saved['items'].last),'Con SKU la variante ya está completa: nada que aprobar'
   end
 
   def test_typed_skm_commit_applies_batch_kind_and_optional_thickness_suggestion

@@ -134,16 +134,18 @@ class MaderaOrderTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { workshop.maderera_profiles }
   end
 
-  def test_saved_draft_is_bound_to_the_profile_it_was_reviewed_with
+  def test_saved_draft_remembers_its_profile_and_follows_a_profile_change_without_losing_edits
     catalog;profile('decimal'=>',')
     workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
-    draft=workshop.plan['plan'];refute_nil draft['maderera']
+    draft=workshop.plan['plan'];refute_nil draft['maderera'];draft['rows'][0]['detail']='Lateral editado'
     workshop.save_plan(draft)
     stored=JSON.parse(@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY))
     assert_equal draft['maderera'],stored['maderera'],'El borrador guardado recuerda la versión del perfil.'
     active=@profiles.active;@profiles.save(active.merge('kerfMm'=>4),@profiles.read['revision'])
     changed=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
-    assert_match(/perfil de maderera/,assert_raises(PlanosSanto::ExportError) { changed.save_plan(draft) }.message)
-    assert_nil changed.plan['plan']['maderera'],'Con el perfil desaprobado el pedido vuelve a la estimación neta.'
+    saved=changed.save_plan(draft)
+    assert saved['changed'];assert saved['merge']['stale'];assert_nil saved['plan']['maderera'],'Con el perfil desaprobado el pedido vuelve a la estimación neta.'
+    assert_equal 'Lateral editado',saved['plan']['rows'][0]['detail'],'Cambiar el perfil no descarta el borrador'
+    assert_nil changed.plan['plan']['maderera']
   end
 end

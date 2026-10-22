@@ -145,15 +145,16 @@ class CatalogSchemaTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { @store.save([own],1) }
     suggested=@store.new_item('Canto 22','edge').merge('suggested'=>{'source'=>'preset','fields'=>%w[widthMm thicknessMm],'presetId'=>'canto-22x045'})
     @store.save([base,variant,suggested],1)
+    # 0.8.16: las sugerencias ya no bloquean nada. Una ficha «aprobada» con sugerencias (que 0.8.15 rechazaba)
+    # se guarda sin la marca, para que una versión anterior siga pudiendo leer el archivo.
     approved=suggested.merge('sku'=>'C22','supplier'=>'QA','thicknessMm'=>0.45,'widthMm'=>22,'approved'=>true)
-    assert_match(/sugerid/i,assert_raises(PlanosSanto::ExportError) { @store.save([base,variant,approved],2) }.message)
-    @store.save([base,variant,approved.merge('suggested'=>nil)],2)
+    saved=@store.save([base,variant,approved],2);refute saved['items'][2]['approved'];assert_equal 'preset',saved['items'][2]['suggested']['source']
+    legacy=@store.save([base,variant,approved.merge('suggested'=>nil)],3);assert legacy['items'][2]['approved'],'Una marca que 0.8.15 aceptaba se conserva tal cual'
     bad_field=suggested.merge('suggested'=>{'source'=>'preset','fields'=>%w[price],'presetId'=>nil})
-    assert_raises(PlanosSanto::ExportError) { @store.save([bad_field],3) }
+    assert_raises(PlanosSanto::ExportError) { @store.save([bad_field],4) }
     bad_source=suggested.merge('suggested'=>{'source'=>'internet','fields'=>[],'presetId'=>nil})
-    assert_raises(PlanosSanto::ExportError) { @store.save([bad_source],3) }
+    assert_raises(PlanosSanto::ExportError) { @store.save([bad_source],4) }
   end
-
   def test_import_accepts_v1_and_v2_exports_unapproved_without_foreign_links
     v1=v1_library
     imported=@store.import(v1,0)
@@ -182,5 +183,36 @@ class CatalogSchemaTest < Minitest::Test
     assert_equal [nil,nil,nil],ambiguous.values_at('thicknessMm','lengthMm','widthMm'),'Valores múltiples o en pulgadas no se adivinan.'
     assert_nil ambiguous['suggested']
     assert items.none? { |row| row['approved'] };assert_equal 3,items.length
+  end
+  def test_ficha_is_complete_or_names_what_it_lacks
+    sheet=@store.new_item('Melamina','sheet')
+    assert_equal %w[SKU espesor largo ancho veta],PlanosSanto::CatalogStore.missing(sheet)
+    sheet.merge!('sku'=>'MB18','thicknessMm'=>18,'lengthMm'=>2750,'widthMm'=>1830,'grain'=>false)
+    assert PlanosSanto::CatalogStore.complete?(sheet),'Sin proveedor ni aprobación la placa ya está completa'
+    assert_equal ['veta'],PlanosSanto::CatalogStore.missing(sheet.merge('grain'=>nil))
+    assert_equal ['SKU'],PlanosSanto::CatalogStore.missing(sheet.merge('sku'=>'   '))
+    assert_equal ['espesor'],PlanosSanto::CatalogStore.missing(sheet.merge('thicknessMm'=>'18'))
+    edge=@store.new_item('Canto','edge')
+    assert_equal ['ancho'],PlanosSanto::CatalogStore.missing(edge);assert PlanosSanto::CatalogStore.complete?(edge.merge('widthMm'=>22)),'Canto: alcanza con el ancho'
+    assert_equal ['tipo'],PlanosSanto::CatalogStore.missing(@store.new_item('Herraje','unknown'))
+    refute PlanosSanto::CatalogStore.complete?(@store.new_item('Pino','solid_wood'))
+  end
+  def test_a_real_0815_v2_catalog_keeps_its_data_and_approval_marks_never_block_saving
+    # Catálogo v2 tal como lo escribía 0.8.15: fichas aprobadas, una sugerida sin aprobar y una variante.
+    edge=v1_item('Canto blanco 22x0,45','edge','sku'=>'CB22','supplier'=>'Maderera QA','thicknessMm'=>0.45,'widthMm'=>22,'approved'=>true).merge('variantOf'=>nil,'notes'=>'','suggested'=>nil)
+    sheet=v1_item('Melamina blanca 18','sheet','sku'=>'MB18','supplier'=>'Maderera QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'approved'=>true,'compatibleIds'=>[edge['id']]).merge('variantOf'=>nil,'notes'=>'Lista octubre','suggested'=>nil)
+    variant=v1_item('Melamina blanca 15','sheet','supplier'=>'Maderera QA','thicknessMm'=>15,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'compatibleIds'=>[edge['id']]).merge('variantOf'=>sheet['id'],'notes'=>'','suggested'=>{'source'=>'variant','fields'=>%w[compatibleIds grain lengthMm supplier widthMm],'presetId'=>nil})
+    original=write({'schema'=>2,'revision'=>12,'items'=>[sheet,edge,variant]})
+    data=@store.read
+    assert_equal JSON.parse(original),data,'Se lee sin migrar ni reescribir nada'
+    assert_equal [true,true,false],data['items'].map { |row| PlanosSanto::CatalogStore.complete?(row) },'La variante sin SKU queda incompleta'
+    assert_equal [sheet['compatibleIds'],variant['suggested']],[data['items'][0]['compatibleIds'],data['items'][2]['suggested']],'Compatibilidades y procedencia se conservan aunque ya no se usen'
+    # Al vaciar el proveedor de una ficha aprobada, 0.8.15 la rechazaba: ahora se guarda y la marca cae para que el archivo siga siendo legible por 0.8.15.
+    items=data['items'];items[0]['supplier']='';items[2]['sku']='MB15'
+    saved=@store.save(items,12)
+    assert_equal [false,true,false],saved['items'].map { |row| row['approved'] }
+    assert saved['items'].select { |row| row['approved'] }.all? { |row| PlanosSanto::CatalogStore.legacy_approved?(row) }
+    assert_equal [true,true,true],saved['items'].map { |row| PlanosSanto::CatalogStore.complete?(row) }
+    assert_equal saved,@store.read;assert_equal 1,backups.length
   end
 end

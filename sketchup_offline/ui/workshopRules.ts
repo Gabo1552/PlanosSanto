@@ -1,5 +1,6 @@
-// Reglas puras del pedido a maderera. Replican en el cliente las comprobaciones de supplier_order.rb
-// para avisar mientras se carga; Ruby sigue siendo la única validación que habilita exportar.
+// Reglas puras del pedido a maderera. Replican en el cliente las comprobaciones físicas de supplier_order.rb
+// para avisar mientras se carga; Ruby sigue siendo la validación que habilita exportar. Desde 0.8.16 no hay
+// tildes de revisión: las fichas están completas o les falta un dato, y el pedido se propone desde el modelo.
 import {mm} from '../../lib/model';
 import type {Catalog,CatalogItem,Geometry,OrderPlan,OrderRow} from './WorkshopPanel';
 
@@ -15,7 +16,17 @@ export function materialLabel(item:Pick<CatalogItem,'name'|'sku'|'kind'|'thickne
  const size=item.kind==='edge'?(item.widthMm===null?'ancho sin cargar':`ancho ${mm(item.widthMm)} mm`):(item.thicknessMm===null?'espesor sin cargar':`${mm(item.thicknessMm)} mm`);
  return `${item.name.trim()||'Sin nombre'} · ${item.sku.trim()||'Sin SKU'} · ${size}`;
 }
-const find=(catalog:Catalog,id:string|null|undefined,kind:string)=>id?catalog.items.find(item=>item.id===id&&item.kind===kind&&item.approved):undefined;
+const measured=(value:number|null|undefined)=>typeof value==='number'&&Number.isFinite(value)&&value>0;
+/** Datos que le faltan a una ficha para usarla en un pedido (mismo criterio que CatalogStore.missing). Placa: SKU, espesor, largo, ancho y veta. Canto: ancho. */
+export function catalogMissing(item:Pick<CatalogItem,'kind'|'sku'|'thicknessMm'|'widthMm'|'lengthMm'|'grain'>):string[]{
+ if(item.kind==='sheet')return [...(item.sku.trim()?[]:['SKU']),...(measured(item.thicknessMm)?[]:['espesor']),...(measured(item.lengthMm)?[]:['largo']),...(measured(item.widthMm)?[]:['ancho']),...(item.grain===true||item.grain===false?[]:['veta'])];
+ if(item.kind==='edge')return measured(item.widthMm)?[]:['ancho'];
+ return ['tipo'];
+}
+export const catalogComplete=(item:Parameters<typeof catalogMissing>[0])=>catalogMissing(item).length===0;
+/** «Ficha completa» o «Falta: SKU, veta». */
+export const completeness=(item:Parameters<typeof catalogMissing>[0])=>{const missing=catalogMissing(item);return missing.length?`Falta: ${missing.join(', ')}`:'Ficha completa';};
+const find=(catalog:Catalog,id:string|null|undefined,kind:string)=>id?catalog.items.find(item=>item.id===id&&item.kind===kind):undefined;
 export const boardOf=(row:Pick<OrderRow,'materialId'>,catalog:Catalog)=>find(catalog,row.materialId,'sheet');
 /** Espesor observado: el eje que no es base ni altura. */
 export function rowThickness(row:Pick<OrderRow,'axes'>,geometry:Pick<Geometry,'lengths'>){if(!row.axes)return null;const axis=[0,1,2].find(i=>!row.axes!.includes(i));return axis===undefined?null:geometry.lengths[axis];}
@@ -24,40 +35,88 @@ export function rowDimensions(row:Pick<OrderRow,'axes'|'dimensionRule'|'cutBase'
  if(row.dimensionRule==='explicit_cut')return row.cutBase&&row.cutHeight&&row.cutBase>0&&row.cutHeight>0?[row.cutBase,row.cutHeight]:null;
  return row.axes?[geometry.lengths[row.axes[0]],geometry.lengths[row.axes[1]]]:null;
 }
-/** Motivo físico por el que un canto no sirve para la placa elegida (no cubre el espesor), o null si sirve. Cualquier canto aprobado vale: no hay canto fijo por placa. */
+/** Motivo físico por el que un canto no sirve para la pieza (más angosto que el espesor), o null. Cualquier canto vale: no hay canto fijo por placa. */
 export function edgeIncompatibility(edge:CatalogItem,board:CatalogItem|undefined,thickness:number|null){
- if(!board)return null;const t=thickness??board.thicknessMm;
+ const t=thickness??board?.thicknessMm??null;
+ if(t===null)return null;
  if(edge.widthMm===null)return 'ancho sin cargar';
- return t!==null&&edge.widthMm+0.1<t?`no cubre el espesor de ${mm(t)} mm`:null;
+ return edge.widthMm+0.1<t?`más angosto que el espesor de ${mm(t)} mm`:null;
 }
-export type RowField='material'|'principalId'|'secondaryId'|'edgeMap'|'grainAxis'|'grainPolicy'|'dimensions';
+export type RowField='material'|'principalId'|'secondaryId'|'edgeMap'|'grainPolicy'|'dimensions'|'detail';
 export type RowWarnings=Partial<Record<RowField,string[]>>;
 const sideNames=['Arriba','Abajo','Izquierda','Derecha'];
 /** Avisos por campo que ya se pueden deducir sin leer el modelo. Vacío no significa exportable. */
 export function rowWarnings(row:OrderRow,geometry:Pick<Geometry,'lengths'>,catalog:Catalog):RowWarnings{
  const out:RowWarnings={},add=(field:RowField,text:string)=>{(out[field]??=[]).push(text);};
  if(!row.include)return out;
- const board=boardOf(row,catalog),thickness=rowThickness(row,geometry);
- if(board&&thickness!==null){if(board.thicknessMm===null)add('material','La placa no tiene espesor cargado en la biblioteca.');else if(Math.abs(thickness-board.thicknessMm)>0.1)add('material',`El eje de espesor mide ${mm(thickness)} mm y la placa tiene ${mm(board.thicknessMm)} mm. Revisá los ejes o la placa.`);}
+ const board=boardOf(row,catalog),thickness=rowThickness(row,geometry),boardMissing=board?catalogMissing(board):[];
+ if(!board)add('material',row.materialId?'La placa elegida ya no está en la biblioteca: elegí otra.':'Elegí una placa de la biblioteca.');
+ else if(boardMissing.length)add('material',`La ficha de «${board.name}» está incompleta: falta ${boardMissing.join(', ')}. Completala en la biblioteca.`);
+ if(board&&thickness!==null&&board.thicknessMm!==null&&Math.abs(thickness-board.thicknessMm)>0.1)add('material',`El eje de espesor mide ${mm(thickness)} mm y la placa tiene ${mm(board.thicknessMm)} mm. Revisá los ejes o la placa.`);
  (['principalId','secondaryId'] as const).forEach((key,index)=>{
   const role=index+1,id=row[key],used=row.edgeMap.some(v=>v===role),edge=find(catalog,id,'edge');
-  if(id&&!edge)add(key,'El canto ya no está aprobado en la biblioteca.');
-  if(edge){const reason=edgeIncompatibility(edge,board,thickness);if(reason)add(key,`No compatible con la placa elegida: ${reason}.`);}
+  if(id&&!edge)add(key,'El canto ya no está en la biblioteca.');
+  if(edge&&used){const missing=catalogMissing(edge);if(missing.length)add(key,`La ficha de «${edge.name}» está incompleta: falta ${missing.join(', ')}.`);const reason=edgeIncompatibility(edge,board,thickness);if(reason&&!missing.length)add(key,`El canto es ${reason}.`);}
   if(used&&!id)add('edgeMap',`${row.edgeMap.map((v,i)=>v===role?sideNames[i]:'').filter(Boolean).join(', ')}: lleva canto ${role===1?'principal (1)':'secundario (2)'} y no hay producto asignado en ese rol.`);
  });
  if(row.principalId&&row.principalId===row.secondaryId)add('secondaryId','El canto secundario debe ser distinto del principal.');
- if(row.grainAxis==='v')add('grainAxis','La veta en V no se exporta: intercambiá los ejes para que la veta quede según la base.');
- else if(board&&row.grainAxis){if(board.grain===true&&row.grainAxis!=='u')add('grainAxis','La placa tiene veta: elegí «Según base U».');if(board.grain!==true&&row.grainAxis==='u')add('grainAxis',board.grain===false?'La placa elegida es sin veta: elegí «Pieza sin veta».':'La placa no tiene la veta confirmada en la biblioteca.');}
  if(row.grainPolicy==='rotate'){const reason=rotationBlock(row,board);if(reason)add('grainPolicy',reason);}
+ if([...row.detail].length>DETAIL_MAX)add('detail',`El detalle supera ${DETAIL_MAX} caracteres.`);
  const size=rowDimensions(row,geometry);
- if(board&&size&&board.lengthMm!==null&&board.widthMm!==null){const [base,height]=size,fits=(base<=board.lengthMm+0.1&&height<=board.widthMm+0.1)||(row.grainPolicy==='rotate'&&height<=board.lengthMm+0.1&&base<=board.widthMm+0.1);if(!fits)add('dimensions',`Mide ${mm(base)} × ${mm(height)} mm y la placa aprobada es ${mm(board.lengthMm)} × ${mm(board.widthMm)} mm.`);}
+ if(board&&size&&board.lengthMm!==null&&board.widthMm!==null){const [base,height]=size,fits=(base<=board.lengthMm+0.1&&height<=board.widthMm+0.1)||(row.grainPolicy==='rotate'&&height<=board.lengthMm+0.1&&base<=board.widthMm+0.1);if(!fits)add('dimensions',`La pieza no entra en la placa: mide ${mm(base)} × ${mm(height)} mm y la placa es ${mm(board.lengthMm)} × ${mm(board.widthMm)} mm.`);}
  return out;
 }
 /** Motivo por el que no se puede permitir giro (rota 1), o null. */
 export function rotationBlock(row:Pick<OrderRow,'edgeMap'>,board:CatalogItem|undefined){
- if(board&&board.grain!==false)return board.grain?'La placa tiene veta: mantené la orientación (rota 0).':'La placa no tiene la veta confirmada: mantené la orientación (rota 0).';
+ if(board&&board.grain!==false)return board.grain?'La placa tiene veta: mantené la orientación (rota 0).':'La ficha de la placa no tiene la veta cargada: mantené la orientación (rota 0).';
  if(new Set(row.edgeMap).size>1)return 'Los cantos son asimétricos: mantené la orientación (rota 0).';
  return null;
+}
+/** Dirección de veta que va al pedido: la decide la placa (punto 8). */
+export function grainText(board:CatalogItem|undefined,row:Pick<OrderRow,'axes'>){
+ if(!board||(board.grain!==true&&board.grain!==false))return 'Se define con la placa.';
+ if(!board.grain)return 'Placa sin veta.';
+ return row.axes?`Con veta: corre a lo largo de la base (eje ${'XYZ'[row.axes[0]]}). Para cambiarla, intercambiá los ejes.`:'Con veta: corre a lo largo de la base.';
+}
+// --- Orientación y cantos ---------------------------------------------------------------
+type View=Pick<OrderRow,'axes'|'frontSign'|'flipX'|'flipY'>;
+/** Cara física (eje y límite) de cada lado de la vista 2D, con la misma regla que OclReader.projected_edges. */
+export function sideFaces(view:View,mirrored:boolean):string[]|null{
+ if(!view.axes||view.frontSign===null)return null;
+ const [u,v]=view.axes,parity=[[0,1],[1,2],[2,0]].some(([a,b])=>a===u&&b===v)?1:-1,flipX=view.flipX!==(view.frontSign*parity*(mirrored?-1:1)<0);
+ return [[v,view.flipY?0:1],[v,view.flipY?1:0],[u,flipX?1:0],[u,flipX?0:1]].map(([axis,high])=>`${axis}:${high}`);
+}
+/** Al cambiar ejes, cara o inversión, cada canto sigue en su cara física: el mapa se reordena, no se pierde. */
+export function remapEdges(before:View,after:View,edgeMap:number[],mirrored:boolean){
+ const from=sideFaces(before,mirrored),to=sideFaces(after,mirrored);
+ if(!from||!to)return edgeMap;
+ return to.map(face=>{const index=from.indexOf(face);return index<0?0:edgeMap[index]??0;});
+}
+// --- Propuesta desde el modelo y línea de base ---------------------------------------
+export type ProposedEntry={values:Partial<OrderRow>;edgeBlockers?:string[];notes?:{group:string;text:string}[]};
+export const PROPOSED_GROUPS:Record<string,(keyof OrderRow)[]>={detail:['detail'],orientation:['axes','frontSign','flipX','flipY'],material:['materialId'],edges:['principalId','secondaryId','edgeMap','edgeBindings'],grain:['grainPolicy'],dimensions:['dimensionRule','cutBase','cutHeight']};
+const same=(a:unknown,b:unknown)=>JSON.stringify(a??null)===JSON.stringify(b??null);
+const baseline=(plan:Pick<OrderPlan,'proposed'>,id:string)=>plan.proposed?.[id];
+/** Igual que OrderProposal.same_group?: la fila conserva lo que propuso el modelo para ese grupo. */
+export function followsModel(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group:string){const entry=baseline(plan,row.id);return !!entry&&PROPOSED_GROUPS[group].every(key=>key in entry.values&&same(row[key],entry.values[key]));}
+/** Avisos de la propuesta que siguen vigentes (su grupo no se editó a mano). No bloquean. */
+export function rowNotes(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group?:string){return (baseline(plan,row.id)?.notes||[]).filter(note=>PROPOSED_GROUPS[note.group]&&(!group||note.group===group)&&followsModel(plan,row,note.group)).map(note=>note.text);}
+/** «Más de dos cantos» mientras los cantos sean los del modelo (bloquea, como en Ruby). */
+export function rowEdgeBlockers(plan:Pick<OrderPlan,'proposed'>,row:OrderRow){return followsModel(plan,row,'edges')?baseline(plan,row.id)?.edgeBlockers||[]:[];}
+/** Grupos editados a mano en la fila. */
+export function editedGroups(plan:Pick<OrderPlan,'proposed'>,row:OrderRow){return baseline(plan,row.id)?Object.keys(PROPOSED_GROUPS).filter(group=>!followsModel(plan,row,group)):[];}
+/** Valores que propuso el modelo para volver a ellos (todos o un grupo). */
+export function restoreProposal(plan:Pick<OrderPlan,'proposed'>,row:OrderRow,group?:string):Partial<OrderRow>{
+ const entry=baseline(plan,row.id);if(!entry)return {};
+ const keys=group?PROPOSED_GROUPS[group]:Object.values(PROPOSED_GROUPS).flat();
+ return Object.fromEntries(keys.filter(key=>key in entry.values).map(key=>[key,structuredClone(entry.values[key])]));
+}
+export type MergeStats={kept:number;added:number;removed:number;stale?:boolean};
+/** Aviso al cruzar el borrador guardado con una propuesta nueva (punto 10). */
+export function mergeNotice(merge:MergeStats|null|undefined){
+ if(!merge?.stale)return '';
+ const parts=[merge.added?`se ${merge.added===1?'agregó':'agregaron'} ${plural(merge.added,'pieza nueva','piezas nuevas')}`:'',merge.removed?`se ${merge.removed===1?'quitó':'quitaron'} ${plural(merge.removed,'pieza que ya no está','piezas que ya no están')}`:'',merge.kept?`se conservaron tus cambios en ${plural(merge.kept,'pieza','piezas')}`:''].filter(Boolean);
+ return `El modelo, la biblioteca o el perfil cambiaron: el pedido se actualizó${parts.length?` (${parts.join(', ')})`:''}.`;
 }
 export type EdgeTotal={id:string;label:string;sku:string;metres:number;sides:number;pieces:number};
 /** Metros de canto por producto, con la misma regla que Ruby: lados 0-1 suman la base y 2-3 la altura. */
@@ -97,25 +156,13 @@ export function edgeAmounts(charges:EdgeCharge[]){
  }
  return out;
 }
-export type ApplyResult={applied:number;edgesSkipped:number;cutsSwapped:number;dimensionsSkipped:number;invalidated:Record<string,string[]>};
-/** Aviso de «Aplicar a…» con lo que Ruby copió, salteó e invalidó; `left` son las verificaciones pendientes en los destinos. */
-export function applySummary(result:ApplyResult,left:number){
- const invalid=Object.values(result.invalidated||{}).reduce((sum,keys)=>sum+keys.length,0);
- return `Aplicado a ${plural(result.applied,'pieza','piezas')}; ${invalid?`se ${invalid===1?'invalidó':'invalidaron'} ${plural(invalid,'confirmación','confirmaciones')}`:'no se invalidó ninguna confirmación'} y quedan ${plural(left,'verificación','verificaciones')} por confirmar.`
+export type ApplyResult={applied:number;edgesSkipped:number;cutsSwapped:number;dimensionsSkipped:number};
+/** Aviso de «Aplicar a…» con lo que Ruby copió y salteó. */
+export function applySummary(result:ApplyResult){
+ return `Aplicado a ${plural(result.applied,'pieza','piezas')}.`
   +(result.edgesSkipped?` Los cantos no se copiaron a ${plural(result.edgesSkipped,'pieza','piezas')} con otros ejes, cara o inversión.`:'')
   +(result.cutsSwapped?` En ${plural(result.cutsSwapped,'pieza','piezas')} con los ejes cruzados se intercambiaron base y altura de corte.`:'')
   +(result.dimensionsSkipped?` Las medidas de corte explícitas no se copiaron a ${plural(result.dimensionsSkipped,'pieza que no es equivalente','piezas que no son equivalentes')}.`:'');
-}
-export type ProposalRow={id:string;detail:string;status:'proposed'|'kept'|'abstained';bulkReady:boolean;reasons:string[]};
-export type ProposalSummary={proposed:number;kept:number;abstained:number;bulkReady:number;review:number};
-export const proposalStatus:Record<ProposalRow['status'],string>={proposed:'Propuesta sin confirmar',kept:'Conservada',abstained:'Sin propuesta'};
-/** Filas propuestas o sin propuesta que no cumplen el criterio de «Confirmar en bloque»: se revisan una por una. */
-export const proposalReview=(rows:ProposalRow[])=>rows.filter(row=>row.status!=='kept'&&!row.bulkReady);
-export function proposalNotice(summary:ProposalSummary){
- return `Propuesta lista: ${plural(summary.proposed,'pieza propuesta','piezas propuestas')}, ${plural(summary.kept,'conservada','conservadas')} por tener verificaciones y ${plural(summary.abstained,'sin propuesta','sin propuesta')}. Nada quedó confirmado; ${summary.bulkReady?`${plural(summary.bulkReady,'pieza se puede','piezas se pueden')} confirmar en bloque`:'ninguna pieza se puede confirmar en bloque todavía'}.`;
-}
-export function bulkNotice(confirmed:number,review:number){
- return `${confirmed?`Se ${confirmed===1?'confirmó':'confirmaron'} en bloque ${plural(confirmed,'pieza','piezas')} sin ambigüedad.`:'No se confirmó ninguna pieza en bloque.'} ${review?`${review===1?'Queda 1 pieza':`Quedan ${review} piezas`} en revisión individual.`:'No queda ninguna pieza en revisión individual.'}`;
 }
 export type EdgeLink={observedId:string;catalogId:string;name:string};
 /** Vínculo del borrador «material observado → canto»: uno por material; sin canto se quita. */
@@ -131,22 +178,19 @@ export function detailCodeWarning(detail:string,code:string|undefined,mode:strin
  const length=[...`${code} ${detail}`].length;
  return length>DETAIL_MAX?`Con el código ${code} el detalle ocupa ${length} caracteres y el máximo es ${DETAIL_MAX}: acortalo ${plural(length-DETAIL_MAX,'carácter','caracteres')}.`:null;
 }
-export type BlockField='detail'|'links'|'include'|'exclude'|'secondaryEdge'|'axes'|'checks'|'edgeResolution'|'note'|'dimensions'|'grain'|'edges'|'material';
-/** Campo del formulario (data-field) al que lleva cada motivo de bloqueo de Ruby. */
+export type BlockField='detail'|'links'|'include'|'secondaryEdge'|'axes'|'dimensions'|'grain'|'edges'|'material';
+/** Campo del formulario (data-field) al que lleva cada problema de Ruby. */
 export function blockedField(reason:string):BlockField|null{
  const r=reason.toLocaleLowerCase('es');
- if(r.includes('excluye'))return 'exclude';
- if(r.includes('código módulo·pieza')||r.includes('detalle con código')||r.includes('se repite en otro mueble'))return 'detail';
- if(r.includes('vínculos de cantos del borrador'))return 'links';
- // Una caja no rectangular no se corrige con los ejes: se verifica la geometría o se excluye la pieza.
- if(r.includes('geometría no rectangular'))return 'include';
- if(r.includes('falta confirmar'))return 'checks';
- if(r.includes('ejes')||r.includes('cara frontal'))return 'axes';
- if(/verificaste los cantos|mapa manual|releer las caras|inspección manual|cara perimetral|canto nativo/.test(r))return 'edgeResolution';
- if(r.includes('justificación')||r.includes('detalle'))return 'note';
- if(/asimétric|girar|rota|veta/.test(r))return 'grain';
+ if(r.includes('código módulo·pieza')||r.includes('detalle con código')||r.includes('se repite en otro mueble')||r.includes('el detalle supera'))return 'detail';
+ if(r.includes('cantos pintados sin vínculo'))return 'links';
+ // Una pieza no rectangular no se corrige con los ejes: se excluye o se corrige en el modelo.
+ if(r.includes('no rectangular'))return 'include';
+ if(r.includes('ejes'))return 'axes';
+ if(r.includes('incompleta'))return r.includes('canto')?(r.includes('secundario (2)')?'secondaryEdge':'edges'):'material';
+ if(/asimétric|girar|giro|rota|veta/.test(r))return 'grain';
  if(/no entra|medidas|corte/.test(r))return 'dimensions';
- if(r.includes('canto'))return r.includes('secundario')?'secondaryEdge':'edges';
+ if(r.includes('canto'))return r.includes('secundario (2)')?'secondaryEdge':'edges';
  if(/placa|espesor|material/.test(r))return 'material';
  return null;
 }

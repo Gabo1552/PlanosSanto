@@ -125,9 +125,16 @@ class OclSyncTest < Minitest::Test
     assert_equal '3000mm',@material.get_attribute(DICT,'std_lengths')
   end
 
-  def test_requires_confirmation_filters_by_item_and_aborts_on_failed_commit
-    assert_raises(PlanosSanto::ExportError) { @library.ocl_sync('dryRun'=>false) }
-    assert_raises(PlanosSanto::ExportError) { @library.ocl_sync('dryRun'=>false,'confirmed'=>true,'catalogId'=>'00000000-0000-4000-8000-000000000000') }
+  def test_one_click_sync_filters_by_item_honours_a_preview_and_aborts_on_failed_commit
+    # Punto 27: sin paso de confirmación; un clic aplica y Ctrl+Z (una operación) lo deshace.
+    result=@library.ocl_sync('dryRun'=>false)
+    assert_operator result['changed'],:>,0;assert_equal 2,@material.get_attribute(DICT,'type')
+    assert_equal :commit,@model.operations.last.first
+    assert_raises(PlanosSanto::ExportError) { @library.ocl_sync('dryRun'=>false,'catalogId'=>'00000000-0000-4000-8000-000000000000') }
+    assert_raises(PlanosSanto::ExportError) { @library.ocl_sync('dryRun'=>false,'planDigest'=>'vencido') } # una vista previa vencida no aplica otra cosa
+    assert_raises(PlanosSanto::ExportError) { @library.ocl_sync('dryRun'=>false,'planDigest'=>7) }
+  end
+  def test_failed_commit_aborts_without_writing
     @model.fail_commit=true
     assert_raises(PlanosSanto::ExportError) { sync }
     assert_nil @material.get_attribute(DICT,'type')

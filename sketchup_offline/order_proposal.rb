@@ -5,23 +5,23 @@ require_relative 'material_resolver'
 require_relative 'ocl_reader'
 
 module PlanosSanto
-  # Hito 3: del modelo pintado al TXT con revisión por excepción. Propone filas del pedido,
-  # confirma en bloque solo lo inequívoco y copia datos entre filas. Nunca escribe el SKP ni
-  # confirma una propuesta por su cuenta: devuelve borradores nuevos y SupplierOrder sigue
-  # siendo la única validación que habilita exportar.
+  # Del modelo pintado al TXT (0.8.16): el pedido se propone solo al abrirlo desde lo pintado y nunca pide
+  # tildes de revisión. Cada propuesta deja en el borrador su línea de base (`proposed`): lo que el taller
+  # cambió a mano se reconoce porque difiere de esa base y se conserva cuando el modelo, la biblioteca o el
+  # perfil cambian; lo que no tocó sigue al modelo. Nunca escribe el SKP; SupplierOrder valida lo físico.
   class OrderProposal
-    CHECKS=%w[orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed grainConfirmed].freeze
     SIDES=%w[Arriba Abajo Izquierda Derecha].freeze
     DETAIL_CODES=%w[none module_piece].freeze
     MAX_DETAIL=80
     MAX_LINKS=500
+    MAX_ROWS=20_000
     TOLERANCE=0.1
-    # Campos que copia cada grupo y verificaciones que invalida si alguno cambia de valor.
-    # La compatibilidad placa/canto la vuelve a comprobar Ruby; el mapa de cantos no depende de la placa.
-    GROUPS={'material'=>[%w[materialId],%w[materialConfirmed grainConfirmed]],
-            'edges'=>[%w[principalId secondaryId edgeMap edgeResolution edgeBindings],%w[edgesConfirmed]],
-            'grain'=>[%w[grainAxis grainPolicy],%w[grainConfirmed]],
-            'dimensions'=>[%w[dimensionRule cutBase cutHeight reviewNote],%w[dimensionsConfirmed]]}.freeze
+    # Fields the model proposes, in groups that are kept or followed as a whole.
+    PROPOSED={'detail'=>%w[detail],'orientation'=>%w[axes frontSign flipX flipY],'material'=>%w[materialId],
+              'edges'=>%w[principalId secondaryId edgeMap edgeBindings],'grain'=>%w[grainPolicy],'dimensions'=>%w[dimensionRule cutBase cutHeight]}.freeze
+    # «Aplicar a otras piezas»: fields copied per group. Nothing is invalidated: there are no ticks left.
+    GROUPS={'material'=>%w[materialId],'edges'=>%w[principalId secondaryId edgeMap edgeBindings],'grain'=>%w[grainPolicy],'dimensions'=>%w[dimensionRule cutBase cutHeight]}.freeze
+    NOTE_GROUPS=%w[orientation material edges].freeze
 
     # report: el recorrido de OclReader o un lambda que lo captura recién cuando hace falta.
     def initialize(service,report,catalog,today: Date.today)
@@ -29,19 +29,93 @@ module PlanosSanto
       @geometry=service.proposal['geometry']
     end
 
+    # Library item a painted material is bound to (Planos Santo native binding). The id and kind are what
+    # the order needs; the ficha's own data may change after painting (completing it is not a new binding).
     def self.bound_item(material,catalog)
       binding=material['native_binding']
       return nil unless material['native_status']=='valid' && binding
-      catalog['items'].find { |item| item['id']==binding['catalogId'] && item['kind']==binding['kind'] && item['approved'] && MaterialResolver.item_fingerprint(item)==binding['catalogFingerprint'] }
+      catalog['items'].find { |item| item['id']==binding['catalogId'] && item['kind']==binding['kind'] }
     end
 
-    # Campos opcionales del borrador (no de las filas): tabla de vínculos y código en el detalle.
+    # Campos opcionales del borrador (no de las filas): vínculos de cantos, código en el detalle y línea de base.
     def self.check_extras!(draft)
       links=draft.fetch('edgeLinks',[])
       valid=links.is_a?(Array) && links.length<=MAX_LINKS && links.all? { |l| l.is_a?(Hash) && l.keys.sort==%w[catalogId name observedId] && l.values.all? { |v| v.is_a?(String) && v.length<=200 } && !l['observedId'].empty? && !l['catalogId'].empty? }
-      raise ExportError,'Tabla de vínculos de cantos inválida: volvé a preparar el pedido.' unless valid && links.map { |l| l['observedId'] }.uniq.length==links.length
+      raise ExportError,'Tabla de vínculos de cantos inválida: volvé a proponer el pedido desde el modelo.' unless valid && links.map { |l| l['observedId'] }.uniq.length==links.length
       raise ExportError,'Opción de código en el detalle inválida.' unless DETAIL_CODES.include?(draft.fetch('detailCode','none'))
+      proposed=draft.fetch('proposed',{})
+      shape=proposed.is_a?(Hash) && proposed.length<=MAX_ROWS && proposed.all? do |id,entry|
+        id.is_a?(String) && entry.is_a?(Hash) && entry['values'].is_a?(Hash) && entry.fetch('edgeBlockers',[]).is_a?(Array) && entry.fetch('edgeBlockers',[]).all?(String) &&
+          entry.fetch('notes',[]).is_a?(Array) && entry.fetch('notes',[]).all? { |n| n.is_a?(Hash) && NOTE_GROUPS.include?(n['group']) && n['text'].is_a?(String) }
+      end
+      raise ExportError,'Propuesta del pedido dañada: volvé a proponer el pedido desde el modelo.' unless shape
       nil
+    end
+
+    def self.baseline(draft,id)
+      entry=draft.is_a?(Hash) && draft['proposed'].is_a?(Hash) ? draft['proposed'][id] : nil
+      entry.is_a?(Hash) && entry['values'].is_a?(Hash) ? entry : nil
+    end
+    # True while the row still holds what the model proposed for that group.
+    def self.same_group?(row,values,group);PROPOSED.fetch(group).all? { |key| values.key?(key) && row[key]==values[key] };end
+    # «Más de dos cantos por pieza» (se mantiene): blocks while the edges are still the model's own.
+    def self.edge_blockers(draft,row)
+      entry=baseline(draft,row['id'])
+      entry && same_group?(row,entry['values'],'edges') ? Array(entry['edgeBlockers']).grep(String) : []
+    end
+    # Non-blocking notes of the proposal that still apply (their group was not edited by hand).
+    def self.notes(draft,row)
+      entry=baseline(draft,row['id']);return [] unless entry
+      Array(entry['notes']).select { |note| note.is_a?(Hash) && PROPOSED.key?(note['group']) && same_group?(row,entry['values'],note['group']) }.map { |note| note['text'] }
+    end
+    def self.edge_source(draft,row)
+      entry=baseline(draft,row['id'])
+      entry && same_group?(row,entry['values'],'edges') ? 'model' : 'manual'
+    end
+
+    # Punto 10: cruza un borrador guardado con la propuesta nueva por id de fila. Las filas que siguen
+    # existiendo conservan cada grupo editado a mano; las nuevas quedan propuestas; las que desaparecieron se quitan.
+    def self.merge(stored,fresh)
+      stored=SupplierOrder.normalize(stored)
+      plan=JSON.parse(JSON.generate(fresh))
+      old_rows=stored['rows'].select { |row| row.is_a?(Hash) && row['id'].is_a?(String) }.to_h { |row| [row['id'],row] }
+      fresh_ids=plan['rows'].map { |row| row['id'] }
+      stats={'kept'=>0,'added'=>0,'removed'=>(old_rows.keys-fresh_ids).length}
+      plan['rows'].map! do |row|
+        old=old_rows[row['id']]
+        unless old
+          stats['added']+=1;next row
+        end
+        merged=row.merge(old.slice('include','excludeReason'))
+        entry=baseline(stored,row['id'])
+        follows_orientation=true;edited=false
+        PROPOSED.each do |group,fields|
+          mine=entry ? !same_group?(old,entry['values'],group) : !blank_group?(old,group)
+          # Edges and explicit cuts are relative to the view: a hand-made orientation keeps them too.
+          mine ||= %w[edges dimensions].include?(group) && !follows_orientation
+          next unless mine
+          fields.each { |key| merged[key]=JSON.parse(JSON.generate(old[key])) if old.key?(key) }
+          follows_orientation=false if group=='orientation'
+          edited=true
+        end
+        stats['kept']+=1 if edited || merged['include']!=row['include']
+        merged
+      end
+      plan['profile']=stored['profile'] if stored['profile'].is_a?(Hash)
+      plan['detailCode']=stored['detailCode'] if DETAIL_CODES.include?(stored['detailCode'])
+      {'plan'=>plan,'merge'=>stats}
+    end
+    # Draft saved before 0.8.16 (no baseline): a group the taller never filled in follows the model.
+    def self.blank_group?(row,group)
+      case group
+      when 'orientation' then row['axes'].nil? || row['frontSign'].nil?
+      when 'material' then row['materialId'].to_s.empty?
+      when 'edges' then row['principalId'].nil? && row['secondaryId'].nil? && Array(row['edgeMap']).all? { |v| v==0 }
+      when 'detail' then row['detail'].to_s.strip.empty?
+      when 'grain' then row['grainPolicy']!='rotate'
+      when 'dimensions' then row['dimensionRule']!='explicit_cut'
+      else true
+      end
     end
 
     # Código compuesto M03·P07 desde la guía guardada: módulo del mueble y código de la pieza.
@@ -89,88 +163,73 @@ module PlanosSanto
       totals.values.map { |entry| entry.merge('metres'=>entry['metres'].round(3),'pieces'=>entry['pieces'].length) }
     end
 
-    # 1. Propuesta para las filas incluidas sin ninguna verificación hecha. Las que ya tienen alguna se conservan.
+    # Propuesta desde el modelo para todas las filas (o las elegidas). Escribe la línea de base de cada fila.
     def propose(draft,ids: nil)
-      plan=copy(draft);links=links(plan);results={};staged={}
+      plan=SupplierOrder.normalize(copy(draft));links=links(plan);results={};staged={}
+      plan['proposed']=plan['proposed'].is_a?(Hash) ? plan['proposed'] : {}
       plan['rows'].each do |row|
-        next unless row['include'] && (ids.nil? || ids.include?(row['id']))
-        if CHECKS.any? { |key| row[key] }
-          results[row['id']]={'status'=>'kept','reasons'=>['Tiene verificaciones hechas: se conserva sin cambios.']};next
-        end
+        next unless ids.nil? || ids.include?(row['id'])
         stage=stage(row,links)
-        stage ? staged[row['id']]=stage : results[row['id']]={'status'=>'abstained','reasons'=>['Geometría no rectangular: revisala en la vista 2D o excluila con un motivo.']}
+        if stage
+          staged[row['id']]=stage
+        else
+          plan['proposed'][row['id']]={'values'=>values(row),'edgeBlockers'=>[],'notes'=>[]}
+          results[row['id']]={'status'=>'abstained','notes'=>['Pieza no rectangular: no se propone; excluila o corregila en el modelo.']}
+        end
       end
       ranking=Hash.new(0)
       staged.each_value { |stage| stage['sides'].each_with_index { |id,index| ranking[id]+=stage['lengths'][index<2 ? 0 : 1] if id.is_a?(String) } unless stage['blocked'] }
       plan['rows'].each do |row|
         stage=staged[row['id']];next unless stage
         row.merge!(patch(row,stage,ranking))
-        results[row['id']]={'status'=>'proposed','reasons'=>stage['reasons']}
+        plan['proposed'][row['id']]={'values'=>values(row),'edgeBlockers'=>stage['blockers'],'notes'=>stage['notes']}
+        results[row['id']]={'status'=>'proposed','notes'=>stage['notes'].map { |note| note['text'] }}
       end
       rows=plan['rows'].filter_map do |row|
         result=results[row['id']];next unless result
-        reasons=result['status']=='proposed' ? (result['reasons']+bulk_reasons(row,plan)).uniq : result['reasons']
-        {'id'=>row['id'],'detail'=>row['detail'],'status'=>result['status'],'bulkReady'=>result['status']=='proposed' && reasons.empty?,'reasons'=>reasons}
+        {'id'=>row['id'],'detail'=>row['detail'],'status'=>result['status'],'notes'=>result['notes']}
       end
-      summary={'proposed'=>rows.count { |r| r['status']=='proposed' },'kept'=>rows.count { |r| r['status']=='kept' },'abstained'=>rows.count { |r| r['status']=='abstained' },
-               'bulkReady'=>rows.count { |r| r['bulkReady'] },'review'=>rows.count { |r| r['status']=='proposed' && !r['bulkReady'] }}
+      summary={'proposed'=>rows.count { |r| r['status']=='proposed' },'abstained'=>rows.count { |r| r['status']=='abstained' },'withNotes'=>rows.count { |r| !r['notes'].empty? }}
       {'plan'=>plan,'proposal'=>{'rows'=>rows,'edgeMaterials'=>edge_materials(plan,links),'summary'=>summary}}
     end
 
-    # 2. Confirma las cinco verificaciones solo en filas inequívocas que además pasan la validación completa.
-    def confirm_bulk(draft,ids: nil)
-      plan=copy(draft);confirmed=[];review=[]
-      plan['rows'].each do |row|
-        next unless row['include'] && (ids.nil? || ids.include?(row['id'])) && !CHECKS.all? { |key| row[key] }
-        reasons=bulk_reasons(row,plan)
-        if reasons.empty?
-          CHECKS.each { |key| row[key]=true };confirmed << row['id']
-        else
-          review << {'id'=>row['id'],'detail'=>row['detail'],'reasons'=>reasons}
-        end
-      end
-      {'plan'=>plan,'confirmed'=>confirmed,'review'=>review}
-    end
-
-    # 3. Copia grupos de datos a filas equivalentes o elegidas. Solo invalida las verificaciones del grupo
-    # cuyo valor cambió de verdad en cada destino; nunca copia verificaciones.
+    # Copia grupos de datos a filas equivalentes o elegidas. Ya no hay verificaciones que invalidar.
     def apply(draft,source_id,target_ids,groups)
-      plan=copy(draft);source=plan['rows'].find { |row| row['id']==source_id }
+      plan=SupplierOrder.normalize(copy(draft));source=plan['rows'].find { |row| row['id']==source_id }
       raise ExportError,'La pieza de origen no está en el pedido.' unless source
-      counts={'applied'=>0,'edgesSkipped'=>0,'cutsSwapped'=>0,'dimensionsSkipped'=>0};invalidated={}
+      counts={'applied'=>0,'edgesSkipped'=>0,'cutsSwapped'=>0,'dimensionsSkipped'=>0}
       plan['rows'].each do |row|
         next if row['id']==source_id || !target_ids.include?(row['id'])
         patch={}
         patch['materialId']=source['materialId'] if groups['material']
         if groups['edges']
           if same_view?(source,row)
-            patch.merge!(source.slice('principalId','secondaryId'),'edgeMap'=>source['edgeMap'].dup,'edgeResolution'=>source['edgeResolution']=='observed' ? 'observed' : nil,
+            patch.merge!(source.slice('principalId','secondaryId'),'edgeMap'=>source['edgeMap'].dup,
               'edgeBindings'=>(row['edgeBindings'].reject { |b| source['edgeBindings'].any? { |s| s['observedId']==b['observedId'] } }+source['edgeBindings']).map(&:dup))
           else
             counts['edgesSkipped']+=1
           end
         end
-        patch.merge!(source.slice('grainAxis','grainPolicy')) if groups['grain']
+        patch.merge!(source.slice('grainPolicy')) if groups['grain']
         if groups['dimensions']
           cut=cut_for(source,row,counts)
-          cut ? patch.merge!(cut,'reviewNote'=>source['reviewNote']) : counts['dimensionsSkipped']+=1
+          cut ? patch.merge!(cut) : counts['dimensionsSkipped']+=1
         end
         changed=patch.reject { |key,value| row[key]==value }
         next if changed.empty?
-        lost=GROUPS.values.select { |fields,_| (fields & changed.keys).any? }.flat_map(&:last).uniq.select { |key| row[key] }
-        row.merge!(changed);lost.each { |key| row[key]=false }
-        invalidated[row['id']]=lost unless lost.empty?
+        row.merge!(changed)
         counts['applied']+=1
       end
-      counts.merge('plan'=>plan,'invalidated'=>invalidated)
+      counts.merge('plan'=>plan)
     end
 
     private
 
     def report;@report ||= @report_source.respond_to?(:call) ? @report_source.call : @report_source;end
     def copy(draft);JSON.parse(JSON.generate(draft));end
-    def sheet(id);@catalog['items'].find { |item| item['id']==id && item['kind']=='sheet' && item['approved'] };end
-    def edge(id);@catalog['items'].find { |item| item['id']==id && item['kind']=='edge' && item['approved'] };end
+    def values(row);PROPOSED.values.flatten.to_h { |key| [key,JSON.parse(JSON.generate(row[key]))] };end
+    def sheet(id);id.is_a?(String) && !id.empty? ? @catalog['items'].find { |item| item['id']==id && item['kind']=='sheet' } : nil;end
+    def edge(id);id.is_a?(String) && !id.empty? ? @catalog['items'].find { |item| item['id']==id && item['kind']=='edge' } : nil;end
     def piece(id);report['pieces'].find { |piece| piece['path'].join('/')==id };end
     def used_materials(id)
       piece=piece(id);return [] unless piece
@@ -184,61 +243,59 @@ module PlanosSanto
       return [self.class.bound_item(material,@catalog)&.then { |item| item['kind']=='edge' ? item : nil },true] if native
       [edge(links[material['id']]),false]
     end
+    def note(group,text);{'group'=>group,'text'=>text};end
 
     def stage(row,links)
       g=@geometry.fetch(row['id']);return nil unless g['rectangular']
-      reasons=[];lengths=g['lengths'];materials=used_materials(row['id'])
+      notes=[];blockers=[];lengths=g['lengths'];materials=used_materials(row['id'])
       sheets=materials.select { |m| m['category']=='sheet' && m['native_status']=='valid' }
       board=sheets.size==1 ? self.class.bound_item(sheets.first,@catalog) : nil
-      reasons << 'Hay más de una placa pintada en la pieza: elegí la placa.' if sheets.size>1
-      reasons << 'La placa pintada no coincide con un ítem aprobado vigente de la biblioteca.' if sheets.size==1 && !board
+      notes << note('material','Hay más de una placa pintada en la pieza: elegí la placa.') if sheets.size>1
+      notes << note('material','La placa pintada ya no está en la biblioteca: elegí la placa.') if sheets.size==1 && !board
       board ||= sheet(row['materialId'])
-      reasons << 'Sin placa vinculada: pintá la pieza con una placa de la biblioteca o elegila.' if board.nil? && sheets.empty?
-      thickness=thickness_axis(lengths,board,reasons)
+      notes << note('material','Sin placa pintada: pintá la pieza con una placa de la biblioteca o elegila acá.') if board.nil? && sheets.empty?
+      thickness=thickness_axis(lengths,board,notes)
       u,v=([0,1,2]-[thickness]).sort_by { |i| [-lengths[i],i] }
-      reasons << 'Largo igual al ancho: confirmá la orientación en la vista 2D.' if (lengths[u]-lengths[v]).abs<=TOLERANCE
-      reasons << 'La placa no tiene la veta confirmada en la biblioteca.' if board && board['grain'].nil?
+      notes << note('orientation','Largo igual al ancho: revisá qué lado es la base en la vista 2D.') if (lengths[u]-lengths[v]).abs<=TOLERANCE && board && board['grain']==true
+      notes << note('orientation','Instancia espejada en el modelo: revisá la cara vista en la vista 2D.') if g['mirrored']
       orientation={'axes'=>[u,v],'frontSign'=>[[0,1],[1,2],[2,0]].include?([u,v]) ? 1 : -1,'flipX'=>false,'flipY'=>false}
       observation=OclReader.projected_edges(report,row.merge(orientation),g)
       names=observation['materials'].to_h { |m| [m['id'],m['name']] };bindings=[]
       sides=observation['sides'].each_with_index.map do |side,index|
         next 0 if side['status']=='observed_no_edge'
         if side['status']!='observed_edge' || side['materialIds'].size!=1
-          reasons << "#{SIDES[index]}: lado sin resolver. #{side['reason']}";next nil
+          notes << note('edges',"#{SIDES[index]}: no se pudo leer el canto del modelo; quedó sin canto. Revisalo o asignalo a mano.");next 0
         end
         id=side['materialIds'].first;material=report['materials'].find { |m| m['id']==id }
         item,native=edge_for(material,links)
         unless item
-          reasons << (native ? "El canto nativo «#{names[id]}» no coincide con un canto aprobado vigente de la biblioteca." : "Vinculá «#{names[id]}» con un canto en «Vínculos de cantos del borrador».")
-          next nil
+          notes << note('edges',native ? "#{SIDES[index]}: el canto pintado «#{names[id]}» ya no está en la biblioteca; quedó sin canto." : "#{SIDES[index]}: vinculá «#{names[id]}» con un canto en «Cantos pintados sin vínculo»; mientras tanto quedó sin canto.")
+          next 0
         end
         bindings << {'observedId'=>id,'catalogId'=>item['id']};item['id']
       end
       skus=sides.grep(String).uniq
       blocked=skus.length>2
-      reasons << "La pieza tiene #{skus.length} cantos distintos (#{skus.map { |id| edge(id)['sku'] }.join(', ')}): el pedido admite como máximo 2 por pieza (principal y secundario)." if blocked
-      {'orientation'=>orientation,'board'=>board,'sides'=>sides,'bindings'=>bindings.uniq,'blocked'=>blocked,'complete'=>!blocked && !sides.include?(nil),
-       'lengths'=>[lengths[u],lengths[v]],'reasons'=>reasons,'axesChanged'=>!row['axes'].nil? && row['axes']!=[u,v]}
+      blockers << "La pieza tiene #{skus.length} cantos distintos pintados (#{skus.map { |id| edge(id)['sku'].to_s.strip.empty? ? edge(id)['name'] : edge(id)['sku'] }.join(', ')}): el pedido admite como máximo 2 por pieza (principal y secundario). Asigná los cantos a mano o repintá la pieza." if blocked
+      {'orientation'=>orientation,'board'=>board,'sides'=>blocked ? [0,0,0,0] : sides,'bindings'=>bindings.uniq,'blocked'=>blocked,
+       'lengths'=>[lengths[u],lengths[v]],'notes'=>notes,'blockers'=>blockers}
     end
-    # Eje del espesor: el único que mide lo que la placa. Sin placa o sin coincidencia, el más chico, con aviso.
-    def thickness_axis(lengths,board,reasons)
+    # Eje del espesor: el único que mide lo que la placa. Sin placa o sin coincidencia, el más chico.
+    def thickness_axis(lengths,board,notes)
       smallest=(0..2).min_by { |i| [lengths[i],i] }
       return smallest unless board && board['thicknessMm'].is_a?(Numeric)
       matches=(0..2).select { |i| (lengths[i]-board['thicknessMm']).abs<=TOLERANCE }
       return matches.first if matches.size==1
-      reasons << (matches.empty? ? "Ningún eje mide el espesor de la placa (#{board['thicknessMm']} mm): revisá la placa o el modelo." : 'Dos ejes miden el espesor de la placa: elegí ejes y cara en la vista 2D.')
+      notes << note('orientation','Dos ejes miden el espesor de la placa: revisá ejes y cara en la vista 2D.') if matches.size>1
       matches.empty? ? smallest : matches.min_by { |i| [lengths[i],i] }
     end
     def patch(row,stage,ranking)
-      roles=stage['complete'] ? stage['sides'].grep(String).uniq.sort_by { |id| [-ranking[id],id] } : []
-      edge_map=stage['complete'] ? stage['sides'].map { |id| id.is_a?(String) ? roles.index(id)+1 : 0 } : [0,0,0,0]
+      roles=stage['sides'].grep(String).uniq.sort_by { |id| [-ranking[id],id] }
+      edge_map=stage['sides'].map { |id| id.is_a?(String) ? roles.index(id)+1 : 0 }
       kept=row['edgeBindings'].reject { |b| stage['bindings'].any? { |s| s['observedId']==b['observedId'] } }
-      board=stage['board'];grain=board && board['grain']==true ? 'u' : board && board['grain']==false ? 'none' : nil
-      note=row['reviewNote'].strip.length>=8 ? row['reviewNote'] : "Propuesta automática desde el modelo (#{@today.iso8601}): medidas terminadas del modelo aceptadas; validar con la maderera."
-      dimensions=row['dimensionRule']=='explicit_cut' && !stage['axesChanged'] ? {} : {'dimensionRule'=>'finished_accepted','cutBase'=>nil,'cutHeight'=>nil}
+      board=stage['board']
       stage['orientation'].merge('materialId'=>board ? board['id'] : row['materialId'],'principalId'=>roles[0],'secondaryId'=>roles[1],'edgeMap'=>edge_map,
-        'edgeResolution'=>stage['complete'] ? 'observed' : nil,'edgeBindings'=>kept+stage['bindings'],'edgeOverrideReason'=>'',
-        'grainAxis'=>grain,'grainPolicy'=>'locked','reviewNote'=>note).merge(dimensions)
+        'edgeBindings'=>kept+stage['bindings'],'grainPolicy'=>'locked','dimensionRule'=>'finished_accepted','cutBase'=>nil,'cutHeight'=>nil)
     end
     def edge_materials(plan,links)
       found={}
@@ -254,33 +311,6 @@ module PlanosSanto
         end
       end
       found.values
-    end
-
-    # Criterio de «Confirmar en bloque». Vacío solo si la fila es inequívoca y Ruby la exportaría confirmada.
-    def bulk_reasons(row,draft)
-      g=@geometry.fetch(row['id'])
-      return ['Geometría no rectangular: se revisa pieza por pieza.'] unless g['rectangular']
-      reasons=[];axes=row['axes']
-      reasons << 'Instancia espejada: confirmá cara y orientación en la vista 2D.' if g['mirrored']
-      return reasons+['Faltan ejes y cara de la vista 2D.'] unless axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |n| n.is_a?(Integer) && n.between?(0,2) } && [-1,1].include?(row['frontSign'])
-      lengths=g['lengths']
-      reasons << 'Largo igual al ancho: confirmá la orientación en la vista 2D.' if (lengths[axes[0]]-lengths[axes[1]]).abs<=TOLERANCE
-      board=sheet(row['materialId']);w=([0,1,2]-axes).first;thickness=lengths[w]
-      if board.nil? then reasons << 'Sin placa aprobada.'
-      elsif !board['thicknessMm'].is_a?(Numeric) || (thickness-board['thicknessMm']).abs>TOLERANCE then reasons << "El espesor no coincide con la placa: el eje de espesor mide #{@service.mm(thickness)} mm."
-      elsif (0..2).count { |i| (lengths[i]-board['thicknessMm']).abs<=TOLERANCE }>1 then reasons << 'Dos ejes miden el espesor de la placa: elegí ejes y cara en la vista 2D.'
-      elsif axes.any? { |i| lengths[i]<thickness-TOLERANCE } then reasons << 'Un lado es más chico que el espesor de la placa: confirmá ejes y espesor en la vista 2D.'
-      end
-      reasons << 'Placa con veta: confirmá la dirección de la veta en la vista 2D.' if board && board['grain']==true
-      unresolved=OclReader.projected_edges(report,row,g)['sides'].each_with_index.select { |side,_| side['status']=='unresolved' }.map { |_,index| SIDES[index] }
-      reasons << "Lados sin resolver: #{unresolved.join(', ')}." unless unresolved.empty?
-      reasons << 'Cantos sin caras observadas: la revisión manual se confirma pieza por pieza.' unless row['edgeResolution']=='observed'
-      # Vista desde el dorso = izquierda y derecha intercambiadas. Solo es la misma pieza si el mapa no cambia
-      # al darla vuelta (izquierda = derecha, o arriba = abajo con un giro de 180°); si no, depende de la cara vista.
-      map=row['edgeMap']
-      reasons << 'Cantos asimétricos que dependen de la cara vista: confirmá la cara vista en la vista 2D.' if map.is_a?(Array) && map.length==4 && map[2]!=map[3] && map[0]!=map[1]
-      return reasons unless reasons.empty?
-      @service.validate_row(row.merge(CHECKS.to_h { |key| [key,true] }),collect:true)+self.class.detail_reasons(draft,row,@service.detail_codes)
     end
 
     def same_view?(a,b);a['axes'] && a['axes']==b['axes'] && %w[frontSign flipX flipY].all? { |key| a[key]==b[key] };end

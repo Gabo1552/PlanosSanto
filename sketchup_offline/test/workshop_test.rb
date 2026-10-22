@@ -14,16 +14,16 @@ class WorkshopTest < Minitest::Test
  end
  def teardown;FileUtils.remove_entry(@dir);end
  def approved_catalog
-  sheet=@store.new_item('Placa de prueba','sheet');sheet.merge!('sku'=>'TEST-18','supplier'=>'Proveedor de prueba','thicknessMm'=>19.05,'widthMm'=>2000,'lengthMm'=>3000,'grain'=>false,'approved'=>true)
-  edge=@store.new_item('Canto de prueba','edge');edge.merge!('sku'=>'EDGE-1','supplier'=>'Proveedor de prueba','thicknessMm'=>0.8,'widthMm'=>22,'approved'=>true)
-  sheet['compatibleIds']=[edge['id']]
+  # Fichas completas: el pedido ya no mira la casilla `approved` (queda false a propósito).
+  sheet=@store.new_item('Placa de prueba','sheet');sheet.merge!('sku'=>'TEST-18','supplier'=>'Proveedor de prueba','thicknessMm'=>19.05,'widthMm'=>2000,'lengthMm'=>3000,'grain'=>false)
+  edge=@store.new_item('Canto de prueba','edge');edge.merge!('sku'=>'EDGE-1','supplier'=>'Proveedor de prueba','thicknessMm'=>0.8,'widthMm'=>22)
   @store.save([sheet,edge],0)
  end
  def order
   catalog=approved_catalog;service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog);draft=service.proposal
+  # Solo datos: ni una confirmación, ni nota de revisión, ni origen de cantos.
   draft['rows'].each do |row|
-   row.merge!('axes'=>[0,1],'frontSign'=>1,'materialId'=>catalog['items'][0]['id'],'principalId'=>catalog['items'][1]['id'],'edgeMap'=>[1,0,0,0],
-    'grainPolicy'=>'locked','grainAxis'=>'none','grainConfirmed'=>true,'dimensionRule'=>'finished_accepted','orientationConfirmed'=>true,'materialConfirmed'=>true,'dimensionsConfirmed'=>true,'edgesConfirmed'=>true,'edgeResolution'=>'manual','edgeOverrideReason'=>'Inspección manual sintética para prueba','reviewNote'=>'Caso sintético, terminadas verificadas para prueba')
+   row.merge!('axes'=>[0,1],'frontSign'=>1,'materialId'=>catalog['items'][0]['id'],'principalId'=>catalog['items'][1]['id'],'edgeMap'=>[1,0,0,0],'grainPolicy'=>'locked','dimensionRule'=>'finished_accepted')
   end
   [service,draft]
  end
@@ -67,13 +67,6 @@ class WorkshopTest < Minitest::Test
   assert service.proposal['geometry']['1/11']['mirrored']
   result=service.export(draft,@dir);manifest=JSON.parse(File.read(File.join(result['directory'],'manifest.json')))
   assert_equal 2,manifest['lots'][0]['textRows']
- end
- def test_order_refuses_uncertainty_veta_missing_edge_incompatible_material_and_stale_catalog
-  service,draft=order
-  changes=[->(d){d['rows'][0]['orientationConfirmed']=false},->(d){d['rows'][0]['grainAxis']='u'},->(d){d['rows'][0]['principalId']=nil},->(d){d['rows'][0]['axes']=[1,2]},->(d){d['catalogRevision']=0},->(d){d['rows'].pop},->(d){d['rows'][0]['reviewNote']=''},->(d){d['rows'][0]['grainPolicy']='rotate'}]
-  changes.each { |change| copy=Marshal.load(Marshal.dump(draft));change.call(copy);assert_raises(PlanosSanto::ExportError){service.validate(copy)} }
-  draft['rows'][0]['include']=false;assert_raises(PlanosSanto::ExportError){service.validate(draft)}
-  draft['rows'][0]['excludeReason']='Herraje ajeno al pedido';assert service.validate(draft)
  end
  def test_explicit_cut_dimensions_and_encoding_are_used_without_guessing_reductions
   service,draft=order;row=draft['rows'][0];row.merge!('dimensionRule'=>'explicit_cut','cutBase'=>600.125,'cutHeight'=>400.5,'detail'=>'M01 Láteral')
@@ -124,15 +117,6 @@ class WorkshopTest < Minitest::Test
   Object.send(:remove_const,:Ladb) if Object.const_defined?(:Ladb,false)
  end
 
- def test_references_require_saved_complete_current_draft_and_never_assign_excluded_pieces
-  service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
-  assert_raises(PlanosSanto::ExportError){workshop.references}
-  workshop.save_plan(service.proposal);assert_raises(PlanosSanto::ExportError){workshop.references}
-  draft['rows'][1]['include']=false;draft['rows'][1]['excludeReason']='Exclusión sintética revisada'
-  workshop.save_plan(draft);references=workshop.references
-  assert_equal ['1/11'],references.keys;assert_includes references['1/11']['text'],'TEST-18';assert_includes references['1/11']['text'],'Arr:EDGE-1'
-  catalog=@store.read;@store.save(catalog['items'],catalog['revision']);assert_raises(PlanosSanto::ExportError){workshop.references}
- end
  def test_references_carry_the_same_edge_map_board_and_cut_as_the_supplier_txt
   service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
   catalog=@store.read;second=@store.new_item('Canto secundario','edge');second.merge!('sku'=>'EDGE-2','supplier'=>'Proveedor de prueba','thicknessMm'=>0.4,'widthMm'=>22,'approved'=>true)
@@ -157,72 +141,42 @@ class WorkshopTest < Minitest::Test
   refute service.proposal['geometry'].values.first['rectangular']
  end
 
- def test_068_draft_migrates_without_overwriting_and_requires_edge_review_again
-  service,draft=order
-  draft['rows'].each { |row| %w[edgeResolution edgeBindings edgeOverrideReason].each { |key| row.delete(key) } }
-  raw=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','rows','profile'));@model.set_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY,raw)
-  workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir);migrated=workshop.plan['plan']
-  assert_nil migrated['rows'][0]['edgeResolution'];refute migrated['rows'][0]['edgesConfirmed'];assert_equal [],migrated['rows'][0]['edgeBindings']
-  assert_equal raw,@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY)
-  assert_raises(PlanosSanto::ExportError){workshop.export_order(migrated,@dir)}
- end
  def test_audit_lists_each_blocked_physical_row_instead_of_dropping_it
-  service,draft=order;draft['rows'][0]['edgeOverrideReason']='';draft['rows'][1]['orientationConfirmed']=false
+  service,draft=order;draft['rows'][0]['principalId']=nil;draft['rows'][1]['axes']=[1,2]
   errors=service.validate(draft,collect_errors:true);assert_equal ['1/11','1/13/12'],errors.map { |e| e['id'] };assert errors.all? { |e| !e['reason'].empty? }
   assert_raises(PlanosSanto::ExportError){service.export(draft,@dir)};assert_empty Dir[File.join(@dir,'PlanosSanto-pedido-*')]
  end
- def test_manual_cantos_without_justification_and_observed_without_reader_are_blocked
-  service,draft=order;draft['rows'][0]['edgeOverrideReason']=''
-  assert_raises(PlanosSanto::ExportError){service.validate(draft)}
-  draft['rows'][0]['edgeResolution']='observed'
-  assert_raises(PlanosSanto::ExportError){service.validate(draft)}
- end
-
- def test_audit_reports_unjustified_exclusion_and_other_blocked_rows_together
-  service,draft=order;draft['rows'][0].merge!('include'=>false,'excludeReason'=>'');draft['rows'][1]['orientationConfirmed']=false
-  errors=service.validate(draft,collect_errors:true);assert_equal ['1/11','1/13/12'],errors.map { |row| row['id'] };assert_includes errors[0]['reason'],'excluye'
-  assert_raises(PlanosSanto::ExportError){service.validate(draft)}
- end
-
  def test_ux2_audit_lists_every_independent_reason_and_keeps_first_as_reason
   service,draft=order;row=draft['rows'][0]
-  row.merge!('orientationConfirmed'=>false,'reviewNote'=>'','grainAxis'=>'u','dimensionRule'=>'explicit_cut','cutBase'=>3500,'cutHeight'=>600)
+  row.merge!('detail'=>'D'*81,'grainPolicy'=>'rotate','dimensionRule'=>'explicit_cut','cutBase'=>3500,'cutHeight'=>600)
   blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
-  assert_equal blocked['reasons'].first,blocked['reason'];assert_operator blocked['reasons'].length,:>=,3
-  assert_includes blocked['reasons'][0],'Falta confirmar orientación'
-  assert blocked['reasons'].any? { |r| r.include?('justificación') }
-  assert blocked['reasons'].any? { |r| r.include?('dirección de veta') }
+  assert_equal blocked['reasons'].first,blocked['reason'];assert_operator blocked['reasons'].length,:>=,2
+  assert_includes blocked['reasons'],'El detalle supera 80 caracteres: acortalo.'
+  assert_includes blocked['reasons'],'Cantos asimétricos: no se puede girar la pieza; mantené la orientación (rota 0).'
   refute blocked['reasons'].any? { |r| r.include?('no entra') },'Las medidas inválidas no se comparan con la placa'
-  row.merge!('reviewNote'=>'Medidas sintéticas revisadas para la prueba')
+  row.merge!('detail'=>'Lateral','grainPolicy'=>'locked')
   blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
-  assert blocked['reasons'].any? { |r| r.include?('mide 3.500 × 600 mm y la placa aprobada es 3.000 × 2.000 mm') },blocked['reasons'].inspect
+  assert_equal ['La pieza no entra en la placa: mide 3.500 × 600 mm y la placa es 3.000 × 2.000 mm.'],blocked['reasons']
  end
  def test_ux2_audit_reports_principal_and_secondary_edge_problems_together
   _service,draft=order;catalog=@store.read;catalog['items'][1]['widthMm']=10
   service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog);row=draft['rows'][0];row['edgeMap']=[1,2,0,0];row['secondaryId']=nil
   blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
-  assert_includes blocked['reasons'],'El canto principal (1) no cubre el espesor de la placa: ancho 10 mm y espesor 19,05 mm.',blocked['reasons'].inspect
-  assert_includes blocked['reasons'],'Elegí un canto secundario (2) aprobado de la biblioteca.'
+  assert_includes blocked['reasons'],'El canto principal (1) es más angosto que el espesor de la pieza: ancho 10 mm y espesor 19,05 mm.',blocked['reasons'].inspect
+  assert_includes blocked['reasons'],'Elegí un canto secundario (2) de la biblioteca.'
   normal=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
   assert normal.message.end_with?(blocked['reasons'].first),normal.message
  end
  def test_ux2_check_and_export_errors_name_the_piece_and_show_values
-  service,draft=order;row=draft['rows'][1];row['materialConfirmed']=false
+  service,draft=order;row=draft['rows'][1];row['materialId']=''
   error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
-  assert_equal "#{row['detail']} (#{row['id']}): Falta confirmar material.",error.message
-  row['materialConfirmed']=true;row['axes']=[0,2]
+  assert_equal "#{row['detail']} (#{row['id']}): Elegí una placa de la biblioteca.",error.message
+  row['materialId']=draft['rows'][0]['materialId'];row['axes']=[0,2]
   error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
-  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa aprobada tiene 19,05 mm\.\z/,error.message)
+  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa tiene 19,05 mm\.\z/,error.message)
   draft['profile']['decimal']=';'
   assert_includes assert_raises(PlanosSanto::ExportError){service.validate(draft)}.message,'Perfil del archivo para la maderera'
  end
- def test_ux2_draft_errors_say_how_to_recover
-  _service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
-  stale=draft.merge('fingerprint'=>'otro');assert_includes assert_raises(PlanosSanto::ExportError){workshop.save_plan(stale)}.message,'usá «Preparar de nuevo»'
-  partial=draft.merge('rows'=>draft['rows'].first(1));assert_includes assert_raises(PlanosSanto::ExportError){workshop.save_plan(partial)}.message,'mismas piezas'
-  error=assert_raises(PlanosSanto::ExportError){workshop.add_item({'name'=>'X'},99)};assert_includes error.message,'volvé a abrirla'
- end
-
  def test_rectangular_mirrors_are_not_consolidated_as_same_orientation
   @model.entities[0].entities[0].transformation=Geom::Transformation.scale(-1,1,1)
   @session.scan;@session.generate(['1']);service,draft=order;draft['rows'].each { |row| row['detail']='Pieza igual' }
@@ -230,4 +184,92 @@ class WorkshopTest < Minitest::Test
   assert_equal 1,result['lots'];assert_equal 2,manifest['lots'][0]['textRows'];assert_equal 2,manifest['lots'][0]['physicalQuantity']
  end
 
+ def test_order_refuses_physical_problems_and_stale_catalog
+  service,draft=order
+  assert service.validate(draft),'Se exporta sin ningún tilde cuando no hay problemas físicos'
+  changes=[->(d){d['rows'][0]['principalId']=nil},->(d){d['rows'][0]['axes']=[1,2]},->(d){d['catalogRevision']=0},->(d){d['rows'].pop},
+           ->(d){d['rows'][0]['grainPolicy']='rotate'},->(d){d['rows'][0]['detail']='D'*81},->(d){d['rows'][0]['materialId']=''},->(d){d['rows'][0]['dimensionRule']='explicit_cut'}]
+  changes.each { |change| copy=Marshal.load(Marshal.dump(draft));change.call(copy);assert_raises(PlanosSanto::ExportError){service.validate(copy)} }
+  draft['rows'][0]['include']=false;assert service.validate(draft),'Excluir no pide motivo'
+  draft['rows'][1]['include']=false;assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+ end
+ def test_legacy_ticks_of_a_0815_draft_are_dropped_and_never_block
+  service,draft=order
+  draft['rows'].each { |row| row.merge!('orientationConfirmed'=>false,'materialConfirmed'=>false,'dimensionsConfirmed'=>false,'edgesConfirmed'=>false,'grainConfirmed'=>false,'grainAxis'=>'u','reviewNote'=>'','edgeResolution'=>nil,'edgeOverrideReason'=>'') }
+  normalized=service.validate(draft)
+  assert normalized['rows'].all? { |row| row.keys.sort==PlanosSanto::SupplierOrder::ROW_KEYS.sort }
+  draft['rows'][0]['inventado']=true;assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+ end
+ def test_references_follow_the_proposal_and_survive_a_library_change_never_assigning_excluded_pieces
+  service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  # Sin borrador guardado: el pedido se propone desde el modelo (el doble no está pintado con placas de la biblioteca).
+  assert_match(/Elegí una placa/,assert_raises(PlanosSanto::ExportError){workshop.references}.message)
+  draft['rows'][1]['include']=false
+  workshop.save_plan(draft);references=workshop.references
+  assert_equal ['1/11'],references.keys;assert_includes references['1/11']['text'],'TEST-18';assert_includes references['1/11']['text'],'Arr:EDGE-1'
+  catalog=@store.read;@store.save(catalog['items'],catalog['revision'])
+  assert_equal references,workshop.references,'El borrador no se descarta cuando cambia la revisión de la biblioteca'
+ end
+ def test_068_and_0815_drafts_migrate_without_overwriting_and_keep_the_taller_data
+  _service,draft=order
+  draft['rows'].each { |row| %w[edgeResolution edgeBindings edgeOverrideReason grainPolicy].each { |key| row.delete(key) };row['orientationConfirmed']=true }
+  raw=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','rows','profile'));@model.set_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY,raw)
+  workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir);result=workshop.plan;migrated=result['plan']
+  first=migrated['rows'][0]
+  assert_equal [],first['edgeBindings'];assert_equal 'locked',first['grainPolicy'];refute first.key?('orientationConfirmed')
+  assert_equal [[0,1],[1,0,0,0],draft['rows'][0]['materialId']],[first['axes'],first['edgeMap'],first['materialId']],'Lo que había cargado el taller se conserva'
+  assert_equal raw,@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY),'Abrir el pedido no escribe el modelo'
+  assert_empty result['audit']['blocked'];assert result['audit']['estimate']
+  export=workshop.export_order(migrated,@dir);assert_equal 2,export['physicalQuantity']
+ end
+ def test_draft_survives_a_new_model_fingerprint_and_is_revalidated
+  service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  draft['rows'][0]['detail']='Lateral izquierdo';draft['rows'][1]['include']=false
+  workshop.save_plan(draft)
+  before=@session.fingerprint
+  @model.entities[0].entities[0].transformation=Geom::Transformation.rotation_z(0.8);@session.scan;@session.generate(['1'])
+  refute_equal before,@session.fingerprint
+  result=workshop.plan;plan=result['plan']
+  assert_equal @session.fingerprint,plan['fingerprint']
+  assert_equal 'Lateral izquierdo',plan['rows'].find { |r| r['id']=='1/11' }['detail'];refute plan['rows'].find { |r| r['id']=='1/13/12' }['include']
+  assert result['merge']['stale'];assert_equal 0,result['merge']['added'];assert_equal 0,result['merge']['removed']
+  assert_empty result['audit']['blocked'],'Después del cruce se revalida'
+  saved=workshop.save_plan(plan);refute saved['changed'];assert_equal plan['fingerprint'],JSON.parse(@model.get_attribute(PlanosSanto::Workshop::DICT,PlanosSanto::Workshop::KEY))['fingerprint']
+  assert workshop.export_order(plan,@dir)
+ end
+ def test_autosave_skips_identical_writes_and_reports_live_problems
+  service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  first=workshop.save_plan(draft);assert first['saved'];assert_empty first['audit']['blocked'];assert first['audit']['estimate']
+  operations=@model.operations.length
+  workshop.save_plan(workshop.plan['plan']);assert_equal operations,@model.operations.length,'Sin cambios no se agrega otra operación al deshacer'
+  draft['rows'][0]['axes']=[1,2]
+  live=workshop.save_plan(draft)['audit'];assert_equal ['1/11'],live['blocked'].map { |e| e['id'] };assert_nil live['estimate']
+  assert_match(/El espesor no coincide/,live['blocked'][0]['reason'])
+ end
+ def test_hand_made_edges_export_without_any_justification
+  service,draft=order;draft['rows'][0]['edgeMap']=[1,1,1,1]
+  result=service.export(draft,@dir);manifest=JSON.parse(File.read(File.join(result['directory'],'manifest.json')))
+  assert_equal({'1/11'=>'manual','1/13/12'=>'manual'},manifest['lots'][0]['edgeSource']);refute manifest['lots'][0].key?('edgeEvidence')
+ end
+ def test_exclusion_reason_is_optional_and_other_rows_still_report
+  service,draft=order;draft['rows'][0].merge!('include'=>false,'excludeReason'=>'');draft['rows'][1]['axes']=[1,2]
+  errors=service.validate(draft,collect_errors:true);assert_equal ['1/13/12'],errors.map { |row| row['id'] }
+  assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+ end
+ def test_incomplete_ficha_blocks_with_what_is_missing_instead_of_an_approval
+  _service,draft=order;catalog=@store.read;catalog['items'][0].merge!('sku'=>'','grain'=>nil);catalog['items'][1]['widthMm']=nil
+  service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog)
+  reasons=service.validate(draft,collect_errors:true)[0]['reasons']
+  assert_includes reasons,'La ficha de la placa «Placa de prueba» está incompleta: falta SKU, veta. Completala en la biblioteca.'
+  assert_includes reasons,'La ficha del canto «Canto de prueba» está incompleta: falta ancho. Completala en la biblioteca.'
+ end
+ def test_stale_or_partial_drafts_are_crossed_with_the_model_instead_of_refused
+  _service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  draft['rows'][0]['detail']='Editado a mano'
+  stale=workshop.save_plan(draft.merge('fingerprint'=>'otro'))
+  assert stale['changed'];assert_equal @session.fingerprint,stale['plan']['fingerprint'];assert_equal 'Editado a mano',stale['plan']['rows'].find { |r| r['id']=='1/11' }['detail']
+  partial=workshop.save_plan(draft.merge('rows'=>draft['rows'].first(1)))
+  assert partial['changed'];assert_equal %w[1/11 1/13/12],partial['plan']['rows'].map { |r| r['id'] }.sort;assert_equal 1,partial['merge']['added']
+  error=assert_raises(PlanosSanto::ExportError){workshop.add_item({'name'=>'X'},99)};assert_includes error.message,'volvé a abrirla'
+ end
 end
