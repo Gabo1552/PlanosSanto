@@ -14,6 +14,7 @@ Pasada de cobertura vitest de la rama `claude/noche-cobertura-ts`. **No se corri
 | BUG-TS-02 | Baja | `sketchup_offline/ui/pdf.ts:117` | `tests/cobertura-pdf-pedido.test.ts` — «no parte un emoji en el corte de 80 caracteres…» |
 | BUG-TS-03 | Baja (texto visible) | `sketchup_offline/ui/names.ts:25` | `tests/cobertura-guia-nombres.test.ts` — «el aviso de varias ediciones descartadas…» |
 | BUG-TS-04 | Baja | `lib/model.ts:125` | `tests/cobertura-lib.test.ts` — «un mueble con nombre solo de espacios…» |
+| BUG-TS-05 | Baja | `lib/nameSuggestions.ts:34` | `tests/cobertura-sugerencias.test.ts` — «un listón de sección 40 × 18 se propone como Listón…» |
 
 ## BUG-TS-01 — Una tabulación o un `\r` bloquean el PDF A4 con un carácter invisible
 
@@ -45,7 +46,15 @@ Pasada de cobertura vitest de la rama `claude/noche-cobertura-ts`. **No se corri
 - **Esperado:** `root.name.trim() || 'Mueble sin nombre'`, igual que las piezas.
 - **Impacto:** bajo; caso poco frecuente, pero produce una hoja impresa sin título.
 
+## BUG-TS-05 — Los listones comunes nunca se proponen como «Listón»
+
+- **Dónde:** `lib/nameSuggestions.ts:34-35` (`classify`). La regla «proporciones ajenas a un tablón fino» (`ordered[2]/ordered[1] > 0.2`) se evalúa **antes** que la de listón (`ordered[0]/ordered[1] > 8`).
+- **Escenario:** «Proponer nombres» con frente confirmado sobre un listón de 764 × 40 × 18 mm (o 2400 × 70 × 18). Espesor/ancho = 0,45 (o 0,26), así que la pieza sale como «Sin clasificar — Geometría irregular o proporciones ajenas a un tablón fino». La propuesta «Listón» solo aparece si el ancho es más de 5 veces el espesor y el largo más de 8 veces el ancho (por ejemplo 1000 × 100 × 18), que no es la sección típica de un listón.
+- **Esperado:** evaluar primero la regla de pieza alargada (largo/ancho > 8) o no aplicar el filtro de tablón fino a piezas alargadas, que es justamente lo que describe el motivo «Pieza alargada; confirmar listón/travesaño/refuerzo (List)».
+- **Impacto:** bajo; no cambia medidas ni pedido, pero el operador tiene que nombrar a mano todos los listones y travesaños.
+
 ## Observaciones que no se registran como bugs
 
+- `nameSuggestions` con vertical y frente en el mismo eje no clasifica, pero una pieza cuyo nombre trae vocabulario del taller (p. ej. «Fondo») pasa de `unclassified` a `review`. La UI cambia el frente al elegir la vertical, así que en la práctica no se alcanza.
 - `listRows` con «Agrupar por medidas» redondea las medidas a 0,1 mm para la clave de plegado: piezas que difieren en menos de 0,05 mm se suman en una fila y se imprime la medida de la primera. Es tolerancia deliberada (prueba «tolera diferencias de redondeo menores a 0,05 mm»).
 - El PDF imprime las medidas con separador de miles (`1.234,5`) y la TSV sin él (`1234,5`). Es coherente con cada destino (hoja impresa en es-AR / planilla que debe parsear números).
