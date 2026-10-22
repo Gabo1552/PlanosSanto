@@ -264,3 +264,30 @@ class Hito2ScopeTest < Minitest::Test
     assert_equal false,@tool.instance_variable_get(:@options)['allowShared']
   end
 end
+
+class Hito2TabTest < Minitest::Test
+  include Hito2Fixture
+  def setup;build_fixture;paint_sheet_on_board!;end
+  def test_tab_alternates_sheet_and_edge_with_the_last_material_of_each_mode
+    asked=[];edge=tool_options('edge','edgeCount'=>2);sheet=tool_options('sheet')
+    build_tool(tool_options('sheet','scope'=>'all','allowShared'=>true),switch_mode:lambda { |mode| asked << mode;mode=='edge' ? edge : sheet })
+    hover_on(@doors[0])
+    assert @tool.onKeyDown(9,1,0,@view)
+    assert_equal 'edge',@tool.status['mode'];assert_equal binding_of(@edge)['uuid'],@tool.status['options']['materialUuid']
+    assert_equal 2,@tool.status['options']['edgeCount'];assert_equal 'unique',@tool.status['options']['scope']
+    assert_nil @tool.status['hover'];assert @tool.status['active'];assert_equal 'edge',@events.last['options']['mode']
+    @tool.onKeyDown(9,1,PlanosSanto::SmartPaintTool::SHIFT_MASK,@view);assert_equal 'sheet',@tool.status['mode']
+    @tool.onKeyDown(9,2,0,@view);assert_equal 'sheet',@tool.status['mode'] # repeat ignored
+    assert_equal %w[edge sheet],asked;assert_empty @model.operations
+  end
+  def test_tab_without_a_remembered_material_or_with_an_unready_one_keeps_the_mode
+    build_tool(tool_options('sheet'),switch_mode:lambda { |_mode| nil })
+    @tool.onKeyDown(9,1,0,@view)
+    assert_equal 'sheet',@tool.status['mode'];assert_match(/Elegí un canto en la paleta para usar Tab/,@events.last['message']);assert @tool.status['active']
+    build_tool(tool_options('edge'),switch_mode:lambda { |_mode| raise PlanosSanto::ExportError,'«Melamina» no está instalada en este modelo.' })
+    @tool.onKeyDown(9,1,0,@view)
+    assert_equal 'edge',@tool.status['mode'];assert_match(/no está instalada/,@events.last['error']);assert @tool.status['active']
+    build_tool(tool_options('remove_edge'),switch_mode:lambda { |mode| mode=='sheet' ? tool_options('sheet') : nil })
+    @tool.onKeyDown(9,1,0,@view);assert_equal 'sheet',@tool.status['mode']
+  end
+end

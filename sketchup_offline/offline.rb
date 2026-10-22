@@ -222,8 +222,9 @@ module PlanosSanto
     # UUID stored in another model. Choosing a catalog material is the explicit
     # intent to paint: PaintMaterials#prepare installs its verified visual in this
     # model when missing (0.8.8), then the current bound material is used.
-    def quick_paint_start(data,install:true)
-      active!;clean_for_paint!
+    # Builds and validates immediate options; resolves the material (installing
+    # only when install:true). Returns [options, prepared or nil].
+    def smart_quick_options(data,install:true)
       # Hito 2 (PINTURA-02): «Todas las iguales» is authorized only by
       # allowShared:true in this same request; it is never remembered.
       scope=data['scope'] || 'unique'
@@ -265,6 +266,12 @@ module PlanosSanto
         prepared=service.prepare(data['catalogId'],mode=='remove_edge' ? 'sheet' : mode)
         options.merge!('catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid'])
       end
+      [options,prepared]
+    end
+
+    def quick_paint_start(data,install:true)
+      active!;clean_for_paint!
+      options,prepared=smart_quick_options(data,install:install)
       result=if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         # Validate the new material BEFORE changing the active Tool. Normal
         # material changes neither deselect the Tool nor require reactivation.
@@ -631,7 +638,8 @@ module PlanosSanto
         generation=@tool_generation || 0
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
           guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
-          remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) })
+          remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
+          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) })
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -776,7 +784,7 @@ module PlanosSanto
       end
     end
 
-    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch].freeze
+    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials].freeze
 
     def smart_state
       (@smart_state || {'active'=>false,'changed'=>false,'queuedCount'=>0,'message'=>''}).merge('changed'=>@smart_changed==true)
@@ -806,6 +814,10 @@ module PlanosSanto
       return {} unless parsed.is_a?(Hash)
       settings=parsed.slice(*SMART_SETTING_KEYS)
       settings.delete('edgeCount') if settings.key?('edgeCount') && !(settings['edgeCount'].is_a?(Integer) && [1,2,4].include?(settings['edgeCount']))
+      if settings.key?('lastMaterials')
+        last=settings['lastMaterials'];last=last.is_a?(Hash) ? last.slice('sheet','edge').select { |_,id| id.is_a?(String) && !id.empty? && id.length<=200 } : {}
+        last.empty? ? settings.delete('lastMaterials') : settings['lastMaterials']=last
+      end
       settings
     rescue JSON::ParserError, ArgumentError, SyntaxError
       {}
@@ -815,11 +827,14 @@ module PlanosSanto
       return unless Sketchup.respond_to?(:write_default)
       settings=options.slice(*SMART_SETTING_KEYS)
       settings['scope']='unique' if settings.key?('scope') # consent for every copy never survives
+      previous=smart_settings;last=previous['lastMaterials'] || {}
       if options['immediate']==true || options['immediatePiece']==true
-        previous=smart_settings
         # Sheet forces one edge per click; it must not forget the edge preference.
         settings['edgeCount']=previous['edgeCount'] || 1 if options['mode']=='sheet'
+        # Tab (PINTURA-06): last catalog id per mode; the UUID belongs to the model.
+        last=last.merge(options['mode']=>options['catalogId']) if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty?
       end
+      settings['lastMaterials']=last unless last.empty?
       bytes=JSON.generate('schema'=>2,'settings'=>settings)
       raise ExportError,'Preferencias de paleta demasiado grandes.' if bytes.bytesize>4096
       Sketchup.write_default('PlanosSanto',SMART_SETTINGS_KEY,SMART_SETTINGS_PREFIX+Base64.strict_encode64(bytes))
@@ -842,6 +857,17 @@ module PlanosSanto
         raise ExportError,'Configuración de pintado inválida.' if options.key?(key) && ![true,false].include?(options[key])
       end
       JSON.parse(JSON.generate(options))
+    end
+
+    # Tab in the immediate Tool: last catalog material of the destination mode,
+    # resolved to this model's UUID without installing. nil when none is known.
+    def smart_switch_mode(mode)
+      raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
+      last=(smart_settings['lastMaterials'] || {})[mode]
+      return nil if last.to_s.empty?
+      options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
+      remember_smart_settings(options);@quick_options=options
+      options
     end
 
     def smart_event(event)

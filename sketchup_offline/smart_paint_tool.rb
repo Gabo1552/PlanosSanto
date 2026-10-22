@@ -64,8 +64,8 @@ module PlanosSanto
     EDGE_COUNTS=[1,2,4].freeze
     attr_reader :queued_targets,:verdicts,:generation
 
-    def initialize(model, service:, options:, on_event:, guard:, remember:nil)
-      @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil)
+      @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode
       @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
       @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil);@occurrences=OccurrenceIndex.new(model)
       @copy_triangles=[]
@@ -352,6 +352,19 @@ module PlanosSanto
       @remember.call(copy(@options)) if @remember
       emit("#{edge_label(@options['edgeCount'])} por clic. Revisá el resaltado antes de hacer clic.")
     end
+    MODE_LABELS={'sheet'=>'Pintar pieza','edge'=>'Pintar canto','remove_edge'=>'Quitar canto'}.freeze
+    # Tab / Shift+Tab (immediate, PINTURA-06): sheet <-> edge with the last
+    # material of the destination mode, resolved by the controller (never installs).
+    def switch_mode
+      destination=@options['mode']=='sheet' ? 'edge' : 'sheet'
+      missing="Elegí #{destination=='edge' ? 'un canto' : 'una placa'} en la paleta para usar Tab."
+      options=@switch_mode && @switch_mode.call(destination)
+      return emit(missing) unless options.is_a?(Hash)
+      clear;@options=copy(options).merge('scope'=>'unique','allowShared'=>false)
+      emit("#{MODE_LABELS[destination]}. Hacé clic en una pieza; Tab vuelve al otro modo.")
+    rescue ExportError=>error
+      emit('No se cambió de modo.',error:error.message)
+    end
     def keyboard_material(backwards=false)
       return emit('Elegí un material desde la paleta para este modo.') unless @service.respond_to?(:material_choices)
       choices=@service.material_choices(service_options([]))
@@ -376,6 +389,8 @@ module PlanosSanto
         return true if repeat.is_a?(Integer) && repeat>1
         if immediate? && (flags & CTRL_MASK)!=0
           cycle_edge_count((flags & SHIFT_MASK)!=0)
+        elsif immediate?
+          switch_mode
         else
           keyboard_submode((flags & SHIFT_MASK)!=0)
         end

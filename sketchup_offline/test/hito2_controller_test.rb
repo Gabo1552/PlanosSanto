@@ -128,4 +128,29 @@ class Hito2ControllerTest < Minitest::Test
     @controller.remember_smart_settings('mode'=>'sheet','scope'=>'all','side'=>'front','axes'=>[0,1],'catalogId'=>'placa')
     assert_equal 'unique',@controller.smart_settings['scope']
   end
+  def test_last_material_of_each_mode_is_remembered_and_tab_resolves_it_without_installing
+    switch=nil
+    quick('mode'=>'edge','catalogId'=>'canto','edgeCount'=>4);switch=tool.args[:switch_mode]
+    assert_nil with_tool { switch.call('sheet') } # no sheet chosen yet
+    quick('mode'=>'sheet','catalogId'=>'placa','scope'=>'all','allowShared'=>true)
+    assert_equal({'sheet'=>'placa','edge'=>'canto'},@controller.smart_settings['lastMaterials'])
+    assert_equal({'sheet'=>'placa','edge'=>'canto'},@controller.dispatch('smart_palette_load',{})['settings']['lastMaterials'])
+    @prepared.clear
+    options=with_tool { tool.args[:switch_mode].call('edge') }
+    assert_equal 'edge',options['mode'];assert_equal 'canto',options['catalogId'];assert_equal 'uuid-canto',options['materialUuid']
+    assert_equal 4,options['edgeCount'];assert_equal 'unique',options['scope'];assert_equal false,options['allowShared']
+    assert_equal [['canto','edge']],@prepared
+    assert_equal 'edge',@controller.smart_settings['mode']
+    @ready.delete('placa');@prepared.clear
+    assert_raises(PlanosSanto::ExportError) { with_tool { tool.args[:switch_mode].call('sheet') } }
+    assert_empty @prepared;assert_empty @model.operations
+  end
+  def test_corrupt_last_materials_are_ignored
+    @controller.remember_smart_settings('mode'=>'edge','immediate'=>true,'catalogId'=>'canto','scope'=>'unique')
+    raw=JSON.generate('schema'=>2,'settings'=>{'lastMaterials'=>{'sheet'=>7,'otro'=>'x','edge'=>'canto'}})
+    Sketchup.hito2_prefs[['PlanosSanto','smart_paint_settings_v2']]='ps2:'+Base64.strict_encode64(raw)
+    assert_equal({'edge'=>'canto'},@controller.smart_settings['lastMaterials'])
+    Sketchup.hito2_prefs[['PlanosSanto','smart_paint_settings_v2']]='ps2:'+Base64.strict_encode64(JSON.generate('schema'=>2,'settings'=>{'lastMaterials'=>'canto'}))
+    refute @controller.smart_settings.key?('lastMaterials')
+  end
 end
