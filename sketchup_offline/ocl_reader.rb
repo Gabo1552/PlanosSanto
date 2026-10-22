@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 require_relative 'p1_diagnostics'
 require_relative 'release'
+require_relative 'catalog_store'
 
 module PlanosSanto
   # Public SketchUp API only. No OCL require, UUID generation, defaults helper,
@@ -166,8 +167,8 @@ module PlanosSanto
       expected=observation['sides'].map do |side|
         next 0 if side['status']=='observed_no_edge'
         catalog_id=bindings[side['materialIds'].first]
-        edge=catalog['items'].find { |item| item['id']==catalog_id && item['kind']=='edge' && item['approved'] }
-        raise ExportError,'Vinculá cada canto observado con un canto aprobado de biblioteca.' unless edge
+        edge=catalog['items'].find { |item| item['id']==catalog_id && item['kind']=='edge' && CatalogStore.complete?(item) }
+        raise ExportError,'Vinculá cada canto observado con un canto completo de la biblioteca.' unless edge
         material=observation['materials'].find { |entry| entry['id']==side['materialIds'].first }
         native=material && material['native_binding']
         if native
