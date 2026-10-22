@@ -57,7 +57,8 @@ module PlanosSanto
     # V9), so a click there did nothing. The face is then one of THAT edge's own
     # faces: same entities, same instance path, never a neighbour piece behind.
     # Sheet mode paints the whole piece, so either face works; edge mode takes
-    # the clearly narrower face (the board edge) and stays ambiguous otherwise.
+    # the clearly narrower face only when the other one is a board face (a
+    # corner between two board edges stays ambiguous: validation 0.8.10 R1).
     def face_of_edge(picker,path,edge)
       faces=edge.faces.to_a.select { |face| face.is_a?(Sketchup::Face) }
       return nil if faces.empty?
@@ -68,8 +69,10 @@ module PlanosSanto
         face if faces.include?(face) && other.is_a?(Array) && other.take_while { |entity| instance?(entity) }==path.take_while { |entity| instance?(entity) }
       end
       return ranked.first || faces.first if @options['mode']=='sheet'
-      narrow,wide=faces.sort_by(&:area)
-      return narrow if wide && narrow.area<wide.area*0.5
+      narrow=faces.min_by(&:area);wide=faces.max_by(&:area)
+      owner=path.take_while { |entity| instance?(entity) }.last
+      board=owner && entities_for(owner).grep(Sketchup::Face).map(&:area).max
+      return narrow if faces.length>1 && board && wide.area>=board*0.5 && narrow.area<wide.area*0.5
       ranked.length==1 ? ranked.first : nil
     end
     def hit(view,x,y)

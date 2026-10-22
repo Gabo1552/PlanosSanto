@@ -49,25 +49,24 @@ module PlanosSanto
     end
     def load_image(path,expected:nil)
       raise ExportError,'Esta instalación no permite decodificar imágenes con ImageRep. Revisá SketchUp2026.' unless defined?(Sketchup::ImageRep)
-      # Windows SketchUp 2026 can return nil after a successful load_file.
-      # Start with a new representation so a failed decode cannot reuse pixels
-      # or dimensions from a previous image. Never treat nil alone as success.
+      # load_file has no documented return value (SketchUp 2026 answers nil after
+      # a successful decode). Start with a new representation so a failed decode
+      # cannot reuse pixels or dimensions from a previous image. Only true or nil
+      # are accepted, and either answer must still prove decoded pixels.
       rep=Sketchup::ImageRep.new
       result=rep.load_file(path)
       reject_image! unless result==true || result.nil?
       width=rep.width;height=rep.height
       reject_image! unless width.is_a?(Integer) && height.is_a?(Integer) && width>0 && height>0 && width<=MAX_DIMENSION && height<=MAX_DIMENSION && width*height<=MAX_PIXELS
       reject_image! if expected && [width,height]!=[expected['widthPx'],expected['heightPx']]
-      if result.nil?
-        reject_image! unless expected && rep.respond_to?(:bits_per_pixel) && rep.respond_to?(:row_padding) && rep.respond_to?(:data)
-        bits=rep.bits_per_pixel;padding=rep.row_padding
-        reject_image! unless [24,32].include?(bits) && bits.is_a?(Integer) && padding.is_a?(Integer) && padding.between?(0,3)
-        stride=width*(bits/8)+padding
-        decoded_size=height*stride
-        reject_image! if stride>MAX_DIMENSION*4+3 || decoded_size>MAX_DECODED_BYTES
-        pixels=rep.data
-        reject_image! unless pixels.is_a?(String) && pixels.bytesize==decoded_size
-      end
+      reject_image! unless expected && rep.respond_to?(:bits_per_pixel) && rep.respond_to?(:row_padding) && rep.respond_to?(:data)
+      bits=rep.bits_per_pixel;padding=rep.row_padding
+      reject_image! unless [24,32].include?(bits) && bits.is_a?(Integer) && padding.is_a?(Integer) && padding.between?(0,3)
+      stride=width*(bits/8)+padding
+      decoded_size=height*stride
+      reject_image! if stride>MAX_DIMENSION*4+3 || decoded_size>MAX_DECODED_BYTES
+      pixels=rep.data
+      reject_image! unless pixels.is_a?(String) && pixels.bytesize==decoded_size
       rep
     rescue ExportError
       raise
@@ -80,11 +79,26 @@ module PlanosSanto
         yield file.path
       end
     end
+    # ImageRep has no resize (API 2018-2026: data/set_data/save_file only). The
+    # preview is a nearest-neighbour sample of the already validated pixels,
+    # kept in native byte order (BGR(A) on Windows) and rows padded to 4 bytes.
+    def thumbnail_rep(rep,width,height)
+      bytes=rep.bits_per_pixel/8;source=rep.data;stride=rep.width*bytes+rep.row_padding
+      padding=(4-(width*bytes)%4)%4;columns=Array.new(width) { |x| (x*rep.width/width)*bytes }
+      pixels=String.new(capacity:(width*bytes+padding)*height,encoding:Encoding::BINARY)
+      height.times do |y|
+        row=(y*rep.height/height)*stride
+        columns.each { |x| pixels << source.byteslice(row+x,bytes) }
+        pixels << ("\x00".b*padding)
+      end
+      Sketchup::ImageRep.new.set_data(width,height,rep.bits_per_pixel,padding,pixels)
+    end
     def image_preview(rep)
       ratio=[256.0/rep.width,256.0/rep.height,1.0].min
       width=[(rep.width*ratio).round,1].max;height=[(rep.height*ratio).round,1].max
       if [width,height]!=[rep.width,rep.height]
-        raise ExportError,'No se pudo generar la vista previa de la imagen.' if rep.resize(width,height)==false
+        rep=thumbnail_rep(rep,width,height)
+        raise ExportError,'No se pudo generar la vista previa de la imagen.' unless rep && rep.width==width && rep.height==height
       end
       Tempfile.create(['.planos-preview-','.png']) do |file|
         path=file.path;file.close

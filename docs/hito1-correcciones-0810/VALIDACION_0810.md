@@ -24,6 +24,19 @@ Banco sintético de 1.560 piezas, plan del clic sin aplicar:
 
 **No son tiempos de SketchUp.**
 
+## Correcciones de la validación multiagente (antes de Dot)
+
+Cinco agentes recorrieron los casos de Dot sobre el código 0.8.10 y contrastaron cada llamada con la documentación oficial de la API (gema `sketchup-api-stubs` 0.7.11). Resultado:
+
+| # | Defecto | Corrección | Prueba |
+|---|---|---|---|
+| 6 | **Bloqueante: `ImageRep#resize` no existe** (API 2018–2026). Toda foto de más de 256 px fallaba al armar la vista previa, tanto en la 0.8.9 como en la 0.8.10, y bloqueaba V1, V15, V2, V3 y V12. Las pruebas pasaban porque el doble inventaba ese método. | La miniatura se arma por submuestreo de los píxeles ya validados (`data`), conservando el orden nativo BGR(A) y rellenando cada fila a 4 bytes, y se crea con `set_data`. La verificación de píxeles corre siempre, sea cual sea el retorno de `load_file`. | El doble de `ImageRep` ahora implementa solo la API documentada. `photo_material_test` incluye un contrato que falla si el código llama a un método de `ImageRep` fuera de la API, la vista previa de 1200×1200 → 256×256 y de 1000×300 → 256×77, y una prueba de orden de bytes y relleno. Con el código anterior: `NoMethodError resize`. |
+| 7 | PALETAS-1: una relectura de fondo de la ventana principal cerraba la paleta separada y su pincel. | Solo la carga inicial de Pintar en la ventana principal (`claim: true`) cierra la otra paleta. El cierre está protegido si el diálogo ya no existe. | `quick_install_controller_test` |
+| 8 | R1: en la esquina entre dos cantos de largo muy distinto se pintaba el canto corto. | La regla de la cara angosta se aplica solo si la otra cara es de placa (al menos la mitad del área mayor de la pieza). Se usa `min_by`/`max_by`. | `paint_ready_test` |
+| 9 | V6: un `nil` de `abort_operation` cortaba toda colisión como si fuera fatal, y un reintento fallido podía dejar el material del taller con el nombre temporal. | Solo `false` o una excepción se toman como rollback fallido; con `nil` decide la comparación de estados. Ante cualquier fallo del reintento se restaura explícitamente el nombre original. | `material_library_test` |
+
+Detalle completo en `docs/hito1-correcciones-0810/VALIDACION_MULTIAGENTE_0810.md`.
+
 ## Cómo validarla
 
 Seguir completa `docs/hito1-correcciones-089/VALIDACION_LOCAL.md` (la guía de la 0.8.9), instalando `dist/PlanosSanto-0.8.10-candidata.rbz`. Agregar:

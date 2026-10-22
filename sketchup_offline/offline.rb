@@ -575,9 +575,16 @@ module PlanosSanto
         # One paint palette at a time: opening Pintar in the main window closes the
         # separate palette and its Tool. Detach first: a deferred on_closed must
         # not stop the tool or drop the photo draft the main window starts next.
-        if @palette_dialog && @dialog && @request_dialog.equal?(@dialog)
+        # Only the initial load of Pintar claims painting; background reloads
+        # (library-changed, context restored) never close the other palette.
+        if data['claim']==true && @palette_dialog && @dialog && @request_dialog.equal?(@dialog)
           palette=@palette_dialog;@palette_dialog=nil;@palette_ready=false;@palette_intent=nil
-          stop_smart_tool(refresh:false);palette.close
+          stop_smart_tool(refresh:false)
+          begin
+            palette.close
+          rescue StandardError => error
+            warn("Planos Santo: la paleta separada ya estaba cerrada: #{error.class}")
+          end
         end
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)

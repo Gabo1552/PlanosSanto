@@ -4,6 +4,7 @@ require 'minitest/mock'
 require 'tmpdir'
 require 'fileutils'
 require 'json'
+require 'base64'
 require_relative 'photo_material_double'
 module PlanosSanto
   class ExportError<StandardError;end unless const_defined?(:ExportError)
@@ -17,11 +18,11 @@ class PhotoMaterialTest < Minitest::Test
     @model=PhotoFixture::Model.new;@catalog=PlanosSanto::CatalogStore.new(directory:@directory)
     @allowed=true
     @service=PlanosSanto::PhotoMaterial.new(@model,catalog:@catalog,directory:@directory,guard:lambda { @allowed })
-    Sketchup::ImageRep.fail_load=false;Sketchup::ImageRep.fail_save=false;Sketchup::ImageRep.fail_resize=false
+    Sketchup::ImageRep.fail_load=false;Sketchup::ImageRep.fail_save=false;Sketchup::ImageRep.set_data_calls=0
   end
   def teardown
     FileUtils.remove_entry(@directory);FileUtils.remove_entry(@source)
-    Sketchup::ImageRep.fail_load=false;Sketchup::ImageRep.fail_save=false;Sketchup::ImageRep.fail_resize=false
+    Sketchup::ImageRep.fail_load=false;Sketchup::ImageRep.fail_save=false;Sketchup::ImageRep.set_data_calls=0
   end
   def file(name='Foto propia.png',bytes=PhotoFixture.png)
     path=File.join(@source,name);File.binwrite(path,bytes);path
@@ -244,6 +245,7 @@ class PhotoMaterialTest < Minitest::Test
       end
       rep.define_singleton_method(:width) { width } unless width.nil?
       rep.define_singleton_method(:height) { height } unless height.nil?
+      rep.define_singleton_method(:data) { nil } unless proof
       if proof
         rep.define_singleton_method(:bits_per_pixel) { bits }
         rep.define_singleton_method(:row_padding) { padding.nil? ? (4-(self.width*(bits.to_i/8))%4)%4 : padding }
@@ -287,6 +289,34 @@ class PhotoMaterialTest < Minitest::Test
       assert_same old_texture,previous.texture;assert_equal old_attributes,Marshal.dump(previous.attributes)
       assert_equal PhotoFixture.png(3,3),File.binread(@model.materials.last.texture.filename)
     end
+  end
+  # Validación 0.8.10 (juez): ImageRep#resize NO existe en la API (2018-2026).
+  # Toda foto de más de 256 px fallaba al armar la vista previa en SketchUp real.
+  IMAGE_REP_API=%w[bits_per_pixel color_at_uv colors data height load_file row_padding save_file set_data size width].freeze
+  def test_photo_code_only_calls_documented_image_rep_methods
+    source=File.read(File.expand_path('../photo_material.rb',__dir__),encoding:'UTF-8')
+    called=source.scan(/\brep\.(\w+)/).flatten.uniq-%w[respond_to]
+    assert_empty called-IMAGE_REP_API,"métodos de ImageRep fuera de la API documentada: #{called-IMAGE_REP_API}"
+    refute Sketchup::ImageRep.method_defined?(:resize),'el doble no debe inventar métodos que SketchUp no tiene'
+  end
+  def test_large_photo_preview_is_sampled_with_set_data_to_at_most_256_pixels
+    result=pick('Textura 1200.jpg',PhotoFixture.jpeg(1200,1200))
+    assert_equal [1200,1200],[result['widthPx'],result['heightPx']]
+    assert_operator Sketchup::ImageRep.set_data_calls,:>=,1
+    info=@service.image_info(Base64.decode64(result['preview'].split(',',2).last))
+    assert_equal [256,256],[info['widthPx'],info['heightPx']]
+    wide=pick('Panorámica.jpg',PhotoFixture.jpeg(1000,300))
+    info=@service.image_info(Base64.decode64(wide['preview'].split(',',2).last))
+    assert_equal [256,77],[info['widthPx'],info['heightPx']]
+  end
+  def test_thumbnail_sampling_keeps_native_byte_order_and_row_padding
+    source=Sketchup::ImageRep.new
+    # 4x2, 24 bpp, padding 0: pixel (x,y) = [x, y, 9] in native order.
+    pixels=(0..1).flat_map { |y| (0..3).flat_map { |x| [x,y,9] } }.pack('C*')
+    source.set_data(4,2,24,0,pixels)
+    thumb=@service.thumbnail_rep(source,2,1)
+    assert_equal [2,1,24,2],[thumb.width,thumb.height,thumb.bits_per_pixel,thumb.row_padding]
+    assert_equal [0,0,9,2,0,9,0,0],thumb.data.unpack('C*'),'vecino más cercano por fila, BGR intacto y fila rellenada a 4 bytes'
   end
   def test_nil_without_pixel_proof_never_accepts_dimensions_alone
     [{proof:false},{data:nil},{data:''},{data:'truncated'},{bits:0},{bits:7},{bits:24.0},{bits:136},{padding:-1},{padding:4}].each do |options|

@@ -125,16 +125,26 @@ class QuickInstallControllerTest
     with_tool { request(palette,'smart_quick_start',{'mode'=>'sheet','catalogId'=>@created['catalogId']}) }
     assert @controller.send(:smart_state)['active']
     main=UI::HtmlDialog.new({});main.show;@controller.instance_variable_set(:@dialog,main)
-    request(main,'smart_palette_load')
+    request(main,'smart_palette_load',{'claim'=>true})
     refute palette.visible?;assert_nil @controller.instance_variable_get(:@palette_dialog);refute @controller.send(:smart_state)['active']
     request(palette,'smart_palette_load') # A late request from the closed palette never closes the main window.
     assert main.visible?
+  end
+  # Validación 0.8.10 (PALETAS-1): con Pintar ya abierto en la principal, una
+  # relectura de fondo (aviso de biblioteca) no cierra la paleta separada.
+  def test_a_background_reload_of_the_main_window_never_closes_the_separate_palette
+    main=UI::HtmlDialog.new({});main.show;@controller.instance_variable_set(:@dialog,main)
+    @controller.quick_action('sheet');palette=@controller.instance_variable_get(:@palette_dialog)
+    with_tool { request(palette,'smart_quick_start',{'mode'=>'sheet','catalogId'=>@created['catalogId']}) }
+    request(main,'smart_palette_load')
+    assert palette.visible?;assert_same palette,@controller.instance_variable_get(:@palette_dialog)
+    assert @controller.send(:smart_state)['active'],'el pincel de la paleta separada sigue activo'
   end
   def test_a_deferred_close_of_the_old_palette_never_stops_the_tool_started_from_the_main_window
     @controller.quick_action('sheet');palette=@controller.instance_variable_get(:@palette_dialog)
     late=palette.instance_variable_get(:@closed);palette.define_singleton_method(:close) { @visible=false }
     main=UI::HtmlDialog.new({});main.show;@controller.instance_variable_set(:@dialog,main)
-    request(main,'smart_palette_load')
+    request(main,'smart_palette_load',{'claim'=>true})
     with_tool { request(main,'smart_quick_start',{'mode'=>'sheet','catalogId'=>@created['catalogId']}) }
     assert @controller.send(:smart_state)['active']
     late.call

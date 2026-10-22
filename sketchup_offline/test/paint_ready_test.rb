@@ -257,6 +257,15 @@ class PaintReadyTest < Minitest::Test
     sheet,sheet_picker,sheet_view=edge_tool('sheet');sheet_picker.hits=picker.hits
     assert_equal "1/#{piece.persistent_id}",sheet.send(:hit,sheet_view,0,0)['pieceId']
   end
+  # Validación 0.8.10 (R1): en una esquina entre dos cantos de largo muy distinto
+  # (estante 2000x300: 36000 vs 5400 mm²) no se elige el canto corto.
+  def test_corner_between_two_edges_of_very_different_length_is_ambiguous
+    tool,picker,view=edge_tool('edge')
+    @faces[2].define_singleton_method(:area) { 18.0 };@faces[4].define_singleton_method(:area) { 2.7 }
+    corner=Sketchup::Edge.new([@faces[2],@faces[4]])
+    picker.hits=[[[@model.entities.first,@pieces[0],corner],corner]]
+    assert_nil tool.send(:hit,view,0,0)
+  end
   def test_ambiguous_corner_edge_in_edge_mode_paints_nothing
     tool,picker,view=edge_tool('edge')
     corner=Sketchup::Edge.new([@faces[2],@faces[3]])

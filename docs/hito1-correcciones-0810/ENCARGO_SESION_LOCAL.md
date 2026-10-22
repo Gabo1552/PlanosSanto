@@ -24,6 +24,7 @@ Validá en **SketchUp 2026 real (Windows)** la candidata **Planos Santo 0.8.10**
 En la consola Ruby:
 ```ruby
 load 'C:/<ruta-del-repo>/docs/hito1-correcciones-0810/verificar_0810_sketchup.rb'
+p Sketchup::ImageRep.method_defined?(:resize)   # se espera false: 0.8.10 ya no lo usa
 PlanosSantoValidacion0810.integridad          # version 0.8.10, passed: true
 PlanosSantoValidacion0810.foto('C:/<ruta>/textura-1200.jpg')  # aceptada: true; guardar el bloque imageRep
 PlanosSantoValidacion0810.colisiones
@@ -38,7 +39,8 @@ PlanosSantoValidacion0810.colisiones
 | A5 (V19) | En M-L: `tiempo_clic('<catalogId>')` + 10 clics reales que cambien material | Medianas de `clic` y `vistaPrevia`. Objetivo orientativo: `clic` < 300 ms |
 | A6 | Modo canto: clic justo en el borde de una cara angosta; clic en una arista de esquina | El borde pinta esa cara de esa pieza; la esquina no pinta nada |
 | A6b | Dos puertas iguales ya pintadas con el mismo material → clic en una | Sin cambios, sin Ctrl+Z nuevo y sin definición nueva en Componentes |
-| A7 | Abrir Pintar desde la barra y después Pintar en la ventana principal; crear un material en una ventana | Queda una sola paleta y el material nuevo aparece sin reabrir |
+| A6c | Esquina de un estante de 2000×300 entre el canto largo y el corto, en modo canto | No pinta nada (ambiguo) |
+| A7 | Abrir Pintar desde la barra y después Pintar en la ventana principal; crear un material en una ventana | Queda una sola paleta y el material nuevo aparece sin reabrir. Con Pintar ya abierto en la principal, abrir la paleta separada desde la barra y crear un material: la separada **no** se cierra sola |
 
 ## 2. Después
 - **Foto nueva entre modelos:** V2, V3, V7 y V12 de `VALIDACION_LOCAL.md`, con una foto creada en la 0.8.10. Incluye textura, escala y UV al reabrir.

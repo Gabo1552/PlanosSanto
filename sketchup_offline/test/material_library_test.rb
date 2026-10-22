@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 require 'minitest/autorun'
+require 'minitest/mock'
 require 'tmpdir'
 require 'ostruct'
 module PlanosSanto
@@ -490,8 +491,11 @@ class MaterialLibraryTest < Minitest::Test
     assert_equal 1,loader.loads.length;assert_equal 1,@model.starts;assert_equal 1,@model.aborts
     assert_nil binding;assert_empty @library.assets['records']
   end
-  def test_collision_never_retries_when_abort_raises_or_returns_nil
-    [nil,:raise].each do |result|
+  # 0.8.10: nil (outside the documented Boolean) is decided by the state proof
+  # instead (test_collision_retry_runs_when_abort_answers_nil_...); a raising
+  # abort still stops without retrying.
+  def test_collision_never_retries_when_abort_raises
+    [:raise].each do |result|
       loader=collision_loader;loader.mutate_on_first_load=false
       @model.define_singleton_method(:abort_operation) do
         @aborts+=1
@@ -510,11 +514,39 @@ class MaterialLibraryTest < Minitest::Test
     loader=collision_loader;loader.reuse_regardless_of_name=true
     @model.define_singleton_method(:abort_operation) { @aborts+=1;true }
     error=assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
-    assert_includes error.message,'no restauró el estado verificable'
-    refute_includes error.message,'ni se modificó'
+    # 0.8.10: the temporary import name is restored explicitly (the API does not
+    # promise abort reverts Material#name=), so the original state is provable again.
+    assert_includes error.message,'copia independiente'
     assert_equal 2,loader.loads.length;assert_equal 2,@model.starts
     assert_nil binding;assert_empty @library.assets['records']
-    refute_equal 'Duplicado',@one.name,'fixture intentionally leaves the temporary native name after lying abort'
+    assert_equal 'Duplicado',@one.name,'el material del usuario recupera su nombre aunque abort no lo revierta'
   end
 
+end
+
+# Validación 0.8.10 (V6): contrato de rollback más allá de lo que garantiza la API.
+class MaterialLibraryTest
+  def test_collision_retry_runs_when_abort_answers_nil_and_states_prove_the_rollback
+    loader=collision_loader
+    native_abort=@model.method(:abort_operation)
+    @model.define_singleton_method(:abort_operation) { native_abort.call;nil }
+    result=@library.install(request,path:collision_source)
+    assert result['collisionIsolated'];assert_equal 2,loader.loads.length
+    assert_equal 'Duplicado',@one.name;assert_empty @one.attributes
+  end
+  def test_failed_retry_never_leaves_the_operators_material_under_the_temporary_name
+    collision_loader
+    # Abort that rolls back attributes but NOT Material#name= (not promised by the API).
+    @model.define_singleton_method(:abort_operation) do
+      @aborts+=1;@materials.replace(@snapshot.map(&:first))
+      @snapshot.each { |m,attrs,_name,color,texture| m.attributes.replace(attrs);m.instance_variable_set(:@color,color);m.instance_variable_set(:@texture,texture) };true
+    end
+    PlanosSanto::MaterialPolicy.stub(:native_valid?,false) do
+      @library.stub(:archive,->(*) { raise PlanosSanto::ExportError,'fallo simulado después de importar' }) do
+        assert_raises(PlanosSanto::ExportError) { @library.install(request,path:collision_source) }
+      end
+    end
+    assert_equal 'Duplicado',@one.name,'el material del usuario recupera su nombre'
+    assert_empty @one.attributes
+  end
 end
