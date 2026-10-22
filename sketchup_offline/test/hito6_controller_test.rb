@@ -136,8 +136,10 @@ class Hito6ControllerTest < Minitest::Test
   end
   def test_painting_marks_stale_without_rescanning
     start_tool;@tool.changed
-    assert_equal true,stale_events.last['stale'];assert_equal 'paint',stale_events.last['source']
+    # smart_event is owned by the painting flow: it keeps its document-invalidated notice.
+    assert_equal [{'scanRequired'=>true}],@dialog.events('planos-santo-document-invalidated')
     result=@controller.dispatch('smart_tool_stop',{})
+    assert_equal true,stale_events.last['stale'];assert_equal 'paint',stale_events.last['source']
     assert_equal true,result['stale'];refute result.key?('scan');refute result.key?('scanRequired')
     assert_equal false,result['toolState']['changed']
     assert_equal 1,Hito6ScanCounter.count

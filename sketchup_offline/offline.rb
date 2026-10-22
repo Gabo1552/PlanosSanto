@@ -858,11 +858,10 @@ module PlanosSanto
         @session=NativeSession.new(@model)
         @naming=nil
         @paint=nil
-        @model_watch&.acknowledge
       end
       begin
       [@dialog,@palette_dialog].compact.uniq.each { |window| emit_to(window,'planos-santo-smart-paint',smart_state) }
-      mark_stale('paint') if event['changed']==true
+      emit_to(@dialog,'planos-santo-document-invalidated',{'scanRequired'=>true}) if event['changed']==true
       rescue StandardError => error
         warn("Planos Santo: no se pudo actualizar la paleta: #{error.class}")
       end
