@@ -6,7 +6,7 @@ import {pieceRows,synchronizeGroupedNames} from '../lib/pieceGroups';
 import {sheetEntries} from '../lib/sheet';
 import {presentationSchema} from '../lib/presentation';
 import {orderProjection} from '../lib/orderPreview';
-import {applySummary,blockedField,bulkNotice,detailCodeWarning,edgeAmounts,edgeIncompatibility,fixInBoard,edgeTotals,equivalentRows,formatMetres,linkEdge,materialLabel,plural,proposalNotice,proposalReview,proposalStatus,rowWarnings,type ProposalRow} from '../sketchup_offline/ui/workshopRules';
+import {applySummary,blockedField,bulkNotice,detailCodeWarning,edgeAmounts,edgeIncompatibility,edgeTotals,equivalentRows,formatMetres,linkEdge,materialLabel,plural,proposalNotice,proposalReview,proposalStatus,rowWarnings,type ProposalRow} from '../sketchup_offline/ui/workshopRules';
 import type {Catalog,CatalogItem,Geometry,OrderPlan,OrderRow} from '../sketchup_offline/ui/WorkshopPanel';
 describe('Sugerencias auditables de nombres',()=>{
  it('se abstiene sin frente confirmado y no cambia nombres ni geometría',()=>{
@@ -77,11 +77,12 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
   expect(second.metres).toBeCloseTo(0.3,6);expect(second.sku).toBe('Sin SKU');expect(totals.missing).toBe(1);expect(totals.unassigned).toBe(1);
  });
  it('marca cantos incompatibles y avisa por campo lo que Ruby bloquearía',()=>{
-  expect(edgeIncompatibility(e1,board,18)).toBeNull();expect(edgeIncompatibility(e2,board,18)).toBe('no cubre el espesor de 18 mm; sin compatibilidad cargada en la biblioteca');expect(fixInBoard(edgeIncompatibility(e2,board,18)!)).toBe(true);
-  expect(edgeIncompatibility(e2,{...board,compatibleIds:['e2']},22)).toBe('no cubre el espesor de 22 mm');expect(fixInBoard('no cubre el espesor de 22 mm')).toBe(false);expect(edgeIncompatibility(e2,{...board,compatibleIds:['e2']},15)).toBeNull();expect(edgeIncompatibility(e2,undefined,22)).toBeNull();
+  // Sin canto fijo por placa: sólo cuenta que cubra el espesor, esté o no en compatibleIds.
+  expect(edgeIncompatibility(e1,board,18)).toBeNull();expect(edgeIncompatibility(e2,board,18)).toBe('no cubre el espesor de 18 mm');
+  expect(edgeIncompatibility(e2,{...board,compatibleIds:['e2']},22)).toBe('no cubre el espesor de 22 mm');expect(edgeIncompatibility(e2,board,15)).toBeNull();expect(edgeIncompatibility(e2,undefined,22)).toBeNull();
   expect(rowWarnings(row('a'),geo([600,720,18]),catalog)).toEqual({});
   const w=rowWarnings(row('a',{secondaryId:'e2',edgeMap:[1,2,0,0],principalId:null,grainAxis:'v',grainPolicy:'rotate'}),geo([2700,720,19.5]),catalog);
-  expect(w.material?.[0]).toContain('mide 19,5 mm');expect(w.secondaryId?.[0]).toContain('sin compatibilidad');expect(w.edgeMap?.[0]).toContain('Arriba');
+  expect(w.material?.[0]).toContain('mide 19,5 mm');expect(w.secondaryId?.[0]).toContain('no cubre el espesor');expect(w.edgeMap?.[0]).toContain('Arriba');
   expect(w.grainAxis?.[0]).toContain('intercambiá los ejes');expect(w.grainPolicy?.[0]).toContain('asimétricos');expect(w.dimensions?.[0]).toBe('Mide 2.700 × 720 mm y la placa aprobada es 2.600 × 1.830 mm.');
   expect(rowWarnings(row('a',{grainAxis:'u'}),geo([600,720,18]),{...catalog,items:[{...board,grain:true},e1]}).grainAxis).toBeUndefined();
  });
@@ -136,7 +137,7 @@ describe('Reglas del pedido a maderera (UX2 taller)',()=>{
   expect(blockedField('La pieza no entra en el formato de placa aprobado: mide 2650 × 600 mm')).toBe('dimensions');expect(blockedField('El espesor no coincide: el eje de espesor mide 18 mm')).toBe('material');expect(blockedField('Elegí una placa aprobada de la biblioteca.')).toBe('material');
   expect(blockedField('Completá detalle y justificación de medidas de corte/terminadas.')).toBe('note');expect(blockedField('Indicá por qué se excluye esta pieza.')).toBe('exclude');
   expect(blockedField('Elegí cómo verificaste los cantos: caras observadas o inspección manual documentada.')).toBe('edgeResolution');
-  expect(blockedField('El canto secundario (2) no cubre el espesor de la placa: ancho 15 mm y espesor 18 mm.')).toBe('secondaryEdge');expect(blockedField('Confirmá compatibilidad placa/canto principal (1) en la biblioteca.')).toBe('edges');
+  expect(blockedField('El canto secundario (2) no cubre el espesor de la placa: ancho 15 mm y espesor 18 mm.')).toBe('secondaryEdge');
   expect(blockedField('Elegí un canto secundario (2) aprobado de la biblioteca.')).toBe('secondaryEdge');
   expect(blockedField('El detalle con código M03·P07 supera 80 caracteres.')).toBe('detail');expect(blockedField('Falta el código módulo·pieza: completá módulo y código de pieza en la guía.')).toBe('detail');
   expect(blockedField('El código módulo·pieza se repite en otro mueble: corregí el módulo en la guía para que cada mueble tenga el suyo.')).toBe('detail');

@@ -144,8 +144,8 @@ module PlanosSanto
             raise ExportError,"Elegí un canto #{role} aprobado de la biblioteca." unless edge
             if board
               width=edge['widthMm'].is_a?(Numeric) ? "#{mm(edge['widthMm'])} mm" : 'sin cargar'
+              # Any approved edge that covers the thickness is valid: boards do not have a fixed matching edge.
               raise ExportError,"El canto #{role} no cubre el espesor de la placa: ancho #{width} y espesor #{mm(thickness)} mm." unless edge['widthMm'].is_a?(Numeric) && edge['widthMm']+0.1>=thickness
-              raise ExportError,"Confirmá compatibilidad placa/canto #{role} en la biblioteca." unless board['compatibleIds'].include?(edge['id'])
             end
           end
         end

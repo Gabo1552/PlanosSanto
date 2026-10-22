@@ -55,7 +55,7 @@ test('cantos del pedido: metros por SKU antes de validar y canto incompatible ma
  await expect(edges).toContainText('Todavía no hay lados con canto');
  await page.getByLabel('Placa aprobada del pedido').selectOption(sheet.id);
  const principal=page.getByLabel('Canto principal (1) del pedido');
- await expect(principal.locator('optgroup[label="No compatibles con la placa elegida"] option')).toHaveText(['Canto angosto · CA-15 · ancho 15 mm · no cubre el espesor de 19,05 mm; sin compatibilidad cargada en la biblioteca']);
+ await expect(principal.locator('optgroup[label="No compatibles con la placa elegida"] option')).toHaveText(['Canto angosto · CA-15 · ancho 15 mm · no cubre el espesor de 19,05 mm']);
  await expect(principal.locator(':scope > option').nth(1)).toHaveText('Canto ancho · CB-22 · ancho 22 mm');
  await expect(page.getByLabel('Placa aprobada del pedido').locator('option').nth(1)).toHaveText('Placa cantos · BOARD-19 · 19,05 mm');
  // Lado 1 sin producto: la opción queda desactivada y el rótulo lo dice.
@@ -73,14 +73,14 @@ test('cantos del pedido: metros por SKU antes de validar y canto incompatible ma
  await expect(page.getByRole('img',{name:/Vista 2D orientada para maderera: base [\d.,]+ × altura [\d.,]+ mm; arriba: canto principal CB-22, [\d.,]+ mm; abajo: sin canto; izquierda: canto principal CB-22/})).toBeVisible();
  await principal.selectOption(narrow.id);await expect(principal).toHaveAttribute('aria-invalid','true');
  const describedBy=await principal.getAttribute('aria-describedby');expect(describedBy).toBeTruthy();
- await expect(page.locator(`#${describedBy}`)).toContainText(/No compatible con la placa elegida: (no cubre el espesor de [\d,]+ mm; )?sin compatibilidad cargada en la biblioteca\./);
+ await expect(page.locator(`#${describedBy}`)).toContainText(/No compatible con la placa elegida: no cubre el espesor de [\d,]+ mm\./);
  // Con el pedido sin guardar, el enlace avisa y guarda el borrador antes de salir: no descarta la pieza en edición.
- const link=panel.getByRole('button',{name:'Revisar Placa cantos en la biblioteca',exact:true});await expect(link).toHaveAttribute('aria-describedby','workshop-catalog-save-help');
+ const link=panel.getByRole('button',{name:'Revisar Canto angosto en la biblioteca',exact:true});await expect(link).toHaveAttribute('aria-describedby','workshop-catalog-save-help');
  let asked='';page.once('dialog',dialog=>{asked=dialog.message();void dialog.dismiss();});await link.click();
  expect(asked).toContain('se guarda primero el borrador del pedido');await expect(panel.getByRole('button',{name:'Pedido maderera',exact:true})).toHaveAttribute('aria-pressed','true');
  expect(actions.filter(a=>a==='order_save')).toHaveLength(0);
  page.once('dialog',dialog=>void dialog.accept());await link.click();
- await expect(panel.getByRole('button',{name:'Biblioteca',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.getByLabel('Nombre de material de biblioteca')).toHaveValue('Placa cantos');
+ await expect(panel.getByRole('button',{name:'Biblioteca',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.getByLabel('Nombre de material de biblioteca')).toHaveValue('Canto angosto');
  await expect(panel.getByRole('status')).toContainText('Borrador del pedido guardado');expect(actions).toContain('order_save');
  await expect(page.getByLabel('Datos revisados y aprobados para este producto')).toBeChecked();await expect(page.getByLabel('Cargar precio opcional')).not.toBeChecked();
  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(page.getByLabel('Canto principal (1) del pedido')).toHaveValue(narrow.id);
