@@ -57,6 +57,15 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   // A4: the printed references (partial route used by the sheet) carry the same map and cut.
   const partial=await send<{references:Record<string,{edgeMap:number[];base:number;height:number}>;pending:string[]}>('order_references_partial');
   expect(partial.pending).toEqual([]);
+  // F-DESP-B wiring: one row back under review prints «pendiente de pedido»; the others keep their order data.
+  const reviewed=rows[4];reviewed.orientationConfirmed=false;await send('order_save',{plan});
+  await page.keyboard.press('Alt+5');await page.locator('details.save-options summary').click();
+  await page.getByLabel('Incluir materiales y cantos del pedido revisado en el PDF').check();
+  await expect(page.locator('.a4-order-pill')).toContainText('4 de 5 piezas');await expect(page.locator('.a4-order-pill')).toContainText('1 pendiente');
+  // Labels for the same five pieces, from the guides view.
+  await page.getByTestId('labels-generate').click();await expect(page.getByTestId('labels-status')).toContainText('5 etiquetas');
+  await expect(page.getByTestId('labels-download')).toHaveAttribute('href',/^blob:/);
+  reviewed.orientationConfirmed=true;await send('order_save',{plan});
   // 2D view of the order, piece by piece.
   await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
   await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();

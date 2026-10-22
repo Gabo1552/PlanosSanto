@@ -12,7 +12,7 @@ import { request } from './bridge';
 import {isQuickIntent,moduleShortcuts,noticeActionFor,shortcutFor,type QuickIntent} from './quickActions';
 import {ensureRuntime} from './runtime';
 import { countPieces, editsFor, guideIssues, mergeGuide, modelGuidOf, withoutCodeHistory, type Generated, type Guide } from './guide';
-import { createOfflinePdf, decode64, encode64, type OrderReferences } from './pdf';
+import { createOfflinePdf, decode64, encode64, type OrderReferences, type PartialReferences } from './pdf';
 import regularFont from '../assets/DejaVuSans.ttf';
 import monoFont from '../assets/DejaVuSansMono.ttf';
 import logo from '../assets/santo-carpintero.png?inline';
@@ -24,6 +24,7 @@ import SmartPaintPalette,{type PaintTarget} from './SmartPaintPalette';
 import WorkshopPanel from './WorkshopPanel';
 import NameSuggestions from './NameSuggestions';
 import CodePlanDialog from './CodePlanDialog';
+import LabelsPanel from './LabelsPanel';
 import NameBatchPreview,{type NameBatchCheck,type NameBatchRow} from './NameBatchPreview';
 import A4SheetPreview from './A4SheetPreview';
 import GuideViews,{ensureGuide} from './GuideViews';
@@ -102,14 +103,14 @@ export default function App(){
   useEffect(()=>{if(!dirty)setPendingConfirm(undefined);},[dirty]);
   const [view,setView]=useState<View>('front');
   const [draftHidden,setDraftHidden]=useState<string[]|null>(null),[hideMode,setHideMode]=useState(false);
-  const [previewReferences,setPreviewReferences]=useState<OrderReferences>(),[previewReferenceError,setPreviewReferenceError]=useState('');
+  const [previewReferences,setPreviewReferences]=useState<OrderReferences>(),[previewPending,setPreviewPending]=useState<string[]>(),[previewReferenceError,setPreviewReferenceError]=useState('');
   const noteInput=useRef<HTMLTextAreaElement>(null);
   const partsScroll=useRef<HTMLDivElement>(null);
   const furniture=project?.furniture.find(f=>f.id===furnitureId)||project?.furniture[0];
   const previewFurniture=useMemo(()=>furniture&&draftHidden!==null?{...furniture,presentation:{...furniture.presentation,guide:{...ensureGuide(furniture).presentation!.guide!,hiddenPieceIds:draftHidden}}}:furniture,[furniture,draftHidden]);
   useEffect(()=>{setDraftHidden(null);setHideMode(false);},[furniture?.id]);
   const sheetPreviewProject=useMemo(()=>project&&furniture?{...project,furniture:[furniture]}:undefined,[project,furniture]);
-  useEffect(()=>{let current=true;setPreviewReferences(undefined);setPreviewReferenceError('');if(!printMaterials||destination!=='guides')return;void request<OrderReferences>('order_references').then(result=>{if(current)setPreviewReferences(result);}).catch(value=>{if(current)setPreviewReferenceError(value instanceof Error?value.message:String(value));});return()=>{current=false;};},[printMaterials,destination,revision,fingerprint]);
+  useEffect(()=>{let current=true;setPreviewReferences(undefined);setPreviewPending(undefined);setPreviewReferenceError('');if(!printMaterials||destination!=='guides')return;void request<PartialReferences>('order_references_partial').then(result=>{if(current){setPreviewReferences(result.references);setPreviewPending(result.pending);}}).catch(value=>{if(current)setPreviewReferenceError(value instanceof Error?value.message:String(value));});return()=>{current=false;};},[printMaterials,destination,revision,fingerprint]);
   useEffect(()=>{const mode=furniture?.presentation?.guide?.mode;if(mode==='exterior')setView('front');else if(mode==='interior')setView('back');},[furniture?.id,furniture?.presentation?.guide?.mode]);
   const orphanNotes=furniture?orphans[furniture.id]||[]:[];
   const note=furniture?[...furniture.notes,...orphanNotes].find(n=>n.id===noteId):undefined;
@@ -223,8 +224,9 @@ export default function App(){
       await ensureRuntime();
       for(const f of project.furniture){const issues=[...guideIssues(f,orphans[f.id]||[]),...namingIssues(f,workCode)];if(issues.length)throw new Error(`${f.name}: ${issues.join(' ')}`);}
       if(selectionChanged){setError('La selección cambió. Pulsá Generar guías para actualizar los muebles del PDF.',{label:'Generar guías',kind:'generate'});return;}
-      const references=printMaterials?await request<OrderReferences>('order_references'):undefined;
-      const bytes=await createOfflinePdf(project,decode64(regularFont),decode64(monoFont),decode64(logo),references);
+      // F-DESP-B: rows that validate print their order data; the rest print «pendiente de pedido».
+      const order=printMaterials?await request<PartialReferences>('order_references_partial'):undefined;
+      const bytes=await createOfflinePdf(project,decode64(regularFont),decode64(monoFont),decode64(logo),order?.references,{pending:order?.pending});
       const result=await request<{path?:string;cancelled?:boolean}>('pdf',{fingerprint,furniture:editsFor(project,orphans,renumbered),base64:encode64(bytes)});
       if(result.cancelled)setMessage('Exportación cancelada.',undefined,'info');else setMessage(`PDF A4 guardado: ${result.path}`);
     });
@@ -388,7 +390,7 @@ export default function App(){
     <div id="module-content" className="offline-app">
 
     {nameBatch&&<NameBatchPreview rows={nameBatch.rows} check={nameBatch.check} busy={!!busy} error={error} onReview={reviewNameBatch} onConfirm={confirmNameBatch} onClose={()=>{setNameBatch(undefined);const trigger=batchTrigger.current;if(trigger&&!trigger.disabled)trigger.focus();else if(trigger&&busy)focusAfterBusy.current=trigger;else document.querySelector<HTMLElement>('.ux-module-heading')?.focus();}}/>}
-    {showCodePlan&&furniture&&<CodePlanDialog furniture={furniture} unsaved={unsavedCodes[furniture.id]||[]} references={previewReferences} loadReferences={()=>request<OrderReferences>('order_references')} onClose={()=>{setShowCodePlan(false);codePlanTrigger.current?.focus();}} onApply={(codes,renumber)=>{changeFurniture(f=>({...f,pieces:f.pieces.map(p=>codes[p.id]?{...p,code:codes[p.id]}:p)}));if(renumber)setRenumbered(old=>new Set([...old,furniture.id]));setShowCodePlan(false);codePlanTrigger.current?.focus();setMessage('Códigos aplicados. Guardá la guía para conservarlos.');}}/>}
+    {showCodePlan&&furniture&&<CodePlanDialog furniture={furniture} unsaved={unsavedCodes[furniture.id]||[]} references={previewReferences} loadReferences={()=>request<PartialReferences>('order_references_partial').then(result=>result.references)} onClose={()=>{setShowCodePlan(false);codePlanTrigger.current?.focus();}} onApply={(codes,renumber)=>{changeFurniture(f=>({...f,pieces:f.pieces.map(p=>codes[p.id]?{...p,code:codes[p.id]}:p)}));if(renumber)setRenumbered(old=>new Set([...old,furniture.id]));setShowCodePlan(false);codePlanTrigger.current?.focus();setMessage('Códigos aplicados. Guardá la guía para conservarlos.');}}/>}
     {showSuggestions&&furniture&&<NameSuggestions furniture={furniture} workCode={workCode} onConfirm={f=>save(false,f)} busy={!!busy} error={error} syncNames={syncNames} onClose={()=>{setShowSuggestions(false);suggestionsTrigger.current?.focus();}}/>}
     {showWorkshop&&<WorkshopPanel initialCatalogId={catalogFocus} initialTab={workshopTab} onDirtyChange={setWorkshopDirty} onClose={()=>{setShowWorkshop(false);setCatalogRefresh(value=>value+1);workshopTrigger.current?.focus();}}/>}
     {showPaint&&<PaintPanel initialPieceId={paintPieceId} onClose={()=>{setShowPaint(false);paintTrigger.current?.focus();}} onApplied={acceptPaintScan}/>}
@@ -426,7 +428,7 @@ export default function App(){
               <ViewAdjustments furniture={furniture} view={view} mode={tool} showTools={false} disabled={!!busy||draftHidden!==null} onMode={setTool} onChange={presentation=>changeFurniture(f=>({...f,presentation}))}/>
               <DimensionControls furniture={furniture} disabled={!!busy} onChange={hiddenDimensions=>changeFurniture(f=>({...f,hiddenDimensions}))}/>
               <GuideViews modelGuid={modelGuidOf(project)} hideMode={hideMode} onHideMode={()=>{setTool('select');setPicking(undefined);setHideMode(value=>!value);}} furniture={furniture} view={view} selectedId={piece?.id} draftHidden={draftHidden} disabled={!!busy} onChange={next=>changeFurniture(()=>next)} onSelect={id=>selectPiece(id)} onView={view=>{setView(view);if(view==='front')setHideMode(false);}} onDraft={ids=>{setTool('select');setPicking(undefined);setDraftHidden(ids);}} onApply={()=>{if(draftHidden!==null)changeFurniture(f=>({...f,presentation:{...f.presentation,guide:{...ensureGuide(f).presentation!.guide!,hiddenPieceIds:draftHidden}}}));setDraftHidden(null);setHideMode(false);}} onCancel={()=>{setDraftHidden(null);setHideMode(false);}}/>
-              {destination==='guides'&&sheetPreviewProject&&<>{printMaterials&&previewReferenceError&&<div className="warning ux-sheet-notice" role="status"><span>Hoja sin materiales: el pedido no está guardado o tiene filas sin revisar. {previewReferenceError}</span><button type="button" onClick={()=>openWorkshop('order')}>Abrir Biblioteca y pedidos</button></div>}<A4SheetPreview project={sheetPreviewProject} activeFurnitureId={furniture.id} references={printMaterials?previewReferences:undefined} disabled={draftHidden!==null||contextChanged||modelAnalysisStale||(printMaterials&&!previewReferences&&!previewReferenceError)} pendingReason={draftHidden!==null?'Aplicá o cancelá las piezas ocultas para actualizar la hoja.':contextChanged?'Volvé al modelo de la guía para revisar la hoja.':printMaterials&&!previewReferences&&!previewReferenceError?'Revisando referencias de materiales y cantos del pedido…':undefined}/></>}
+              {destination==='guides'&&sheetPreviewProject&&<>{printMaterials&&previewReferenceError&&<div className="warning ux-sheet-notice" role="status"><span>Hoja sin materiales: el pedido no está guardado o quedó desactualizado. {previewReferenceError}</span><button type="button" onClick={()=>openWorkshop('order')}>Abrir Biblioteca y pedidos</button></div>}<A4SheetPreview project={sheetPreviewProject} activeFurnitureId={furniture.id} references={printMaterials?previewReferences:undefined} pending={printMaterials?previewPending:undefined} disabled={draftHidden!==null||contextChanged||modelAnalysisStale||(printMaterials&&!previewReferences&&!previewReferenceError)} pendingReason={draftHidden!==null?'Aplicá o cancelá las piezas ocultas para actualizar la hoja.':contextChanged?'Volvé al modelo de la guía para revisar la hoja.':printMaterials&&!previewReferences&&!previewReferenceError?'Revisando referencias de materiales y cantos del pedido…':undefined}/><LabelsPanel project={sheetPreviewProject} references={printMaterials?previewReferences:undefined} pending={printMaterials?previewPending:undefined} disabled={draftHidden!==null||contextChanged||modelAnalysisStale||(printMaterials&&!previewReferences&&!previewReferenceError)}/></>}
               {!!warnings.length&&<><div className="warnings">{warnings.map(w=><p key={w}>{w}</p>)}</div><span role="status" className="sr-only">{warningAnnouncement}</span></>}
             </div>
             <div className="assembly-inspector">

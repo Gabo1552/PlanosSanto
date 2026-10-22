@@ -19,7 +19,7 @@ async function boot(page:Page,folder:string,viewport={width:1500,height:1100}){
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  if(action==='order_references')return {version:1,id:msg.id,result:null,error:'Guardá primero el borrador revisado del pedido.'};
+  if(action==='order_references'||action==='order_references_partial')return {version:1,id:msg.id,result:null,error:'Guardá primero el borrador revisado del pedido.'};
   if(action==='diagnostic'&&hang)return new Promise(()=>{});
   if(action==='diagnostic'&&slow){await new Promise(done=>setTimeout(done,2500));}
   return native(raw);
