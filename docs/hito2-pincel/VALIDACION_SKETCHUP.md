@@ -82,3 +82,17 @@ Regla de registro: para cada caso anotar **resultado (OK / FALLA)**, captura y, 
 - Paleta inmediata en Chromium con un doble de transporte (capturas `artifacts/hito2-paleta-*-SINTETICA.png`).
 
 Nada de lo anterior prueba el render de `draw_text`, el alpha de `drawing_color`, `UI.create_cursor`, el `ModelObserver` real, el foco de teclado ni la latencia en SketchUp.
+
+## 5. Línea base sintética de latencia (dobles, no SketchUp)
+
+`LANG=C.UTF-8 ruby scripts/profile-hito2-pincel.rb` sobre 500 piezas sintéticas (125 módulos × 4 puertas iguales), Ruby 3.3 en Linux, 2026-10-22. Mide solo el costo Ruby del plan y del commit con dobles: **no** incluye teselado, render, Undo nativo ni el resto de SketchUp.
+
+| Medición | p50 | p95 | máx |
+|---|---|---|---|
+| Hover, primera vez por pieza (veredicto calculado o reusado por definición) | 0,3 ms | 5,3 ms | 13,6 ms |
+| Hover con veredicto en caché | 0,2 ms | 0,5 ms | 2,5 ms |
+| Clic canto · 4 lados · Solo esta (con aislamiento) | 32 ms | 39 ms | 44 ms |
+| Clic placa · Solo esta | 27 ms | 37 ms | 40 ms |
+| Clic placa · Todas las iguales (4) | 25 ms | 59 ms | 105 ms |
+
+60 clics, 60 entradas de Undo, sin errores de la herramienta. Sirve para detectar regresiones antes de la prueba nativa; la cifra que decide el criterio (< 150 ms) es la de `pincel-tiempos.jsonl` en SketchUp con el modelo C.
