@@ -39,7 +39,7 @@ test('atajos: Alt+número cambia de módulo y Ctrl+S guarda con las mismas prote
  await expect(page.getByRole('button',{name:'Guardar guía',exact:true})).toHaveAttribute('aria-keyshortcuts','Control+S');
  await page.keyboard.press('Alt+4');await expect(rail(page,'Maderera')).toHaveAttribute('aria-current','page');
  await page.keyboard.press('Alt+1');await expect(rail(page,'Inicio')).toHaveAttribute('aria-current','page');
- await page.keyboard.press('Control+s');await expect(page.getByRole('alert')).toContainText('No se puede guardar: Primero generá las guías en Muebles.');expect(count('save')).toBe(0);
+ await page.keyboard.press('Control+s');await expect(page.getByRole('alert')).toContainText('No se puede guardar. Primero generá las guías en Muebles.');expect(count('save')).toBe(0);
  await page.keyboard.press('Control+Shift+E');await expect(page.getByRole('alert')).toContainText('No se puede exportar');expect(count('pdf')).toBe(0);
  await page.keyboard.press('Alt+3');await expect(rail(page,'Muebles')).toHaveAttribute('aria-current','page');
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('Lateral atajo');
@@ -52,13 +52,13 @@ test('motivo visible del bloqueo de exportar y avisos que se cierran o traen la 
  await boot(page,info.outputDir);const exportButton=page.getByRole('button',{name:'Exportar PDF A4',exact:true});
  await expect(exportButton).toBeDisabled();await expect(exportButton).toHaveAccessibleDescription('Primero generá las guías en Muebles');await expect(page.locator('#export-block-reason')).toBeVisible();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();await expect(exportButton).toBeEnabled();await expect(page.locator('#export-block-reason')).toHaveCount(0);
- await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await expect(exportButton).toBeDisabled();await expect(exportButton).toHaveAccessibleDescription('Cambiaste los muebles: pulsá Generar guías');
+ await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await expect(exportButton).toBeDisabled();await expect(exportButton).toHaveAccessibleDescription('Cambiaste los muebles; pulsá Generar guías');
  await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().check();await expect(exportButton).toBeEnabled();
  await page.evaluate(()=>window.dispatchEvent(new Event('planos-santo-document-invalidated')));
  const info1=page.getByRole('status').filter({hasText:'Cambió el material del modelo'});await expect(info1).toBeVisible();await expect(info1.getByRole('button',{name:'Analizar de nuevo',exact:true})).toBeVisible();
- await expect(exportButton).toHaveAccessibleDescription('El material cambió: volvé a analizar y generar las guías');await expect(rail(page,'Muebles')).toHaveAttribute('title',/Análisis desactualizado/);
+ await expect(exportButton).toHaveAccessibleDescription('El material cambió; volvé a analizar y generar las guías');await expect(rail(page,'Muebles')).toHaveAttribute('title',/Análisis desactualizado/);
  await info1.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await expect(info1).toHaveCount(0);
- await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar: El material cambió');expect(count('pdf')).toBe(0);
+ await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. El material cambió;');expect(count('pdf')).toBe(0);
  await alert.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await expect(alert).toHaveCount(0);
  const scans=count('scan');await quick(page,{sequence:1,action:'guides',scanRequired:true,refreshWarning:'El modelo cambió. Volvé a analizar antes de continuar.'});
  await expect(alert).toContainText('El modelo cambió');await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();
@@ -70,7 +70,7 @@ test('los avisos de éxito se van solos salvo con el puntero encima; los errores
  const done=page.getByRole('status').filter({hasText:'Guías generadas'});await expect(done).toBeVisible();await done.hover();await page.waitForTimeout(6600);await expect(done).toBeVisible();
  await page.locator('.ux-module-heading').hover();await expect(done).toHaveCount(0,{timeout:9000});
  await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await page.locator('.ux-module-heading').click();await page.keyboard.press('Control+Shift+E');
- const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar: Cambiaste los muebles: pulsá Generar guías.');await page.waitForTimeout(6600);await expect(alert).toBeVisible();expect(count('pdf')).toBe(0);
+ const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. Cambiaste los muebles; pulsá Generar guías.');await page.waitForTimeout(6600);await expect(alert).toBeVisible();expect(count('pdf')).toBe(0);
 });
 
 test('confirmación integrada al descartar cambios: Escape conserva, el botón nombra la acción y el progreso muestra segundos',async({page},info)=>{
@@ -79,8 +79,21 @@ test('confirmación integrada al descartar cambios: Escape conserva, el botón n
  const confirm=page.getByRole('alertdialog',{name:'Descartar cambios y volver a analizar'});await expect(confirm).toBeVisible();await expect(confirm).toContainText('Se pierden los nombres, notas y ajustes de vista que no guardaste en 2 muebles');
  await expect(confirm.getByRole('button',{name:'Seguir editando',exact:true})).toBeFocused();await page.keyboard.press('Control+s');expect(count('save')).toBe(0);
  await page.keyboard.press('Escape');await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();await expect(name).toHaveValue('Nombre a conservar');expect(count('scan')).toBe(scans);
- await reanalyze.click();await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(confirm).toHaveCount(0);
+ await reanalyze.click();await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();
  slow=true;await page.getByText('Si necesitás ayuda con un error',{exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
  const busy=page.locator('.ux-busy');await expect(busy).toHaveAttribute('role','status');await expect(busy).toContainText('Comprobando instalación…');await expect(busy.locator('.ux-spinner')).toHaveCount(1);await expect(busy).toContainText(/· [23] s/,{timeout:4000});
- await expect(rail(page,'Muebles')).toBeDisabled();await expect(rail(page,'Muebles')).toHaveAttribute('title',/Esperá: Comprobando instalación/);await expect(busy).toHaveCount(0,{timeout:6000});
+ await expect(rail(page,'Muebles')).toBeDisabled();await expect(rail(page,'Muebles')).toHaveAttribute('title',/Esperá a que termine «Comprobando instalación»/);await expect(busy).toHaveCount(0,{timeout:6000});
+});
+
+// Regresión: noticeHold se reinicia al quitar el aviso. Chromium suele despachar blur/pointerleave al nodo quitado,
+// así que la prueba fija el comportamiento esperado en ambos caminos (puntero y foco) sin depender de eso.
+test('un aviso de éxito que desaparece con el puntero o el foco encima no deja trabados los avisos siguientes',async({page},info)=>{
+ await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+ const name=page.getByLabel('Nombre P01',{exact:true}),saved=page.getByRole('status').filter({hasText:'Guía guardada'});
+ const done=page.getByRole('status').filter({hasText:'Guías generadas'});await expect(done).toBeVisible();await done.hover();
+ await done.evaluate(node=>node.querySelector<HTMLButtonElement>('.ux-notice-close')?.click());await expect(done).toHaveCount(0);await page.mouse.move(5,5);
+ await name.fill('Lateral puntero');await name.focus();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);
+ await expect(saved).toBeVisible();await saved.getByRole('button',{name:'Cerrar aviso',exact:true}).focus();await page.keyboard.press('Enter');await expect(saved).toHaveCount(0);
+ await name.fill('Lateral foco');await name.focus();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(2);
+ await expect(saved).toBeVisible();await expect(saved).toHaveCount(0,{timeout:9000});
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ViewAdjustments,{shiftDimension,orbitCamera} from '../../components/ViewAdjustments';
 import {withNaming,normalizeNaming,namingIssues,moduleFromName} from '../../lib/naming';
 import Diagram from '../../components/Diagram';
@@ -82,14 +82,16 @@ export default function App(){
   const [furnitureId,setFurnitureId]=useState(''),[pieceId,setPieceId]=useState(''),[noteId,setNoteId]=useState('');
   const [picking,setPicking]=useState<string>();
   const [busy,setBusy]=useState(''),[error,setErrorText]=useState(''),[errorAction,setErrorAction]=useState<NoticeAction>(),[message,setMessageText]=useState(''),[messageAction,setMessageAction]=useState<NoticeAction>(),[noticeHold,setNoticeHold]=useState(false),[elapsed,setElapsed]=useState(0);
-  const setError=useCallback((text:string,action?:NoticeAction)=>{setErrorText(text);setErrorAction(action);},[]),setMessage=useCallback((text:string,action?:NoticeAction)=>{setMessageText(text);setMessageAction(action);},[]);
-  const [pendingConfirm,setPendingConfirm]=useState<Confirm>();const confirmCancel=useRef<HTMLButtonElement>(null),shortcutHandler=useRef<(event:KeyboardEvent)=>void>(()=>{});
+  const setError=useCallback((text:string,action?:NoticeAction)=>{setErrorText(text);setErrorAction(action);},[]),setMessage=useCallback((text:string,action?:NoticeAction)=>{setMessageText(text);setMessageAction(action);if(!text)setNoticeHold(false);},[]);
+  const [pendingConfirm,setPendingConfirm]=useState<Confirm>();const confirmCancel=useRef<HTMLButtonElement>(null),shortcutHandler=useRef<(event:KeyboardEvent)=>void>(()=>{}),focusAfterBusy=useRef<HTMLElement|null>(null);
   useEffect(()=>{if(!message||messageAction||noticeHold)return;const timer=setTimeout(()=>setMessage(''),6000);return()=>clearTimeout(timer);},[message,messageAction,noticeHold,setMessage]);
   useEffect(()=>{if(!busy)return;const start=Date.now(),timer=setInterval(()=>setElapsed(Math.floor((Date.now()-start)/1000)),1000);return()=>{clearInterval(timer);setElapsed(0);};},[busy]);
   useEffect(()=>{if(pendingConfirm)confirmCancel.current?.focus();},[pendingConfirm]);
+  useEffect(()=>{const target=focusAfterBusy.current;if(busy||!target)return;focusAfterBusy.current=null;requestAnimationFrame(()=>{if(target.isConnected&&!(target as HTMLButtonElement).disabled&&document.activeElement===document.body)target.focus();});},[busy]);
   useEffect(()=>{const key=(event:KeyboardEvent)=>shortcutHandler.current(event);document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);},[]);
   const [dirty,setDirty]=useState(false),[diagnostic,setDiagnostic]=useState('');
   const [filePending,setFilePending]=useState(false);
+  useEffect(()=>{if(!dirty)setPendingConfirm(undefined);},[dirty]);
   const [view,setView]=useState<View>('front');
   const [draftHidden,setDraftHidden]=useState<string[]|null>(null),[hideMode,setHideMode]=useState(false);
   const [previewReferences,setPreviewReferences]=useState<Record<string,string>>(),[previewReferenceError,setPreviewReferenceError]=useState('');
@@ -140,7 +142,7 @@ export default function App(){
     if(mode==='selected'&&!result.selected.length)setMessage('No hay grupos o componentes seleccionados en SketchUp. Seleccionalos en el modelo y volvé a analizar.');
   },[setMessage]);
   function askDiscard(title:string,confirmLabel:string,run:()=>void){const count=project?.furniture.length||0;setPendingConfirm({title,confirmLabel,run,opener:document.activeElement as HTMLElement|null,detail:`Se pierden los nombres, notas y ajustes de vista que no guardaste${count?` en ${count} ${count===1?'mueble':'muebles'}`:''}. La guía guardada en el modelo no cambia.`});}
-  function closeConfirm(confirmed:boolean){const current=pendingConfirm;setPendingConfirm(undefined);if(!current)return;if(confirmed)current.run();else requestAnimationFrame(()=>current.opener?.focus());}
+  function closeConfirm(confirmed:boolean){const current=pendingConfirm;setPendingConfirm(undefined);if(!current)return;if(confirmed){focusAfterBusy.current=current.opener||null;current.run();}else requestAnimationFrame(()=>current.opener?.focus());}
   async function analyze(mode?:'all'|'selected',confirmed=false){
     if(dirty&&!confirmed){askDiscard('Descartar cambios y volver a analizar','Descartar y analizar',()=>void analyze(mode,true));return;}
     await run('Analizando modelo…',async()=>{
@@ -296,12 +298,12 @@ export default function App(){
   }
   function acceptPaintScan(result:unknown,warning?:string){setCatalogRefresh(value=>value+1);if(result){acceptScan(result as Scan);setMessage(warning||'Modelo actualizado. Generá las guías para refrescar las vistas; se conservan los ajustes guardados. Revisá y confirmá el pedido antes del TXT.');}else{setProject(undefined);setScan(undefined);setError(warning||'El modelo cambió, pero no se pudo refrescar el análisis. Volvé a analizar antes de generar guías o pedidos.',{label:'Analizar de nuevo',kind:'analyze'});}}
   function openPalette(compact=false,catalogId?:string,autoStart=false){
-    if(!scan||busy||dirty||(libraryDirty&&!autoStart)||workshopDirty||draftHidden!==null||contextChanged||modelAnalysisStale){setError(`${blockReason('paint')||'Guardá los cambios pendientes y aplicá o cancelá la visibilidad'} antes de pintar.`);return;}
+    const reason=blockReason('paint',autoStart);if(reason){setError(`No se puede pintar. ${reason}.`);return;}
     setQuickIntent(undefined);setPaintCatalogId(catalogId);setPaintAutoStart(compact?true:autoStart);setCompactPaint(compact);setShowSmartPaint(true);
   }
   function navigateModule(next:Module){
     if(busy){setError('Esperá a que termine la operación actual.');return;}
-    if(libraryDirty||workshopDirty){const owner:Module=libraryDirty?'materials':'order';setError(`Hay cambios sin guardar en ${moduleLabel(owner)} (biblioteca, importación o pedido). Guardalos o cancelalos antes de cambiar de sección.`,owner==='materials'&&destination!=='materials'?{label:`Ir a ${moduleLabel(owner)}`,kind:'module',module:owner}:undefined);return;}
+    if(workshopDirty||(libraryDirty&&next!=='materials')){const owner:Module=libraryDirty&&next!=='materials'?'materials':'order';setError(`Hay cambios sin guardar en ${moduleLabel(owner)} (biblioteca, importación o pedido). Guardalos o cancelalos antes de cambiar de sección.`,owner==='materials'&&!workshopDirty&&destination!=='materials'?{label:`Ir a ${moduleLabel(owner)}`,kind:'module',module:owner}:undefined);return;}
     if(draftHidden!==null&&!['furniture','guides'].includes(next)){setError('Aplicá o cancelá la previsualización de piezas ocultas antes de cambiar de sección.');return;}
     setError('');setShowWorkshop(false);setShowPaint(false);setShowMaterials(false);setShowSuggestions(false);
     setDestination(next);if(next==='furniture'&&scan&&!project&&!dirty){const roots=selectedFurnitureIds(scan.selected,scan.tree.roots);if(roots.length)void generate(roots,'furniture');}if(next==='materials')setMaterialsVisited(true);
@@ -339,29 +341,29 @@ export default function App(){
     setMessage(intent.message||(project?'Revisá el mueble y sus piezas. No se aplicaron nombres ni se exportó ningún archivo.':'Elegí el mueble y pulsá Generar guías para revisar nombres, vistas y notas.'));
     requestAnimationFrame(()=>{const target=document.querySelector<HTMLElement>(project?(intent.action==='furniture'?'.parts-config':'.assembly-drawing'):'#furniture-chooser');target?.scrollIntoView({block:'start'});if(intent.action==='furniture'&&project)target?.querySelector<HTMLInputElement>('input[aria-label="Nombre del grupo"]')?.focus({preventScroll:true});});
   };
-  function blockReason(kind:Block):string|undefined{
-    if(busy)return `Esperá: ${busy}`;
+  function blockReason(kind:Block,allowLibrary=false):string|undefined{
+    if(busy)return `Esperá a que termine «${busy.replace(/…$/,'')}»`;
     if(kind==='nav')return undefined;
     if(kind==='tools')return scan?undefined:'Esperá a que se analice el modelo abierto';
     if(contextChanged)return 'Volvé al modelo original de la guía';
-    if(modelAnalysisStale)return 'El material cambió: volvé a analizar y generar las guías';
+    if(modelAnalysisStale)return 'El material cambió; volvé a analizar y generar las guías';
     if(draftHidden!==null)return 'Aplicá o cancelá las piezas ocultas';
-    if(kind==='paint')return !scan?'Esperá a que se analice el modelo abierto':dirty?'Guardá la guía antes de pintar':libraryDirty?'Guardá o cancelá los cambios de Materiales':workshopDirty?'Guardá o cancelá los cambios de biblioteca o pedido':undefined;
+    if(kind==='paint')return !scan?'Esperá a que se analice el modelo abierto':dirty?'Guardá la guía antes de pintar':libraryDirty&&!allowLibrary?'Guardá o cancelá los cambios de Materiales':workshopDirty?'Guardá o cancelá los cambios de biblioteca o pedido':undefined;
     if(!project)return 'Primero generá las guías en Muebles';
-    if(kind==='export'&&selectionChanged)return 'Cambiaste los muebles: pulsá Generar guías';
+    if(kind==='export'&&selectionChanged)return 'Cambiaste los muebles; pulsá Generar guías';
     return undefined;
   }
   const saveBlock=blockReason('save'),exportBlock=blockReason('export'),paintBlock=blockReason('paint'),navBlock=blockReason('nav'),toolsBlock=blockReason('tools');
   const guidePending=contextChanged||modelAnalysisStale?'Análisis desactualizado':dirty?'Guía sin guardar':filePending?'Falta guardar el SKP':undefined;
   const pending:Record<Module,string|undefined>={home:undefined,materials:libraryDirty?'Cambios de biblioteca sin guardar':undefined,furniture:guidePending,order:workshopDirty?'Biblioteca o pedido sin guardar':undefined,guides:guidePending};
   const dialogOpen=showSmartPaint||showPhotoMaterial||showPaint||showMaterials||showWorkshop||showSuggestions||!!nameBatch||!!pendingConfirm;
-  function runNoticeAction(action:NoticeAction){setError('');setMessage('');if(action.kind==='analyze')void analyze();else if(action.kind==='generate')void generate();else if(action.module){setDestination(action.module);if(action.module==='materials')setMaterialsVisited(true);requestAnimationFrame(()=>document.querySelector<HTMLElement>('.ux-module-heading')?.focus({preventScroll:true}));}}
-  shortcutHandler.current=event=>{
+  function runNoticeAction(action:NoticeAction){setError('');setMessage('');if(action.kind==='analyze')void analyze();else if(action.kind==='generate')void generate();else if(action.module)navigateModule(action.module);}
+  useLayoutEffect(()=>{shortcutHandler.current=event=>{
     const action=shortcutFor(event,dialogOpen);if(!action)return;event.preventDefault();
-    if(action==='save'){if(saveBlock)setError(`No se puede guardar: ${saveBlock}.`);else void save();}
-    else if(action==='export'){if(exportBlock)setError(`No se puede exportar: ${exportBlock}.`);else void exportPdf();}
+    if(action==='save'){if(saveBlock)setError(`No se puede guardar. ${saveBlock}.`);else void save();}
+    else if(action==='export'){if(exportBlock)setError(`No se puede exportar. ${exportBlock}.`);else void exportPdf();}
     else navigateModule(action);
-  };
+  };});
   const palette=showSmartPaint?<SmartPaintPalette quickMode={compactPaint} initialCatalogId={paintCatalogId} autoStart={paintAutoStart} onCreateMaterial={()=>{setQuickIntent(undefined);setPaintAutoStart(false);setShowSmartPaint(false);setPhotoTarget(undefined);setShowPhotoMaterial(true);}} onAssignPhoto={target=>{setQuickIntent(undefined);setPaintAutoStart(false);setShowSmartPaint(false);setPhotoTarget(target);setShowPhotoMaterial(true);}} initialCompact={compactPaint} quickIntent={quickIntent} onApplied={acceptPaintScan} onClose={()=>setShowSmartPaint(false)} onManage={destination=>{setShowSmartPaint(false);if(destination==='catalog'){setDestination('materials');setMaterialsVisited(true);}else{setPaintPieceId(piece?.id);setShowPaint(true);}}}/>:null;
   return <>{showPhotoMaterial&&<PhotoMaterialPanel replacement={photoTarget} initialKind={photoTarget?.kind} onClose={()=>{setShowPhotoMaterial(false);setPhotoTarget(undefined);setPaintAutoStart(false);setShowSmartPaint(true);}} onCreated={(result,options)=>{const assigned=photoTarget?.assign===true;setShowPhotoMaterial(false);setPhotoTarget(undefined);if(assigned&&!options.paint){setCatalogRefresh(value=>value+1);setShowSmartPaint(true);return;}if(result.scan)acceptPaintScan(result.scan,result.refreshWarning);else if(result.refreshWarning)acceptPaintScan(undefined,result.refreshWarning);else setCatalogRefresh(value=>value+1);if(options.paint&&result.scan){setQuickIntent(undefined);setPaintCatalogId(result.catalogId);setPaintAutoStart(true);setCompactPaint(true);setShowSmartPaint(true);}else{setShowSmartPaint(false);setDestination('materials');setMaterialsVisited(true);}}}/>} {palette}<div className={`ux-shell destination-${destination}`} hidden={showSmartPaint}>
     <a className="ux-skip" href="#module-content">Ir al contenido</a>
