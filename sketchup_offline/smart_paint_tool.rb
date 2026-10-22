@@ -53,12 +53,39 @@ module PlanosSanto
       raise ExportError,'La entidad no tiene identificador persistente.' unless entity.respond_to?(:persistent_id) && entity.persistent_id.to_i>0
       entity.persistent_id.to_s
     end
+    # Near a border PickHelper ranks the Edge before its Faces (0.8.8 native
+    # V9), so a click there did nothing. The face is then one of THAT edge's own
+    # faces: same entities, same instance path, never a neighbour piece behind.
+    # Sheet mode paints the whole piece, so either face works; edge mode takes
+    # the clearly narrower face only when the other one is a board face (a
+    # corner between two board edges stays ambiguous: validation 0.8.10 R1).
+    def face_of_edge(picker,path,edge)
+      faces=edge.faces.to_a.select { |face| face.is_a?(Sketchup::Face) }
+      return nil if faces.empty?
+      count=picker.respond_to?(:count) ? picker.count : 1
+      ranked=(1...count).filter_map do |index|
+        other=picker.path_at(index);other=other.to_a if other.respond_to?(:to_a)
+        face=picker.leaf_at(index)
+        face if faces.include?(face) && other.is_a?(Array) && other.take_while { |entity| instance?(entity) }==path.take_while { |entity| instance?(entity) }
+      end
+      return ranked.first || faces.first if @options['mode']=='sheet'
+      narrow=faces.min_by(&:area);wide=faces.max_by(&:area)
+      owner=path.take_while { |entity| instance?(entity) }.last
+      board=owner && entities_for(owner).grep(Sketchup::Face).map(&:area).max
+      return narrow if faces.length>1 && board && wide.area>=board*0.5 && narrow.area<wide.area*0.5
+      ranked.length==1 ? ranked.first : nil
+    end
     def hit(view,x,y)
       picker=view.pick_helper;picker.do_pick(x,y)
       return nil if picker.respond_to?(:count) && picker.count.zero?
       path=picker.path_at(0);leaf=picker.leaf_at(0)
       path=path.to_a if path.respond_to?(:to_a)
-      return nil unless path.is_a?(Array) && leaf.is_a?(Sketchup::Face)
+      return nil unless path.is_a?(Array)
+      if defined?(Sketchup::Edge) && leaf.is_a?(Sketchup::Edge)
+        path=path.dup;path.pop if path.last.equal?(leaf)
+        leaf=face_of_edge(picker,path,leaf)
+      end
+      return nil unless leaf.is_a?(Sketchup::Face)
       path=path.dup
       path << leaf unless path.last.equal?(leaf)
       return nil unless path.last.equal?(leaf) && path[0...-1].all? { |entity| instance?(entity) }

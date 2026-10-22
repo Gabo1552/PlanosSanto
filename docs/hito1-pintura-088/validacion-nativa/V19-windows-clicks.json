@@ -1,0 +1,75 @@
+{
+  "note": "10 real Windows clicks: first four visibly change four pieces; last six are no-ops. throughCaptureMs includes automation/capture overhead, not isolated paint timing.",
+  "clicks": [
+    {
+      "n": 1,
+      "x": 1100,
+      "y": 710,
+      "inputMs": 98,
+      "throughCaptureMs": 924
+    },
+    {
+      "n": 2,
+      "x": 1550,
+      "y": 755,
+      "inputMs": 100,
+      "throughCaptureMs": 894
+    },
+    {
+      "n": 3,
+      "x": 1120,
+      "y": 425,
+      "inputMs": 98,
+      "throughCaptureMs": 925
+    },
+    {
+      "n": 4,
+      "x": 260,
+      "y": 150,
+      "inputMs": 99,
+      "throughCaptureMs": 901
+    },
+    {
+      "n": 5,
+      "x": 1120,
+      "y": 710,
+      "inputMs": 103,
+      "throughCaptureMs": 876
+    },
+    {
+      "n": 6,
+      "x": 1560,
+      "y": 755,
+      "inputMs": 98,
+      "throughCaptureMs": 890
+    },
+    {
+      "n": 7,
+      "x": 1130,
+      "y": 425,
+      "inputMs": 100,
+      "throughCaptureMs": 928
+    },
+    {
+      "n": 8,
+      "x": 265,
+      "y": 150,
+      "inputMs": 102,
+      "throughCaptureMs": 922
+    },
+    {
+      "n": 9,
+      "x": 1130,
+      "y": 710,
+      "inputMs": 99,
+      "throughCaptureMs": 920
+    },
+    {
+      "n": 10,
+      "x": 1560,
+      "y": 760,
+      "inputMs": 99,
+      "throughCaptureMs": 951
+    }
+  ]
+}

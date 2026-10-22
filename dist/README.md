@@ -1,3 +1,9 @@
+# Entrega 0.8.10 — candidata Hito 1 = 0.8.9 + mejoras, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.10-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp. Es la 0.8.9 sin cambios, más cuatro mejoras: clic sin huella geométrica (V19), clic cerca del borde del canto, una sola paleta abierta y verificador con diagnóstico de foto. `PlanosSanto-0.8.10-Validacion-Local-Hito1.zip` trae la guía 0.8.9 completa y el anexo `VALIDACION_0810.md`. No se instala. Validar esta candidata en lugar de la 0.8.9. Producción no aprobada.
+
+---
+
 # Entrega 0.8.9 — correcciones Hito 1, candidata sin aprobación nativa
 
 Instalar `PlanosSanto-0.8.9-candidata.rbz` tras cerrar TODAS las ventanas de SketchUp. Comprobar `.sha256`. `PlanosSanto-0.8.9-Validacion-Local-Hito1-Correcciones.zip` contiene fuentes reproducibles, pruebas, perfil sintético y VALIDACION_LOCAL.md. El ZIP no se instala.

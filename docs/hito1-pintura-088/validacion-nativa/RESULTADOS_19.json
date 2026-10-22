@@ -1,0 +1,127 @@
+{
+  "candidate": "0.8.8",
+  "acceptance": "NO APROBADA",
+  "milestone2": "NO INICIADO",
+  "scope": "PASS confirma solamente la variante ejecutada, identificada en cada fila. No extrapolar color/SKM a creación desde foto.",
+  "summary": {
+    "FAIL": 4,
+    "PENDIENTE": 5,
+    "PASS": 10
+  },
+  "tests": [
+    {
+      "id": "V1",
+      "status": "FAIL",
+      "result": "Foto JPG válida: +Material rechaza 1200x1200/166694 bytes; Guardar y pintar no queda disponible.",
+      "evidence": "V1-valid-jpg-rejected.jpg; V1-native-photo-diagnostic.json"
+    },
+    {
+      "id": "V2",
+      "status": "PENDIENTE",
+      "result": "Material nuevo desde foto bloqueado por V1. La textura real de SKM sí se comprobó en V13; no sustituye este caso.",
+      "evidence": "V13-skm-texture-painted.jpg"
+    },
+    {
+      "id": "V3",
+      "status": "PENDIENTE",
+      "result": "Recorrido con la foto nueva bloqueado por V1. Variante de color pasó entre procesos 27452/32860/7596: Se instala al elegir -> Pintando -> pintura, sin instalación manual.",
+      "evidence": "V3-V4-V8-bm17-painted.json; V3-states-before-model2.json"
+    },
+    {
+      "id": "V4",
+      "status": "PASS",
+      "result": "Variante de color, fuera de edición, en BM17. Cambiaron lateral 22/51 y puerta 22/249/250; las cuatro caras menores de cada una conservaron materiales.",
+      "evidence": "final-audit.json; V4-V8-single-shared-side.jpg"
+    },
+    {
+      "id": "V5",
+      "status": "PASS",
+      "result": "Variante de color: cinco piezas distintas del banco M-S, cinco clics sin formulario. Dos Undo posteriores dejaron exactamente tres piezas pintadas.",
+      "evidence": "V5-*.jpg; small-after-five-undo2-escape.json; final-audit.json"
+    },
+    {
+      "id": "V6",
+      "status": "FAIL",
+      "result": "Caju18mm aparece instalable, pero falla por nombre SKM ya existente; el material previo sigue activo. Cambio entre colores y al SKM Plywood sí pasó.",
+      "evidence": "V6-material-switch-error.jpg; existing-skm-install-error.jpg; V14-manual-color-painted.jpg"
+    },
+    {
+      "id": "V7",
+      "status": "PENDIENTE",
+      "result": "Variante comercial con color: edición real de SKU/proveedor, guardado y pintura posterior sin revincular pasó. No se completó variante foto ni aprobación de ficha después de V1.",
+      "evidence": "V7-commercial-fields-saved.jpg; V7-paint-after-commercial-edit.jpg"
+    },
+    {
+      "id": "V8",
+      "status": "PASS",
+      "result": "Una puerta repetida del BM17 pintada con color, gemela sin cambio; comparación semántica nativa respalda aislamiento. Pintura en instancias espejadas no queda validada.",
+      "evidence": "V8-first-door-only.jpg; final-audit.json"
+    },
+    {
+      "id": "V9",
+      "status": "PASS",
+      "result": "Un clic en cara estrecha visible: solo cara 310 de 22/249/250 cambió a canto rojo; otros cantos, placa y gemela intactos. Fixture de cantos se preparó con Ruby en copia. Ver observación sobre clic a arista.",
+      "evidence": "V9-isolated-edge-painted.jpg; V9-comparison.json"
+    },
+    {
+      "id": "V10",
+      "status": "PASS",
+      "result": "Dos Ctrl+Z reales después de cinco pintadas, una por vez; tres piezas permanecen pintadas.",
+      "evidence": "V10-*.jpg; final-audit.json"
+    },
+    {
+      "id": "V11",
+      "status": "PASS",
+      "result": "Escape real detuvo Pintar; no apareció una modificación adicional del modelo.",
+      "evidence": "small-after-five-undo2-escape.json; V11-*.jpg"
+    },
+    {
+      "id": "V12",
+      "status": "PENDIENTE",
+      "result": "Color: guardado, cierre de proceso propio, reinicio, reapertura y pintura sin reinstalar pasó. Cantos y textura SKM persistieron al reabrir sus copias. Persistencia de una FOTO NUEVA bloqueada por V1; no se validó su UV.",
+      "evidence": "small-after-process-restart.json; V12-bm17-edges-reopened.json; V12-V13-ML-texture-reopened.json; final-audit.json"
+    },
+    {
+      "id": "V13",
+      "status": "PASS",
+      "result": "Importación real por interfaz de Plywood_01_1K.skm instalado con SketchUp, clasificación placa18, elección automática y clic con textura visible en M-L. Se usó M-L en lugar de M-S.",
+      "evidence": "V13-skm-installable.jpg; V13-skm-texture-painted.jpg"
+    },
+    {
+      "id": "V14",
+      "status": "PASS",
+      "result": "Ficha manual nueva QA088 Prueba color creada desde interfaz, clasificada placa18, aviso Necesitan atención, Asignar color, mosaico, elección y pintura real en M-L.",
+      "evidence": "V14-manual-needs-visual.jpg; V14-manual-color-painted.jpg"
+    },
+    {
+      "id": "V15",
+      "status": "FAIL",
+      "result": "Asignar foto desde Necesitan atención rechaza el mismo JPG válido. Ficha con SKU preparada por API de catálogo como fixture; SKU conservado tras el rechazo.",
+      "evidence": "V15-assign-photo-rejected.jpg; V15-fixture.json; V15-after-rejected-photo.json"
+    },
+    {
+      "id": "V16",
+      "status": "PASS",
+      "result": "SKM SOLO QA renombrado; todas las ventanas de SketchUp cerradas tras confirmación humana, sesión nueva y copia exclusiva: aviso Falta el archivo de textura. Restauración por hash y regreso a Se instala al elegir comprobados.",
+      "evidence": "V16-all-windows-closed.json; V16-restarted-process.json; V16-restarted-integrity.json; V16-restarted-states.json; V16-restarted-missing-texture.jpg; V16-restart-restored.json; V16-restarted-restored.jpg"
+    },
+    {
+      "id": "V17",
+      "status": "PASS",
+      "result": "Atributos oficiales y OCL7.1.0 real -> Partes -> Generar: Camellia agrupada como placa; azul y rojo como cantos (3 y1). Avisos dimensionales de OCL visibles.",
+      "evidence": "V17-OCL-native-cutlist.jpg; V9-after-visible-face-click.json"
+    },
+    {
+      "id": "V18",
+      "status": "PENDIENTE",
+      "result": "BM17 renombrado mediante sesión PS, PDF exterior y doble A4 exportados y revisados,17 piezas/1hoja cada uno, reapertura y conservación nativa pasó. TXT real sin exportar: faltan orientación/material/medidas/cantos validados; bloqueo comprobado y columnas9 correctas.",
+      "evidence": "V18-BM17-*-A4.pdf; V18-txt-guard.json; V18-after-export-check.json; V18-reopened-guide.json"
+    },
+    {
+      "id": "V19",
+      "status": "FAIL",
+      "result": "Objetivo orientativo<300ms: planes oficiales593.6/540.0/544.9/544.0/549.9; mediana544.9ms en1560 piezas. Diez clics Windows: cuatro cambios y seis no-op. Cronometraje hasta captura incluye automatización; no mide motor aislado.",
+      "evidence": "V19-tiempo-clic.json; V19-windows-clicks.json; V19-large-painted.jpg"
+    }
+  ]
+}

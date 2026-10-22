@@ -1,0 +1,140 @@
+{
+  "BM17-paint": {
+    "geometryNamesTransformsUnchanged": true,
+    "containers": 20,
+    "leafPieces": 17,
+    "geometryTolerance": "coordinates rounded to 1e-6 inch; transformation coefficients to 1e-8",
+    "paintChangedPieces": [
+      "22/51",
+      "22/249/250"
+    ]
+  },
+  "small-after-undo": {
+    "geometryNamesTransformsUnchanged": true,
+    "containers": 13,
+    "leafPieces": 11,
+    "geometryTolerance": "coordinates rounded to 1e-6 inch; transformation coefficients to 1e-8",
+    "paintChangedPieces": [
+      "20/50",
+      "20/78",
+      "20/162"
+    ]
+  },
+  "large-paint": {
+    "geometryNamesTransformsUnchanged": true,
+    "containers": 1603,
+    "leafPieces": 1560,
+    "geometryTolerance": "coordinates rounded to 1e-6 inch; transformation coefficients to 1e-8",
+    "paintChangedPieces": [
+      "29603",
+      "29656",
+      "29731",
+      "29805"
+    ]
+  },
+  "bm17-edge-persistence": {
+    "geometryNamesTransformsUnchanged": true,
+    "containers": 20,
+    "leafPieces": 17,
+    "geometryTolerance": "coordinates rounded to 1e-6 inch; transformation coefficients to 1e-8",
+    "faceMaterialsPersisted": true
+  },
+  "large-texture-persistence": {
+    "geometryNamesTransformsUnchanged": true,
+    "containers": 1603,
+    "leafPieces": 1560,
+    "geometryTolerance": "coordinates rounded to 1e-6 inch; transformation coefficients to 1e-8",
+    "faceMaterialsPersisted": true
+  },
+  "boardPaintEdgeProtection": [
+    {
+      "piece": "22/51",
+      "fourSmallestFacesUnchanged": true
+    },
+    {
+      "piece": "22/249/250",
+      "fourSmallestFacesUnchanged": true
+    }
+  ],
+  "V9-only-one-face-changed": true,
+  "A4-native-conservation": true,
+  "photoAssignmentSkuPreserved": true,
+  "originalModels": [
+    {
+      "id": "M-S",
+      "sourceUnchanged": true,
+      "backupMatches": true
+    },
+    {
+      "id": "M-C",
+      "sourceUnchanged": true,
+      "backupMatches": true
+    },
+    {
+      "id": "M-L",
+      "sourceUnchanged": true,
+      "backupMatches": true
+    },
+    {
+      "id": "BM17",
+      "sourceUnchanged": true,
+      "backupMatches": true
+    }
+  ],
+  "productionLibraryUnchanged": true,
+  "pdfs": [
+    {
+      "file": "V18-BM17-doble-A4.pdf",
+      "sha256": "9d2986369cabdf049408d3f661bac6700f7ec1be787b582e0b6040e40c79e8e4",
+      "pages": 1,
+      "mm": [
+        297.0,
+        210.0
+      ],
+      "header17Pieces": true,
+      "hasExterior": true,
+      "hasInterior": true,
+      "hasNote": true,
+      "hasExpectedWidths": true,
+      "visualReview": "Rendered with Poppler and inspected; table, notes and arrows fit on one sheet; dense dimension lines around hardware remain visible."
+    },
+    {
+      "file": "V18-BM17-exterior-A4.pdf",
+      "sha256": "2f718b355341386264796ceeada6a0f5b848b30648d6b97486ba48041ae0fc9d",
+      "pages": 1,
+      "mm": [
+        297.0,
+        210.0
+      ],
+      "header17Pieces": true,
+      "hasExterior": true,
+      "hasInterior": false,
+      "hasNote": true,
+      "hasExpectedWidths": true,
+      "visualReview": "Rendered with Poppler and inspected; table, notes and arrows fit on one sheet; dense dimension lines around hardware remain visible."
+    }
+  ],
+  "nativeIntegrity": {
+    "version": "0.8.8",
+    "sketchupVersion": "26.2.243",
+    "rubyVersion": "3.2.2",
+    "installedFiles": 54,
+    "mismatches": [],
+    "toolbar": [
+      "edge",
+      "furniture",
+      "guides",
+      "main",
+      "materials",
+      "order",
+      "remove_edge",
+      "sample",
+      "sheet"
+    ],
+    "paintModules": true,
+    "passed": true,
+    "productionApproved": false
+  },
+  "gitClean": true,
+  "timestampUtc": "2026-10-21T20:27:17.292741+00:00"
+}

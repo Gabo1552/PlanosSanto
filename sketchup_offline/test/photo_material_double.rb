@@ -124,9 +124,22 @@ module PhotoFixture
 end
 module Sketchup
   class ImageRep
-    class << self;attr_accessor :fail_load,:fail_save,:fail_resize;end
-    attr_reader :width,:height
+    # Mirrors the documented API only (no resize). load_file answers nil after
+    # a successful decode, like SketchUp 2026 on Windows (0.8.8 native V1).
+    class << self;attr_accessor :fail_load,:fail_save,:set_data_calls;end
+    attr_reader :width,:height,:bits_per_pixel,:row_padding
+    def data;@data;end
+    def size;@data&.bytesize;end
+    def set_data(width,height,bits,padding,pixels)
+      raise ArgumentError,'invalid image data' unless width.positive? && height.positive? && [8,24,32].include?(bits) && pixels.encoding==Encoding::BINARY && pixels.bytesize==(width*bits/8+padding)*height
+      self.class.set_data_calls=(self.class.set_data_calls||0)+1
+      @width,@height,@bits_per_pixel,@row_padding,@data=width,height,bits,padding,pixels;self
+    end
     def load_file(path)
+      return false unless decode(path)
+      @bits_per_pixel=32;@row_padding=0;@data="\x00".b*(@width*@height*4);nil
+    end
+    def decode(path)
       return false if self.class.fail_load
       bytes=File.binread(path)
       if bytes.start_with?("\x89PNG\r\n\x1a\n".b)
@@ -141,7 +154,6 @@ module Sketchup
       end
       true
     end
-    def resize(width,height);return false if self.class.fail_resize;@width=width;@height=height;true;end
     def save_file(path);return false if self.class.fail_save;File.binwrite(path,PhotoFixture.png(width,height));true;end
   end
 end

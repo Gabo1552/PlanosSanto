@@ -1,0 +1,138 @@
+PLANOS SANTO 0.8.8 — INFORME DE VALIDACIÓN REAL DEL HITO 1
+21 de octubre de 2026 — Gabonet / SketchUp 2026 / Windows
+
+DECISIÓN: CANDIDATA NO APROBADA. HITO 2 NO INICIADO.
+El recorrido obligatorio crear material desde foto -> elegir -> pintar falla con JPG válido. No se modificó el código del producto para sortearlo.
+
+Resumen: 10 PASS,4 FAIL,5 PENDIENTE de19 casos. PASS confirma exclusivamente la variante que indica cada fila. Las comprobaciones con color o con SKM no validan la creación de una foto nueva. V19 falla contra un objetivo orientativo, no contra un umbral contractual.
+
+ENTORNO Y PREPARACIÓN
+- Control visual real y clics Windows mediante la habilidad computer-use; consola Ruby nativa, no dobles de SketchUp. Capturas de interfaz y JSON nativos guardados.
+- SketchUp26.2.243; Ruby3.2.2; OpenCutList7.1.0 conservado y utilizado.
+- Fuente aislada clonada de https://github.com/Gabo1552/PlanosSanto en validation-088-source, main af434dd23d7b1ca220f7e6e3efd920780c0ea99e. Git limpio al terminar. No se confundió con el checkout anterior sin remoto. No se abrió una rama de producto ni se cambiaron archivos instalados.
+- Candidata dist/PlanosSanto-0.8.8-candidata.rbz, SHA256 2a66f19d510a70a90d8bc074e92c0de2bd5dd7452c7861722267890fef805a20.
+- ZIP de validación SHA256 1292f58d495dc062c270c80d0d30cd8f5de089bd86dd1d37920a11345d610acc. Se leyó la guía docs/hito1-pintura-088/VALIDACION_SKETCHUP_088.md y el verificador oficial.
+- La misma candidata ya estaba instalada por una tarea local previa. Se verificaron los54 archivos contra el manifiesto, sin diferencias; no se reinstaló innecesariamente. También se cerró y reinició un proceso propio durante esta corrida (PID27452 ->32860), se volvió a ejecutar el verificador oficial y pasó. Otro proceso propio7596 permitió pruebas entre procesos. Al finalizar, el usuario confirmó que había guardado/cerrado M-S-candidate*. Se verificaron cero ventanas SketchUp, se reinició y se completó V16 con archivo QA ausente; sin cerrar ni guardar trabajo ajeno por automatización.
+- El verificador oficial de solo lectura dio passed:true, paintModules:true e installedFiles:54 al inicio, tras el reinicio y al terminar. productionApproved:false.
+- Se revisaron instrucciones locales y estado Git antes de preparar auxiliares; no se encontraron AGENTS.md aplicables. Se mantuvieron los informes y pruebas anteriores.
+
+RESPALDOS Y AISLAMIENTO
+Raíz local: <carpeta local de validación, omitida>
+- backups/library-original: copia completa de %LOCALAPPDATA%/PlanosSanto,45 archivos (~21,6MB), hashes de origen antes/después/copia idénticos.
+- backups/installed-planos-santo y cargador .rb: respaldo de candidata ya instalada.
+- backups/{M-S,M-C,M-L,BM17}-original.skp: cuatro originales respaldados; rutas privadas y hashes en evidence/model-backups.json.
+- models/: exclusivamente copias de trabajo y resultados; qa-library/: copia aislada de la biblioteca. Cada proceso de prueba configuró PLANOS_SANTO_DATA_DIR para esa copia.
+- Auditoría FINAL:4/4 originales y sus respaldos coinciden con hashes iniciales. Biblioteca de producción completa sin cambios. El SKM renombrado temporalmente se restauró y su SHA quedó registrado.
+- Modelo pequeño disponible: banco de11 piezas, no8–10 exactas de la guía. BM17:17 piezas/20 contenedores, puertas repetidas. M-C:1423 piezas con caras propias. M-L:1560 piezas/1603 contenedores. Los casos reales de pintura V4/V8 se hicieron en BM17, no en M-C grande; V13/V14 se hicieron en M-L.
+
+RESULTADO PRINCIPAL
+P1 reproducido: un JPG propio de1200x1200 y166694 bytes es válido según encabezado y es decodificado por ImageRep; load_file devuelve nil con width/height1200. photo_material.rb:51 exige ==true y lo rechaza. Se reprodujo tanto en +Material como en Asignar foto de ficha con SKU. La foto no se incluye en el paquete transferible.
+Otro bloqueo real: Caju18mm se anuncia instalable pero su SKM lleva un nombre que ya existe en el modelo; materials.load retorna ese material y el producto pide vínculo explícito. No afecta a todos los SKM: Plywood importado por interfaz pintó con textura real.
+Rendimiento: mediana oficial544,9ms por plan de solo lectura en1560 piezas. Diez clics Windows medidos aparte: cuatro aplicaciones y seis repeticiones sin cambio. No se tomó tiempo de envío de input como tiempo nativo del motor.
+
+MATRIZ DE LAS19 PRUEBAS
+
+V1 — FAIL
+Foto JPG válida: +Material rechaza 1200x1200/166694 bytes; Guardar y pintar no queda disponible.
+Evidencia local: V1-valid-jpg-rejected.jpg; V1-native-photo-diagnostic.json
+
+V2 — PENDIENTE
+Material nuevo desde foto bloqueado por V1. La textura real de SKM sí se comprobó en V13; no sustituye este caso.
+Evidencia local: V13-skm-texture-painted.jpg
+
+V3 — PENDIENTE
+Recorrido con la foto nueva bloqueado por V1. Variante de color pasó entre procesos 27452/32860/7596: Se instala al elegir -> Pintando -> pintura, sin instalación manual.
+Evidencia local: V3-V4-V8-bm17-painted.json; V3-states-before-model2.json
+
+V4 — PASS
+Variante de color, fuera de edición, en BM17. Cambiaron lateral 22/51 y puerta 22/249/250; las cuatro caras menores de cada una conservaron materiales.
+Evidencia local: final-audit.json; V4-V8-single-shared-side.jpg
+
+V5 — PASS
+Variante de color: cinco piezas distintas del banco M-S, cinco clics sin formulario. Dos Undo posteriores dejaron exactamente tres piezas pintadas.
+Evidencia local: V5-*.jpg; small-after-five-undo2-escape.json; final-audit.json
+
+V6 — FAIL
+Caju18mm aparece instalable, pero falla por nombre SKM ya existente; el material previo sigue activo. Cambio entre colores y al SKM Plywood sí pasó.
+Evidencia local: V6-material-switch-error.jpg; existing-skm-install-error.jpg; V14-manual-color-painted.jpg
+
+V7 — PENDIENTE
+Variante comercial con color: edición real de SKU/proveedor, guardado y pintura posterior sin revincular pasó. No se completó variante foto ni aprobación de ficha después de V1.
+Evidencia local: V7-commercial-fields-saved.jpg; V7-paint-after-commercial-edit.jpg
+
+V8 — PASS
+Una puerta repetida del BM17 pintada con color, gemela sin cambio; comparación semántica nativa respalda aislamiento. Pintura en instancias espejadas no queda validada.
+Evidencia local: V8-first-door-only.jpg; final-audit.json
+
+V9 — PASS
+Un clic en cara estrecha visible: solo cara 310 de 22/249/250 cambió a canto rojo; otros cantos, placa y gemela intactos. Fixture de cantos se preparó con Ruby en copia. Ver observación sobre clic a arista.
+Evidencia local: V9-isolated-edge-painted.jpg; V9-comparison.json
+
+V10 — PASS
+Dos Ctrl+Z reales después de cinco pintadas, una por vez; tres piezas permanecen pintadas.
+Evidencia local: V10-*.jpg; final-audit.json
+
+V11 — PASS
+Escape real detuvo Pintar; no apareció una modificación adicional del modelo.
+Evidencia local: small-after-five-undo2-escape.json; V11-*.jpg
+
+V12 — PENDIENTE
+Color: guardado, cierre de proceso propio, reinicio, reapertura y pintura sin reinstalar pasó. Cantos y textura SKM persistieron al reabrir sus copias. Persistencia de una FOTO NUEVA bloqueada por V1; no se validó su UV.
+Evidencia local: small-after-process-restart.json; V12-bm17-edges-reopened.json; V12-V13-ML-texture-reopened.json; final-audit.json
+
+V13 — PASS
+Importación real por interfaz de Plywood_01_1K.skm instalado con SketchUp, clasificación placa18, elección automática y clic con textura visible en M-L. Se usó M-L en lugar de M-S.
+Evidencia local: V13-skm-installable.jpg; V13-skm-texture-painted.jpg
+
+V14 — PASS
+Ficha manual nueva QA088 Prueba color creada desde interfaz, clasificada placa18, aviso Necesitan atención, Asignar color, mosaico, elección y pintura real en M-L.
+Evidencia local: V14-manual-needs-visual.jpg; V14-manual-color-painted.jpg
+
+V15 — FAIL
+Asignar foto desde Necesitan atención rechaza el mismo JPG válido. Ficha con SKU preparada por API de catálogo como fixture; SKU conservado tras el rechazo.
+Evidencia local: V15-assign-photo-rejected.jpg; V15-fixture.json; V15-after-rejected-photo.json
+
+V16 — PASS
+SKM SOLO QA renombrado; todas las ventanas de SketchUp cerradas tras confirmación humana, sesión nueva y copia exclusiva: aviso Falta el archivo de textura. Restauración por hash y regreso a Se instala al elegir comprobados.
+Evidencia local: V16-all-windows-closed.json; V16-restarted-process.json; V16-restarted-integrity.json; V16-restarted-states.json; V16-restarted-missing-texture.jpg; V16-restart-restored.json; V16-restarted-restored.jpg
+
+V17 — PASS
+Atributos oficiales y OCL7.1.0 real -> Partes -> Generar: Camellia agrupada como placa; azul y rojo como cantos (3 y1). Avisos dimensionales de OCL visibles.
+Evidencia local: V17-OCL-native-cutlist.jpg; V9-after-visible-face-click.json
+
+V18 — PENDIENTE
+BM17 renombrado mediante sesión PS, PDF exterior y doble A4 exportados y revisados,17 piezas/1hoja cada uno, reapertura y conservación nativa pasó. TXT real sin exportar: faltan orientación/material/medidas/cantos validados; bloqueo comprobado y columnas9 correctas.
+Evidencia local: V18-BM17-*-A4.pdf; V18-txt-guard.json; V18-after-export-check.json; V18-reopened-guide.json
+
+V19 — FAIL
+Objetivo orientativo<300ms: planes oficiales593.6/540.0/544.9/544.0/549.9; mediana544.9ms en1560 piezas. Diez clics Windows: cuatro cambios y seis no-op. Cronometraje hasta captura incluye automatización; no mide motor aislado.
+Evidencia local: V19-tiempo-clic.json; V19-windows-clicks.json; V19-large-painted.jpg
+
+CONSERVACIÓN Y PERSISTENCIA COMPROBADAS
+- BM17: solo cambiaron el lateral22/51 y la puerta22/249/250 durante pintura de placa. Sus cuatro caras menores conservaron materiales de frente y dorso. La puerta gemela no cambió.
+- Canto: solo cara310 cambió de material; placa, otros cantos y gemela sin cambios.
+- M-S: después de cinco clics y dos Undo quedan tres piezas pintadas; geometría/nombres/transformaciones conservados.
+- M-L: cuatro componentes cambiaron por clic;1560 piezas conservan geometría/nombres/transformaciones.
+- Al reabrir los archivos con resultados, materiales de caras y cantos coinciden. Comparación normaliza IDs transitorios de definición; coordenadas a1e-6 pulgadas y coeficientes de transformación a1e-8. Esto no constituye validación UV de una foto nueva.
+- A4: el diagnóstico nativo antes/después de exportar es idéntico tras normalizar etiquetas transitorias de definición. Guía y nombre QA088 Bajo mesada persistieron al reabrir.
+
+REGRESIÓN NATIVA COMPLEMENTARIA
+Siete pruebas pasadas dentro de SketchUp, en fixture exclusivo: sintaxis/integridad27 fuentes Ruby; diagnóstico anidado/repetido/rotado; generación enmm de8 ocurrencias; bloqueo de pedido sin validar y9 columnas; nombres editables sin duplicar prefijo; guardado/reapertura de nombres; captura de viewport.
+Se adaptó únicamente el auxiliar de regresión0.8.1 a versión0.8.8 y a esta raíz; no se cambiaron clases de producto. Fixture sintético claramente separado de pruebas de muebles reales. No sustituye pintura real de componentes espejados.
+Resultado: evidence/native-20261021T200727-7596-353cea687ba1/result.json.
+
+PDFS GENERADOS POR SKETCHUP Y REVISADOS
+- evidence/V18-BM17-exterior-A4.pdf
+- evidence/V18-BM17-doble-A4.pdf
+Ambos:1 página,297x210mm, creador PlanosSanto0.8.8;17 piezas en tabla agrupada (cantidades2+1+2+2+1+1+2+6), medidas, nota de prueba y flecha. Doble: exterior e interior. Exterior: una sola vista. Renderizados con Poppler e inspeccionados: sin tabla cortada, nota/leyenda dentro de hoja; cotas de herrajes densas, con advertencia de orientación para P09/P11. No se comparó una impresión física ni medidas tomadas sobre papel.
+TXT de BM17: no se forzó exportación con revisiones sin realizar. El producto bloqueó la propuesta por orientación sin confirmar; las columnas coinciden con cant,base,altura,detalle,rota,canto_arr,canto_aba,canto_izq,canto_der. Exportación de un pedido completamente revisado queda pendiente.
+
+INCIDENTES DEL AUXILIAR / LÍMITES
+No se clasificaron como defectos del producto: primer JPG24MP fuera del límite; selector Windows rechazó ruta con barras normales y se corrigió a ruta Windows; auxiliar de cámara usó inicialmente multiplicación de vector no admitida y se corrigió; primera preparación de cantos eligió un contenedor sin caras y luego se corrigió a la hoja real; auxiliar pidió quick_action('plans') inexistente y se usó la barra real. El auxiliar de reinicio usó inicialmente Entities.empty? inexistente; se corrigió la guardia a modelo sin ruta y sin cambios. Todos son incidentes de la prueba, conservados como tales.
+No se cerraron ni guardaron documentos ajenos. Una copia M-S ya abierta en otro proceso se abrió en modo solo lectura; la regresión creó después una copia exclusiva. Una reapertura pidió guardar la copia ya respaldada y se continuó sin tocar su archivo.
+El observador de transacciones no produjo eventos útiles: no se utiliza para afirmar latencia. inputMs mide automatización de Windows; throughCaptureMs añade captura y transporte.
+Las capturas y snapshots completos permanecen locales porque pueden contener datos de modelos o materiales. El paquete transferible incluye informe y JSON resumidos/saneados; excluye SKP,SKM,fotos,texturas,catálogo privado y geometría cruda.
+
+PRÓXIMO PASO
+Aplicar correcciones del archivo CORRECCIONES_PRIORIZADAS_088.txt en el desarrollo principal, generar nueva candidata y repetir primero V1/V15. Luego completar V2/V3/V7/V12 con foto nueva, persistencia/UV, prueba de instancias espejadas, TXT validado. Repetir rendimiento con diez escrituras reales y perfilar el clic completo.
+No aceptar Hito1 ni comenzar Hito2 mientras falle el recorrido obligatorio desde foto.

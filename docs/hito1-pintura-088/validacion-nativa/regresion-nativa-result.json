@@ -1,0 +1,44 @@
+{
+  "status": "completed",
+  "harness": "088-installed-regression",
+  "native": true,
+  "production_ready": false,
+  "sketchup": "26.2.243",
+  "ruby": "3.2.2",
+  "tests": [
+    {
+      "name": "ruby_syntax_all_baseline_sources",
+      "status": "pass"
+    },
+    {
+      "name": "native_diagnostics_nested_repeated_rotated",
+      "status": "pass"
+    },
+    {
+      "name": "native_scan_generate_mm",
+      "status": "pass"
+    },
+    {
+      "name": "unvalidated_supplier_order_blocked",
+      "status": "pass"
+    },
+    {
+      "name": "editable_names_no_duplicate_prefix",
+      "status": "pass"
+    },
+    {
+      "name": "names_persist_save_reopen",
+      "status": "pass"
+    },
+    {
+      "name": "viewport_capture",
+      "status": "pass"
+    }
+  ],
+  "initialModel": {
+    "path": "<QA>/models/M-S.skp",
+    "entities": 1
+  },
+  "compiledRubySourceCount": 27,
+  "scope": "Synthetic regression; A4 acceptance recorded separately"
+}

@@ -204,6 +204,80 @@ class PaintReadyTest < Minitest::Test
     assert smart.apply_immediate(options(prepared))['changed'];assert_board(@pieces[0],@model.materials.last)
   end
 
+  # 0.8.8 nativo V19: un clic inmediato recorría el modelo 3 veces con huella de
+  # mallas + SHA-256 de todo el modelo (plan + frente + dorso). Ahora: un único
+  # recorrido sin huella geométrica; vista previa/confirmar conservan la firma.
+  module InventoryCounter
+    class << self;attr_accessor :calls;end
+    def inventory(geometry: true);(InventoryCounter.calls||=[]) << geometry;super;end
+  end
+  PlanosSanto::NameManager.prepend(InventoryCounter)
+  def test_immediate_click_traverses_the_model_once_without_geometry_fingerprint
+    prepared=service.prepare(create_photo['catalogId'],'sheet')
+    InventoryCounter.calls=[]
+    assert smart.apply_immediate(options(prepared))['changed']
+    assert_equal [false],InventoryCounter.calls,'un solo recorrido liviano por clic'
+    assert_board(@pieces[0],@model.materials.last)
+    InventoryCounter.calls=[]
+    painter=smart;token=painter.preview(options(prepared,1).reject { |key,_| key=='immediatePiece' }.merge('immediate'=>true))['token']
+    assert_equal [true],InventoryCounter.calls,'la vista previa con token conserva la firma completa'
+    @pieces[1].definition.entities[0].material=@narrow
+    assert_raises(PlanosSanto::ExportError) { painter.apply('token'=>token,'confirmed'=>true) }
+  end
+
+  # 0.8.8 nativo V9 (observación): cerca del borde, PickHelper devuelve primero
+  # la ARISTA; el clic no hacía nada. Ahora se usa una cara de esa misma arista.
+  class EdgeLeaf
+    attr_reader :faces
+    def initialize(faces);@faces=faces;end
+  end
+  class RankedPicker
+    attr_accessor :hits
+    def do_pick(_x,_y);end
+    def count;hits.length;end
+    def path_at(index);hits[index][0];end
+    def leaf_at(index);hits[index][1];end
+  end
+  def edge_tool(mode)
+    Sketchup.const_set(:Edge,EdgeLeaf) unless defined?(Sketchup::Edge)
+    @faces.each_with_index { |face,index| area=[384.0,384.0,18.0,18.0,12.0,12.0][index];face.define_singleton_method(:area) { area } }
+    picker=RankedPicker.new;view=View.new(picker)
+    tool=PlanosSanto::SmartPaintTool.new(@model,service:smart,options:{'mode'=>mode,'immediate'=>true,'immediatePiece'=>mode=='sheet'},on_event:lambda { |_event| },guard:lambda { true })
+    [tool,picker,view]
+  end
+  def test_click_on_a_board_border_edge_selects_the_narrow_face_of_the_same_piece
+    tool,picker,view=edge_tool('edge')
+    piece=@pieces[0];board,narrow=@faces[0],@faces[2]
+    border=Sketchup::Edge.new([board,narrow])
+    other=@pieces[1]
+    picker.hits=[[[@model.entities.first,piece,border],border],[[@model.entities.first,other,@faces[1]],@faces[1]],[[@model.entities.first,piece,board],board]]
+    target=tool.send(:hit,view,0,0)
+    assert_equal "1/#{piece.persistent_id}",target['pieceId'],'nunca la pieza vecina de atrás'
+    assert_equal [narrow.persistent_id.to_s],target['faceIds'],'en modo canto, la cara estrecha de esa arista'
+    sheet,sheet_picker,sheet_view=edge_tool('sheet');sheet_picker.hits=picker.hits
+    assert_equal "1/#{piece.persistent_id}",sheet.send(:hit,sheet_view,0,0)['pieceId']
+  end
+  # Validación 0.8.10 (R1): en una esquina entre dos cantos de largo muy distinto
+  # (estante 2000x300: 36000 vs 5400 mm²) no se elige el canto corto.
+  def test_corner_between_two_edges_of_very_different_length_is_ambiguous
+    tool,picker,view=edge_tool('edge')
+    @faces[2].define_singleton_method(:area) { 18.0 };@faces[4].define_singleton_method(:area) { 2.7 }
+    corner=Sketchup::Edge.new([@faces[2],@faces[4]])
+    picker.hits=[[[@model.entities.first,@pieces[0],corner],corner]]
+    assert_nil tool.send(:hit,view,0,0)
+  end
+  def test_ambiguous_corner_edge_in_edge_mode_paints_nothing
+    tool,picker,view=edge_tool('edge')
+    corner=Sketchup::Edge.new([@faces[2],@faces[3]])
+    picker.hits=[[[@model.entities.first,@pieces[0],corner],corner]]
+    assert_nil tool.send(:hit,view,0,0)
+    open_border=Sketchup::Edge.new([@faces[0]])
+    picker.hits=[[[@model.entities.first,@pieces[0],open_border],open_border]]
+    assert_nil tool.send(:hit,view,0,0),'una arista de borde con una sola cara ancha no se trata como canto'
+    picker.hits=[[[@model.entities.first,@pieces[0],@faces[2]],@faces[2]]]
+    assert_equal [@faces[2].persistent_id.to_s],tool.send(:hit,view,0,0)['faceIds'],'un clic sobre la cara sigue igual'
+  end
+
   # Material de color sólido, sin fotografía.
   def test_solid_colour_can_be_assigned_to_a_commercial_item_and_reused_in_another_model
     row=@catalog.new_item('Blanco liso','sheet').merge('sku'=>'BL18','supplier'=>'QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'approved'=>true)
@@ -278,6 +352,21 @@ class PaintReadyTest < Minitest::Test
     refute_same @pieces[0].definition,@pieces[1].definition
   end
 
+  # Auditoría OCL F-PINT-A: repasar una pieza compartida que YA tiene el material
+  # no debe aislarla (make_unique) ni dejar una entrada de Ctrl+Z vacía.
+  def test_repainting_shared_pieces_that_already_have_the_material_is_a_real_no_op
+    prepared=service.prepare(create_photo['catalogId'],'sheet');material=@model.materials.last
+    shared=@pieces[0].definition
+    shared.entities.first(2).each { |face| face.material=material;face.back_material=material }
+    assert_same shared,@pieces[1].definition
+    undo=@model.undo_states.length
+    result=smart.apply_immediate(options(prepared,0))
+    refute result['changed'];assert result['noChanges']
+    assert_same shared,@pieces[0].definition,'no se crea una definición nueva'
+    assert_same shared,@pieces[1].definition
+    assert_equal undo,@model.undo_states.length,'sin entrada de Ctrl+Z'
+  end
+
   def test_kind_mismatch_is_explained
     created=create_photo
     error=assert_raises(PlanosSanto::ExportError) { service.prepare(created['catalogId'],'edge') }
@@ -334,7 +423,7 @@ class PaintReadyTest < Minitest::Test
     assert_equal 0,hashed
   end
 
-  def write_png(name);path=File.join(@source,name);File.binwrite(path,PhotoFixture.png);path;end
+  def write_png(name,bytes=PhotoFixture.png);path=File.join(@source,name);File.binwrite(path,bytes);path;end
   def test_skm_collision_with_unbound_native_visual_is_installed_independently_and_paints
     image=File.join(@source,'selected-skm-texture.png');File.binwrite(image,PhotoFixture.png(4,3))
     source=PhotoFixture::Material.new(9000,'Melamina QA 18mm');source.texture=[image,2,3]

@@ -223,7 +223,9 @@ module PlanosSanto
         rollback_confirmed=true
         if started
           begin
-            rollback_confirmed=@model.abort_operation==true
+            # Boolean per the API; only an explicit false is a failed rollback
+            # (validation 0.8.10). Callers that need proof still compare states.
+            rollback_confirmed=@model.abort_operation!=false
           rescue StandardError
             rollback_confirmed=false
           end
@@ -378,6 +380,12 @@ module PlanosSanto
       [result,changed]
     end
 
+    def restore_name!(material,name)
+      material.name=name if material.respond_to?(:valid?) ? material.valid? && material.name.to_s!=name : material.name.to_s!=name
+    rescue StandardError => restore_error
+      warn("Planos Santo: no se pudo restaurar el nombre del material #{name.inspect}: #{restore_error.class}")
+    end
+
     # with_status:false returns only the installed binding (no full library
     # re-listing after the operation committed; used by PaintMaterials).
     def install(data, path: nil, with_status: true)
@@ -408,11 +416,18 @@ module PlanosSanto
           ensure_rollback_states!(error.original_states)
           # Retry only once, from the rolled-back state. If the native loader
           # still reuses any prior object (e.g. GUID deduplication), abort safely.
+          original_name=error.material.name.to_s
           begin
             mutate(index) { install_visual(item,index,path,repair,collision:error.material) }
           rescue ExistingMaterialCollision => retry_error
+            restore_name!(error.material,original_name)
             ensure_rollback_states!(retry_error.original_states)
             raise ExportError,'SketchUp no pudo crear una copia independiente de este SKM. No se vinculó ningún material existente ni se modificó el modelo.'
+          rescue StandardError
+            # The API does not promise that abort reverts Material#name=: never
+            # leave the operator's material under the temporary import name.
+            restore_name!(error.material,original_name)
+            raise
           end
         end
       end

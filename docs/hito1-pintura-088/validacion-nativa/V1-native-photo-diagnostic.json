@@ -1,0 +1,34 @@
+{
+  "sourceBytes": 166694,
+  "sha256": "4af47551e59440084b6eeb19f9a23a2ea96632e47ade4a44ba823372d8bfd0ab",
+  "imageInfo": {
+    "widthPx": 1200,
+    "heightPx": 1200,
+    "format": "jpg"
+  },
+  "imageRep": {
+    "loadReturn": null,
+    "returnClass": "NilClass",
+    "width": 1200,
+    "height": 1200
+  },
+  "productError": [
+    "PlanosSanto::ExportError",
+    "Elegí una imagen JPG o PNG válida de hasta12MiB,16megapíxeles y16.384píxeles por lado.",
+    [
+      "<PLUGINS>/planos_santo/photo_material.rb:24:in `reject_image!'",
+      "<PLUGINS>/planos_santo/photo_material.rb:60:in `rescue in load_image'",
+      "<PLUGINS>/planos_santo/photo_material.rb:49:in `load_image'",
+      "<PLUGINS>/planos_santo/photo_material.rb:94:in `block in pick'",
+      "<PLUGINS>/planos_santo/photo_material.rb:65:in `block in temporary'",
+      "C:/program files/sketchup/sketchup 2026/sketchup/Tools/RubyStdLib/tempfile.rb:407:in `create'",
+      "<PLUGINS>/planos_santo/photo_material.rb:63:in `temporary'",
+      "<PLUGINS>/planos_santo/photo_material.rb:94:in `pick'",
+      "<QA>/photo_diagnostic.rb:9:in `photo_diagnostic'",
+      "<QA>/photo_diagnostic.rb:13:in `<top (required)>'",
+      "(eval):1:in `load'",
+      "(eval):1:in `<main>'",
+      "SketchUp:in `eval'"
+    ]
+  ]
+}

@@ -66,7 +66,11 @@ module PlanosSanto
     end
 
     # Traverse occurrences, including hidden ones, so shared definitions cannot leak writes.
-    def inventory
+    # geometry: false skips the per-face mesh fingerprint and the model
+    # signature (signature: nil). Only a plan that is validated and committed in
+    # the same synchronous call may use it (immediate paint click, 0.8.10; native V19):
+    # a token flow that commits later needs the signature to detect drift.
+    def inventory(geometry: true)
       index = {}; occurrences = Hash.new { |h,k| h[k] = [] }; definitions = Hash.new(0)
       fingerprint = []; vertex_count = 0
       visit = lambda do |entity, parents, stack|
@@ -83,11 +87,12 @@ module PlanosSanto
                  'role' => role, 'kind' => entity.is_a?(Sketchup::Group) ? 'group' : 'component', 'children' => [],
                  '_entity' => entity, '_parents' => parents }
         index[route] = node; occurrences[entity.persistent_id.to_s] << route; definitions[entity.definition.guid.to_s] += 1
+        next node.merge!('children' => children.map { |child| visit.call(child, parents + [entity], stack + [entity.definition.guid.to_s]) }) unless geometry
         mesh = faces.map do |face|
-          geometry = face.mesh(0)
-          vertex_count += geometry.points.length
+          face_mesh = face.mesh(0)
+          vertex_count += face_mesh.points.length
           raise ExportError, 'La geometría supera el límite de revisión de nombres.' if vertex_count > 200_000
-          [face.hidden?, face.layer.name.to_s, face.layer.visible?, geometry.points.map { |p| p.to_a }, geometry.polygons, @reader.material(face.material), @reader.material(face.back_material)]
+          [face.hidden?, face.layer.name.to_s, face.layer.visible?, face_mesh.points.map { |p| p.to_a }, face_mesh.polygons, @reader.material(face.material), @reader.material(face.back_material)]
         end
         fingerprint << [route, entity.persistent_id.to_s, entity.definition.guid.to_s, entity.definition.name.to_s,
                         entity.name.to_s, entity.transformation.to_a, locked?(entity), entity.hidden?,
@@ -98,7 +103,7 @@ module PlanosSanto
       end
       roots = @reader.containers(@model.entities).map { |root| visit.call(root, [], []) }
       guide = GuideStore.new(@model).read
-      signature = Digest::SHA256.hexdigest(JSON.generate([@model.guid.to_s, fingerprint, guide]))
+      signature = geometry ? Digest::SHA256.hexdigest(JSON.generate([@model.guid.to_s, fingerprint, guide])) : nil
       { roots: roots, index: index, occurrences: occurrences, definitions: definitions, signature: signature, guide: guide }
     end
 
