@@ -742,11 +742,13 @@ module PlanosSanto
       return emit('El material seleccionado ya está activo.') if chosen['materialUuid']==@options['materialUuid']
       clear;@last_error=nil
       @options.merge!(chosen.slice('catalogId','materialUuid'))
-      @options['allowShared']=false
       @options['scope']='unique' if immediate?
+      # Simplificación punto 26: the chosen scope is the authorization; a new
+      # material keeps it (one Ctrl+Z per click) instead of asking again.
+      @options['allowShared']=@options['scope']=='all'
       refresh_recents!
       # Instant, through the limiter: drops a stale pending hover and resets the signature.
-      emit(immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.",extra:{'requiresSharedReview'=>!immediate?})
+      emit("Material activo: #{chosen['name']}. Hacé clic en otra pieza.")
     end
     def onKeyDown(key,repeat,flags,view)
       repeated=repeat.is_a?(Integer) && repeat>1

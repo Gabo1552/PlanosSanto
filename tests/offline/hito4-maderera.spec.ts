@@ -58,26 +58,26 @@ const board={sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,len
 const edge={supplier:'Prueba',thicknessMm:.8};
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
-test('perfil de maderera: queda sin aprobar, se aprueba, se usa en pedidos y el presupuesto muestra tres columnas y servicios',async({page},info)=>{
+// Simplificación punto 24: no approval step; «Usar en pedidos» is enough.
+test('perfil de maderera: se guarda, se usa en pedidos sin aprobar y el presupuesto muestra tres columnas y servicios',async({page},info)=>{
  await boot(page,info.outputDir);const today=new Date().toISOString().slice(0,10);
  const [sheet,strip]=await catalog([{name:'Placa presupuesto',kind:'sheet',patch:{...board,price:{amount:10000,currency:'ARS',unit:'m2',date:today,source:'Lista sintética'}}},{name:'Canto presupuesto',kind:'edge',patch:{...edge,sku:'CP-22',widthMm:22,price:{amount:300,currency:'ARS',unit:'metro',date:today,source:'Lista sintética'}}}],all=>{all[0].compatibleIds=[all[1].id];});
  const panel=await openOrder(page);
  await panel.getByRole('button',{name:'Perfil de maderera',exact:true}).click();await expect(panel.getByRole('button',{name:'Perfil de maderera',exact:true})).toHaveAttribute('aria-pressed','true');
- await expect(panel).toContainText('El TXT sigue siendo de nueve columnas');await expect(panel).toContainText('Los valores son sugeridos hasta que apruebes una versión');
+ await expect(panel).toContainText('El TXT sigue siendo de nueve columnas');await expect(panel).toContainText('Guardalo y elegí «Usar en pedidos»');
  await expect(panel.getByLabel('Refilado por lado (mm)')).toHaveValue('10');await expect(panel.getByLabel('Kerf: espesor de la sierra (mm)')).toHaveValue('3');await expect(panel.getByLabel('Desperdicio (%)')).toHaveValue('15');
  const rule=panel.getByLabel('Regla de medidas');await rule.selectOption('deduct_edge');
- await expect(rule).toHaveAttribute('aria-describedby','madera-deduct-risk');await expect(panel.locator('#madera-deduct-risk')).toContainText('Riesgo de descontar dos veces');await rule.selectOption('finished');
+ await expect(rule).toHaveAttribute('aria-describedby','madera-deduct-risk');await expect(panel.locator('#madera-deduct-risk')).toContainText('Riesgo de descontar dos veces');await expect(panel.locator('#madera-deduct-risk')).toContainText('no impide usar el perfil');await rule.selectOption('finished');
  await panel.getByLabel('Nombre del perfil').fill('Maderera sintética');await panel.getByLabel('Proveedor',{exact:true}).fill('Proveedor de prueba');
  const cut=panel.getByRole('group',{name:'Tarifa de corte'});await cut.getByLabel('Cargar tarifa (opcional)').check();await cut.getByLabel('Unidad').selectOption('placa');await cut.getByLabel('Importe').fill('5000');await cut.getByLabel('Fuente de la tarifa').fill('Lista de corte sintética');
  const edging=panel.getByRole('group',{name:'Tarifa de canteado (por metro)'});await edging.getByLabel('Cargar tarifa (opcional)').check();await edging.getByLabel('Importe').fill('150');await edging.getByLabel('Fuente de la tarifa').fill('Lista de canteado sintética');
- await expect(panel.getByRole('button',{name:'Aprobar esta versión',exact:true})).toBeDisabled();
- await panel.getByRole('button',{name:'Guardar perfil',exact:true}).click();await expect(panel.getByRole('status')).toContainText('Perfil guardado como versión 1, sin aprobar');
+ await expect(panel.getByRole('button',{name:'Aprobar esta versión',exact:true})).toHaveCount(0);
+ await panel.getByRole('button',{name:'Guardar perfil',exact:true}).click();await expect(panel.getByRole('status')).toContainText('Perfil guardado como versión 1. Elegí «Usar en pedidos» para aplicarlo.');
  const list=panel.getByRole('group',{name:'Perfiles de maderera'}),entry=list.getByRole('button',{name:/^Maderera sintética/});
- await expect(entry).toContainText('Sin aprobar · v 1');await expect(entry).toHaveAttribute('aria-pressed','true');
- const use=panel.getByRole('button',{name:'Usar en pedidos',exact:true});await expect(use).toBeDisabled();
+ await expect(entry).toContainText('v 1');await expect(entry).not.toContainText('aprob');await expect(entry).toHaveAttribute('aria-pressed','true');
+ const use=panel.getByRole('button',{name:'Usar en pedidos',exact:true});await expect(use).toBeEnabled();
  const saved=actions.find(a=>a.action==='maderera_profile_save')!.data as {profile:Record<string,unknown>};expect(saved.profile).not.toHaveProperty('approved');expect(saved.profile).not.toHaveProperty('version');
- await panel.getByRole('button',{name:'Aprobar esta versión',exact:true}).click();await expect(panel.getByRole('status')).toContainText('Versión 1 aprobada');await expect(entry).toContainText('Aprobado · v 1');
- await use.click();const stop=panel.getByRole('button',{name:'Dejar de usar',exact:true});await expect(stop).toBeEnabled();await expect(entry).toContainText('En uso en pedidos');
+ await use.click();expect(actions.some(a=>a.action==='maderera_profile_approve')).toBe(false);const stop=panel.getByRole('button',{name:'Dejar de usar',exact:true});await expect(stop).toBeEnabled();await expect(entry).toContainText('En uso en pedidos');
  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
  await fillOrder(page,panel,sheet.id,strip.id);
  const budget=panel.getByRole('region',{name:'Presupuesto con desperdicio · Maderera sintética v 1'});await expect(budget).toBeVisible();
@@ -93,7 +93,7 @@ test('perfil de maderera: queda sin aprobar, se aprueba, se usa en pedidos y el 
  await page.screenshot({path:info.outputPath('presupuesto-SINTETICO.png'),fullPage:true});
 });
 
-test('espesor distinto ofrece variante, otra placa o excluir; sin perfil en uso el presupuesto invita a aprobar y activar uno',async({page},info)=>{
+test('espesor distinto ofrece variante, otra placa o excluir; sin perfil en uso el presupuesto invita a usar uno',async({page},info)=>{
  await boot(page,info.outputDir);const [sheet,strip,thick]=await catalog([{name:'Placa buena',kind:'sheet',patch:board},{name:'Canto bueno',kind:'edge',patch:{...edge,sku:'CB-22',widthMm:22}},{name:'Placa gruesa',kind:'sheet',patch:{...board,sku:'BOARD-25',thicknessMm:25}}],all=>{all[0].compatibleIds=[all[1].id];});
  const panel=await openOrder(page);
  let asked='';page.on('dialog',dialog=>{asked=dialog.message();void dialog.dismiss();});
@@ -109,7 +109,7 @@ test('espesor distinto ofrece variante, otra placa o excluir; sin perfil en uso 
  const variant=actions.find(a=>a.action==='catalog_variant')!.data;expect(variant).toMatchObject({id:thick.id});expect(Math.abs((variant.thicknessMm as number)-25)).toBeGreaterThan(.1);
  await expect(page.getByLabel('Detalle del pedido')).toHaveValue('Lateral a conservar');
  await fillOrder(page,panel,sheet.id,strip.id);
- const empty=panel.getByRole('region',{name:'Presupuesto con desperdicio',exact:true});await expect(empty).toContainText('Sin perfil de maderera aprobado en uso');
+ const empty=panel.getByRole('region',{name:'Presupuesto con desperdicio',exact:true});await expect(empty).toContainText('Sin perfil de maderera en uso. Elegí «Usar en pedidos»');
  await empty.getByRole('button',{name:'Ir a Perfil de maderera',exact:true}).click();await expect(panel.getByRole('button',{name:'Perfil de maderera',exact:true})).toHaveAttribute('aria-pressed','true');
  expect(asked).toBe('');
 });

@@ -93,9 +93,14 @@ class GroupedPiecesTest < Minitest::Test
       assert_equal 'VF M01 Distinta',save['furniture'][0]['pieces'][1]['name']
     end
   end
-  def test_locked_member_and_failed_write_leave_entire_group_unchanged
+  # Punto 20: a locked member keeps its name with a row notice; the guide and
+  # the other names are saved in one operation. A failed write still aborts all.
+  def test_locked_member_is_skipped_and_failed_write_leaves_entire_group_unchanged
     piece=@model.entities[0].entities[1].entities[0];piece.locked_for_names=true
-    assert_raises(PlanosSanto::ExportError){save};assert_empty @model.attributes;assert_empty @model.operations
+    saved=save;assert_equal 1,saved['revision'];assert_equal 1,@model.undo_states.length
+    assert_equal ['1/13/12'],@session.skipped_names.map { |row| row['id'] };assert_match(/bloqueado/,@session.skipped_names[0]['reason'])
+    assert_equal 'Base',piece.name;assert_equal 'VF M01 PT',@model.entities[0].entities[0].name
+    @model.undo;assert_equal 'Lateral - Blanco',@model.entities[0].entities[0].name;regenerate
     piece.locked_for_names=false;piece.fail_name_write=true
     assert_raises(IOError){save};assert_equal 'Lateral - Blanco',@model.entities[0].entities[0].name
     assert_equal 'Base',piece.name;assert_empty @model.attributes;assert_equal :abort,@model.operations.last[0]
@@ -111,7 +116,10 @@ class GroupedPiecesTest < Minitest::Test
   end
   def test_grouping_does_not_bypass_shared_parent_guard
     @model.entities << Sketchup::ComponentInstance.new(3,'Otra ocurrencia',@model.entities[0].definition)
-    assert_raises(PlanosSanto::ExportError){save};assert_empty @model.operations;assert_empty @model.attributes
+    regenerate;save
+    assert_equal %w[1/11 1/13/12],@session.skipped_names.map { |row| row['id'] }.sort,'Las piezas del mueble compartido no se renombran.'
+    assert_equal 'Lateral - Blanco',@model.entities[0].entities[0].name;assert_equal 'Base',@model.entities[0].entities[1].entities[0].name
+    assert_equal 'VF M01 PT',@store.read['furniture'][0]['pieces'][0]['name'],'La guía guarda el nombre igual.'
   end
 
 end

@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {deflateSync} from 'node:zlib';
 import {PDFDocument} from 'pdf-lib';
 import {
- A4FitError,A4_LANDSCAPE_MM,boardLine,createOfflinePdf,decode64,edgeCode,encode64,exportTableTsv,hasEdgeMap,
+ A4FitError,A4_LANDSCAPE_MM,boardLine,createOfflinePdf,createOfflinePdfPages,decode64,edgeCode,encode64,exportTableTsv,hasEdgeMap,
  listRows,orderReference,previewFileName,referenceCoverage,tsvCell,type OrderReference,
 } from '../sketchup_offline/ui/pdf';
 import {createDemo} from '../lib/demo';
@@ -16,7 +16,12 @@ const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf');
 const mono=readFileSync('sketchup_offline/assets/DejaVuSansMono.ttf');
 const logo=readFileSync('sketchup_offline/assets/santo-carpintero.png');
 /** OPT-14: every list that does not fit also offers the hoja 2 consent. */
-const HOJA2=' También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.';
+// Simplificación punto 29: a list that does not fit continues on hoja 2 by itself; the lever is advice on page «1a».
+async function fitAdvice(project:Project,references?:Parameters<typeof createOfflinePdf>[4]){
+ const {pages}=await createOfflinePdfPages(project,regular,mono,undefined,references);
+ expect(pages[0].label).toBe('1a');expect(pages[1].label).toBe('1b');
+ return pages[0].fit!;
+}
 
 /** Módulo bajo del demo, solo, con guía de una vista y sin observaciones. */
 function single(observations=''):Project{
@@ -232,32 +237,35 @@ describe('Errores de encaje A4: causa, acción y detalle',()=>{
   // Sin pedido entra: la leyenda de cantos era la que sobraba.
   await expect(createOfflinePdf(project,regular,mono)).resolves.toBeInstanceOf(Uint8Array);
  });
- it('un listado largo con pedido sugiere quitar el pedido o plegar por medidas',async()=>{
+ it('un listado largo con pedido sigue en la hoja 2 y sugiere quitar el pedido o plegar por medidas',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:16},(_,i)=>({...template,id:`fila/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,definition:`def-${i}`}));
   const references=Object.fromEntries(f.pieces.map(p=>[p.id,{...placa,board:'Melamina Blanco Nieve 18 mm de primera calidad con veta horizontal'}]));
-  const error=await fitError(project,references);
-  expect(error.kind).toBe('table');
-  expect(error.action).toBe('Desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado o activá «Agrupar por medidas en el listado A4».'+HOJA2);
+  const advice=await fitAdvice(project,references);
+  expect(advice.detail).toMatch(/^Necesita \d+ mm de \d+ mm/);
+  expect(advice.action).toBe('Desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado o activá «Agrupar por medidas en el listado A4».');
  });
  it('un listado largo de componentes iguales sugiere agruparlos antes que acortar nombres',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:30},(_,i)=>({...template,id:`igual/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Lateral ${i+1}`}));
-  expect((await fitError(project)).action).toBe('Activá Agrupar componentes iguales en este mueble.'+HOJA2);
+  expect((await fitAdvice(project)).action).toBe('Activá Agrupar componentes iguales en este mueble.');
  });
  it('un listado largo de piezas distintas con medidas repetidas sugiere plegar por medidas',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:30},(_,i)=>({...template,id:`medida/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:'Lateral',definition:`def-${i}`}));
-  expect((await fitError(project)).action).toBe('Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.'+HOJA2);
+  expect((await fitAdvice(project)).action).toBe('Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.');
  });
  it('un listado largo sin otra palanca nombra las filas de nombres más largos o sugiere separar el mueble',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:22},(_,i)=>({...template,id:`largo/${i}`,code:`P${String(i+1).padStart(2,'0')}`,definition:`def-${i}`,
    name:i<3?`Lateral con nombre muy descriptivo del taller número ${i+1}`:`Pieza ${i+1}`,dimensions:[100+i,450,18] as [number,number,number]}));
-  expect((await fitError(project)).action).toBe('Acortá los nombres más largos: P01, P02, P03.'+HOJA2);
+  f.presentation={...f.presentation,guide:{mode:'interior',hiddenPieceIds:f.pieces.slice(1).map(p=>p.id),sharedCamera:true,observations:''}};
+  expect((await fitAdvice(project)).action).toBe('Acortá los nombres más largos: P01, P02, P03.');
   const short=single(),g=short.furniture[0];
   g.pieces=Array.from({length:40},(_,i)=>({...template,id:`corto/${i}`,code:`P${String(i+1).padStart(2,'0')}`,definition:`def-${i}`,name:`P ${i+1}`,dimensions:[100+i,450,18] as [number,number,number]}));
-  expect((await fitError(short)).action).toBe('Separá el mueble en dos grupos de SketchUp para imprimir cada uno en su hoja.'+HOJA2);
+  // Stacked synthetic pieces: only the list grows; the drawing keeps one piece so its dimensions stay legible.
+  g.presentation={...g.presentation,guide:{mode:'interior',hiddenPieceIds:g.pieces.slice(1).map(p=>p.id),sharedCamera:true,observations:''}};
+  expect((await fitAdvice(short)).action).toBe('Separá el mueble en dos grupos de SketchUp para imprimir cada uno en su hoja.');
  });
 });
 

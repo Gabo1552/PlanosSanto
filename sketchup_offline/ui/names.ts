@@ -1,5 +1,5 @@
 // The legacy names_catalog/names_preview/names_apply controller (names.rb) remains as a
-// tested API only; the UI flow is «Proponer nombres» + «Aplicar renombrado».
+// tested API only; the UI flow is «Proponer nombres» and «Guardar guía» (renames on save, punto 20).
 export function cleanName(value:string){return value.normalize('NFC').replace(/\s+/gu,' ').trim();}
 // Visual-only composite code (F-DESP-C): piece codes restart at P01 in every furniture,
 // so screens that mix furniture show 'M03·P07'. It never changes the TXT or the guide.
@@ -19,9 +19,10 @@ export function carryEdits(chosen:Record<string,string>,before:Proposal[],after:
   for(const [id,value] of Object.entries(chosen)){const manual=!bases.has(id)||value!==bases.get(id);if(!manual)auto++;else if(present.has(id)){next[id]=value;kept++;}else lost++;}
   return {chosen:next,kept,lost,auto};
 }
-export function carryNotice({kept,lost,auto}:{kept:number;lost:number;auto:number}){
+// reapplied: the geometric proposals of the new list were applied again by themselves (punto 21).
+export function carryNotice({kept,lost,auto}:{kept:number;lost:number;auto:number},reapplied=false){
   if(!kept&&!lost&&!auto)return '';
-  const parts=[kept?`Se ${kept===1?'conservó 1 nombre editado':`conservaron ${kept} nombres editados`}; las propuestas automáticas se recalcularon.`:'Las propuestas automáticas se recalcularon; volvé a seleccionarlas.'];
+  const parts=[kept?`Se ${kept===1?'conservó 1 nombre editado':`conservaron ${kept} nombres editados`}; las propuestas automáticas se recalcularon.`:reapplied?'Las propuestas automáticas se recalcularon con el nuevo frente.':'Las propuestas automáticas se recalcularon; volvé a seleccionarlas.'];
   if(lost)parts.push(`${lost===1?'1 edición quedó':`${lost} ediciones quedaron`} fuera de la lista y se ${lost===1?'descartó':'descartaron'}.`);
   return parts.join(' ');
 }

@@ -427,12 +427,13 @@ module PlanosSanto
     # Builds and validates immediate options; resolves the material (installing
     # only when install:true). Returns [options, prepared or nil].
     def smart_quick_options(data,install:true,allow_empty:false)
-      # Hito 2 (PINTURA-02): «Todas las iguales» is authorized only by
-      # allowShared:true in this same request; it is never remembered.
+      # Hito 2 (PINTURA-02) · simplificación punto 26: choosing «Todas las
+      # iguales» (scope all) in this same request is the authorization; there is
+      # no separate checkbox, one Ctrl+Z undoes it, and it is never remembered.
       scope=data['scope'] || 'unique'
       raise ExportError,'Alcance de pintado inválido.' unless %w[unique all].include?(scope)
       raise ExportError,'Configuración de pintado inválida.' if data.key?('allowShared') && ![true,false].include?(data['allowShared'])
-      raise ExportError,'Para pintar todas las copias, activá «Todas las iguales» en la paleta.' if scope=='all' && data['allowShared']!=true
+      raise ExportError,'Para pintar todas las copias, elegí «Todas las iguales» en la paleta.' if scope=='all' && data['allowShared']==false
       mode=data.fetch('mode','sheet')
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge remove_edge].include?(mode)
       # Hito 2 (PINTURA-01): 1, 2 opposite or 4 edges per click, exact Integer;
@@ -767,7 +768,7 @@ module PlanosSanto
              'affectedPaths'=>index.values.select { |other| other['_entity'].equal?(node['_entity']) }.map { |other| other['id'] }}
           end
         end
-        {'rows'=>rows,'warnings'=>[],'blockers'=>[]}
+        {'rows'=>rows,'warnings'=>[],'blockers'=>[],'skipped'=>manager.skipped}
       when 'ui_loading'
         @ui_ready=false
         ensure_editor_context!
@@ -1127,7 +1128,7 @@ module PlanosSanto
           end
         end
         rebaseline_analysis!
-        { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
+        { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'skippedNames' => @session.skipped_names || [], 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
       when 'pdf'
         active!
         @session.validate_export(data.fetch('furniture'))
@@ -1228,6 +1229,8 @@ module PlanosSanto
         %w[front back both].include?(options['side']) && %w[all unique].include?(options['scope']) &&
         options['axes'].is_a?(Array) && options['axes'].length==2 && options['axes'].uniq.length==2 && options['axes'].all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
       raise ExportError,'Elegí modo, superficie, alcance y ejes; activá explícitamente la herramienta.' unless valid
+      # Punto 26: the chosen scope carries its own authorization when absent.
+      options=options.merge('allowShared'=>options['scope']=='all') unless options.key?('allowShared')
       if options['immediate']==true || options['immediatePiece']==true
         scoped=(options['scope']=='unique' && options['allowShared']!=true) || (options['scope']=='all' && options['allowShared']==true)
         raise ExportError,'No se puede pintar esta instancia con seguridad.' unless scoped && options['side']=='both' && options['batch']!=true

@@ -27,7 +27,6 @@ class MaderaOrderTest < Minitest::Test
   def profile(patch={})
     data=@profiles.save(PlanosSanto::MaderaProfile.template.merge('name'=>'Maderera QA','supplier'=>'Maderera QA SRL').merge(patch),@profiles.read['revision'])
     created=data['profiles'].last
-    @profiles.approve(created['id'],created['version'],@profiles.read['revision'])
     @profiles.activate(created['id'],@profiles.read['revision']);@profiles.active
   end
   def order(maderera=nil,sheet_patch={})
@@ -52,7 +51,7 @@ class MaderaOrderTest < Minitest::Test
     estimate=service.estimate(draft);assert_nil estimate['budget'];assert_empty estimate['warnings'];refute estimate['includesWaste']
   end
 
-  def test_approved_profile_prefills_file_format_and_is_registered_in_manifest
+  def test_profile_in_use_prefills_file_format_and_is_registered_in_manifest
     maderera=profile('encoding'=>'windows1252','decimal'=>',','header'=>true)
     service,draft=order(maderera)
     assert_equal({'encoding'=>'windows1252','decimal'=>',','header'=>true},draft['profile'])
@@ -63,11 +62,16 @@ class MaderaOrderTest < Minitest::Test
     assert_equal maderera['contentHash'],manifest['madereraProfile']['contentHash']
   end
 
-  def test_unapproved_profile_never_applies
-    data=@profiles.save(PlanosSanto::MaderaProfile.template.merge('name'=>'Borrador','supplier'=>'QA','dimensionRule'=>'deduct_edge','notes'=>'Pendiente de confirmar'),0)
-    service,draft=order(data['profiles'].first)
-    content,manifest=export(service,draft)
-    assert_equal "2\t609.6\t406.4\tM01 Lateral\t0\t1\t0\t0\t0\r\n",content;assert_nil manifest['madereraProfile']
+  # Simplificación punto 24: no approval, but a saved profile that is not in
+  # use (and an unsaved draft) never touches the order.
+  def test_profile_not_in_use_never_applies
+    @profiles.save(PlanosSanto::MaderaProfile.template.merge('name'=>'Borrador','supplier'=>'QA','dimensionRule'=>'deduct_edge'),0)
+    assert_nil @profiles.active
+    [@profiles.active,PlanosSanto::MaderaProfile.template.merge('dimensionRule'=>'deduct_edge')].each do |maderera|
+      service,draft=order(maderera)
+      content,manifest=export(service,draft)
+      assert_equal "2\t609.6\t406.4\tM01 Lateral\t0\t1\t0\t0\t0\r\n",content;assert_nil manifest['madereraProfile']
+    end
   end
 
   def test_edge_deduction_rule_uses_edge_thickness_in_txt_only_when_enabled
@@ -107,7 +111,7 @@ class MaderaOrderTest < Minitest::Test
     assert_equal maderera['id'],budget['profile']['id']
   end
 
-  def test_workshop_uses_only_the_active_approved_profile
+  def test_workshop_uses_only_the_profile_in_use
     catalog;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
     assert_equal({'encoding'=>'utf8','decimal'=>'.','header'=>false},workshop.plan['plan']['profile'])
     profile('decimal'=>',')
@@ -144,8 +148,8 @@ class MaderaOrderTest < Minitest::Test
     active=@profiles.active;@profiles.save(active.merge('kerfMm'=>4),@profiles.read['revision'])
     changed=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
     saved=changed.save_plan(draft)
-    assert saved['changed'];assert saved['merge']['stale'];assert_nil saved['plan']['maderera'],'Con el perfil desaprobado el pedido vuelve a la estimación neta.'
-    assert_equal 'Lateral editado',saved['plan']['rows'][0]['detail'],'Cambiar el perfil no descarta el borrador'
-    assert_nil changed.plan['plan']['maderera']
+    assert saved['changed'];assert saved['merge']['stale'];assert_equal 'Lateral editado',saved['plan']['rows'][0]['detail'],'Cambiar el perfil no descarta el borrador'
+    assert_equal PlanosSanto::MaderaProfile.binding(@profiles.active),changed.plan['plan']['maderera'],'Sin aprobación: el perfil editado en uso aplica en su versión nueva.'
+    assert_equal 2,changed.plan['plan']['maderera']['version']
   end
 end

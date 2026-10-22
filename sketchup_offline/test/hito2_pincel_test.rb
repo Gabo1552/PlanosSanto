@@ -534,7 +534,7 @@ class Hito2ReviewTest < Minitest::Test
     tool!(tool_options('sheet'))
     hover_on(@doors[0]);@now=0.05;hover_on(@doors[1]);assert_equal 1,hovers.length
     @now=0.06;@tool.onKeyDown(39,1,0,@view)
-    event=@events.last;assert_equal 'Material activo: Otra. Hacé clic en otra pieza.',event['message'];assert_equal false,event['requiresSharedReview']
+    event=@events.last;assert_equal 'Material activo: Otra. Hacé clic en otra pieza.',event['message'];refute event['requiresSharedReview']
     UI.hito2_timers.each { |timer| timer.last.call };assert_equal 1,hovers.length # stale pending never sent
     @now=0.5;hover_on(@doors[0]);assert_equal 2,hovers.length;assert_equal '1/11',hovers.last['hover']['pieceId']
   end

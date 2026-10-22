@@ -84,14 +84,14 @@ class CatalogV2ActionsTest < Minitest::Test
     assert_equal 0,loaded['profiles']['revision'];assert_equal 'finished',loaded['template']['dimensionRule']
     saved=dispatch('maderera_profile_save',{'profile'=>loaded['template'].merge('name'=>'Maderera QA','supplier'=>'QA SRL','decimal'=>','),'revision'=>0})
     profile=saved['profiles']['profiles'].first
-    assert_raises(PlanosSanto::ExportError) { dispatch('maderera_profile_activate',{'id'=>profile['id'],'revision'=>1}) }
-    approved=dispatch('maderera_profile_approve',{'id'=>profile['id'],'version'=>1,'revision'=>1})
-    assert approved['profiles']['profiles'].first['approved']
-    active=dispatch('maderera_profile_activate',{'id'=>profile['id'],'revision'=>2})
+    # Punto 24: no approval; the 0.8.15 approve action is still routed but writes nothing.
+    legacy=dispatch('maderera_profile_approve',{'id'=>profile['id'],'version'=>1,'revision'=>1})
+    assert_equal 1,legacy['profiles']['revision'];refute legacy['profiles']['profiles'].first.key?('approved')
+    active=dispatch('maderera_profile_activate',{'id'=>profile['id'],'revision'=>1})
     assert_equal profile['id'],active['profiles']['activeId']
     @controller.instance_variable_get(:@session).generate(['1'])
     plan=dispatch('order_plan')
-    assert_equal ',',plan['plan']['profile']['decimal'],'El pedido nuevo toma el formato del perfil aprobado.'
+    assert_equal ',',plan['plan']['profile']['decimal'],'El pedido nuevo toma el formato del perfil en uso.'
   end
 
   def test_catalog_load_reports_pending_migration

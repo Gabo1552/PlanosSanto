@@ -192,15 +192,17 @@ class SmartPaintToolTest < Minitest::Test
     @tool.update_options(@options.merge('mode'=>'sheet','paintScope'=>'face'));@tool.onKeyDown(9,0,0,@view)
     assert_equal 'piece',@tool.status['options']['paintScope']
   end
-  def test_native_arrows_choose_only_service_valid_materials_and_require_shared_review
+  # Simplificación punto 26: changing the material keeps the chosen «todas»
+  # scope as its own authorization; no second review is asked.
+  def test_native_arrows_choose_only_service_valid_materials_and_keep_the_chosen_scope
     choices=[{'catalogId'=>'approved-sheet','materialUuid'=>'native-id','name'=>'Primero'},{'catalogId'=>'second-sheet','materialUuid'=>'second-native','name'=>'Segundo'}]
     @service.define_singleton_method(:material_choices) { |_options| choices }
     @tool.update_options(@options.merge('batch'=>true,'allowShared'=>true));@tool.activate;click
     assert @tool.onKeyDown(39,0,0,@view)
     assert_equal 'second-native',@tool.status['options']['materialUuid'];assert_empty @tool.queued_targets
-    assert @events.last['requiresSharedReview'];refute @events.last['options'].key?('allowShared');refute @events.last['options'].key?('confirmed')
+    refute @events.last['requiresSharedReview'];refute @events.last['options'].key?('allowShared');refute @events.last['options'].key?('confirmed')
     @service.paths=['1/11','2/21'];@service.shared_count=2;click
-    assert_empty @service.applications;assert_match(/autorizá/,@events.last['error'])
+    assert_nil @events.last['error'];assert_equal 1,@tool.queued_targets.length
   end
   def test_expanded_preview_draws_all_validated_faces_and_forwards_explicit_scope
     ids=@piece.definition.entities.first(2).map { |face| face.persistent_id.to_s }

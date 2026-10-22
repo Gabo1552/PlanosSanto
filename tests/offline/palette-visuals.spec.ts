@@ -40,7 +40,7 @@ test('miniatura SKM real se muestra sin activar pintura y el material elegido qu
  await material.click();
  const active=palette.getByRole('region',{name:'Material activo en la paleta'});
  await expect(active).toContainText('Melamina Petiribi');await expect(active.locator('img')).toHaveAttribute('src',pixel);
- await expect(palette.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeDisabled();
+ await expect(palette.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeEnabled(); // Punto 26: elegir no pinta; sólo «Activar» inicia la herramienta.
  expect(calls.filter(call=>call.action==='smart_tool_start')).toHaveLength(0);
  await page.setViewportSize({width:420,height:720});
  expect(await active.evaluate(node=>getComputedStyle(node).position)).toBe('sticky');
@@ -66,7 +66,7 @@ test('recientes conserva hasta cinco selecciones únicas y filtra tipo/aprobaci�
  await expect(recent.locator('option')).toHaveText(['Volver a elegir un material…','Melamina Blanca','Melamina Petiribi']);
  await recent.selectOption('sheet-a');
  await expect(palette.getByRole('region',{name:'Material activo en la paleta'})).toContainText('Melamina Petiribi');
- await expect(palette.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeDisabled();
+ await expect(palette.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeEnabled();expect(calls.filter(call=>call.action==='smart_tool_start')).toHaveLength(0);
  await palette.getByRole('button',{name:'Cantos',exact:true}).click();await expect(recent).toHaveCount(0);
  await palette.getByRole('button',{name:/Canto Petiribi/}).click();
  await expect(recent.locator('option')).toHaveText(['Volver a elegir un material…','Canto Petiribi']);

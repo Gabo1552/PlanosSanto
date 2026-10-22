@@ -109,13 +109,15 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
   await audit(page,'nombres-sugerencias',dialog);
  });
 
+ // Simplificación punto 20: no batch dialog; the row notice of a name that was not synced is what gets audited.
  test(`axe ${w}px: nombres en lote`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir);await generate(page);
-  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral auditoría');await page.getByLabel('Nombre P01',{exact:true}).press('Enter');
-  await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();
-  const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog.getByRole('status')).toBeVisible();
-  await audit(page,'nombres-lote',dialog);
+  await send('__names_lock',{persistentId:'12'});
+  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral auditoría');await page.getByLabel('Nombre P02',{exact:true}).fill('Base auditoría');await page.getByLabel('Nombre P02',{exact:true}).press('Enter');
+  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
+  const table=page.getByRole('table',{name:'Piezas del mueble'});await expect(table.getByRole('note')).toContainText('No se renombró en SketchUp');
+  await audit(page,'nombres-lote',table);
  });
 
  test(`axe ${w}px: vista previa A4`,async({page},info)=>{

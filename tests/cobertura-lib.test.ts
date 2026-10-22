@@ -2,7 +2,7 @@ import {describe,expect,it} from 'vitest';
 import {Matrix4} from 'three';
 import {box,createDemo} from '../lib/demo';
 import {applyEdit,identity,importDocument,mm,toEdit,type Furniture,type NodeMetadata,type RawDocument,type RawNode} from '../lib/model';
-import {fullPieceName,moduleFromName,namingIssues,normalizeNaming,withNaming} from '../lib/naming';
+import {autoModules,effectiveWorkCode,fullPieceName,moduleFromName,namingIssues,namingNotices,normalizeNaming,withNaming} from '../lib/naming';
 import {groupedNameIssues,pieceCodeMap,pieceRows,renamePieceGroup,synchronizeGroupedNames} from '../lib/pieceGroups';
 import {sheetEntries} from '../lib/sheet';
 import {orderProjection} from '../lib/orderPreview';
@@ -146,14 +146,26 @@ describe('Nombres de taller: obra, módulo y base',()=>{
   const n=normalizeNaming(f,'VF');
   expect(n.groupName).toBe('Bajo mesada');expect(n.name).toBe('Bajo mesada');expect(n.pieces[0].name).toBe('VF M02 Lat\u00e9ral izq');expect(n.naming!.bases[0].base.normalize('NFC')).toBe(n.naming!.bases[0].base);
  });
- it('namingIssues pide obra de dos letras, módulo válido y bases completas',()=>{
+ // Simplificación punto 22: obra y módulo se deducen y nunca bloquean; sólo bloquea un nombre de pieza vacío.
+ it('namingIssues sólo bloquea bases vacías; obra incompleta es aviso y el módulo se asigna solo',()=>{
   const f=withNaming(createDemo().furniture[0],'VF','M01');
-  expect(namingIssues(f,'VF')).toEqual([]);expect(namingIssues(f,'')).toEqual([]);
-  expect(namingIssues(f,'vf')).toEqual(['Completá las dos letras de la obra, por ejemplo VF.']);
+  expect(namingIssues(f)).toEqual([]);
+  expect(effectiveWorkCode('vf')).toBe('');expect(effectiveWorkCode('V')).toBe('');expect(effectiveWorkCode('VF')).toBe('VF');
+  expect(namingNotices('V')).toEqual(['La obra lleva dos letras (por ejemplo VF); mientras tanto los nombres se guardan sin obra.']);
+  expect(namingNotices('VF')).toEqual([]);expect(namingNotices('')).toEqual([]);
   const noModule={...f,naming:{...f.naming!,moduleCode:'X1'}};
-  expect(namingIssues(noModule,'VF')).toEqual(['Completá el módulo de este mueble, por ejemplo M01, o agregalo al grupo y volvé a analizar.']);
+  expect(namingIssues(noModule)).toEqual([]);
   const blank={...f,naming:{...f.naming!,bases:[{id:'a',base:'  '}]}};
-  expect(namingIssues(blank,'VF')).toEqual(['Completá el nombre de cada pieza, por ejemplo Lateral.']);
+  expect(namingIssues(blank)).toEqual(['Completá el nombre de cada pieza, por ejemplo Lateral.']);
+ });
+ it('autoModules asigna M01, M02… por orden a los muebles sin módulo válido, sin repetir los que ya tienen',()=>{
+  const demo=createDemo().furniture[0];
+  const list=[{...demo,id:'a',name:'Bajo',naming:undefined},{...demo,id:'b',name:'Alacena M01',naming:undefined},{...demo,id:'c',name:'Torre',naming:{moduleCode:'M',bases:[]}}].map(f=>withNaming(f,'VF'));
+  expect(list.map(f=>f.naming?.moduleCode)).toEqual(['','M01','M']);
+  const result=autoModules(list,'VF');
+  expect(result.map(f=>f.naming?.moduleCode)).toEqual(['M02','M01','M03']);
+  expect(result[0].pieces[0].name.startsWith('VF M02 ')).toBe(true);
+  expect(autoModules(list,'')).toBe(list);expect(autoModules(list,'V')).toBe(list);
  });
 });
 

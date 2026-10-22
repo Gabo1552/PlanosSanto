@@ -26,7 +26,8 @@ async function boot(page:Page,folder:string,driver:'names'|'recognition'){
 }
 async function modules(page:Page,work=''){if(work)await page.getByLabel('Abreviatura de la obra').fill(work);await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');}
 async function openProposals(page:Page){await page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog).toBeVisible();return dialog;}
-async function openBatch(page:Page){await page.getByRole('button',{name:'Aplicar renombrado',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Aplicar renombrado',exact:true});await expect(dialog).toBeVisible();return dialog;}
+// Simplificación punto 20: no batch dialog; «Guardar guía» renames.
+async function saveGuide(page:Page){await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText(/Guía (guardada en el modelo abierto|y archivo SketchUp guardados)/)).toBeVisible();}
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
 test('sugerencias: nombres accesibles iguales al rótulo, código compuesto, fila resaltada sin aria-selected y nombre final',async({page},info)=>{
@@ -34,7 +35,8 @@ test('sugerencias: nombres accesibles iguales al rótulo, código compuesto, fil
  const dialog=await openProposals(page);
  // WCAG 2.5.3: the accessible name is exactly the visible label (voice control says what it sees).
  await expect(dialog.getByRole('combobox',{name:'Vertical local',exact:true})).toBeVisible();await expect(dialog.getByRole('combobox',{name:'Frente local',exact:true})).toBeVisible();
- const confirmed=dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true});await expect(confirmed).toBeFocused();
+ // Punto 21: the group axes are the default orientation; focus goes to the first proposal.
+ await expect(dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true})).toHaveCount(0);await expect(dialog.getByLabel('Nombre sugerido P01',{exact:true})).toBeFocused();
  await expect(dialog.locator('[aria-selected]')).toHaveCount(0);
  await dialog.getByRole('button',{name:'M01·P02 · ×1',exact:true}).click();const current=dialog.locator('tr[data-current="true"]');await expect(current).toHaveCount(1);await expect(current).toContainText('M01·P02');await expect(current.getByText('(pieza resaltada)',{exact:true})).toHaveClass('sr-only');
  const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true});await p01.fill('Estante medio');
@@ -52,37 +54,37 @@ test('sugerencias: sin obra se aclara que no hay prefijo',async({page},info)=>{
 });
 
 test('sugerencias: «no ambiguas» suma sin pisar lo editado y reorientar conserva las ediciones manuales',async({page},info)=>{
- await boot(page,info.outputDir,'recognition');const dialog=await openProposals(page),confirmed=dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true});
- await confirmed.check();const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true});await p01.fill('Editado a mano');
+ await boot(page,info.outputDir,'recognition');const dialog=await openProposals(page),front=dialog.getByRole('combobox',{name:'Frente local',exact:true});
+ const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true});await p01.fill('Editado a mano');
  await dialog.getByRole('button',{name:'Seleccionar propuestas no ambiguas',exact:true}).click();
  await expect(p01).toHaveValue('Editado a mano');await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).toBeChecked();
  const notice=dialog.locator('.naming-notice');await expect(notice).toHaveAttribute('role','status');await expect(notice).toHaveText(/(Se sum(ó|aron) .* geométricas?; lo ya elegido o editado se conservó\.|No había propuestas geométricas nuevas para sumar\.)/);
- // Untick and tick the confirmation: the manual edit survives, automatic proposals are recalculated.
- await confirmed.uncheck();await expect(p01).toHaveValue('Editado a mano');await expect(notice).toContainText('Se conservó 1 nombre editado');
- await confirmed.check();await expect(p01).toHaveValue('Editado a mano');await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).toBeChecked();
- await dialog.getByRole('combobox',{name:'Frente local',exact:true}).selectOption('0,1');await expect(p01).toHaveValue('Editado a mano');
+ // Correcting the front: the manual edit survives, automatic proposals are recalculated.
+ await front.selectOption('0,1');await expect(p01).toHaveValue('Editado a mano');await expect(notice).toContainText('Se conservó 1 nombre editado');
+ await front.selectOption('1,-1');await expect(p01).toHaveValue('Editado a mano');await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).toBeChecked();
  await dialog.getByRole('checkbox',{name:'Incluir piezas que ya tienen nombre o revisión guardada'}).check();await expect(p01).toHaveValue('Editado a mano');
  expect(count('save')).toBe(0);
 });
 
-test('lote: agrupado por mueble, casilla de tres estados, plegado y código compuesto en filas y bloqueos',async({page},info)=>{
+test('lote: dos muebles se renombran al guardar en una sola operación, con su código compuesto en pantalla',async({page},info)=>{
  await boot(page,info.outputDir,'names');await modules(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Base del otro');
  await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral nuevo');await page.getByLabel('Nombre P02',{exact:true}).fill('Base nueva');
- const before=await inspect(),dialog=await openBatch(page);await expect(dialog.getByRole('status')).toHaveText('Selección verificada');
- const m1p1=dialog.getByRole('checkbox',{name:'Incluir renombrado M01·P01',exact:true}),m1p2=dialog.getByRole('checkbox',{name:'Incluir renombrado M01·P02',exact:true}),m2p1=dialog.getByRole('checkbox',{name:'Incluir renombrado M02·P01',exact:true});
- await expect(m1p1).toBeChecked();await expect(m2p1).toBeChecked();await expect(dialog.locator('tr[data-batch-row="1/11"]')).toContainText('M01·P01');
- await expect(dialog.getByRole('rowheader')).toHaveCount(2);await expect(dialog).toContainText('Muebles: 2 de 2 con cambios incluidos');
- const group=dialog.getByRole('checkbox',{name:'Incluir los cambios de Bajo Mesada (M01)',exact:true});await expect(group).toBeChecked();
- await m1p2.uncheck();expect(await group.evaluate(el=>(el as HTMLInputElement).indeterminate)).toBe(true);await expect(dialog.getByRole('rowheader').first()).toContainText('1 de 2 incluidos');
- await group.check();await expect(m1p2).toBeChecked();await group.uncheck();await expect(m1p1).not.toBeChecked();await expect(m1p2).not.toBeChecked();await expect(m2p1).toBeChecked();
- await expect(dialog).toContainText('Muebles: 1 de 2 con cambios incluidos');
- const fold=dialog.getByRole('button',{name:'Plegar Bajo Mesada (M01)',exact:true});await expect(fold).toHaveAttribute('aria-expanded','true');await fold.click();
- const unfold=dialog.getByRole('button',{name:'Mostrar Bajo Mesada (M01)',exact:true});await expect(unfold).toHaveAttribute('aria-expanded','false');await expect(m1p1).toHaveCount(0);await unfold.click();await expect(m1p1).toBeVisible();
- await group.check();await expect(dialog.getByRole('status')).toHaveText('Selección verificada');
- await dialog.getByRole('button',{name:'Cancelar',exact:true}).click();await expect(dialog).toHaveCount(0);expect(await inspect()).toEqual(before);
+ const before=await inspect();await saveGuide(page);const after=await inspect();
+ expect(after.names['11']).toBe('Lateral nuevo');expect(after.names['12']).toBe('Base nueva');expect(Object.values(after.names)).toContain('Base del otro');
+ expect(after.operations.filter(op=>op[0]==='start').length).toBe(before.operations.filter(op=>op[0]==='start').length+1);
+ expect(count('guide_names_preview')).toBe(0);
 });
 
-test('lote bloqueado: el bloqueo trae la ruta y «Ver fila» se distingue con el código y la ruta',async({page},info)=>{
+// Simplificación punto 22: with an obra, an empty module becomes M01, M02… in order; nothing blocks the save.
+test('obra y módulo: los módulos vacíos se asignan M01, M02 por orden al guardar',async({page},info)=>{
+ await boot(page,info.outputDir,'names');await page.getByLabel('Abreviatura de la obra').fill('VF');
+ await page.getByLabel('Módulo de este mueble').fill('');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('');
+ await saveGuide(page);const names=Object.values((await inspect()).names);
+ expect(names.filter(name=>/^VF M0[12] /.test(name)).length).toBeGreaterThanOrEqual(3);expect(names.some(name=>name.startsWith('VF M01 '))).toBe(true);expect(names.some(name=>name.startsWith('VF M02 '))).toBe(true);
+ await page.getByLabel('Abreviatura de la obra').fill('V');await expect(page.getByText('La obra lleva dos letras (por ejemplo VF); mientras tanto los nombres se guardan sin obra.')).toBeVisible();
+});
+
+test('lote bloqueado: el aviso queda en la fila compartida, sin ruta interna',async({page},info)=>{
  await mkdir(info.outputDir,{recursive:true});pending=new Map();errors=[];calls=[];
  child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',info.outputDir,'shared'],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(info.outputDir,'catalog-data')}});
  child.stderr.on('data',()=>{});createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line);pending.get(reply.id)?.(reply);pending.delete(reply.id);});
@@ -91,8 +93,7 @@ test('lote bloqueado: el bloqueo trae la ruta y «Ver fila» se distingue con el
  page.on('pageerror',error=>errors.push(error.message));
  await page.route('https://planos-santo.test/**',async route=>{const name=new URL(route.request().url()).pathname.slice(1);await route.fulfill({body:await readFile(resolve('sketchup_offline/build/planos_santo/ui',name)),contentType:name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'text/css'});});
  await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
- await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral compartido');const dialog=await openBatch(page);
- const strip=dialog.locator('.name-batch-issues');await expect(strip.getByRole('alert')).toContainText(/^.*1\/11: /);
- const view=strip.getByRole('button',{name:'Ver fila P01 1/11',exact:true});await expect(view).toHaveText('Ver fila P01');await view.click();await expect(dialog.locator('tr[data-batch-row="1/11"]')).toBeFocused();
- await expect(dialog.getByRole('button',{name:'Cerrar',exact:true})).toHaveText('×');
+ await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral compartido');await saveGuide(page);
+ // Punto 20: the blocked row carries its own notice instead of a dialog strip.
+ const note=page.locator('tr[data-piece-row="1/11"]').getByRole('note');await expect(note).toContainText('No se renombró en SketchUp');await expect(note).not.toContainText('1/11:');
 });

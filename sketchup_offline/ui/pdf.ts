@@ -69,10 +69,10 @@ export type ListRow={piece:PieceRow;reference?:OrderReference;also:string[];pend
 /** `pending`: piece ids included in the order whose rows are still under review. */
 export type A4Options={pending?:readonly string[]};
 /** One printed page: `label` is «3» for a single-page furniture, «3a», «3b»… when it has a hoja 2. */
-export type A4Page={furnitureId:string;name:string;label:string};
+/** `fit`: on page «{n}a» of a furniture whose list went on to hoja 2, why and what would keep it on one sheet (advice, never a block). */
+export type A4Page={furnitureId:string;name:string;label:string;fit?:{detail:string;action:string}};
 export const PENDING_TEXT='pendiente de pedido';
 const PENDING_LEGEND={full:'Pendiente de pedido: la fila sigue en revisión en Biblioteca y pedidos; se imprime sin placa ni cantos.',compact:'Pendiente de pedido: sin placa ni cantos hasta revisarla.'};
-const HOJA2_ACTION='También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.';
 /**
  * Rows of the printed list. Identical instances may share a row only with the same order assignment;
  * with `foldTable` rows with equal measures, material, order assignment and name are folded too (codes stay in the drawing).
@@ -257,7 +257,7 @@ function edgeLegend(rows:TableRow[]):{full:string;compact:string}|undefined{
     compact:`Cantos Arr·Aba·Izq·Der: ${[principal&&`1 = ${principal}`,secondary&&`2 = ${secondary}`,'0 = sin canto'].filter(Boolean).join(' · ')}.`};
 }
 function foldCount(f:Furniture,references?:OrderReferences,pending?:readonly string[]){try{return listRows(f,references,true,pending).length;}catch{return Infinity;}}
-/** Numbers and the lever that matches the cause, for a list that does not fit. */
+/** Numbers and the lever that matches the cause, for a list that does not fit on page 1. Since 0.8.16 it is advice: the list continues on hoja 2. */
 function tableDiagnosis(f:Furniture,rows:TableRow[],used:number,references?:OrderReferences,pending?:readonly string[]){
   const over=Math.max(1,Math.ceil((used-TABLE_LIMIT)/(used/rows.length)));
   const detail=`Necesita ${Math.round(used/MM)} mm de ${Math.round(TABLE_LIMIT/MM)} mm: ${over===1?'sobra 1 fila':`sobran unas ${over} filas`}.`;
@@ -269,6 +269,7 @@ function tableDiagnosis(f:Furniture,rows:TableRow[],used:number,references?:Orde
   else{const long=rows.filter(r=>r.lines.length>1).sort((a,b)=>b.lines.length-a.lines.length).slice(0,3).map(r=>r.piece.code);action=long.length?`Acortá los nombres más largos: ${long.join(', ')}.`:'Separá el mueble en dos grupos de SketchUp para imprimir cada uno en su hoja.';}
   return {detail,action};
 }
+
 
 const DETAIL_COLS=[0,14,110,128,146,160,174,210],DETAIL_X=8*MM,SHEET2_W=281*MM,DETAIL_TOP=50*MM,DETAIL_BOTTOM=196*MM,DETAIL_PAGES=20;
 type DetailRow={kind:'row';piece:PieceRow;reference?:OrderReference;pending?:boolean;lines:string[];extra:string[];cut:string;code:string;height:number};
@@ -338,8 +339,8 @@ export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,mono
   return (await createOfflinePdfPages(project,fontBytes,monoBytes,logoBytes,references,options)).bytes;
 }
 /**
- * One furniture, one A4 page. With its explicit consent (`detailSheet`), a furniture whose list does not fit prints
- * page «{n}a» with views and legend and the full list on «{n}b», «{n}c»… grouped by board. Infeasible layouts fail before any bytes are returned.
+ * One furniture, one A4 page. A furniture whose list does not fit prints, by itself (punto 29, no consent), page «{n}a»
+ * with views and legend and the full list on «{n}b», «{n}c»… grouped by board. Infeasible layouts fail before any bytes are returned.
  */
 export async function createOfflinePdfPages(project:Project,fontBytes:Uint8Array,monoBytes:Uint8Array,logoBytes?:Uint8Array,references?:OrderReferences,options:A4Options={}):Promise<{bytes:Uint8Array;pages:A4Page[]}>{
   const pending=options.pending;
@@ -354,10 +355,9 @@ export async function createOfflinePdfPages(project:Project,fontBytes:Uint8Array
     try{
     if(f.pieces.some(p=>!p.name.trim()))fail('Hay piezas sin nombre.','names');
     const list=listRows(f,references,undefined,pending),rows=tableRows(list,fonts),used=rows.reduce((h,r)=>h+r.height,0);
-    let detailSheets:DetailItem[][]|undefined;
+    let detailSheets:DetailItem[][]|undefined,fit:{detail:string;action:string}|undefined;
     if(used>TABLE_LIMIT){
-      const {detail,action}=tableDiagnosis(f,rows,used,references,pending);
-      if(!f.presentation?.guide?.detailSheet)fail('El listado no cabe legiblemente en una A4 con texto de 8 pt.','table',`${action} ${HOJA2_ACTION}`,detail);
+      fit=tableDiagnosis(f,rows,used,references,pending);
       detailSheets=detailPages(list,fonts);
       if(detailSheets.length>DETAIL_PAGES)fail(`El despiece completo necesita ${detailSheets.length} hojas; el máximo es ${DETAIL_PAGES} hojas por mueble.`,'size','Separá el mueble en dos grupos de SketchUp para imprimir cada uno con su despiece.');
     }
@@ -394,13 +394,13 @@ export async function createOfflinePdfPages(project:Project,fontBytes:Uint8Array
       return {view,scene,box};
     });
     if(linesFor(f.name,130*MM,fonts.regular,13).length>1||linesFor(project.name,130*MM,fonts.regular,9).length>1)fail('El nombre del proyecto o del mueble no entra en el encabezado.','header');
-    return {f,rows,legendLines,legendTop,scenes,detailSheets};
+    return {f,rows,legendLines,legendTop,scenes,detailSheets,fit};
     }catch(error){if(error instanceof A4FitError&&!error.furniture){error.furniture=f.name;error.furnitureId=f.id;error.message=error.compose();}throw error;}
   });
   const total=project.furniture.length,printed:A4Page[]=[];
   /** A new page with the furniture header and the footer, both carrying the page label. */
-  const sheet=(f:Furniture,label:string)=>{
-    const page=pdf.addPage([PAGE_W,PAGE_H]);page.setMediaBox(0,0,PAGE_W,PAGE_H);page.setCropBox(0,0,PAGE_W,PAGE_H);printed.push({furnitureId:f.id,name:f.name,label});
+  const sheet=(f:Furniture,label:string,fit?:{detail:string;action:string})=>{
+    const page=pdf.addPage([PAGE_W,PAGE_H]);page.setMediaBox(0,0,PAGE_W,PAGE_H);page.setCropBox(0,0,PAGE_W,PAGE_H);printed.push({furnitureId:f.id,name:f.name,label,...(fit?{fit}:{})});
     if(logo){const w=43*MM,h=w*logo.height/logo.width;if(h>22*MM)throw new Error('El logotipo supera el espacio del encabezado A4. Usá una imagen horizontal.');page.drawImage(logo,{x:8*MM,y:PAGE_H-8*MM-h,width:w,height:h});}
     else{text(page,'SANTO CARPINTERO',8*MM,9*MM,10,fonts.regular);text(page,'AMOBLAMIENTOS',8*MM,16*MM,8,fonts.regular);}
     text(page,'GUÍA DE ARMADO',56*MM,7*MM,9,fonts.regular,BLUE);
@@ -416,8 +416,8 @@ export async function createOfflinePdfPages(project:Project,fontBytes:Uint8Array
     const footer=`${label} / ${total}`;text(page,footer,Math.min(279*MM,289*MM-fonts.regular.widthOfTextAtSize(footer,8)),201*MM,8,fonts.regular,GRAY);
     return page;
   };
-  for(const [pageIndex,{f,rows,legendLines,legendTop,scenes,detailSheets}] of prepared.entries()){
-    const n=pageIndex+1,page=sheet(f,detailSheets?`${n}a`:String(n));
+  for(const [pageIndex,{f,rows,legendLines,legendTop,scenes,detailSheets,fit}] of prepared.entries()){
+    const n=pageIndex+1,page=sheet(f,detailSheets?`${n}a`:String(n),fit);
     for(const {view,scene,box} of scenes){
       page.drawRectangle({x:box.x,y:PAGE_H-43*MM,width:box.width,height:7*MM,color:TEAL});
       text(page,view==='front'?'VISTA EXTERIOR':'VISTA INTERIOR',box.x+2*MM,38*MM,8,fonts.regular,WHITE);

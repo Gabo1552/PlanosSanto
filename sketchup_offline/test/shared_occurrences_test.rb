@@ -35,26 +35,30 @@ class SharedOccurrencesTest < Minitest::Test
     assert_equal 1,@model.undo_states.length
     @model.undo;assert_equal 'Lateral',@leaf.name
   end
-  def test_conflicting_occurrence_names_fail_before_any_model_write
+  # Punto 20: conflicting names keep the shared entity as it is, with a notice
+  # on every occurrence row; the guide is saved in the same single operation.
+  def test_conflicting_occurrence_names_skip_the_shared_piece_and_save_the_guide
     changes=edits;changes[0]['pieces'][1]['name']='VF M15 Otra';changes[0]['naming']['bases'][1]['base']='Otra'
-    error=assert_raises(PlanosSanto::ExportError) { session.save(changes,0,sync_names:true,work_code:'VF') }
-    assert_match(/nombres distintos/,error.message);assert_match(/solo en la guía/,error.message)
-    assert_equal 'Lateral',@leaf.name;assert_empty @model.operations
+    s=session;result=s.save(changes,0,sync_names:true,work_code:'VF')
+    assert_equal 'VF M15 Otra',result['furniture'][0]['pieces'][1]['name']
+    assert_equal @paths.sort,s.skipped_names.map { |row| row['id'] }.sort
+    assert s.skipped_names.all? { |row| row['reason'].include?('nombres distintos') }
+    assert_equal 'Lateral',@leaf.name;assert_equal 1,@model.undo_states.length
   end
-  def test_unselected_shared_occurrence_remains_protected_but_guide_only_save_is_allowed
+  def test_unselected_shared_occurrence_remains_protected_and_is_reported
     @model.entities << Sketchup::Group.new(70000,'Otro mueble',Sketchup::Definition.new('Otro','other-container',[
       Sketchup::ComponentInstance.new(70001,'Cajón externo',@drawers[0].definition)]))
     s=session
-    assert_match(/Incluí todas/,assert_raises(PlanosSanto::ExportError) { s.save(edits,0,sync_names:true,work_code:'VF') }.message)
-    assert_empty @model.operations
-    result=s.save(edits,0,sync_names:false,work_code:'VF')
+    result=s.save(edits,0,sync_names:true,work_code:'VF')
     assert_equal 6,result['furniture'][0]['pieces'].size
+    assert_match(/Instancia compartida: 7 apariciones; faltan 1/,s.skipped_names.first['reason'])
     assert_equal 'Lateral',@leaf.name
   end
-  def test_locked_ancestor_of_any_occurrence_blocks_entire_batch
+  def test_locked_ancestor_of_any_occurrence_skips_the_shared_piece
     @drawers.last.locked_for_names=true
-    assert_match(/bloqueado/,assert_raises(PlanosSanto::ExportError) { session.save(edits,0,sync_names:true,work_code:'VF') }.message)
-    assert_empty @model.operations;assert_equal 'Lateral',@leaf.name
+    s=session;s.save(edits,0,sync_names:true,work_code:'VF')
+    assert_match(/bloqueado/,s.skipped_names.first['reason']);assert_equal 6,s.skipped_names.length
+    assert_equal 'Lateral',@leaf.name
   end
   def test_legacy_preview_allows_full_coverage_and_rejects_conflicting_bases
     preview=@manager.preview('62228');refute preview['blocked']
@@ -82,8 +86,8 @@ class SharedOccurrencesTest < Minitest::Test
     unplaced=Sketchup::ComponentInstance.new(99999,'Referencia sin colocar',definition)
     known=@drawers
     definition.define_singleton_method(:instances) { known+[unplaced] }
-    assert_match(/definición compartida/,assert_raises(PlanosSanto::ExportError) { session.save(edits,0,sync_names:true,work_code:'VF') }.message)
-    assert_empty @model.operations
+    s=session;s.save(edits,0,sync_names:true,work_code:'VF')
+    assert_match(/definición compartida/,s.skipped_names.first['reason']);assert_equal 'Lateral',@leaf.name
   end
   def test_partial_write_failure_rolls_back_guide_and_shared_entity_name
     @leaf.fail_meta_write=true
@@ -91,13 +95,14 @@ class SharedOccurrencesTest < Minitest::Test
     assert_equal 'Lateral',@leaf.name;assert_empty @leaf.names_attributes;assert_empty @model.attributes
     assert_equal :abort,@model.operations.last[0]
   end
-  # UX2 TC-04: every batch blocker starts with the affected route so the UI can
-  # offer «Ver fila» / «Excluir y revisar», and never shows an internal persistent_id.
-  def test_batch_blockers_start_with_route_and_name_the_piece_or_furniture
+  # UX2 TC-04: every row notice carries the affected route so the UI shows it on
+  # that row, and never shows an internal persistent_id. Data errors still refuse.
+  def test_batch_notices_carry_route_and_name_the_piece_or_furniture
     changes=edits;changes[0]['pieces'][1]['name']='VF M15 Otra';changes[0]['naming']['bases'][1]['base']='Otra'
-    message=assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
-    assert message.start_with?("#{@paths[0]}: La pieza compartida P01 tiene nombres distintos"),message
-    refute_includes message,'44976 tiene'
+    @manager.guide_changes(changes,'VF')
+    first=@manager.skipped.find { |row| row['id']==@paths[0] }
+    assert first['reason'].start_with?('La pieza compartida P01 tiene nombres distintos'),first['reason']
+    refute_includes first['reason'],'44976 tiene'
     changes=edits;changes[0]['naming']['moduleCode']=''
     message=assert_raises(PlanosSanto::ExportError) { @manager.guide_changes(changes,'VF') }.message
     assert_equal '62228: Falta el módulo del mueble «M15 Guardado bajo» (por ejemplo M01).',message

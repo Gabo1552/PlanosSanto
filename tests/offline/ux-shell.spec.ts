@@ -53,19 +53,23 @@ test('motivo visible del bloqueo de exportar y avisos que se cierran o traen la 
  await boot(page,info.outputDir);const exportButton=page.getByRole('button',{name:'Exportar PDF A4',exact:true});
  await expect(exportButton).toBeDisabled();await expect(exportButton).toHaveAccessibleDescription('Primero generá las guías en Muebles');await expect(page.locator('#export-block-reason')).toBeVisible();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();await expect(exportButton).toBeEnabled();await expect(page.locator('#export-block-reason')).toHaveCount(0);
- await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await expect(exportButton).toBeDisabled();await expect(exportButton).toHaveAccessibleDescription('Cambiaste los muebles; pulsá Generar guías');
- await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().check();await expect(exportButton).toBeEnabled();
+ // Simplificación punto 23: cambiar los muebles regenera las guías solo; exportar nunca queda bloqueado por eso.
+ const regenerated=count('generate');
+ await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await expect.poll(()=>count('generate')).toBe(regenerated+1);await expect(exportButton).toBeEnabled();await expect(page.locator('#export-block-reason')).toHaveCount(0);
+ await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().check();await expect.poll(()=>count('generate')).toBe(regenerated+2);await expect(exportButton).toBeEnabled();
  // Sin cambios en la guía, el análisis y las guías se rehacen solos (como OpenCutList): no hace falta «Reanalizar».
  const scansBefore=count('scan'),generatesBefore=count('generate');
  await page.evaluate(()=>window.dispatchEvent(new Event('planos-santo-document-invalidated')));
  await expect.poll(()=>count('scan')).toBe(scansBefore+1);await expect.poll(()=>count('generate')).toBe(generatesBefore+1);
  await expect(exportButton).toBeEnabled();await expect(rail(page,'Muebles')).not.toHaveAttribute('title',/Análisis desactualizado/);
- // Con cambios sin guardar no se reanaliza solo (los perdería): queda el aviso y exportar sigue bloqueado.
+ // Con cambios sin guardar no se reanaliza solo (los perdería): queda el aviso, pero exportar no se bloquea (punto 18):
+ // regenera por id conservando la edición y exporta.
  await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral editado');
  await page.evaluate(()=>window.dispatchEvent(new Event('planos-santo-document-invalidated')));
- await expect(exportButton).toHaveAccessibleDescription('El análisis está desactualizado; volvé a analizar y generar las guías');await expect(rail(page,'Muebles')).toHaveAttribute('title',/Análisis desactualizado/);
- await page.keyboard.press('Control+Shift+E');const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. El análisis está desactualizado;');expect(count('pdf')).toBe(0);
- await alert.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await expect(alert).toHaveCount(0);
+ await expect(rail(page,'Muebles')).toHaveAttribute('title',/Análisis desactualizado/);await expect(exportButton).toBeEnabled();await expect(page.locator('#export-block-reason')).toHaveCount(0);
+ const scansStale=count('scan');await page.keyboard.press('Control+Shift+E');await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();expect(count('pdf')).toBe(1);expect(count('scan')).toBe(scansStale+1);
+ await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveValue('Lateral editado');await expect(rail(page,'Muebles')).not.toHaveAttribute('title',/Análisis desactualizado/);
+ const alert=page.getByRole('alert');
  const scans=count('scan');await quick(page,{sequence:1,action:'guides',scanRequired:true,refreshWarning:'El modelo cambió. Volvé a analizar antes de continuar.'});
  await expect(alert).toContainText('El modelo cambió');await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();
  const confirm=page.getByRole('alertdialog',{name:'Descartar cambios y volver a analizar'});if(await confirm.count())await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(alert).toHaveCount(0);
@@ -75,8 +79,8 @@ test('los avisos de éxito se van solos a los 20 s salvo con el puntero encima; 
  await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  const done=page.getByRole('status').filter({hasText:'Guías generadas'});await expect(done).toBeVisible();await page.clock.fastForward(8000);await expect(done).toBeVisible();await done.hover();await page.clock.fastForward(21000);await expect(done).toBeVisible();
  await page.locator('.ux-module-heading').hover();await page.clock.fastForward(21000);await expect(done).toHaveCount(0);
- await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await page.locator('.ux-module-heading').click();await page.keyboard.press('Control+Shift+E');
- const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. Cambiaste los muebles; pulsá Generar guías.');await page.clock.fastForward(21000);await expect(alert).toBeVisible();expect(count('pdf')).toBe(0);
+ await page.getByLabel('Nombre P01',{exact:true}).fill('');await page.locator('.ux-module-heading').click();await page.keyboard.press('Control+Shift+E');
+ const alert=page.getByRole('alert');await expect(alert).toContainText('Completá el nombre de cada pieza');await page.clock.fastForward(21000);await expect(alert).toBeVisible();expect(count('pdf')).toBe(0);
 });
 
 test('confirmación integrada al descartar cambios: Escape conserva, el botón nombra la acción y el progreso muestra segundos',async({page},info)=>{

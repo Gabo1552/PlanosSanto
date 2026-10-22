@@ -3,20 +3,21 @@ import type {CatalogItem} from './WorkshopPanel';
 
 export type ServicePrice={amount:number;currency:string;unit:string;date:string;source:string};
 export type DimensionRule='finished'|'deduct_edge';
-export type MaderaProfile={id:string|null;version:number;approved:boolean;approvedAt:string|null;updatedAt:string|null;contentHash:string|null;name:string;supplier:string;trimMm:number|null;kerfMm:number|null;dimensionRule:DimensionRule;wastePercent:number|null;cutPrice:ServicePrice|null;edgingPrice:ServicePrice|null;encoding:'utf8'|'windows1252';decimal:'.'|',';header:boolean;notes:string};
+// approved/approvedAt only come with profiles saved up to 0.8.15; nothing reads them since the approval step is gone (punto 24).
+export type MaderaProfile={id:string|null;version:number;approved?:boolean;approvedAt?:string|null;updatedAt:string|null;contentHash:string|null;name:string;supplier:string;trimMm:number|null;kerfMm:number|null;dimensionRule:DimensionRule;wastePercent:number|null;cutPrice:ServicePrice|null;edgingPrice:ServicePrice|null;encoding:'utf8'|'windows1252';decimal:'.'|',';header:boolean;notes:string};
 export type MaderaProfiles={profiles:{schema:1;revision:number;activeId:string|null;profiles:MaderaProfile[]};template:MaderaProfile};
 export type BudgetStatus='current_price'|'stale_price'|'future_price'|'price_pending'|'size_pending';
 export type BudgetMaterial={materialId:string;name:string;sku:string;role:'board'|'edge';unit:'m2'|'metro';netQuantity:number;wasteQuantity:number;purchaseQuantity:number|null;purchaseUnit:'placa'|'metro';netAmount:number|null;wasteAmount:number|null;purchaseAmount:number|null;currency:string|null;status:BudgetStatus};
 export type BudgetService={kind:'cut'|'edging';quantity:number|null;unit:string;amount:number|null;currency:string;status:BudgetStatus;approximate:boolean};
-export type Budget={profile:{id:string;name:string;supplier:string;version:number;approved:boolean;contentHash:string;trimMm:number;kerfMm:number;dimensionRule:DimensionRule;wastePercent:number};wastePercent:number;kerfMm:number;trimMm:number;priceAgeDays:number;materials:BudgetMaterial[];totals:{net:Record<string,number>;waste:Record<string,number>;purchase:Record<string,number>};services:BudgetService[];servicesTotals:Record<string,number>;estimated:true;optimized:false};
+export type Budget={profile:{id:string;name:string;supplier:string;version:number;contentHash:string;trimMm:number;kerfMm:number;dimensionRule:DimensionRule;wastePercent:number};wastePercent:number;kerfMm:number;trimMm:number;priceAgeDays:number;materials:BudgetMaterial[];totals:{net:Record<string,number>;waste:Record<string,number>;purchase:Record<string,number>};services:BudgetService[];servicesTotals:Record<string,number>;estimated:true;optimized:false};
 export type UsableWarning={id:string;detail:string;message:string};
 
 const CONTENT=['name','supplier','trimMm','kerfMm','dimensionRule','wastePercent','cutPrice','edgingPrice','encoding','decimal','header','notes'] as const;
-/** Lo único que manda el cliente: identificador y contenido. Versión, aprobación y huella las pone Ruby. */
+/** Lo único que manda el cliente: identificador y contenido. Versión y huella las pone Ruby. */
 export function profileContent(profile:MaderaProfile){return {id:profile.id,...Object.fromEntries(CONTENT.map(key=>[key,profile[key]]))};}
 export const sameContent=(a:MaderaProfile,b:MaderaProfile)=>JSON.stringify(profileContent(a))===JSON.stringify(profileContent(b));
-/** «Aprobado · v 2», «Sin aprobar · v 1» y, si corresponde, «En uso en pedidos». */
-export function profileState(profile:MaderaProfile,activeId:string|null){return [`${profile.approved?'Aprobado':'Sin aprobar'} · v ${profile.version}`,...(profile.id&&profile.id===activeId?['En uso en pedidos']:[])];}
+/** «v 2» y, si corresponde, «En uso en pedidos». */
+export function profileState(profile:MaderaProfile,activeId:string|null){return [`v ${profile.version}`,...(profile.id&&profile.id===activeId?['En uso en pedidos']:[])];}
 
 const decimals=(digits:number)=>new Intl.NumberFormat('es-AR',{minimumFractionDigits:digits,maximumFractionDigits:digits});
 const two=decimals(2),three=decimals(3),whole=new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});

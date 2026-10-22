@@ -54,7 +54,8 @@ test('Pintar en la ventana principal: los atajos del shell no actúan y Tab nave
  expect(count('viewport_focus')).toBe(0);expect(count('smart_quick_start')).toBe(0);
 });
 
-test('pintar con la paleta abierta deja la franja «Pintaste…» al volver; el aviso y la franja bloquean guardar',async({page},info)=>{
+// Simplificación punto 18: the stale banner stays as information but never blocks saving.
+test('pintar con la paleta abierta deja la franja «Pintaste…» al volver; guardar igual regenera por id y la quita',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
  await rail(page,'Pintar').click();await expect(page.locator('.smart-paint-palette')).toBeVisible();
  // Ruby, en el mismo clic del pincel: estado de herramienta, documento invalidado y franja de escritura propia.
@@ -66,13 +67,12 @@ test('pintar con la paleta abierta deja la franja «Pintaste…» al volver; el 
  const banner=page.getByRole('status',{name:'Análisis desactualizado'});
  await expect(banner).toContainText('Pintaste desde Planos Santo.');
  const scans=count('scan');
- await page.keyboard.press('Control+s');await expect(page.getByRole('alert')).toContainText(/volvé a analizar/i);expect(count('save')).toBe(1);
- expect(count('scan')).toBe(scans);
+ await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(2);expect(count('scan')).toBe(scans+1);await expect(banner).toHaveCount(0);
  // La revisión diferida no cambia el motivo en una ráfaga de clics (mismo evento repetido).
  await emit(page,'planos-santo-analysis-state',{stale:true,reason:'Pintaste desde Planos Santo.',source:'paint'});
  await expect(banner).toContainText('Pintaste desde Planos Santo.');
  await banner.getByRole('button',{name:'Reanalizar',exact:true}).click();
  const discard=page.getByRole('button',{name:'Descartar y analizar',exact:true});if(await discard.isVisible())await discard.click();
- await expect.poll(()=>count('scan')).toBe(scans+1);await expect(banner).toHaveCount(0);
+ await expect.poll(()=>count('scan')).toBe(scans+2);await expect(banner).toHaveCount(0);
  await page.keyboard.press('Alt+2');await expect(page.locator('.ux-module-heading')).toHaveText('Materiales');
 });

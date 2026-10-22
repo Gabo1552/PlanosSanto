@@ -42,12 +42,13 @@ async function boot(page:Page,folder:string,props:Record<string,unknown>={},badB
 }
 const starts=()=>calls.filter(call=>call.action==='smart_tool_start');
 
+// Simplificación punto 26: choosing the scope is the explicit gesture; «Activar» is the one that paints.
 test('foto lista para diseño aparece sin aprobar compra y pintar requiere gesto explícito',async({page},info)=>{
  await boot(page,info.outputDir);
  await expect(page.getByRole('button',{name:/SKM pendiente QA/})).toHaveCount(0);
  await page.getByRole('button',{name:/Foto de diseño QA/}).click();
  await expect(page.getByRole('region',{name:'Material activo en la paleta'})).toContainText('Listo para diseño · pendiente para maderera');
- expect(starts()).toHaveLength(0);await expect(page.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeDisabled();
+ expect(starts()).toHaveLength(0);await expect(page.getByRole('button',{name:'Activar pintado en SketchUp',exact:true})).toBeEnabled();expect(starts()).toHaveLength(0);
  await page.getByText('Ajustes de alcance y caras',{exact:true}).click();await page.getByLabel('Alcance pintado directo',{exact:true}).selectOption('unique');
  await page.getByRole('button',{name:'Activar pintado en SketchUp',exact:true}).click();
  expect(starts()[0].data.options).toMatchObject({catalogId:'photo',materialUuid:'photo-uuid',scope:'unique',allowShared:false,paintScope:'face'});
@@ -81,15 +82,15 @@ test('submodos Cara/Pieza y uno/dos/cuatro cantos llegan al motor sin activar al
 });
 
 
-test('estado de atajo nativo sincroniza modo y cantos y revoca autorización compartida',async({page},info)=>{
+test('estado de atajo nativo sincroniza modo y cantos sin pedir otra autorización compartida',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('button',{name:/Placa QA/}).click();
- await page.getByText('Ajustes de alcance y caras',{exact:true}).click();await page.getByLabel('Autorizar todas las ocurrencias compartidas',{exact:true}).check();
- await page.getByRole('button',{name:'Activar pintado en SketchUp',exact:true}).click();expect(starts()).toHaveLength(1);
+ await page.getByText('Ajustes de alcance y caras',{exact:true}).click();await expect(page.getByLabel('Autorizar todas las ocurrencias compartidas',{exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Activar pintado en SketchUp',exact:true}).click();expect(starts()).toHaveLength(1);expect(starts()[0].data.options).toMatchObject({scope:'all',allowShared:true});
  await page.evaluate(async()=>{const state={active:true,mode:'edge',queuedCount:0,requiresSharedReview:true,options:{mode:'edge',paintScope:'face',edgeCount:4,catalogId:'edge',materialUuid:'edge-uuid'},message:'Atajo nativo: revisá alcance'};const w=window as unknown as {paletteSetTool:(state:unknown)=>Promise<void>};await w.paletteSetTool(state);window.dispatchEvent(new CustomEvent('planos-santo-smart-paint',{detail:state}));});
  await expect(page.getByRole('button',{name:'Cantos',exact:true})).toHaveAttribute('aria-pressed','true');
  await expect(page.getByRole('button',{name:'4 cantos',exact:true})).toHaveAttribute('aria-pressed','true');
  await expect(page.getByRole('region',{name:'Material activo en la paleta'})).toContainText('Canto QA');
- await expect(page.getByLabel('Autorizar todas las ocurrencias compartidas',{exact:true})).not.toBeChecked();expect(starts()).toHaveLength(1);
+ expect(starts()).toHaveLength(1);
 });
 
 

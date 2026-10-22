@@ -20,8 +20,8 @@ const open=(target:string)=>document.querySelector<HTMLElement>(`[data-fix-targe
 const FIX_TARGETS:Partial<Record<A4FitKind,(action?:string)=>HTMLElement|null|undefined>>={
   legend:()=>document.querySelector<HTMLElement>('[data-fix-target="legend"]'),
   scale:()=>document.querySelector<HTMLElement>('[data-fix-target="scale"] [aria-checked="true"]'),
-  // «Agrupar por medidas» when the diagnosis names it; otherwise the hoja 2 consent when it is offered, then the list itself.
-  table:action=>(action?.startsWith('Activá «Agrupar por medidas')?open('table'):null)||(action?.includes('«Permitir hoja 2')?open('detail-sheet'):null)||open('table')||document.querySelector<HTMLElement>('[data-piece-row] input'),
+  // «Agrupar por medidas» when the diagnosis names it, then the list itself (hoja 2 is automatic since 0.8.16).
+  table:action=>(action?.startsWith('Activá «Agrupar por medidas')?open('table'):null)||open('table')||document.querySelector<HTMLElement>('[data-piece-row] input'),
   names:()=>[...document.querySelectorAll<HTMLInputElement>('input[data-piece-name]')].find(input=>!input.value.trim())||document.querySelector<HTMLElement>('input[data-piece-name]'),
 };
 /** Focus the control that fixes `kind`; returns the notice when it cannot be reached. */
@@ -129,6 +129,7 @@ export default function A4SheetPreview({project,references,pending,disabled=fals
         <p className="a4-live-status" role="status" aria-live="polite">{live}</p>
         {!disabled&&sheet&&!fresh&&<small id={blockedId} className="a4-link-reason">Esperá a que la hoja esté actualizada</small>}
         {!disabled&&sheet&&<small className="a4-sheet-size" data-testid="a4-sheet-size">{summary}</small>}
+        {!disabled&&sheet&&(advice=>advice&&<small className="a4-sheet-fit" data-testid="a4-sheet-fit">El listado sigue en la hoja 2. {advice.detail} Para que entre en una sola hoja: {advice.action}</small>)(sheet.list.find(p=>p.fit&&p.furnitureId===sheet.list[shown]?.furnitureId)?.fit)}
       </div>
     </header>
     {!disabled&&<>
