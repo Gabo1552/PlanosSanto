@@ -413,3 +413,34 @@ class Hito2VerdictTest < Minitest::Test
     assert_equal 1,@tool.generation;assert_equal 1,@applied
   end
 end
+
+class Hito2ThrottleTest < Minitest::Test
+  include Hito2Fixture
+  def setup
+    build_fixture;paint_sheet_on_board!;UI.hito2_timers=[];@now=0.0;now=-> { @now }
+    build_tool(tool_options('sheet'),clock:now)
+  end
+  def hovers;@events.select { |event| event['hover'] && event['message'].start_with?('Clic para pintar') };end
+  def test_hover_events_are_limited_to_one_per_100_ms_and_the_last_one_is_delivered_later
+    hover_on(@doors[0]);assert_equal ['1/11'],hovers.map { |event| event['hover']['pieceId'] }
+    @now=0.05;hover_on(@doors[1]);@now=0.06;hover_on(@doors[2])
+    assert_equal 1,hovers.length;assert_equal 1,UI.hito2_timers.length;assert_equal [0.1,false],UI.hito2_timers.first.first(2)
+    @now=0.11;UI.hito2_timers.shift.last.call
+    assert_equal %w[1/11 1/13],hovers.map { |event| event['hover']['pieceId'] }
+    UI.hito2_timers.each { |timer| timer.last.call };assert_equal 2,hovers.length
+    @now=0.3;hover_on(@doors[3]);assert_equal 3,hovers.length
+  end
+  def test_unchanged_signature_is_never_resent
+    hover_on(@doors[0]);@now=5;50.times { |i| @tool.onMouseMove(0,40+i,50,@view) }
+    assert_equal 1,hovers.length;assert_empty UI.hito2_timers
+  end
+  def test_click_options_and_leaving_the_piece_are_sent_at_once_and_drop_the_pending_hover
+    hover_on(@doors[0]);@now=0.01;hover_on(@doors[1]);assert_equal 1,hovers.length
+    count=@events.length;@now=0.02;click_on(@doors[1])
+    assert_equal count+1,@events.length;assert_equal false,@events.last['changed'] # already painted: no-op, still instant
+    UI.hito2_timers.each { |timer| timer.last.call };assert_equal count+1,@events.length # pending dropped by the click
+    @now=0.03;@picker.path=nil;@tool.onMouseMove(0,1,1,@view);assert_nil @events.last['hover']
+    @now=0.04;5.times { @tool.onMouseMove(0,2,2,@view) };assert_equal count+2,@events.length
+    @tool.onKeyDown(9,1,PlanosSanto::SmartPaintTool::CTRL_MASK,@view);assert_equal count+3,@events.length
+  end
+end

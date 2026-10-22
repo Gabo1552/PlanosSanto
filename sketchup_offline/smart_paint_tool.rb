@@ -91,8 +91,10 @@ module PlanosSanto
     EDGE_COUNTS=[1,2,4].freeze
     attr_reader :queued_targets,:verdicts,:generation
 
-    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil)
+    HOVER_INTERVAL=0.1
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil)
       @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode
+      @clock=clock || lambda { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
       @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
       @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil);@occurrences=OccurrenceIndex.new(model)
       @copy_triangles=[]
@@ -137,14 +139,50 @@ module PlanosSanto
     def status
       {'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch')}
     end
+    # hover:true -> limited (F-ARQ-B): only on a new signature and >=100 ms
+    # after the previous hover event, else pending until a timer or the next
+    # event. hover::clear -> deduplicated but immediate. Anything else
+    # (clicks, errors, options, activate/stop) is sent at once and drops the pending.
     def emit(message,error:nil,changed:nil,hover:false)
       event=status.merge('message'=>message)
       event['error']=error if error || immediate?
       event['changed']=changed unless changed.nil?
       @last_error=error if error && !hover
       status_text!
-      @on_event.call(event) if @on_event
+      return event unless @on_event
+      signature=signature(event)
+      if hover
+        if signature==@sent_signature
+          @pending=nil;return event
+        end
+        if hover==true
+          now=@clock.call
+          if @hover_sent_at && now-@hover_sent_at<HOVER_INTERVAL
+            @pending=event;schedule_flush;return event
+          end
+          @hover_sent_at=now
+        end
+      end
+      @pending=nil;@sent_signature=signature
+      @on_event.call(event)
       event
+    end
+    def signature(event)
+      hover=event['hover'] || {};verdict=hover['verdict'] || {}
+      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode']]
+    end
+    def schedule_flush
+      return if @flush_scheduled || !(defined?(UI) && UI.respond_to?(:start_timer))
+      @flush_scheduled=true
+      UI.start_timer(HOVER_INTERVAL,false) { @flush_scheduled=false;flush_pending }
+    rescue StandardError
+      @flush_scheduled=false
+    end
+    def flush_pending
+      event=@pending;@pending=nil
+      return unless event && @on_event
+      @hover_sent_at=@clock.call;@sent_signature=signature(event)
+      @on_event.call(event)
     end
     # ---- In-view feedback (ARQ-10 stage 1): status bar, tooltip, color, cursor.
     def scope_label(count=nil)
@@ -383,7 +421,7 @@ module PlanosSanto
       target=hit(view,x,y)
       unless target
         @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
-        @service.cancel;emit('Apuntá a una cara de una pieza.');invalidate(view);return
+        @service.cancel;emit('Apuntá a una cara de una pieza.',hover: :clear);invalidate(view);return
       end
       key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds'],@generation]
       unless key==@hit_key
@@ -392,7 +430,7 @@ module PlanosSanto
       invalidate(view)
     rescue StandardError=>error
       @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
-      @service.cancel;emit('No se puede preparar esta cara.',error:error.message);invalidate(view)
+      @service.cancel;emit('No se puede preparar esta cara.',error:error.message,hover: :clear);invalidate(view)
     end
     def authorized!(result)
       raise ExportError,'Confirmá material, cara y alcance en la paleta antes de pintar.' unless @options['confirmed']==true
