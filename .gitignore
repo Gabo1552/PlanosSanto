@@ -58,3 +58,4 @@ planos-santo-loop-ux-082/WIREFRAME_REFERENCIA.html
 # SketchUp customer models and material libraries remain private everywhere.
 *.skp
 *.skm
+coverage/

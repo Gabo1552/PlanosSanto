@@ -50,7 +50,7 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
     {scene.notes.filter(n=>!n.marker).map(note=><g key={note.id} data-note={note.id}>
       <path d={`M${note.rect.x},${note.rect.y+20} L${note.target.x},${note.target.y}`} fill="none" stroke="#1f4d78" strokeWidth="1.8" markerEnd={`url(#arrow-${f.id}-${view})`}/>
       <circle cx={note.target.x} cy={note.target.y} r="3" fill="#1f4d78"/>
-      <g className={onMove?'draggable-note':undefined} data-testid="note-box" role={onMove?'button':undefined} aria-label={onMove?`Mover nota: ${note.text}`:undefined} tabIndex={onMove?0:undefined} style={onMove?{userSelect:'none',WebkitUserSelect:'none',touchAction:'none'}:undefined}
+      <g className={onMove?'draggable-note':undefined} data-testid="note-box" role={onMove?'button':undefined} aria-label={onMove?`${codes.get(note.pieceId)} · NOTA DE ARMADO ${note.lines.join(' ')}. Mover con las flechas`:undefined} tabIndex={onMove?0:undefined} style={onMove?{userSelect:'none',WebkitUserSelect:'none',touchAction:'none'}:undefined}
         onKeyDown={e=>{const d:Record<string,[number,number]>={ArrowLeft:[-5,0],ArrowRight:[5,0],ArrowUp:[0,-5],ArrowDown:[0,5]};if(d[e.key]){e.preventDefault();onMove?.(note.id,[Math.max(16,Math.min(734,note.position[0]+d[e.key][0])),Math.max(22,Math.min(528,note.position[1]+d[e.key][1]))]);}if(e.key==='Enter')onNote?.(note.id);}}
         onPointerDown={e=>{
           if(!onMove)return;
@@ -66,8 +66,8 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
         }} onPointerUp={e=>{delete e.currentTarget.dataset.drag;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
         onPointerCancel={e=>{delete e.currentTarget.dataset.drag;}}>
         <rect {...note.rect} width={note.rect.w} height={note.rect.h} rx="4" fill="#f3f7fc" stroke="#9cb2cc"/>
-        <text x={note.rect.x+12} y={note.rect.y+20} fontFamily="Arial, sans-serif" fontSize="12" fontWeight="700" fill="#17375e">{codes.get(note.pieceId)} · NOTA DE ARMADO</text>
-        <text x={note.rect.x+12} y={note.rect.y+40} fontFamily="monospace" fontSize="12.5" fill="#202d2a">{note.lines.map((line,i)=><tspan key={i} x={note.rect.x+12} dy={i?17:0}>{line}</tspan>)}</text>
+        <text x={note.rect.x+12} y={note.rect.y+20} fontFamily="Arial, sans-serif" fontSize="12" fontWeight="700" fill="#17375e">{codes.get(note.pieceId)} · NOTA DE ARMADO{' '}</text>
+        <text x={note.rect.x+12} y={note.rect.y+40} fontFamily="monospace" fontSize="12.5" fill="#202d2a">{note.lines.map((line,i)=><tspan key={i} x={note.rect.x+12} dy={i?17:0}>{line}{i<note.lines.length-1?' ':''}</tspan>)}</text>
       </g>
     </g>)}
     {visibleScene.labels.map(label=><g key={label.pieceId} className="piece-label" data-label={label.code} aria-pressed={onPick?selectedIds.has(label.pieceId):undefined} role={onPick?'button':undefined} aria-label={onPick?labelNames.get(label.pieceId):undefined} tabIndex={onPick?0:undefined} onPointerDown={e=>{if(!onPick)return;e.stopPropagation();const p=f.pieces.find(p=>p.id===label.pieceId)!;onPick?.(p.id,p.mesh.vertices[0]);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const p=f.pieces.find(p=>p.id===label.pieceId)!;onPick?.(p.id,p.mesh.vertices[0]);}}}>

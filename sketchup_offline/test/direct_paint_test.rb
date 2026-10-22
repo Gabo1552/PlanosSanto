@@ -84,7 +84,7 @@ class DirectPaintTest < Minitest::Test
     with_tool { @controller.quick_action('sheet') }
     assert_equal 1,UI::HtmlDialog.created.length
     assert_nil @controller.instance_variable_get(:@dialog)
-    assert_equal [680,320],palette.sizes.last
+    assert_equal [680,320],palette.options.values_at(:width,:height);assert_empty palette.sizes # ARQ-06
     assert palette.file.end_with?('/ui/palette.html')
     assert_equal true,@controller.smart_state['active']
     assert_equal 'unique',@selected.first.options['scope']
@@ -235,7 +235,8 @@ class DirectPaintTest < Minitest::Test
     assert_equal 'remove_edge',options['mode']
     refute options.key?('catalogId')
     refute options.key?('materialUuid')
-    assert_equal 1,options['edgeCount']
+    # Hito 2 (PINTURA-01): the remembered 1/2/4 edges per click is reused.
+    assert_equal 4,options['edgeCount']
   end
   def test_explicit_remove_edge_restoration_resolves_a_sheet_not_an_edge
     @controller.quick_action('sheet')

@@ -9,6 +9,7 @@ require_relative 'names'
 require_relative 'p1_diagnostics'
 require_relative 'ocl_reader'
 require_relative 'workshop'
+require_relative 'order_references'
 require_relative 'material_library'
 require_relative 'native_paint'
 require_relative 'smart_paint'
@@ -19,6 +20,7 @@ require_relative 'skm_import'
 require_relative 'piece_highlight_tool'
 require_relative 'photo_material'
 require_relative 'paint_materials'
+require_relative 'model_watch'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -42,16 +44,53 @@ module PlanosSanto
     def context_changed(model,replaced:false)
       return unless @model
       if @model.equal?(model) && !replaced && !@context_invalid
+        # Back on the analyzed model: observe it again and catch what changed meanwhile.
+        if @model_watch.nil? && @session
+          watch_model!
+          check_analysis
+        end
         return unless @smart_state && @smart_state['contextChanged']
         smart_event('active'=>false,'queuedCount'=>0,'contextChanged'=>false,'contextRestored'=>true,'error'=>nil)
         return
       end
       @context_invalid=true if replaced && @model.equal?(model)
+      unwatch_model!
       stop_smart_tool(refresh:false)
       @quick_intent=nil;@palette_intent=nil
       @photo_material=nil; @photo_preview_active=false
       smart_event('active'=>false,'queuedCount'=>0,'contextChanged'=>true,
                   'error'=>'Cambió el modelo activo. Volvé a analizar antes de continuar.')
+    end
+
+    # ARQ-03: one ModelWatch for the model of the open windows. Observers only
+    # note the kind of change; the debounced flush runs here, outside callbacks.
+    def watch_model!
+      return @model_watch if @model_watch && @model_watch.model.equal?(@model) && @model_watch.attached?
+      unwatch_model!
+      return nil unless @model
+      @model_watch=ModelWatch.new(@model,on_change:lambda { |kinds| model_watch_changed(kinds) }).attach
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo observar el modelo: #{error.class}")
+      @model_watch=nil
+    end
+
+    def unwatch_model!
+      watch=@model_watch;@model_watch=nil
+      watch&.detach
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo dejar de observar el modelo: #{error.class}")
+    end
+
+    # Transactions opened while serving a window request belong to Planos Santo.
+    def without_model_watch(&block)
+      @model_watch ? @model_watch.suppress(&block) : yield
+    end
+
+    def model_watch_changed(kinds)
+      return unless @model && Sketchup.active_model.equal?(@model) && !@context_invalid
+      # MATERIALES-12: native browser edits refresh both palettes (cheap reread).
+      notify_material_library_changed('model_watch') if kinds.include?('materials')
+      check_analysis if kinds.include?('model') || kinds.include?('materials')
     end
 
     def quick_block_reason(action)
@@ -93,7 +132,7 @@ module PlanosSanto
               'selectionPaths'=>quick_selection_paths,
               'message'=>toggle ? 'Herramienta detenida; no se aplicaron las caras pendientes.' : queued>0 ? 'Se canceló la selección pendiente al cambiar de herramienta.' : %w[sheet edge remove_edge].include?(action) ? 'Elegí un material de la paleta para pintar.' : action=='sample' ? 'Cuentagotas de solo lectura. Hacé clic en una cara para tomar su material.' : action=='order' ? 'Revisá materiales, dimensiones y cantos antes de preparar el pedido.' : ''}
       intent['destination']=destination if destination
-      intent.merge!(stopped.slice('scan','scanRequired','refreshWarning'))
+      intent.merge!(stopped.slice('scan','scanRequired','refreshWarning','stale'))
       if %w[sheet edge remove_edge sample].include?(action)
         ensure_palette_context!
         @palette_intent=intent
@@ -134,7 +173,6 @@ module PlanosSanto
       else
         show
       end
-      @dialog.set_size(1440,920) if @dialog && @dialog.respond_to?(:set_size)
     end
 
     def show
@@ -144,9 +182,11 @@ module PlanosSanto
         return
       end
       @ui_ready=false
+      # ARQ-06: no forced size. SketchUp remembers the user's size and position
+      # (preferences_key); the first open is fitted to 80 % of the screen by the UI.
       @dialog = UI::HtmlDialog.new(dialog_title: 'Planos Santo', preferences_key: 'PlanosSantoOffline',
-                                   scrollable: true, resizable: true, width: 1440, height: 920,
-                                   min_width: 420, min_height: 480, style: UI::HtmlDialog::STYLE_DIALOG)
+                                   scrollable: true, resizable: true, width: MAIN_INITIAL_SIZE[0], height: MAIN_INITIAL_SIZE[1],
+                                   min_width: MAIN_FOLDED_SIZE[0], min_height: MAIN_FOLDED_SIZE[1], style: UI::HtmlDialog::STYLE_DIALOG)
       @dialog.set_file(File.join(__dir__, 'ui', 'index.html'))
       @dialog.add_action_callback('request') do |_context, raw|
         source=@dialog
@@ -161,10 +201,100 @@ module PlanosSanto
         unless @palette_dialog
           @skm_import=nil;@skm_preview_active=false;@photo_material=nil;@photo_preview_active=false
           stop_smart_tool(refresh:false);@session=nil
+          unwatch_model!
         end
+        forget_analysis! # the analysis state belongs to the editor window
       end
+      @folded_size=nil;@compact_size=nil
       @dialog.show
-      @dialog.set_size(1440,920) if @dialog.respond_to?(:set_size)
+    end
+
+    MAIN_INITIAL_SIZE=[1100,680].freeze # fits 1366x768 before the first fit
+    MAIN_FOLDED_SIZE=[420,120].freeze
+    MAIN_COMPACT_SIZE=[440,760].freeze
+    PALETTE_SIZE=[680,320].freeze
+    WINDOW_LAYOUT_KEY='window_layout_v1'
+
+    # Screen = [width,height,left,top] of the monitor holding the window
+    # (availLeft/availTop place it on a secondary monitor).
+    def window_screen(data)
+      width=data['screenWidth'];height=data['screenHeight']
+      valid=[width,height].all? { |value| value.is_a?(Integer) && value.between?(320,16_384) }
+      raise ExportError,'Pantalla inválida para ajustar la ventana.' unless valid
+      left,top=%w[screenLeft screenTop].map { |key| data[key].is_a?(Integer) && data[key].abs<=65_536 ? data[key] : 0 }
+      [width,height,left,top]
+    end
+
+    # Size reported by the UI (outerWidth/outerHeight): HtmlDialog#get_size may
+    # be missing, so it is the fallback to restore the operator's size.
+    def reported_window_size(data)
+      size=[data['windowWidth'],data['windowHeight']]
+      size.all? { |value| value.is_a?(Integer) && value.between?(100,16_384) } ? size : nil
+    end
+
+    def current_window_size(window,data)
+      (window.respond_to?(:get_size) && window.get_size) || reported_window_size(data)
+    end
+
+    def fit_window(window,screen)
+      return unless window
+      size=screen ? screen[0,2].map { |value| (value*0.8).round } : MAIN_INITIAL_SIZE
+      window.set_size(*size) if window.respond_to?(:set_size)
+      return unless screen && window.respond_to?(:set_position)
+      window.set_position(*[0,1].map { |i| screen[i+2]+((screen[i]-size[i])/2.0).round })
+    end
+
+    def window_fitted?
+      Sketchup.respond_to?(:read_default) && Sketchup.read_default('PlanosSanto',WINDOW_LAYOUT_KEY,'')=='fitted'
+    end
+
+    def remember_window_fitted(value)
+      Sketchup.write_default('PlanosSanto',WINDOW_LAYOUT_KEY,value) if Sketchup.respond_to?(:write_default)
+    end
+
+    # First open only: later opens keep what SketchUp remembered for the user.
+    def window_fit(data)
+      @screen=window_screen(data)
+      return {'fitted'=>false} unless @request_dialog && @request_dialog.equal?(@dialog)
+      # Closed while folded: SketchUp remembers the strip, so refit on reopen.
+      size=reported_window_size(data)
+      reopened_folded=size && size[1]<=MAIN_FOLDED_SIZE[1]+60
+      return {'fitted'=>false} if window_fitted? && !reopened_folded
+      fit_window(@dialog,@screen)
+      remember_window_fitted('fitted')
+      {'fitted'=>true}
+    end
+
+    # «Plegar» leaves a small strip and gives the keyboard back to the model.
+    def window_fold(folded,data={})
+      raise ExportError,'Estado de plegado inválido.' unless [true,false].include?(folded)
+      window=@dialog
+      return {'folded'=>false} unless window
+      if folded
+        @folded_size ||= current_window_size(window,data)
+        window.set_size(*MAIN_FOLDED_SIZE) if window.respond_to?(:set_size)
+        Sketchup.focus if Sketchup.respond_to?(:focus)
+      else
+        size=@folded_size;@folded_size=nil
+        size ? window.set_size(*size) : fit_window(window,@screen)
+      end
+      {'folded'=>folded}
+    end
+
+    # Menu «Restablecer ventanas»: forget remembered layout and refit open windows.
+    def reset_windows
+      remember_window_fitted('')
+      @folded_size=nil;@compact_size=nil
+      if @dialog
+        fit_window(@dialog,@screen)
+        remember_window_fitted('fitted') if @screen
+        emit_to(@dialog,'planos-santo-window-reset',{'screen'=>!@screen.nil?})
+      end
+      @palette_dialog.set_size(*PALETTE_SIZE) if @palette_dialog && @palette_dialog.respond_to?(:set_size)
+      true
+    rescue StandardError => error
+      warn("Planos Santo: no se pudieron restablecer las ventanas: #{error.class}")
+      false
     end
 
     # This window is independent of the guide editor; opening it never scans or
@@ -179,7 +309,24 @@ module PlanosSanto
         @context_invalid=false
         @session=NativeSession.new(@model)
       end
+      watch_model!
       clean_for_paint!
+    end
+
+    # ARQ-07: Materiales and Maderera open without scanning. The editor gets a
+    # model context like the palette does; an existing session is never replaced.
+    def ensure_editor_context!
+      observe_context
+      if @session
+        # The palette may have closed alone and detached the watch (QA integración).
+        watch_model! if !@context_invalid && Sketchup.active_model.equal?(@model)
+        return
+      end
+      model=Sketchup.active_model
+      return unless model
+      @model=model;@context_invalid=false
+      @session=NativeSession.new(@model)
+      watch_model!
     end
 
     def show_palette
@@ -199,9 +346,9 @@ module PlanosSanto
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
         @photo_material=nil;@photo_preview_active=false
         stop_smart_tool(refresh:false)
+        unwatch_model! unless @dialog
       end
       window.show
-      window.set_size(680,320) if window.respond_to?(:set_size)
     end
 
     def emit_to(window,event,data)
@@ -222,17 +369,32 @@ module PlanosSanto
     # UUID stored in another model. Choosing a catalog material is the explicit
     # intent to paint: PaintMaterials#prepare installs its verified visual in this
     # model when missing (0.8.8), then the current bound material is used.
-    def quick_paint_start(data,install:true)
-      active!;clean_for_paint!
-      raise ExportError,'El pintado rápido usa una instancia. Revisá el alcance avanzado para afectar otras.' if data['scope'] && data['scope']!='unique'
+    # Builds and validates immediate options; resolves the material (installing
+    # only when install:true). Returns [options, prepared or nil].
+    def smart_quick_options(data,install:true)
+      # Hito 2 (PINTURA-02): «Todas las iguales» is authorized only by
+      # allowShared:true in this same request; it is never remembered.
+      scope=data['scope'] || 'unique'
+      raise ExportError,'Alcance de pintado inválido.' unless %w[unique all].include?(scope)
+      raise ExportError,'Configuración de pintado inválida.' if data.key?('allowShared') && ![true,false].include?(data['allowShared'])
+      raise ExportError,'Para pintar todas las copias, activá «Todas las iguales» en la paleta.' if scope=='all' && data['allowShared']!=true
       mode=data.fetch('mode','sheet')
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge remove_edge].include?(mode)
+      # Hito 2 (PINTURA-01): 1, 2 opposite or 4 edges per click, exact Integer;
+      # absent -> remembered -> 1. Sheet always paints the two broad faces.
+      if data.key?('edgeCount')
+        raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' unless data['edgeCount'].is_a?(Integer) && [1,2,4].include?(data['edgeCount'])
+        count=data['edgeCount']
+      else
+        count=smart_settings['edgeCount'] || 1
+      end
+      count=1 if mode=='sheet'
       # Daily painting is one safe occurrence, both physical sides of the board,
       # no deferred batch and no inherited face/XY/shared settings from old UI.
       # The service infers the local cutting axes from each clicked piece.
-      options={'mode'=>mode,'side'=>'both','scope'=>'unique','axes'=>[0,1],
-        'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>1,'batch'=>false,
-        'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>false}
+      options={'mode'=>mode,'side'=>'both','scope'=>scope,'axes'=>[0,1],
+        'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>count,'batch'=>false,
+        'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>scope=='all'}
       if mode=='remove_edge' && data['catalogId'].to_s.empty? && !data['materialUuid'].to_s.empty?
         raise ExportError,'Elegí la placa de restauración completa o usá la detección de la pieza.'
       end
@@ -251,23 +413,103 @@ module PlanosSanto
         prepared=service.prepare(data['catalogId'],mode=='remove_edge' ? 'sheet' : mode)
         options.merge!('catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid'])
       end
+      [options,prepared]
+    end
+
+    def quick_paint_start(data,install:true)
+      active!;clean_for_paint!
+      options,prepared=smart_quick_options(data,install:install)
       result=if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         # Validate the new material BEFORE changing the active Tool. Normal
         # material changes neither deselect the Tool nor require reactivation.
+        # A different material or mode drops the «Todas las iguales» consent.
+        current=(@smart_tool.respond_to?(:status) && @smart_tool.status['options']) || @quick_options || {}
+        options.merge!('scope'=>'unique','allowShared'=>false) if current['mode']!=options['mode'] || current['catalogId']!=options['catalogId']
         @smart_tool.update_options(options)
         remember_smart_settings(options)
         {'toolState'=>smart_state}
       else
         dispatch('smart_tool_start',{'options'=>options})
       end
+      @quick_options=options
       return result unless prepared
       result=result.merge('prepared'=>prepared.slice('catalogId','materialUuid','installed','message'))
       prepared['installed'] ? result.merge(paint_palette_state) : result
     end
 
+    # F-ARQ-A: every reply is measured; above the cap it becomes a clear error,
+    # and large ones travel in parts (one execute_script each) so CEF never
+    # receives a single huge script. bridge.ts rebuilds and validates them.
+    REPLY_CHUNK_BYTES=1024*1024
+    REPLY_MAX_BYTES=48*1024*1024
+    REPLY_WARN_BYTES=8*1024*1024
+    REPLY_STATS_LIMIT=20
+    def reply_chunk_bytes;REPLY_CHUNK_BYTES;end
+    def reply_max_bytes;REPLY_MAX_BYTES;end
+
     def reply(id, result: nil, error: nil)
       payload = JSON.generate({ 'version' => 1, 'id' => id, 'result' => result, 'error' => error })
-      (@request_dialog || @dialog)&.execute_script("window.PlanosSantoBridge.receive(JSON.parse(#{JSON.generate(payload)}))")
+      bytes=payload.bytesize
+      capped=bytes>reply_max_bytes
+      if capped
+        payload=JSON.generate({ 'version' => 1, 'id' => id, 'result' => nil,
+          'error' => "La respuesta de SketchUp supera el tope de #{reply_mib(reply_max_bytes)} MB (#{reply_mib(bytes)} MB). Generá menos muebles a la vez o revisá herrajes con mucha geometría." })
+      end
+      parts=deliver_reply(@request_dialog || @dialog,id,payload)
+      record_reply(bytes,parts,capped)
+    end
+
+    def deliver_reply(target,id,payload)
+      return 0 unless target
+      if payload.bytesize<=reply_chunk_bytes
+        target.execute_script("window.PlanosSantoBridge.receive(JSON.parse(#{JSON.generate(payload)}))")
+        return 1
+      end
+      parts=reply_parts(payload)
+      parts.each_with_index do |data,index|
+        chunk=JSON.generate({ 'version' => 1, 'id' => id, 'index' => index, 'total' => parts.length, 'data' => data })
+        target.execute_script("window.PlanosSantoBridge.receiveChunk(JSON.parse(#{JSON.generate(chunk)}))")
+      end
+      parts.length
+    end
+
+    # Byte slices that never cut a UTF-8 character.
+    def reply_parts(payload)
+      limit=[reply_chunk_bytes,16].max;parts=[];offset=0
+      while offset<payload.bytesize
+        size=[limit,payload.bytesize-offset].min
+        size-=1 until payload.byteslice(offset,size).valid_encoding?
+        parts << payload.byteslice(offset,size);offset+=size
+      end
+      parts
+    end
+
+    def reply_mib(bytes);(bytes/1024.0/1024).round(1);end
+
+    def record_reply(bytes,parts,capped)
+      started=@request_started
+      ms=started ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC)-started)*1000).round : nil
+      (@reply_stats ||= []) << {'action'=>@request_action,'bytes'=>bytes,'ms'=>ms,'parts'=>parts,'capped'=>capped}
+      @reply_stats.shift while @reply_stats.length>REPLY_STATS_LIMIT
+      warn("Planos Santo: respuesta #{@request_action} de #{reply_mib(bytes)} MB en #{ms} ms (#{parts} partes).") if bytes>REPLY_WARN_BYTES
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo medir la respuesta: #{error.class}")
+    end
+
+    # F-ARQ-A: the scan tree only needs to know which nodes are pieces. Meshes
+    # travel with generate, for the chosen furniture only; the session keeps them.
+    DEFERRED_MESH={'vertices'=>[].freeze,'triangles'=>[].freeze,'deferred'=>true}.freeze
+    def light_scan(result)
+      tree=result['tree']
+      result.merge('tree'=>tree.merge('roots'=>light_nodes(tree['roots'])))
+    end
+
+    def light_nodes(nodes)
+      nodes.map do |node|
+        copy=node.merge('children'=>light_nodes(node.fetch('children',[]) || []))
+        copy['mesh']=DEFERRED_MESH if node['mesh']
+        copy
+      end
     end
 
     # Only the human choice is unbounded. JS resumes its working deadline on return,
@@ -293,7 +535,9 @@ module PlanosSanto
       @request_dialog=source || @dialog
       id = nil
       raise ExportError, 'Solicitud demasiado grande.' unless raw.is_a?(String) && raw.bytesize <= 45 * 1024 * 1024
+      @request_started=Process.clock_gettime(Process::CLOCK_MONOTONIC);@request_action=nil
       msg = JSON.parse(raw); id = msg['id']
+      @request_action=msg['action'].to_s[0,40] if msg.is_a?(Hash)
       raise ExportError, 'Protocolo de extensión incompatible.' unless msg['version'] == 1 && id.is_a?(String) && id.length <= 100 && msg['action'].is_a?(String)
       data = msg['data'] || {}
       if msg['action'] == 'dirty' || msg['action'] == 'workshop_dirty'
@@ -305,7 +549,7 @@ module PlanosSanto
       @busy = true
       @request_id = id
       begin
-        result = dispatch(msg['action'], data)
+        result = without_model_watch { dispatch(msg['action'], data) }
         reply(id, result: result)
         if msg['action']=='save' && result['closeAfterSave']==true && @dialog
           dialog=@dialog; session=@session
@@ -364,7 +608,8 @@ module PlanosSanto
     # own palette data after the successful operation; never scan the model here.
     MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
       catalog_bind catalog_install skm_commit skm_install material_photo_create
-      material_photo_install smart_assign_color smart_material_prepare smart_quick_start].freeze
+      material_photo_install smart_assign_color smart_material_prepare smart_quick_start
+      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync].freeze
     def dispatch(action, data)
       result=dispatch_action(action,data)
       if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
@@ -393,6 +638,8 @@ module PlanosSanto
         raise ExportError,'Detené Pintura Inteligente antes de guardar, generar o cambiar la biblioteca.'
       end
       case action
+      when *MATERIAL_MANAGEMENT_ACTIONS
+        material_management(action,data)
       when 'palette_ready'
         active!
         @palette_ready=true
@@ -434,7 +681,9 @@ module PlanosSanto
         {'rows'=>rows,'warnings'=>[],'blockers'=>[]}
       when 'ui_loading'
         @ui_ready=false
-        {'ready'=>false}
+        ensure_editor_context!
+        # Peek only: ui_ready/quick_action_ack consume the intent.
+        {'ready'=>false,'intent'=>@quick_intent}
       when 'quick_action_ack'
         sequence=data['sequence']
         raise ExportError,'Confirmación de acceso inválida.' unless sequence.is_a?(Integer) && sequence>0
@@ -457,8 +706,10 @@ module PlanosSanto
         @photo_material=nil; @photo_preview_active=false
         result = @session.scan
         @dirty = false
-        result
-      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_edges','order_audit','ocl_open'
+        watch_model!
+        mark_fresh!
+        light_scan(result)
+      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_references_partial','order_edges','order_audit','order_propose','order_confirm_bulk','order_apply','ocl_open'
         active!
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -484,9 +735,13 @@ module PlanosSanto
           when 'order_audit' then workshop.audit(data.fetch('plan'))
           when 'order_edges' then workshop.edge_observations(data.fetch('row'))
           when 'order_references' then workshop.references
+          when 'order_references_partial' then OrderReferences.partial(@model,workshop)
           when 'order_plan' then workshop.plan(data['reset']==true)
           when 'order_save' then workshop.save_plan(data.fetch('plan'))
           when 'order_check' then workshop.check(data.fetch('plan'))
+          when 'order_propose' then workshop.propose(data.fetch('plan'),data['ids'])
+          when 'order_confirm_bulk' then workshop.confirm_bulk(data.fetch('plan'),data['ids'])
+          when 'order_apply' then workshop.apply_rows(data.fetch('plan'),data.fetch('sourceId'),data.fetch('targetIds'),data.fetch('groups'))
           when 'order_export'
             path= with_user_dialog { UI.select_directory(title:'Elegir carpeta para TXT y manifiesto') }
             return {'cancelled'=>true} unless path
@@ -580,7 +835,7 @@ module PlanosSanto
         refresh_after_material_change(library.install(data,path:path))
       when 'piece_highlight'
         active!
-        raise ExportError,'Detené Pintura Inteligente y actualizá el análisis antes de resaltar.' if @smart_changed
+        raise ExportError,'Detené Pintura Inteligente y actualizá el análisis antes de resaltar.' if @smart_changed || @analysis_stale
         stop_smart_tool(refresh:false)
         generation=@tool_generation || 0
         @smart_state={'active'=>false,'mode'=>'highlight','changed'=>false,'queuedCount'=>0,'message'=>''}
@@ -614,7 +869,7 @@ module PlanosSanto
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
          'paintStates'=>paint_materials.states,
-         'settings'=>smart_settings,'toolState'=>smart_state,'thumbnails'=>material_thumbnails}
+         'settings'=>smart_settings,'toolState'=>smart_view_state,'thumbnails'=>material_thumbnails}
       when 'smart_material_prepare'
         # Advanced palette: install/verify the chosen material without starting a Tool.
         active!;clean_for_paint!
@@ -635,8 +890,14 @@ module PlanosSanto
         service=SmartPaint.new(@model,catalog:CatalogStore.new(directory:directory))
         @smart_state={'active'=>false,'mode'=>options['mode'],'changed'=>false,'queuedCount'=>0,'message'=>''}
         generation=@tool_generation || 0
+        # Hito 7 (PINTURA-04/07): recientes y cuentagotas de la vista eligen sin instalar.
+        advanced={select_material:lambda { |catalog_id,mode| tool_guard!(generation);smart_select_material(catalog_id,mode) },
+          recents:lambda { |mode| generation==(@tool_generation || 0) ? smart_recent_materials(mode) : [] },
+          eyedropper_key:smart_settings['eyedropperKey'] || 'alt'}
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
-          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) })
+          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
+          remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
+          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing,**advanced)
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -670,14 +931,43 @@ module PlanosSanto
         end
         stopped.merge('toolState'=>smart_state)
       when 'smart_tool_status'
-        @smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}
+        (@smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
       when 'smart_tool_stop'
         stop_smart_tool
+      # Hito 7: opciones de vista del pincel inmediato. No detienen la herramienta,
+      # no escriben entidades y no marcan el análisis como desactualizado.
+      when 'smart_tool_view'
+        active!
+        raise ExportError,'Opción de vista inválida.' unless data.is_a?(Hash) && data.keys==['highlightMissing'] && [true,false].include?(data['highlightMissing'])
+        @smart_tool.set_view_options('highlightMissing'=>data['highlightMissing']) if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? && @smart_tool.respond_to?(:set_view_options)
+        {'toolState'=>smart_state}
+      when 'smart_toggle_transparency'
+        active! # PINTURA-14: opción de vista, sin operación ni Undo.
+        raise ExportError,'Esta versión de SketchUp no permite cambiar la transparencia desde el pincel.' unless SmartPaintTool.respond_to?(:toggle_transparency)
+        value=SmartPaintTool.toggle_transparency(@model)==true
+        @smart_state=(@smart_state || {}).merge('transparency'=>value)
+        {'transparency'=>value,'toolState'=>smart_state}
+      when 'smart_eyedropper_key'
+        active! # PINTURA-07: tecla sostenida del cuentagotas.
+        key=data.is_a?(Hash) ? data['key'] : nil
+        raise ExportError,'Elegí Alt o Mayús para el cuentagotas.' unless %w[alt shift].include?(key)
+        remember_smart_settings(smart_settings.merge('eyedropperKey'=>key))
+        @smart_tool.eyedropper_key=key if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? && @smart_tool.respond_to?(:eyedropper_key=)
+        {'settings'=>smart_settings,'toolState'=>smart_state}
       when 'smart_palette_compact'
         raise ExportError,'Tamaño de paleta inválido.' unless [true,false].include?(data['compact'])
         target=@request_dialog || @dialog
         if target && target.respond_to?(:set_size)
-          target.set_size(*(target.equal?(@palette_dialog) ? (data['compact'] ? [680,320] : [680,760]) : data['compact'] ? [440,760] : [1440,920]))
+          if target.equal?(@palette_dialog)
+            target.set_size(*(data['compact'] ? PALETTE_SIZE : [680,760]))
+          elsif data['compact']
+            @compact_size ||= current_window_size(target,data)
+            target.set_size(*MAIN_COMPACT_SIZE)
+          else
+            # ARQ-06: back to the operator's size, never a fixed 1440x920.
+            size=@compact_size;@compact_size=nil
+            size ? target.set_size(*size) : fit_window(target,@screen)
+          end
         end
         {'compact'=>data['compact']}
       when 'paint_cancel'
@@ -736,12 +1026,10 @@ module PlanosSanto
         else
           result = @naming.apply(data)
           unless result['noChanges']
-            begin
-              result['scan'] = @session.scan
-            rescue StandardError => e
-              @session = NativeSession.new(@model)
-              result['refreshWarning'] = "Nombres aplicados. Guardá el SKP con Ctrl+S. No se pudieron releer las guías: #{e.message}. Volvé a analizar."
-            end
+            @session = NativeSession.new(@model)
+            @naming = nil
+            mark_stale('names')
+            result['stale'] = true
           end
           result
         end
@@ -765,23 +1053,29 @@ module PlanosSanto
             end
           end
         end
+        rebaseline_analysis!
         { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
       when 'pdf'
         active!
         @session.validate_export(data.fetch('furniture'))
         raise ExportError, 'Regenerá la guía antes de exportar.' unless data['fingerprint'] == @session.fingerprint
         save_pdf(data.fetch('base64'))
+      when 'window_fit'
+        window_fit(data)
+      when 'window_fold'
+        window_fold(data['folded'],data)
       when 'diagnostic'
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
           'layoutModulePresent' => Object.const_defined?(:Layout), 'pdfEngine' => 'pdf-lib local; no requiere LayOut',
-          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false }
+          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'replyStats' => (@reply_stats || []).last(10), 'paintClicks' => smart_timing.summary }
       else
         raise ExportError, 'Acción desconocida.'
       end
     end
 
-    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch].freeze
+    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials recentMaterials eyedropperKey].freeze
+    RECENT_MATERIALS_MAX=6
 
     def smart_state
       (@smart_state || {'active'=>false,'changed'=>false,'queuedCount'=>0,'message'=>''}).merge('changed'=>@smart_changed==true)
@@ -808,14 +1102,48 @@ module PlanosSanto
         return {} unless envelope.is_a?(Hash) && envelope.keys.sort==%w[schema settings] && envelope['schema']==2
         parsed=envelope['settings']
       end
-      parsed.is_a?(Hash) ? parsed.slice(*SMART_SETTING_KEYS) : {}
+      return {} unless parsed.is_a?(Hash)
+      settings=parsed.slice(*SMART_SETTING_KEYS)
+      settings.delete('edgeCount') if settings.key?('edgeCount') && !(settings['edgeCount'].is_a?(Integer) && [1,2,4].include?(settings['edgeCount']))
+      if settings.key?('lastMaterials')
+        last=settings['lastMaterials'];last=last.is_a?(Hash) ? last.slice('sheet','edge').select { |_,id| id.is_a?(String) && !id.empty? && id.length<=200 } : {}
+        last.empty? ? settings.delete('lastMaterials') : settings['lastMaterials']=last
+      end
+      # Hito 7 (PINTURA-04): hasta 6 ids de catálogo únicos por modo; lo demás se descarta.
+      if settings.key?('recentMaterials')
+        recent=settings['recentMaterials']
+        recent=recent.is_a?(Hash) ? recent.slice('sheet','edge').filter_map { |mode,ids| ids=ids.is_a?(Array) ? ids.select { |id| id.is_a?(String) && !id.empty? && id.length<=200 }.uniq.first(RECENT_MATERIALS_MAX) : [];[mode,ids] unless ids.empty? }.to_h : {}
+        recent.empty? ? settings.delete('recentMaterials') : settings['recentMaterials']=recent
+      end
+      settings.delete('eyedropperKey') if settings.key?('eyedropperKey') && !%w[alt shift].include?(settings['eyedropperKey'])
+      settings
     rescue JSON::ParserError, ArgumentError, SyntaxError
       {}
     end
 
     def remember_smart_settings(options)
       return unless Sketchup.respond_to?(:write_default)
-      bytes=JSON.generate('schema'=>2,'settings'=>options.slice(*SMART_SETTING_KEYS))
+      settings=options.slice(*SMART_SETTING_KEYS)
+      settings['scope']='unique' if settings.key?('scope') # consent for every copy never survives
+      previous=smart_settings;last=previous['lastMaterials'] || {};recent=previous['recentMaterials'] || {}
+      # The recents list and the eyedropper key are never taken blindly from options.
+      settings.delete('recentMaterials');settings['eyedropperKey']=previous['eyedropperKey'] unless %w[alt shift].include?(settings['eyedropperKey'])
+      settings.delete('eyedropperKey') unless settings['eyedropperKey']
+      if options['immediate']==true || options['immediatePiece']==true
+        # Sheet forces one edge per click; it must not forget the edge preference.
+        settings['edgeCount']=previous['edgeCount'] || 1 if options['mode']=='sheet'
+        # Tab (PINTURA-06): last catalog id per mode; the UUID belongs to the model.
+        if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty? && options['catalogId'].length<=200
+          last=last.merge(options['mode']=>options['catalogId'])
+          # PINTURA-04: a new id enters at the front (at most 6 per mode); a known one
+          # keeps its slot, so the strip square and key 1–6 always mean the same material.
+          list=recent[options['mode']] || []
+          recent=recent.merge(options['mode']=>list.include?(options['catalogId']) ? list : ([options['catalogId']]+list).first(RECENT_MATERIALS_MAX))
+        end
+      end
+      settings['lastMaterials']=last unless last.empty?
+      settings['recentMaterials']=recent unless recent.empty?
+      bytes=JSON.generate('schema'=>2,'settings'=>settings)
       raise ExportError,'Preferencias de paleta demasiado grandes.' if bytes.bytesize>4096
       Sketchup.write_default('PlanosSanto',SMART_SETTINGS_KEY,SMART_SETTINGS_PREFIX+Base64.strict_encode64(bytes))
     rescue StandardError, SyntaxError => error
@@ -828,14 +1156,83 @@ module PlanosSanto
         options['axes'].is_a?(Array) && options['axes'].length==2 && options['axes'].uniq.length==2 && options['axes'].all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
       raise ExportError,'Elegí modo, superficie, alcance y ejes; activá explícitamente la herramienta.' unless valid
       if options['immediate']==true || options['immediatePiece']==true
-        raise ExportError,'No se puede pintar esta instancia con seguridad.' unless options['scope']=='unique' && options['side']=='both' && options['batch']!=true && options['allowShared']!=true
+        scoped=(options['scope']=='unique' && options['allowShared']!=true) || (options['scope']=='all' && options['allowShared']==true)
+        raise ExportError,'No se puede pintar esta instancia con seguridad.' unless scoped && options['side']=='both' && options['batch']!=true
       end
-      raise ExportError,'Elegí1,2opuestos o4cantos.' if options.key?('edgeCount') && ![1,2,4].include?(options['edgeCount'])
+      raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' if options.key?('edgeCount') && !(options['edgeCount'].is_a?(Integer) && [1,2,4].include?(options['edgeCount']))
       raise ExportError,'Elegí pieza o cara.' if options.key?('paintScope') && !%w[piece face].include?(options['paintScope'])
       %w[allowShared batch immediate immediatePiece].each do |key|
         raise ExportError,'Configuración de pintado inválida.' if options.key?(key) && ![true,false].include?(options[key])
       end
       JSON.parse(JSON.generate(options))
+    end
+
+    # Tab in the immediate Tool: last catalog material of the destination mode,
+    # resolved to this model's UUID without installing. nil when none is known.
+    def smart_switch_mode(mode)
+      raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
+      last=(smart_settings['lastMaterials'] || {})[mode]
+      return nil if last.to_s.empty?
+      options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
+      remember_smart_settings(options);@quick_options=options
+      options
+    end
+
+    # Hito 7 (PINTURA-04/07): material chosen from the view (recents strip or
+    # eyedropper). Same validation as the palette, but never installs.
+    # PINTURA-14: the palette shows the model's real X-ray state even without a Tool.
+    def smart_view_state
+      state=smart_state
+      return state if state.key?('transparency') || !@model.respond_to?(:rendering_options)
+      value=@model.rendering_options['ModelTransparency']
+      [true,false].include?(value) ? state.merge('transparency'=>value) : state
+    rescue StandardError
+      state
+    end
+
+    def smart_select_material(catalog_id,mode)
+      raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
+      raise ExportError,'Elegí un material de la paleta.' unless catalog_id.is_a?(String) && !catalog_id.empty?
+      options,=smart_quick_options({'mode'=>mode,'catalogId'=>catalog_id},install:false)
+      remember_smart_settings(options);@quick_options=options
+      options
+    end
+
+    # Recents strip: remembered ids of the mode that are ready in THIS model, with
+    # the catalog name and the native colour [r,g,b]. Never installs; a failing
+    # item is skipped so one broken entry never hides the others.
+    def smart_recent_materials(mode)
+      return [] unless %w[sheet edge].include?(mode)
+      ids=(smart_settings['recentMaterials'] || {})[mode] || []
+      return [] if ids.empty?
+      directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      service=paint_materials;items=CatalogStore.new(directory:directory).read['items'] || []
+      natives=@model.respond_to?(:materials) ? @model.materials.to_a : []
+      ids.filter_map do |id|
+        state=service.state(id)
+        next unless state.is_a?(Hash) && state['state']=='ready' && !state['materialUuid'].to_s.empty?
+        item=items.find { |row| row['id']==id && row['kind']==mode }
+        next unless item
+        native=natives.find { |material| MaterialResolver.observe_binding(material).dig('binding','uuid')==state['materialUuid'] }
+        next unless native && native.respond_to?(:color) && native.color
+        color=native.color;rgb=color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3)
+        next unless rgb.length==3 && rgb.all? { |value| value.is_a?(Numeric) }
+        {'catalogId'=>id,'materialUuid'=>state['materialUuid'].to_s,'name'=>item['name'].to_s,'color'=>rgb.map { |value| value.to_i.clamp(0,255) }}
+      rescue StandardError
+        nil
+      end
+    rescue StandardError => error
+      warn("Planos Santo: no se pudieron leer los materiales recientes: #{error.class}")
+      []
+    end
+
+    # One click-time log per process; its folder is the Planos Santo data folder.
+    def smart_timing
+      @smart_timing ||= PaintTimingLog.new(directory:begin
+        ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      rescue StandardError
+        nil # memory only; diagnostics must never fail because of the log
+      end)
     end
 
     def smart_event(event)
@@ -845,6 +1242,10 @@ module PlanosSanto
         @session=NativeSession.new(@model)
         @naming=nil
         @paint=nil
+        # QA integración: the Tool commits outside handle(), so ModelWatch sees
+        # it. Mark the own write now: the debounced check then skips the walk
+        # and the banner says «Pintaste…», not «El modelo cambió en SketchUp».
+        mark_stale('paint') unless @analysis_stale && @analysis_reason=='paint'
       end
       begin
       [@dialog,@palette_dialog].compact.uniq.each { |window| emit_to(window,'planos-santo-smart-paint',smart_state) }
@@ -869,21 +1270,99 @@ module PlanosSanto
       end
       @tool_generation=(@tool_generation || 0)+1
       @smart_state=(@smart_state || {}).merge('active'=>false,'queuedCount'=>0,'hover'=>nil,'sample'=>nil)
+      # ARQ-02: never rescan here. The session was already invalidated by the
+      # change; the editor shows "Análisis desactualizado · Reanalizar".
+      stale=refresh && @smart_changed
+      @smart_changed=false if stale
       result={'toolState'=>smart_state}
-      if refresh && @smart_changed
-        if @session && Sketchup.active_model.equal?(@model)
-          begin
-            result['scan']=@session.scan
-            @smart_changed=false
-          rescue StandardError => error
-            result['refreshWarning']="Cambios aplicados. Volvé a analizar: #{error.message}"
-            result['scanRequired']=true
-          end
-        else
-          result['scanRequired']=true
-        end
+      if stale
+        result['stale']=true
+        mark_stale('paint')
       end
       result
+    end
+
+    # --- Hito 7: gestión de materiales (bloque aislado del dispatch) ----------
+    # Duplicate/archive/package/texture/OCL-sync/focus. Never paints or touches
+    # the smart paint tool; mutations are refused while it is active.
+    MATERIAL_MANAGEMENT_ACTIONS=%w[material_extras material_duplicate material_archive
+      material_package_export material_package_preview material_package_commit material_package_cancel
+      material_texture_preview material_texture_apply material_ocl_sync viewport_focus].freeze
+    MATERIAL_MANAGEMENT_READONLY=%w[material_extras material_package_cancel viewport_focus].freeze
+    def material_management_directory
+      ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+    end
+    def management_library
+      directory=material_management_directory
+      MaterialLibrary.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory)
+    end
+    def material_package
+      directory=material_management_directory
+      catalog=CatalogStore.new(directory:directory)
+      @material_package ||= MaterialPackage.new(library:MaterialLibrary.new(@model,catalog:catalog,directory:directory),catalog:catalog,directory:directory)
+    end
+    def material_management(action,data)
+      raise ExportError,'Datos de la acción inválidos.' unless data.is_a?(Hash)
+      if !MATERIAL_MANAGEMENT_READONLY.include?(action) && @smart_state && @smart_state['active'] && @smart_state['mode']!='highlight'
+        raise ExportError,'Detené Pintura Inteligente antes de cambiar la biblioteca.'
+      end
+      case action
+      when 'viewport_focus'
+        # Best effort (MATERIALES-19): Sketchup.focus exists only in recent APIs.
+        if defined?(Sketchup) && Sketchup.respond_to?(:focus)
+          Sketchup.focus
+          {'focused'=>true,'method'=>'Sketchup.focus'}
+        else
+          {'focused'=>false,'method'=>'unsupported'}
+        end
+      when 'material_extras'
+        active!
+        management_library.extras
+      when 'material_duplicate'
+        active!;clean_for_paint!
+        management_library.duplicate(data)
+      when 'material_archive'
+        active!;clean_for_paint!
+        management_library.archive_items(data)
+      when 'material_package_export'
+        active!
+        ids=data['catalogIds']
+        raise ExportError,'Selección de fichas inválida.' unless ids.nil? || ids.is_a?(Array)
+        target=with_user_dialog { UI.savepanel('Exportar paquete de materiales',nil,'PlanosSanto-materiales.zip') }
+        return {'cancelled'=>true} unless target
+        target+='.zip' unless target.downcase.end_with?('.zip')
+        material_package.export(target,catalog_ids:ids,include_archived:data['includeArchived']==true)
+      when 'material_package_preview'
+        active!;clean_for_paint!
+        path=with_user_dialog { UI.openpanel('Importar paquete de materiales',nil,'Paquete de materiales ZIP|*.zip||') }
+        return {'cancelled'=>true} unless path
+        active!
+        @material_package=nil
+        material_package.preview(path)
+      when 'material_package_commit'
+        active!;clean_for_paint!
+        raise ExportError,'Elegí primero un paquete para revisar.' unless @material_package
+        result=material_package.commit(data['token'],data['selectedIds'],data['revision'],confirmed:data['confirmed']==true,renames:data.fetch('renames',{}))
+        @material_package=nil
+        result
+      when 'material_ocl_sync'
+        active!
+        clean_for_paint! unless data['dryRun']==true
+        result=management_library.ocl_sync(data)
+        result['changed'].to_i>0 ? refresh_after_material_change(result) : result
+      when 'material_texture_preview'
+        active!
+        photo_material.texture_preview(data)
+      when 'material_texture_apply'
+        active!;clean_for_paint!
+        refresh_after_material_change(photo_material.texture_apply(data))
+      when 'material_package_cancel'
+        @material_package&.cancel
+        @material_package=nil
+        {'cancelled'=>true}
+      else
+        raise ExportError,'Acción de materiales no disponible.'
+      end
     end
 
     def clean_for_paint!
@@ -891,17 +1370,77 @@ module PlanosSanto
       raise ExportError,'Guardá los cambios de biblioteca o pedido antes de pintar o vincular materiales.' if @workshop_dirty
     end
 
+    # ARQ-02: a material write invalidates the analysis instead of rescanning.
     def refresh_after_material_change(result)
       return result if result['noChanges']==true
       @naming=nil
       @paint=nil
-      begin
-        result['scan']=@session.scan
-      rescue StandardError => error
-        @session=NativeSession.new(@model)
-        result['refreshWarning']="Material aplicado. Guardá el SKP con Ctrl+S. No se pudo actualizar el análisis: #{error.message}. Volvé a analizar antes de continuar."
+      @session=NativeSession.new(@model)
+      mark_stale('material')
+      result.merge('stale'=>true)
+    end
+
+    ANALYSIS_REASONS={
+      'paint'=>'Pintaste desde Planos Santo.','material'=>'Cambió un material del modelo.',
+      'names'=>'Se aplicaron nombres en SketchUp.','model'=>'El modelo cambió en SketchUp (edición, Deshacer o Rehacer).'
+    }.freeze
+
+    def analysis_state
+      {'stale'=>@analysis_stale==true,'reason'=>@analysis_stale ? ANALYSIS_REASONS[@analysis_reason] : nil,'source'=>@analysis_reason}
+    end
+
+    # Only an editor that analyzed this model shows the banner.
+    def mark_stale(reason)
+      return unless @analysis_session
+      @analysis_stale=true;@analysis_reason=reason
+      publish_analysis_state
+    end
+
+    def mark_fresh!
+      @analysis_session=@session;@analysis_stale=false;@analysis_reason=nil
+      @analysis_fingerprint=safe_fingerprint
+    end
+
+    def forget_analysis!
+      @analysis_session=nil;@analysis_fingerprint=nil;@analysis_stale=false;@analysis_reason=nil
+    end
+
+    # Own writes that keep the analysis valid (saving the guide) re-baseline.
+    def rebaseline_analysis!
+      @analysis_fingerprint=safe_fingerprint if @analysis_session && @analysis_session.equal?(@session) && !@analysis_stale
+    end
+
+    # Runs from the debounced timer, never from an observer callback.
+    def check_analysis
+      return unless @analysis_session && @dialog
+      # No baseline (fingerprint failed at scan): be conservative on any change.
+      return mark_stale('model') unless @analysis_fingerprint || @analysis_stale
+      return unless @analysis_fingerprint
+      # Already stale and the analyzed session was replaced (own write): it can
+      # only become fresh by reanalyzing, so skip the walk (painting bursts).
+      return if @analysis_stale && !@analysis_session.equal?(@session)
+      current=safe_fingerprint
+      return unless current
+      if current!=@analysis_fingerprint
+        mark_stale('model') unless @analysis_stale
+      elsif @analysis_stale && @analysis_session.equal?(@session)
+        # Undo back to the analyzed state with the same session: fresh again.
+        @analysis_stale=false;@analysis_reason=nil
+        publish_analysis_state
       end
-      result
+    end
+
+    def safe_fingerprint
+      ModelWatch.fingerprint(@model)
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo calcular la huella del modelo: #{error.class}")
+      nil
+    end
+
+    def publish_analysis_state
+      emit_to(@dialog,'planos-santo-analysis-state',analysis_state)
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo avisar el estado del análisis: #{error.class}")
     end
 
     def read_materials

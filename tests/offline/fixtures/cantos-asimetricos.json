@@ -1,0 +1,10 @@
+{
+  "_comment": "CANTOS-04: cinco piezas con cantos asimétricos (Arr·Aba·Izq·Der sobre base × altura del pedido). La misma tabla alimenta la prueba Ruby del TXT, la de la A4 (vitest) y la de la vista 2D (Playwright).",
+  "pieces": [
+    {"detail": "Asimétrica 1", "edgeMap": [1, 0, 0, 0]},
+    {"detail": "Asimétrica 2", "edgeMap": [0, 1, 2, 0]},
+    {"detail": "Asimétrica 3", "edgeMap": [1, 2, 1, 0]},
+    {"detail": "Asimétrica 4", "edgeMap": [0, 0, 1, 2]},
+    {"detail": "Asimétrica 5", "edgeMap": [2, 1, 0, 1]}
+  ]
+}
