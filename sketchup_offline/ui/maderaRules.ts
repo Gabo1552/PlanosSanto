@@ -20,6 +20,8 @@ export function profileState(profile:MaderaProfile,activeId:string|null){return 
 
 const decimals=(digits:number)=>new Intl.NumberFormat('es-AR',{minimumFractionDigits:digits,maximumFractionDigits:digits});
 const two=decimals(2),three=decimals(3),whole=new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
+/** Número suelto en formato es-AR (2,5), sin decimales de relleno. */
+export const plain=(value:number)=>new Intl.NumberFormat('es-AR',{maximumFractionDigits:2}).format(value);
 export const money=(currency:string,value:number)=>`${currency} ${two.format(value)}`;
 export const moneyTotals=(values:Record<string,number>)=>Object.entries(values).map(([currency,value])=>money(currency,value)).join(' · ');
 /** Cantidad con su unidad en formato argentino: m² con tres decimales, metros con dos, placas enteras. */

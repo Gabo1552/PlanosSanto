@@ -54,7 +54,7 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
   const items=[...(dialog.current?.querySelectorAll<HTMLElement>('button:not([disabled]):not([tabindex="-1"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary')||[])];const first=items[0],last=items[items.length-1];
   if(first&&((e.shiftKey&&document.activeElement===first)||(!e.shiftKey&&document.activeElement===last)||!dialog.current?.contains(document.activeElement))){e.preventDefault();(e.shiftKey?last:first)?.focus();}
  }}document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key);},[busy,dirty,mark,onClose,embedded]);
- function navigate(next:string){if(dirty&&!window.confirm(discard))return false;mark(false);setTab(next);setError('');setNotice('');setCreating(null);if(next==='catalog')void run(load,'Cargando biblioteca…');if(next==='order')void run(loadOrder,'Preparando las piezas del pedido…');return true;}
+ function navigate(next:string){if(next===tab&&next==='maderera')return false;if(dirty&&!window.confirm(discard))return false;mark(false);setTab(next);setError('');setNotice('');setCreating(null);if(next==='catalog')void run(load,'Cargando biblioteca…');if(next==='order')void run(loadOrder,'Preparando las piezas del pedido…');return true;}
  // Consultar la ficha no debe costar el pedido en edición: con cambios se guarda el borrador antes de salir.
  function openInCatalog(id:string){
   if(!dirty||tab!=='order'||!plan){if(navigate('catalog'))setSelectedId(id);return;}
@@ -66,7 +66,7 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
  function updateItem(patch:Partial<CatalogItem>){if(!library||!selected)return;if(['name','kind','sku','supplier','thicknessMm','widthMm','lengthMm','grain','compatibleIds'].some(key=>key in patch))patch={...patch,approved:false};setLibrary({...library,catalog:{...library.catalog,items:library.catalog.items.map(item=>item.id===selected.id?{...item,...patch,updatedAt:new Date().toISOString()}:item)}});mark(true);}
  const row=plan?.rows.find(item=>item.id===rowId)||plan?.rows[0],geometry=row&&plan?.geometry[row.id];
  // Edits keep the last audit and estimate visible, flagged as outdated, so they still work as a checklist.
- function updateRow(patch:Partial<OrderRow>){if(!plan||!row)return;if(['axes','frontSign','flipX','flipY'].some(key=>key in patch))patch={...patch,orientationConfirmed:false,edgesConfirmed:false,grainConfirmed:false,edgeResolution:null};setPlan({...plan,rows:plan.rows.map(item=>item.id===row.id?{...item,...patch}:item)});setEstimate(value=>value&&{...value,stale:true});setBlocked(value=>value&&{...value,stale:true});mark(true);}
+ function updateRow(patch:Partial<OrderRow>){if(!plan||!row)return;if(['axes','frontSign','flipX','flipY'].some(key=>key in patch))patch={...patch,orientationConfirmed:false,edgesConfirmed:false,grainConfirmed:false,edgeResolution:null};setPlan({...plan,rows:plan.rows.map(item=>item.id===row.id?{...item,...patch}:item)});setEstimate(value=>value&&{...value,stale:true});setUsable([]);setBlocked(value=>value&&{...value,stale:true});mark(true);}
  const allowedEdges=library?.catalog.items.filter(item=>item.kind==='edge'&&item.approved)||[];
  const rows=library?.catalog.items.filter(item=>(!favorites||item.favorite)&&`${item.name} ${item.sku} ${item.supplier}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')))||[];
  const focusIndex=Math.max(0,rows.findIndex(item=>item.id===selectedId));
