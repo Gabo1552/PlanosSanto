@@ -821,6 +821,86 @@ module PlanosSanto
     rescue StandardError=>error
       @service.cancel;emit('No se aplicó la selección.',error:error.message);invalidate(view)
     end
+    # ---- PINTURA-13: context menu (immediate brush). Choosing «Todas» here IS the
+    # explicit consent, like the palette toggle, and resets with the same rules.
+    MF=%i[MF_ENABLED MF_GRAYED MF_CHECKED MF_UNCHECKED].zip([0,1,8,0]).to_h { |name,fallback| [name,Object.const_defined?(name) ? Object.const_get(name) : fallback] }.freeze
+    # Pieces hidden by the brush, per model, for the whole SketchUp session.
+    def self.hidden_by_brush;@hidden_by_brush ||= {}.compare_by_identity;end
+    def hidden_list;self.class.hidden_by_brush[@model] ||= [];end
+    def getMenu(menu,_flags,x,y,view)
+      return false unless immediate? && menu.respond_to?(:add_item)
+      target=begin
+        hit(view,x,y)
+      rescue StandardError
+        nil
+      end
+      shared=target ? [copies_of(target).length,1].max : nil
+      item=lambda do |label,checked=nil,&action|
+        id=menu.add_item(label) do
+          begin
+            action.call;invalidate(view)
+          rescue StandardError=>error
+            emit('No se aplicó la opción del menú.',error:error.message);invalidate(view)
+          end
+        end
+        menu.set_validation_proc(id) { checked.call ? MF[:MF_CHECKED] : MF[:MF_UNCHECKED] } if checked && menu.respond_to?(:set_validation_proc)
+      end
+      separator=lambda { menu.add_separator if menu.respond_to?(:add_separator) }
+      item.call('Solo esta',-> { scope=='unique' }) { menu_scope('unique') }
+      item.call(shared ? "Todas las iguales (#{shared})" : 'Todas las iguales',-> { scope=='all' }) { menu_scope('all') }
+      if %w[edge remove_edge].include?(@options['mode'])
+        separator.call
+        {1=>'1 canto',2=>'2 cantos opuestos',4=>'4 cantos'}.each { |count,label| item.call(label,-> { edge_count==count }) { menu_edge_count(count) } }
+      end
+      separator.call
+      item.call('Pintar pieza',-> { @options['mode']=='sheet' }) { switch_mode unless @options['mode']=='sheet' }
+      item.call('Pintar canto',-> { @options['mode']=='edge' }) { switch_mode unless @options['mode']=='edge' }
+      separator.call
+      item.call('Ocultar esta pieza') { hide_piece(target) }
+      item.call('Mostrar piezas ocultadas por el pincel') { show_hidden }
+      separator.call
+      item.call('Revisar lo que falta',-> { @review==true }) { review!(!@review) }
+      true
+    end
+    def menu_scope(value)
+      clear;@last_error=nil;@options['scope']=value;@options['allowShared']=value=='all'
+      @remember.call(copy(@options)) if @remember
+      emit(value=='all' ? 'Todas las iguales: el clic pinta todas las copias con un solo Undo.' : 'Solo esta: el clic pinta solo la pieza apuntada.')
+    end
+    def menu_edge_count(count)
+      clear;@last_error=nil;@options['edgeCount']=count
+      @remember.call(copy(@options)) if @remember
+      emit("#{edge_label(count)} por clic. Revisá el resaltado antes de hacer clic.")
+    end
+    def visibility_operation(name)
+      raise ExportError,'No se pudo iniciar la operación.' unless @model.start_operation(name,true)
+      begin
+        yield
+        raise ExportError,'No se pudo confirmar la operación.' unless @model.commit_operation
+      rescue StandardError
+        @model.abort_operation if @model.respond_to?(:abort_operation)
+        raise
+      end
+      @generation+=1;clear
+    end
+    def hide_piece(target)
+      verify_guard!
+      raise ExportError,'Apuntá a una pieza para ocultarla.' unless target
+      instances=target['_instances'];entity=instances.last
+      raise ExportError,PaintVerdict::LOCKED if instances.any? { |e| e.respond_to?(:locked?) && e.locked? }
+      raise ExportError,'Esta pieza no se puede ocultar.' unless entity.respond_to?(:hidden=)
+      visibility_operation('Ocultar pieza (Planos Santo)') { entity.hidden=true }
+      hidden_list << entity unless hidden_list.any? { |e| e.equal?(entity) }
+      emit('Pieza oculta. Ctrl+Z o «Mostrar piezas ocultadas por el pincel» la vuelven a mostrar.',changed:true)
+    end
+    def show_hidden
+      verify_guard!
+      list=hidden_list.select { |e| (!e.respond_to?(:valid?) || e.valid?) && e.respond_to?(:hidden?) && e.hidden? }
+      return (hidden_list.clear;emit('No hay piezas ocultadas por el pincel.')) if list.empty?
+      visibility_operation('Mostrar piezas ocultadas (Planos Santo)') { list.each { |e| e.hidden=false } }
+      hidden_list.clear # only after the commit: a refused operation keeps the list
+      emit("Se mostraron #{list.length} #{list.length==1 ? 'pieza' : 'piezas'} ocultadas por el pincel.",changed:true)
+    end
     # SketchUp reasons: 0 Escape, 1 tool reselected, 2 Undo. Ctrl+Z (which the
     # messages recommend) must keep the operator in the brush.
     def onCancel(reason,view)

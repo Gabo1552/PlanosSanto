@@ -231,3 +231,65 @@ class Hito7ReviewTest < Minitest::Test
     @tool.tool_option('reviewMissing',true);assert_equal true,@events.last['review']['truncated']
   end
 end
+
+# PINTURA-13: context menu of the immediate brush.
+class Hito7Menu
+  attr_reader :items
+  def initialize(validation=true);@items=[];@validation=validation;end
+  def add_item(label,&block);@items << {label:label,block:block};@items.length;end
+  def add_separator;@items << {label:'-'};end
+  def respond_to_missing?(name,priv=false);name==:set_validation_proc ? @validation : super;end
+  def method_missing(name,*args,&block)
+    return super unless name==:set_validation_proc && @validation
+    @items[args.first-1][:validation]=block;true
+  end
+  def labels;items.map { |item| item[:label] };end
+  def item(label);items.find { |row| row[:label]==label } || raise("sin #{label}: #{labels}");end
+  def choose(label);item(label)[:block].call;end
+  def checked?(label);item(label)[:validation].call==8;end
+end
+class Hito7MenuTest < Minitest::Test
+  include Hito2Fixture
+  def setup
+    build_fixture;paint_sheet_on_board!;@remembered=[];@asked=[]
+    remembered=@remembered;asked=@asked;test=self
+    build_tool(tool_options('edge','edgeCount'=>4),remember:lambda { |o| remembered << o },switch_mode:lambda { |m| asked << m;test.tool_options(m) })
+  end
+  def menu(door=@doors[0],validation:true)
+    face=faces_of(door)[2];@picker.path=[@root,door,face];@picker.leaf=face
+    result=Hito7Menu.new(validation);@tool.getMenu(result,0,40,50,@view);result
+  end
+  def test_items_reflect_the_current_options_and_change_them_like_the_keyboard
+    m=menu
+    assert_equal ['Solo esta','Todas las iguales (4)','-','1 canto','2 cantos opuestos','4 cantos','-','Pintar pieza','Pintar canto','-',
+                  'Ocultar esta pieza','Mostrar piezas ocultadas por el pincel','-','Revisar lo que falta'],m.labels
+    assert m.checked?('Solo esta');refute m.checked?('Todas las iguales (4)');assert m.checked?('4 cantos');assert m.checked?('Pintar canto')
+    m.choose('Todas las iguales (4)')
+    assert_equal 'all',@tool.status['options']['scope'];assert_equal true,@tool.instance_variable_get(:@options)['allowShared']
+    assert_equal 'all',@events.last['options']['scope'];assert_equal 'all',@remembered.last['scope']
+    m.choose('2 cantos opuestos');assert_equal 2,@tool.status['options']['edgeCount'];assert_equal 2,@remembered.last['edgeCount']
+    assert_equal 'all',@tool.status['options']['scope'] # the edge count keeps the explicit consent
+    m.choose('Pintar pieza');assert_equal ['sheet'],@asked;assert_equal 'sheet',@tool.status['mode'];assert_equal 'unique',@tool.status['options']['scope']
+    m=menu;refute_includes m.labels,'1 canto';assert m.checked?('Pintar pieza')
+    m.choose('Revisar lo que falta');assert_equal true,@events.last['options']['reviewMissing'];assert menu.checked?('Revisar lo que falta')
+    assert_empty @model.operations
+  end
+  def test_hide_one_piece_in_one_undo_and_show_only_what_the_brush_hid
+    @doors[2].hidden=true;undo=@model.undo_states.length
+    menu(@doors[0]).choose('Ocultar esta pieza')
+    assert @doors[0].hidden?;refute @doors[1].hidden?;assert_equal undo+1,@model.undo_states.length;assert @events.last['changed']
+    assert_equal [[:start,'Ocultar pieza (Planos Santo)',true],[:commit]],@model.operations
+    menu(@doors[1]).choose('Ocultar esta pieza');assert_equal undo+2,@model.undo_states.length
+    build_tool(tool_options('sheet')) # same SketchUp session, new tool
+    m=menu(@doors[3]);m.choose('Mostrar piezas ocultadas por el pincel')
+    refute @doors[0].hidden?;refute @doors[1].hidden?;assert @doors[2].hidden?;assert_equal undo+3,@model.undo_states.length
+    operations=@model.operations.length;menu(@doors[3]).choose('Mostrar piezas ocultadas por el pincel')
+    assert_equal operations,@model.operations.length;assert_match(/No hay piezas ocultadas/,@events.last['message'])
+  end
+  def test_a_locked_piece_is_not_hidden_and_menus_without_validation_still_work
+    @doors[0].locked_for_names=true
+    m=menu(@doors[0],validation:false);m.choose('Ocultar esta pieza')
+    refute @doors[0].hidden?;assert_match(/bloquead/,@events.last['error']);assert_empty @model.operations
+    m.choose('1 canto');assert_equal 1,@tool.status['options']['edgeCount']
+  end
+end
