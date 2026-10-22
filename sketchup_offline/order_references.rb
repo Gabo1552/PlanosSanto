@@ -28,6 +28,9 @@ module PlanosSanto
       references={};pending=[]
       included.each do |row|
         reference=failing.include?(row['id']) ? nil : reference_for(service,row,lots)
+        # Module·piece code of the saved guide (OrderProposal.codes): the same one the TXT detail carries.
+        code=draft.fetch('codes',{})[row['id']].to_s
+        reference['code']=code if reference && !code.empty?
         if reference then references[row['id']]=reference else pending << row['id'] end
       end
       # Lot numbers are final only when every included row validates: a pending row can still move to another lot and renumber the TXT.
