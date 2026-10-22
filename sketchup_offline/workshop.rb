@@ -18,7 +18,7 @@ module PlanosSanto
     def import_catalog(data,revision);data=@catalog.import(data,revision);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
     def add_item(data,revision)
       current=@catalog.read
-      raise ExportError,'La biblioteca cambió.' unless current['revision']==revision
+      raise ExportError,'La biblioteca cambió en otra ventana: volvé a abrirla y repetí el alta del material.' unless current['revision']==revision
       current['items'] << @catalog.new_item(data.fetch('name'),data.fetch('kind','unknown'))
       save_catalog(current['items'],revision)
     end
@@ -114,9 +114,9 @@ module PlanosSanto
     def save_plan(draft)
       # Drafts may be unfinished. Preserve exact source linkage, never certify them.
       current=order.proposal
-      raise ExportError,'Borrador desactualizado.' unless draft.is_a?(Hash) && draft['fingerprint']==current['fingerprint'] && draft['catalogRevision']==current['catalogRevision']
-      raise ExportError,'Piezas incompletas en borrador.' unless draft['rows'].is_a?(Array) && draft['rows'].map { |r| r['id'] }.sort==current['rows'].map { |r| r['id'] }.sort
-      raise ExportError,'Campos de borrador incompatibles.' unless draft['rows'].all? { |row| row.is_a?(Hash) && row.keys.sort==SupplierOrder::ROW_KEYS.sort }
+      raise ExportError,'El borrador quedó desactualizado porque cambió el modelo o la biblioteca: usá «Preparar de nuevo».' unless draft.is_a?(Hash) && draft['fingerprint']==current['fingerprint'] && draft['catalogRevision']==current['catalogRevision']
+      raise ExportError,'El borrador no tiene las mismas piezas que el modelo: usá «Preparar de nuevo».' unless draft['rows'].is_a?(Array) && draft['rows'].map { |r| r['id'] }.sort==current['rows'].map { |r| r['id'] }.sort
+      raise ExportError,'El borrador viene de otra versión de Planos Santo: usá «Preparar de nuevo».' unless draft['rows'].all? { |row| row.is_a?(Hash) && row.keys.sort==SupplierOrder::ROW_KEYS.sort }
       value=JSON.generate(draft.slice('schema','fingerprint','catalogRevision','rows','profile'))
       raise ExportError,'Borrador demasiado grande.' if value.bytesize>8*1024*1024
       started=false

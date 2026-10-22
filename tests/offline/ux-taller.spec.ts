@@ -40,7 +40,7 @@ async function openOrder(page:Page){
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
 }
-const verifications=['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con proveedor','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'];
+const verifications=['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con la maderera','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'];
 const board={sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false,approved:true};
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
@@ -54,7 +54,7 @@ test('pedido: progreso por pieza, siguiente pendiente con atajos y confirmación
  await expect(panel.getByRole('button',{name:'Exportar TXT de prueba…',exact:true})).toHaveClass(/workshop-primary/);
  await expect(panel.getByRole('button',{name:'Siguiente pendiente',exact:true})).toHaveAttribute('aria-keyshortcuts','Alt+ArrowDown');
  await expect(panel.getByRole('button',{name:'Pieza anterior',exact:true})).toHaveAttribute('aria-keyshortcuts','Alt+ArrowUp');
- await page.getByLabel('Placa del pedido').selectOption(sheet.id);
+ await page.getByLabel('Placa aprobada del pedido').selectOption(sheet.id);
  for(const label of verifications.slice(0,3))await page.getByLabel(label,{exact:true}).check();
  await expect(select.locator('option').first()).toHaveText(/^3\/5 · /);await expect(panel.getByText('Verificaciones de la pieza (3/5)',{exact:true})).toBeVisible();
  for(const label of verifications.slice(3))await page.getByLabel(label,{exact:true}).check();
@@ -65,8 +65,8 @@ test('pedido: progreso por pieza, siguiente pendiente con atajos y confirmación
  await page.keyboard.press('Alt+ArrowDown');await expect(select).toHaveValue(ids[1]);// cíclico: salta la pieza lista
  await page.keyboard.press('Alt+ArrowUp');await expect(select).toHaveValue(ids[0]);
  await select.selectOption(ids[2]);await page.getByLabel('Incluir pieza física en el pedido').uncheck();
- await expect(select.locator('option').nth(2)).toHaveText(/^EXCLUIDA sin motivo · /);
- await page.getByLabel('Motivo de exclusión').fill('Se corta en el taller');await expect(select.locator('option').nth(2)).toHaveText(/^EXCLUIDA · /);
+ await expect(select.locator('option').nth(2)).toHaveText(/^Excluida sin motivo · /);
+ await page.getByLabel('Motivo de exclusión').fill('Se corta en el taller');await expect(select.locator('option').nth(2)).toHaveText(/^Excluida · /);
  await expect(progress).toContainText('2 de 3 piezas listas · 1 excluida');
  let asked='';page.once('dialog',dialog=>{asked=dialog.message();void dialog.dismiss();});
  await panel.getByRole('button',{name:'Preparar de nuevo',exact:true}).click();expect(asked).toContain('descarta los cambios del pedido');
@@ -82,16 +82,16 @@ test('pedido: bloqueadas accionables y estimación legible que se marcan desactu
  const panel=await openOrder(page),select=panel.getByLabel('Pieza del pedido');
  const ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));
  await panel.getByRole('button',{name:'Ver piezas bloqueadas',exact:true}).click();
- await expect(panel.getByRole('heading',{name:'3 piezas bloqueadas',exact:true})).toBeVisible();await expect(panel.getByLabel('Piezas bloqueadas').locator('li')).toHaveCount(3);
- await panel.getByLabel('Piezas bloqueadas').locator('li').nth(1).getByRole('button').click();
- await expect(select).toHaveValue(ids[1]);await expect(page.getByLabel('Incluir pieza física en el pedido')).toBeFocused();
+ await expect(panel.getByRole('heading',{name:/^3 piezas bloqueadas · \d+ problemas?$/})).toBeVisible();await expect(panel.getByLabel('Piezas bloqueadas').locator(':scope > li')).toHaveCount(3);
+ await panel.getByLabel('Piezas bloqueadas').locator(':scope > li').nth(1).getByRole('button',{name:/^Ir a la pieza/}).click();
+ await expect(select).toHaveValue(ids[1]);await expect(page.getByLabel('Ejes de base / altura de la vista 2D')).toBeFocused();
  await page.getByLabel('Detalle del pedido').fill('Lateral revisado');
- await expect(panel.getByText('Revisión desactualizada por cambios.',{exact:false})).toBeVisible();await expect(panel.getByLabel('Piezas bloqueadas').locator('li')).toHaveCount(3);
+ await expect(panel.getByText('Revisión desactualizada por cambios.',{exact:false})).toBeVisible();await expect(panel.getByLabel('Piezas bloqueadas').locator(':scope > li')).toHaveCount(3);
  for(const id of ids){
-  await select.selectOption(id);await page.getByLabel('Ejes de la vista 2D').selectOption('0,1');await page.getByLabel('Cara de la vista 2D').selectOption('1');
-  await page.getByLabel('Placa del pedido').selectOption(sheet.id);await page.getByLabel('Dirección de veta del pedido').selectOption('none');await page.getByLabel('Rotación del pedido').selectOption('locked');
-  await page.getByLabel('Origen de revisión de cantos').selectOption('manual');await page.getByLabel('Justificación manual de cantos').fill('Cantos sintéticos inspeccionados');
-  await page.getByLabel('Regla de medidas del pedido').selectOption('finished_accepted');await page.getByLabel('Justificación del pedido').fill('Medidas sintéticas aceptadas');
+  await select.selectOption(id);await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
+  await page.getByLabel('Placa aprobada del pedido').selectOption(sheet.id);await page.getByLabel('Dirección de veta en esta vista').selectOption('none');await page.getByLabel('Veta / rotación del pedido').selectOption('locked');
+  await page.getByLabel('Origen de la revisión de cantos').selectOption('manual');await page.getByLabel('Motivo y fuente de la inspección manual').fill('Cantos sintéticos inspeccionados');
+  await page.getByLabel('Medidas que recibe la maderera').selectOption('finished_accepted');await page.getByLabel('Fuente / explicación de la revisión').fill('Medidas sintéticas aceptadas');
   for(const label of verifications)await page.getByLabel(label,{exact:true}).check();
  }
  await expect(panel.getByLabel('Piezas bloqueadas').locator('li.is-verified')).toHaveCount(3);await expect(panel.getByText('Verificaciones completas · volvé a revisar').first()).toBeVisible();
@@ -143,39 +143,39 @@ test('cantos: diagnóstico completo, estado por lado y vínculo rápido a princi
  const [sheet,first,second]=await catalog([{name:'Placa observable',kind:'sheet',patch:board},{name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22,approved:true}},{name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22,approved:true}}]);
  const panel=await openOrder(page),read=panel.getByRole('button',{name:'Leer cantos de las caras',exact:true});
  await expect(read).toBeDisabled();await expect(panel.getByText('Elegí ejes y cara para leer cantos.',{exact:true})).toBeVisible();
- await page.getByLabel('Ejes de la vista 2D').selectOption('0,1');await page.getByLabel('Cara de la vista 2D').selectOption('1');await page.getByLabel('Placa del pedido').selectOption(sheet.id);
+ await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');await page.getByLabel('Placa aprobada del pedido').selectOption(sheet.id);
  await expect(read).toBeEnabled();await read.click();await expect(panel.getByText('Recorrido completo',{exact:true})).toBeVisible();
  const edgeTable=panel.locator('.edge-review table');await expect(edgeTable.locator('thead th')).toHaveText(['Lado 2D','Estado','Pintura / evidencia']);
  await expect(edgeTable.locator('tbody tr').first().locator('.workshop-badge')).toHaveText('Observado');await expect(edgeTable.locator('tbody tr').nth(1).locator('.workshop-badge')).toHaveText('Sin canto');
  const issues=panel.locator('.edge-issues li'),propose=panel.getByRole('button',{name:'Usar propuesta de los cuatro lados',exact:true});
  await expect(issues).toHaveCount(2);await expect(issues.first()).toContainText('Arriba: vinculá');await expect(issues.nth(1)).toContainText('Izquierda: vinculá');await expect(propose).toBeDisabled();
- await page.getByLabel('Vincular canto observado material:888',{exact:true}).selectOption(first.id);await page.getByLabel('Vincular canto observado material:890',{exact:true}).selectOption(second.id);
+ await page.getByLabel(/\(material:888\)$/).selectOption(first.id);await page.getByLabel(/\(material:890\)$/).selectOption(second.id);
  await expect(issues).toHaveCount(2);await expect(issues.first()).toContainText('como principal (1) o secundario (2)');
  await panel.getByRole('group',{name:'Rol de Principal biblioteca en el pedido'}).getByRole('button',{name:'Usar como principal (1)',exact:true}).click();
- await expect(page.getByLabel('Canto principal del pedido')).toHaveValue(first.id);await expect(issues).toHaveCount(1);
+ await expect(page.getByLabel('Canto principal (1) del pedido')).toHaveValue(first.id);await expect(issues).toHaveCount(1);
  await panel.getByRole('group',{name:'Rol de Secundario biblioteca en el pedido'}).getByRole('button',{name:'Usar como secundario (2)',exact:true}).click();
- await expect(page.getByLabel('Canto secundario del pedido')).toHaveValue(second.id);await expect(issues).toHaveCount(0);
+ await expect(page.getByLabel('Canto secundario (2) del pedido')).toHaveValue(second.id);await expect(issues).toHaveCount(0);
  await expect(panel.getByRole('group',{name:'Rol de Principal biblioteca en el pedido'}).getByRole('button',{name:'Usar como principal (1)',exact:true})).toHaveAttribute('aria-pressed','true');
  await expect(propose).toBeEnabled();await propose.click();
- await expect(page.getByLabel('Canto arriba del pedido')).toHaveValue('1');await expect(page.getByLabel('Canto izquierda del pedido')).toHaveValue('2');await expect(page.getByLabel('Canto abajo del pedido')).toHaveValue('0');
+ await expect(page.getByLabel('Arriba · canto del pedido')).toHaveValue('1');await expect(page.getByLabel('Izquierda · canto del pedido')).toHaveValue('2');await expect(page.getByLabel('Abajo · canto del pedido')).toHaveValue('0');
  await page.screenshot({path:'artifacts/ux-taller-cantos-SINTETICO.png',fullPage:false});
- await page.getByLabel('Ejes de la vista 2D').selectOption('1,0');
+ await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('1,0');
  await expect(panel.getByText('La lectura anterior era de otra orientación. Volvé a leer.',{exact:true})).toBeVisible();await expect(propose).toHaveCount(0);
 });
 
 test('revisión de materiales: conteos por filtro, vacío con salida, «/» y ver piezas que usan un material',async({page},info)=>{
  await boot(page,info.outputDir,'materials');
  await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});
- const filter=dialog.getByLabel('Filtrar materiales OCL',{exact:true}),rows=dialog.locator('tbody').first().locator('tr');await expect(rows).toHaveCount(3);
+ const filter=dialog.getByLabel('Mostrar materiales por tipo',{exact:true}),rows=dialog.locator('tbody').first().locator('tr');await expect(rows).toHaveCount(3);
  await expect(filter.locator('option')).toHaveText(['Todos (3)','Placas (2)','Cantos (1)','Sin resolver (0)','Sin aplicar (1)','Con conflicto (0)']);
  await expect(dialog.getByText('Mostrando 3 de 3 materiales',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Limpiar filtros'})).toHaveCount(0);
  await dialog.getByRole('heading',{name:'Materiales y cantos'}).click();await page.keyboard.press('/');const search=dialog.getByLabel('Buscar material OCL');await expect(search).toBeFocused();
  await page.keyboard.type('zzz');await expect(rows).toHaveCount(0);await expect(dialog.getByText('No hay materiales con ese filtro ni con «zzz».',{exact:true})).toBeVisible();
  await dialog.locator('.material-review-empty').getByRole('button',{name:'Limpiar filtros',exact:true}).click();await expect(rows).toHaveCount(3);await expect(search).toHaveValue('');
  await filter.selectOption('edge');await expect(dialog.getByText('Mostrando 1 de 3 materiales',{exact:false})).toBeVisible();
- const allPieces=await dialog.getByLabel('Pieza para revisar materiales',{exact:true}).locator('option').count();
+ const allPieces=await dialog.getByLabel('Revisar una pieza: caras y materiales',{exact:true}).locator('option').count();
  await rows.first().getByRole('button',{name:'Ver piezas',exact:true}).click();
- const pieces=dialog.getByLabel('Pieza para revisar materiales',{exact:true});await expect(pieces).toBeFocused();
+ const pieces=dialog.getByLabel('Revisar una pieza: caras y materiales',{exact:true});await expect(pieces).toBeFocused();
  await expect(dialog.getByText(/^Piezas con Canto de prueba \(\d+\)/)).toBeVisible();
  const filtered=await pieces.locator('option').count();expect(filtered).toBeGreaterThan(1);expect(filtered).toBeLessThanOrEqual(allPieces);
  await dialog.getByRole('button',{name:'Quitar filtro',exact:true}).click();await expect(pieces.locator('option')).toHaveCount(allPieces);

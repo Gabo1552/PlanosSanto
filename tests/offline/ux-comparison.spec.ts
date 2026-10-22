@@ -60,7 +60,7 @@ if(process.env.PLANOS_UX_CAPTURE_BASELINE!=='1'){
   await expect(page.getByRole('heading',{name:'Materiales del taller',exact:true})).toBeVisible();
   await expect(page.getByText('Placa QA sintética',{exact:true}).first()).toBeVisible();await shot(page,'after-materials');
   const beforeNav=calls.length;await nav.getByRole('button',{name:'Maderera',exact:true}).click();
-  await expect(page.getByRole('dialog',{name:'Biblioteca y pedidos'})).toBeVisible();await shot(page,'after-order');
+  await expect(page.getByRole('region',{name:'Biblioteca y pedidos'})).toBeVisible();await expect(page.getByRole('dialog',{name:'Biblioteca y pedidos'})).toHaveCount(0);await shot(page,'after-order');
   expect(calls.slice(beforeNav).some(action=>['pdf','order_save','order_export','names_apply'].includes(action))).toBe(false);
   await nav.getByRole('button',{name:'Inicio',exact:true}).click();
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
