@@ -364,17 +364,32 @@ module PlanosSanto
     # UUID stored in another model. Choosing a catalog material is the explicit
     # intent to paint: PaintMaterials#prepare installs its verified visual in this
     # model when missing (0.8.8), then the current bound material is used.
-    def quick_paint_start(data,install:true)
-      active!;clean_for_paint!
-      raise ExportError,'El pintado rápido usa una instancia. Revisá el alcance avanzado para afectar otras.' if data['scope'] && data['scope']!='unique'
+    # Builds and validates immediate options; resolves the material (installing
+    # only when install:true). Returns [options, prepared or nil].
+    def smart_quick_options(data,install:true)
+      # Hito 2 (PINTURA-02): «Todas las iguales» is authorized only by
+      # allowShared:true in this same request; it is never remembered.
+      scope=data['scope'] || 'unique'
+      raise ExportError,'Alcance de pintado inválido.' unless %w[unique all].include?(scope)
+      raise ExportError,'Configuración de pintado inválida.' if data.key?('allowShared') && ![true,false].include?(data['allowShared'])
+      raise ExportError,'Para pintar todas las copias, activá «Todas las iguales» en la paleta.' if scope=='all' && data['allowShared']!=true
       mode=data.fetch('mode','sheet')
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge remove_edge].include?(mode)
+      # Hito 2 (PINTURA-01): 1, 2 opposite or 4 edges per click, exact Integer;
+      # absent -> remembered -> 1. Sheet always paints the two broad faces.
+      if data.key?('edgeCount')
+        raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' unless data['edgeCount'].is_a?(Integer) && [1,2,4].include?(data['edgeCount'])
+        count=data['edgeCount']
+      else
+        count=smart_settings['edgeCount'] || 1
+      end
+      count=1 if mode=='sheet'
       # Daily painting is one safe occurrence, both physical sides of the board,
       # no deferred batch and no inherited face/XY/shared settings from old UI.
       # The service infers the local cutting axes from each clicked piece.
-      options={'mode'=>mode,'side'=>'both','scope'=>'unique','axes'=>[0,1],
-        'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>1,'batch'=>false,
-        'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>false}
+      options={'mode'=>mode,'side'=>'both','scope'=>scope,'axes'=>[0,1],
+        'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>count,'batch'=>false,
+        'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>scope=='all'}
       if mode=='remove_edge' && data['catalogId'].to_s.empty? && !data['materialUuid'].to_s.empty?
         raise ExportError,'Elegí la placa de restauración completa o usá la detección de la pieza.'
       end
@@ -393,15 +408,25 @@ module PlanosSanto
         prepared=service.prepare(data['catalogId'],mode=='remove_edge' ? 'sheet' : mode)
         options.merge!('catalogId'=>prepared['catalogId'],'materialUuid'=>prepared['materialUuid'])
       end
+      [options,prepared]
+    end
+
+    def quick_paint_start(data,install:true)
+      active!;clean_for_paint!
+      options,prepared=smart_quick_options(data,install:install)
       result=if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         # Validate the new material BEFORE changing the active Tool. Normal
         # material changes neither deselect the Tool nor require reactivation.
+        # A different material or mode drops the «Todas las iguales» consent.
+        current=(@smart_tool.respond_to?(:status) && @smart_tool.status['options']) || @quick_options || {}
+        options.merge!('scope'=>'unique','allowShared'=>false) if current['mode']!=options['mode'] || current['catalogId']!=options['catalogId']
         @smart_tool.update_options(options)
         remember_smart_settings(options)
         {'toolState'=>smart_state}
       else
         dispatch('smart_tool_start',{'options'=>options})
       end
+      @quick_options=options
       return result unless prepared
       result=result.merge('prepared'=>prepared.slice('catalogId','materialUuid','installed','message'))
       prepared['installed'] ? result.merge(paint_palette_state) : result
@@ -833,7 +858,9 @@ module PlanosSanto
         @smart_state={'active'=>false,'mode'=>options['mode'],'changed'=>false,'queuedCount'=>0,'message'=>''}
         generation=@tool_generation || 0
         @smart_tool=SmartPaintTool.new(@model,service:service,options:options,
-          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) })
+          guard:lambda { tool_guard!(generation) },on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) },
+          remember:lambda { |changed| remember_smart_settings(changed) if generation==(@tool_generation || 0) },
+          switch_mode:lambda { |mode| tool_guard!(generation);smart_switch_mode(mode) },timing:smart_timing)
         begin
           @model.select_tool(@smart_tool)
           @smart_state['active']=true
@@ -867,7 +894,7 @@ module PlanosSanto
         end
         stopped.merge('toolState'=>smart_state)
       when 'smart_tool_status'
-        @smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}
+        (@smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
       when 'smart_tool_stop'
         stop_smart_tool
       when 'smart_palette_compact'
@@ -984,13 +1011,13 @@ module PlanosSanto
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
           'layoutModulePresent' => Object.const_defined?(:Layout), 'pdfEngine' => 'pdf-lib local; no requiere LayOut',
-          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'replyStats' => (@reply_stats || []).last(10) }
+          'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'replyStats' => (@reply_stats || []).last(10), 'paintClicks' => smart_timing.summary }
       else
         raise ExportError, 'Acción desconocida.'
       end
     end
 
-    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch].freeze
+    SMART_SETTING_KEYS=%w[edgeCount paintScope mode catalogId replacementKind axes side scope batch lastMaterials].freeze
 
     def smart_state
       (@smart_state || {'active'=>false,'changed'=>false,'queuedCount'=>0,'message'=>''}).merge('changed'=>@smart_changed==true)
@@ -1017,14 +1044,31 @@ module PlanosSanto
         return {} unless envelope.is_a?(Hash) && envelope.keys.sort==%w[schema settings] && envelope['schema']==2
         parsed=envelope['settings']
       end
-      parsed.is_a?(Hash) ? parsed.slice(*SMART_SETTING_KEYS) : {}
+      return {} unless parsed.is_a?(Hash)
+      settings=parsed.slice(*SMART_SETTING_KEYS)
+      settings.delete('edgeCount') if settings.key?('edgeCount') && !(settings['edgeCount'].is_a?(Integer) && [1,2,4].include?(settings['edgeCount']))
+      if settings.key?('lastMaterials')
+        last=settings['lastMaterials'];last=last.is_a?(Hash) ? last.slice('sheet','edge').select { |_,id| id.is_a?(String) && !id.empty? && id.length<=200 } : {}
+        last.empty? ? settings.delete('lastMaterials') : settings['lastMaterials']=last
+      end
+      settings
     rescue JSON::ParserError, ArgumentError, SyntaxError
       {}
     end
 
     def remember_smart_settings(options)
       return unless Sketchup.respond_to?(:write_default)
-      bytes=JSON.generate('schema'=>2,'settings'=>options.slice(*SMART_SETTING_KEYS))
+      settings=options.slice(*SMART_SETTING_KEYS)
+      settings['scope']='unique' if settings.key?('scope') # consent for every copy never survives
+      previous=smart_settings;last=previous['lastMaterials'] || {}
+      if options['immediate']==true || options['immediatePiece']==true
+        # Sheet forces one edge per click; it must not forget the edge preference.
+        settings['edgeCount']=previous['edgeCount'] || 1 if options['mode']=='sheet'
+        # Tab (PINTURA-06): last catalog id per mode; the UUID belongs to the model.
+        last=last.merge(options['mode']=>options['catalogId']) if %w[sheet edge].include?(options['mode']) && options['catalogId'].is_a?(String) && !options['catalogId'].empty?
+      end
+      settings['lastMaterials']=last unless last.empty?
+      bytes=JSON.generate('schema'=>2,'settings'=>settings)
       raise ExportError,'Preferencias de paleta demasiado grandes.' if bytes.bytesize>4096
       Sketchup.write_default('PlanosSanto',SMART_SETTINGS_KEY,SMART_SETTINGS_PREFIX+Base64.strict_encode64(bytes))
     rescue StandardError, SyntaxError => error
@@ -1037,14 +1081,35 @@ module PlanosSanto
         options['axes'].is_a?(Array) && options['axes'].length==2 && options['axes'].uniq.length==2 && options['axes'].all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
       raise ExportError,'Elegí modo, superficie, alcance y ejes; activá explícitamente la herramienta.' unless valid
       if options['immediate']==true || options['immediatePiece']==true
-        raise ExportError,'No se puede pintar esta instancia con seguridad.' unless options['scope']=='unique' && options['side']=='both' && options['batch']!=true && options['allowShared']!=true
+        scoped=(options['scope']=='unique' && options['allowShared']!=true) || (options['scope']=='all' && options['allowShared']==true)
+        raise ExportError,'No se puede pintar esta instancia con seguridad.' unless scoped && options['side']=='both' && options['batch']!=true
       end
-      raise ExportError,'Elegí1,2opuestos o4cantos.' if options.key?('edgeCount') && ![1,2,4].include?(options['edgeCount'])
+      raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' if options.key?('edgeCount') && !(options['edgeCount'].is_a?(Integer) && [1,2,4].include?(options['edgeCount']))
       raise ExportError,'Elegí pieza o cara.' if options.key?('paintScope') && !%w[piece face].include?(options['paintScope'])
       %w[allowShared batch immediate immediatePiece].each do |key|
         raise ExportError,'Configuración de pintado inválida.' if options.key?(key) && ![true,false].include?(options[key])
       end
       JSON.parse(JSON.generate(options))
+    end
+
+    # Tab in the immediate Tool: last catalog material of the destination mode,
+    # resolved to this model's UUID without installing. nil when none is known.
+    def smart_switch_mode(mode)
+      raise ExportError,'Modo rápido inválido.' unless %w[sheet edge].include?(mode)
+      last=(smart_settings['lastMaterials'] || {})[mode]
+      return nil if last.to_s.empty?
+      options,=smart_quick_options({'mode'=>mode,'catalogId'=>last},install:false)
+      remember_smart_settings(options);@quick_options=options
+      options
+    end
+
+    # One click-time log per process; its folder is the Planos Santo data folder.
+    def smart_timing
+      @smart_timing ||= PaintTimingLog.new(directory:begin
+        ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+      rescue StandardError
+        nil # memory only; diagnostics must never fail because of the log
+      end)
     end
 
     def smart_event(event)

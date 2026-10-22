@@ -235,7 +235,8 @@ class DirectPaintTest < Minitest::Test
     assert_equal 'remove_edge',options['mode']
     refute options.key?('catalogId')
     refute options.key?('materialUuid')
-    assert_equal 1,options['edgeCount']
+    # Hito 2 (PINTURA-01): the remembered 1/2/4 edges per click is reused.
+    assert_equal 4,options['edgeCount']
   end
   def test_explicit_remove_edge_restoration_resolves_a_sheet_not_an_edge
     @controller.quick_action('sheet')
