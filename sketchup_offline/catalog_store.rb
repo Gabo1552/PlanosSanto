@@ -11,13 +11,61 @@ module PlanosSanto
     attr_reader :directory
     MAX_BYTES=8*1024*1024
     KINDS=%w[unknown sheet edge solid_wood dimensional veneer].freeze
-    SCHEMA=2
+    SCHEMA=3
     FIELDS_V1=%w[id name kind sku supplier thicknessMm widthMm lengthMm grain compatibleIds price favorite approved updatedAt sourceHash observed].freeze
     # Schema 2 (F-MAT-D): base item of a thickness variant, free notes and the
     # fields that were prefilled as unapproved suggestions (preset, OCL, SKM...).
-    FIELDS=(FIELDS_V1+%w[variantOf notes suggested]).freeze
+    FIELDS_V2=(FIELDS_V1+%w[variantOf notes suggested]).freeze
+    # Schema 3 (0.8.17): «Espesores estándar» of the ficha. `thicknessMm` stays the
+    # chosen thickness (orders, OCL, ficha completa) and is always part of the list.
+    FIELDS=(FIELDS_V2+%w[thicknessesMm]).freeze
+    MAX_THICKNESSES=32
+    # Fallback when presets-taller.json has no valid `standardThicknessesMm` (Gabriel, 22/10).
+    DEFAULT_THICKNESSES={'sheet'=>[3,5,12,15,18,25],'edge'=>[0.45,2]}.freeze
+    PRESETS=File.join(__dir__,'presets-taller.json')
     SUGGESTION_SOURCES=%w[preset ocl skm variant].freeze
     SUGGESTABLE=%w[kind sku supplier thicknessMm widthMm lengthMm grain compatibleIds].freeze
+    def self.measure?(value)
+      value.is_a?(Numeric) && value.finite? && value>0 && value<=100000
+    end
+    # Per-kind standard thicknesses: presets-taller.json (editable, shipped with the
+    # extension) or the constants above. Other kinds start with an empty list.
+    def self.default_thicknesses_all(path=PRESETS)
+      return @default_thicknesses.transform_values(&:dup) if path==PRESETS && @default_thicknesses
+      data=JSON.parse(File.read(path,encoding:'UTF-8'))['standardThicknessesMm'] rescue nil
+      valid=data.is_a?(Hash) && data.keys.sort==%w[edge sheet] && data.values.all? { |list| list.is_a?(Array) && list.length.between?(1,MAX_THICKNESSES) && list.all? { |value| measure?(value) } && list.uniq==list }
+      result=(valid ? data : DEFAULT_THICKNESSES).transform_values { |list| list.map { |value| clean_measure(value) }.sort }
+      @default_thicknesses=result.transform_values(&:dup) if path==PRESETS
+      result
+    end
+    def self.default_thicknesses(kind);(default_thicknesses_all[kind] || []).dup;end
+    def self.clean_measure(value)
+      rounded=value.to_f.round(3)
+      rounded==rounded.to_i ? rounded.to_i : rounded
+    end
+    # Sorted, without repetitions and always including the chosen thickness. A list
+    # with anything that is not a valid measure is left untouched for #validate.
+    def self.thickness_list(row)
+      list=row['thicknessesMm']
+      return list unless list.nil? || (list.is_a?(Array) && list.all? { |value| measure?(value) })
+      values=(list || [])+(measure?(row['thicknessMm']) ? [row['thicknessMm']] : [])
+      values.map { |value| clean_measure(value) }.uniq.sort
+    end
+    # Brings a v1/v2 record to the current shape without losing data. Used by the
+    # migration, by package imports and by saves from older windows.
+    def self.upgrade_row(row)
+      return row unless row.is_a?(Hash)
+      row=row.merge('variantOf'=>nil,'notes'=>'','suggested'=>nil) if row.keys.sort==FIELDS_V1.sort
+      if row.keys.sort==FIELDS_V2.sort
+        defaults=%w[sheet edge].include?(row['kind']) ? default_thicknesses(row['kind']) : []
+        row=row.merge('thicknessesMm'=>thickness_list(row.merge('thicknessesMm'=>defaults)))
+      end
+      row
+    end
+    def self.normalize_row(row)
+      return row unless row.is_a?(Hash) && row.key?('thicknessesMm')
+      row.merge('thicknessesMm'=>thickness_list(row))
+    end
     def self.default_directory
       base=ENV['LOCALAPPDATA'] || ENV['APPDATA'] || ENV['XDG_DATA_HOME'] || File.join(Dir.home,'.local','share')
       File.join(base,'PlanosSanto')
@@ -54,7 +102,12 @@ module PlanosSanto
       raise ExportError,"La biblioteca usa un esquema más nuevo (#{data['schema']}) que esta versión de Planos Santo; no se modificó. Actualizá la extensión." if data['schema'].is_a?(Integer) && data['schema']>SCHEMA
       if data['schema']==1
         validate(data,schema:1)
-        data=data.merge('schema'=>SCHEMA,'items'=>data['items'].map { |row| row.merge('variantOf'=>nil,'notes'=>'','suggested'=>nil) })
+        data=data.merge('schema'=>2,'items'=>data['items'].map { |row| row.merge('variantOf'=>nil,'notes'=>'','suggested'=>nil) })
+      end
+      if data['schema']==2
+        # 0.8.17: each ficha gets its «Espesores estándar»: the defaults of its kind plus its own thickness.
+        validate(data,schema:2)
+        data=data.merge('schema'=>SCHEMA,'items'=>data['items'].map { |row| self.class.upgrade_row(row) })
       end
       validate(data)
     end
@@ -69,7 +122,7 @@ module PlanosSanto
     end
     def validate(data,schema:SCHEMA)
       raise ExportError,'Versión de biblioteca desconocida.' unless data.is_a?(Hash) && data.keys.sort==%w[items revision schema] && data['schema']==schema && data['revision'].is_a?(Integer) && data['revision']>=0 && data['items'].is_a?(Array) && data['items'].length<=5000
-      ids=[];fields=schema==1 ? FIELDS_V1 : FIELDS
+      ids=[];fields={1=>FIELDS_V1,2=>FIELDS_V2}.fetch(schema,FIELDS)
       data['items'].each do |row|
         raise ExportError,'Registro de biblioteca inválido.' unless row.is_a?(Hash) && row.keys.sort==fields.sort
         raise ExportError,'ID de biblioteca inválido.' unless row['id'].is_a?(String) && row['id'].match?(/\A[0-9a-f-]{36}\z/) && !ids.include?(row['id'])
@@ -87,6 +140,7 @@ module PlanosSanto
         end
         raise ExportError,'Procedencia inválida.' unless row['observed'].is_a?(Hash) && row['sourceHash'].is_a?(String) && row['sourceHash'].match?(/\A[0-9a-f]{64}\z/) && row['updatedAt'].is_a?(String)
         validate_v2_fields(row) unless schema==1
+        validate_v3_fields(row) if schema>=3
       end
       data['items'].each do |row|
         raise ExportError,'Canto compatible no existente o tipo incorrecto.' unless row['compatibleIds'].all? { |id| data['items'].any? { |other| other['id']==id && other['kind']=='edge' } }
@@ -104,6 +158,10 @@ module PlanosSanto
       # Provenance only (where the prefilled values came from): it never blocks a ficha.
       raise ExportError,'Sugerencias de ficha inválidas.' unless suggested.is_a?(Hash) && suggested.keys.sort==%w[fields presetId source] && SUGGESTION_SOURCES.include?(suggested['source']) &&
         suggested['fields'].is_a?(Array) && suggested['fields'].uniq==suggested['fields'] && suggested['fields'].all? { |key| SUGGESTABLE.include?(key) } && (suggested['presetId'].nil? || text(suggested['presetId'],80)==suggested['presetId'])
+    end
+    def validate_v3_fields(row)
+      list=row['thicknessesMm']
+      raise ExportError,"Espesores estándar inválidos (hasta #{MAX_THICKNESSES} medidas positivas, sin repetir)." unless list.is_a?(Array) && list.length<=MAX_THICKNESSES && list.all? { |value| self.class.measure?(value) } && list.uniq.length==list.length
     end
     # Ficha completa (0.8.16): the data an order needs, computed, never ticked by hand.
     # Placa: SKU, espesor, largo, ancho y veta definida. Canto: ancho.
@@ -136,14 +194,15 @@ module PlanosSanto
       raw=JSON.generate(canonical({'name'=>name,'kind'=>kind,'observed'=>observed}))
       {'id'=>SecureRandom.uuid,'name'=>text(name),'kind'=>KINDS.include?(kind) ? kind : 'unknown','sku'=>'','supplier'=>'',
        'thicknessMm'=>nil,'widthMm'=>nil,'lengthMm'=>nil,'grain'=>nil,'compatibleIds'=>[],'price'=>nil,'favorite'=>false,'approved'=>false,
-       'updatedAt'=>Time.now.utc.iso8601,'sourceHash'=>Digest::SHA256.hexdigest(raw),'observed'=>observed,'variantOf'=>nil,'notes'=>'','suggested'=>nil}
+       'updatedAt'=>Time.now.utc.iso8601,'sourceHash'=>Digest::SHA256.hexdigest(raw),'observed'=>observed,'variantOf'=>nil,'notes'=>'','suggested'=>nil,
+       'thicknessesMm'=>self.class.default_thicknesses(kind)}
     end
     # Unapproved item whose given values are recorded as suggestions to review.
     def suggested_item(name,kind,values,source,observed={},preset_id: nil)
       values=values.select { |key,value| SUGGESTABLE.include?(key) && !value.nil? }
       item=new_item(name,kind,observed).merge(values)
       item['suggested']={'source'=>source,'fields'=>values.keys.sort,'presetId'=>preset_id} unless values.empty?
-      item
+      self.class.normalize_row(item)
     end
     # MATERIALES-03: same product in another thickness. Copies the commercial
     # data as unapproved suggestions; SKU and price stay empty on purpose.
@@ -157,7 +216,8 @@ module PlanosSanto
       values=base.slice('supplier','widthMm','lengthMm','grain').merge(base['kind']=='sheet' ? {'compatibleIds'=>base['compatibleIds']} : {})
       values=values.reject { |_key,value| value.nil? || value==[] || value=='' }
       item=suggested_item(name,base['kind'],values,'variant',{'source'=>'variant','baseId'=>base['id']})
-      item.merge('thicknessMm'=>thickness,'variantOf'=>base['variantOf'] || base['id'])
+      list=base['thicknessesMm'].is_a?(Array) ? base['thicknessesMm'] : item['thicknessesMm']
+      self.class.normalize_row(item.merge('thicknessMm'=>thickness,'variantOf'=>base['variantOf'] || base['id'],'thicknessesMm'=>list))
     end
     # F-MAT-A: OpenCutList measures read from the model, as suggestions only.
     # A list of several values or a non-metric unit is ambiguous: never guessed.
@@ -193,6 +253,8 @@ module PlanosSanto
         result['revision']=revision+1
         if result['items'].is_a?(Array)
           result['items']=result['items'].map { |row| row.is_a?(Hash) && row['approved']==true && !self.class.legacy_approved?(row) ? row.merge('approved'=>false) : row }
+          # A window of 0.8.16 sends v2 records: upgraded here, never rejected. The chosen thickness always joins the list.
+          result['items']=result['items'].map { |row| self.class.normalize_row(self.class.upgrade_row(row)) }
         end
         validate(result);bytes=JSON.pretty_generate(result)
         raise ExportError,'La biblioteca supera 8 MiB.' if bytes.bytesize>MAX_BYTES
@@ -228,7 +290,7 @@ module PlanosSanto
     end
     def save(items,revision);transaction(revision) { |current| current['items']=items;current };end
     def import(data,revision)
-      library=data.is_a?(Hash) && [1,SCHEMA].include?(data['schema']) && data['items'].is_a?(Array)
+      library=data.is_a?(Hash) && data['schema'].is_a?(Integer) && (1..SCHEMA).cover?(data['schema']) && data['items'].is_a?(Array)
       candidates=if library
         # Exports of either schema go through the same explicit migration.
         migrate(data)['items'].map { |row| row.merge('approved'=>false,'suggested'=>nil) }

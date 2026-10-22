@@ -28,24 +28,24 @@ class CatalogSchemaTest < Minitest::Test
   def write(data);File.write(@path,data.is_a?(String) ? data : JSON.pretty_generate(data));File.binread(@path);end
   def backups;Dir[File.join(@dir,'backups','*.json')];end
 
-  def test_new_library_is_schema_2_with_new_fields
+  def test_new_library_is_schema_3_with_new_fields
     item=@store.new_item('Melamina','sheet')
-    assert_equal 2,@store.empty['schema']
+    assert_equal 3,@store.empty['schema']
     assert_equal PlanosSanto::CatalogStore::FIELDS.sort,item.keys.sort
-    assert_nil item['variantOf'];assert_equal '',item['notes'];assert_nil item['suggested']
-    saved=@store.save([item],0);assert_equal 2,saved['schema'];assert_equal 2,JSON.parse(File.read(@path))['schema']
+    assert_nil item['variantOf'];assert_equal '',item['notes'];assert_nil item['suggested'];assert_equal [3,5,12,15,18,25],item['thicknessesMm']
+    saved=@store.save([item],0);assert_equal 3,saved['schema'];assert_equal 3,JSON.parse(File.read(@path))['schema']
   end
 
   def test_v1_reads_migrated_in_memory_without_touching_the_file
     original=write(v1_library)
     data=@store.read
-    assert_equal 2,data['schema'];assert_equal 7,data['revision'];assert_equal 3,data['items'].length
+    assert_equal 3,data['schema'];assert_equal 7,data['revision'];assert_equal 3,data['items'].length
     data['items'].each { |row| assert_equal PlanosSanto::CatalogStore::FIELDS.sort,row.keys.sort;assert_nil row['variantOf'];assert_equal '',row['notes'];assert_nil row['suggested'] }
     v1_library_rows=JSON.parse(original)['items']
     data['items'].zip(v1_library_rows).each { |migrated,old| V1_FIELDS.each { |key| old[key].nil? ? assert_nil(migrated[key],key) : assert_equal(old[key],migrated[key],key) } }
     assert_equal original,File.binread(@path),'Leer no reescribe la biblioteca v1.'
     assert_empty backups
-    assert_equal({'from'=>1,'to'=>2,'pending'=>true},@store.migration)
+    assert_equal({'from'=>1,'to'=>3,'pending'=>true},@store.migration)
   end
 
   def test_migration_preserves_native_binding_fingerprints
@@ -53,12 +53,12 @@ class CatalogSchemaTest < Minitest::Test
     assert_equal before,@store.read['items'].map { |row| PlanosSanto::MaterialResolver.item_fingerprint(row) }
   end
 
-  def test_first_save_writes_verified_premigration_backup_then_schema_2
+  def test_first_save_writes_verified_premigration_backup_then_schema_3
     original=write(v1_library)
     items=@store.read['items'];items[2]['notes']='Revisar con el proveedor'
     saved=@store.save(items,7)
-    assert_equal 2,saved['schema'];assert_equal 8,saved['revision']
-    stored=JSON.parse(File.read(@path));assert_equal 2,stored['schema'];assert_equal 3,stored['items'].length
+    assert_equal 3,saved['schema'];assert_equal 8,saved['revision']
+    stored=JSON.parse(File.read(@path));assert_equal 3,stored['schema'];assert_equal 3,stored['items'].length
     premigration=backups.select { |path| File.basename(path).start_with?('catalog-v1-premigracion-7-') }
     assert_equal 1,premigration.length,'Respaldo explícito de la versión 1.'
     assert_equal Digest::SHA256.hexdigest(original),Digest::SHA256.file(premigration.first).hexdigest
@@ -72,7 +72,7 @@ class CatalogSchemaTest < Minitest::Test
   def test_damaged_files_are_rejected_untouched_and_without_backup
     cases={
       'json roto'=>'{"schema":1,',
-      'esquema futuro'=>JSON.generate('schema'=>3,'revision'=>0,'items'=>[]),
+      'esquema futuro'=>JSON.generate('schema'=>4,'revision'=>0,'items'=>[]),
       'esquema texto'=>JSON.generate('schema'=>'2','revision'=>0,'items'=>[]),
       'no es objeto'=>JSON.generate([1,2]),
       'clave extra arriba'=>JSON.generate(v1_library.merge('extra'=>true)),
@@ -80,6 +80,10 @@ class CatalogSchemaTest < Minitest::Test
       'v1 sin campo'=>JSON.generate(v1_library.tap { |d| d['items'][0].delete('observed') }),
       'v1 ids duplicados'=>JSON.generate(v1_library.tap { |d| d['items'][1]['id']=d['items'][0]['id'] }),
       'v2 sin campos nuevos'=>JSON.generate(v1_library.merge('schema'=>2)),
+      'v3 sin espesores estándar'=>JSON.generate(v1_library.merge('schema'=>3).tap { |d| d['items'].each { |row| row.merge!('variantOf'=>nil,'notes'=>'','suggested'=>nil) } }),
+      'v3 espesores no numéricos'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('thicknessesMm'=>['18mm'])])),
+      'v3 espesores repetidos'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('thicknessesMm'=>[18,18])])),
+      'v3 espesor negativo'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('thicknessesMm'=>[-3])])),
       'v2 variante inexistente'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('variantOf'=>SecureRandom.uuid)])),
       'v2 sugerencia mal formada'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('suggested'=>{'source'=>'preset'})])),
       'v2 notas con control'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('notes'=>"a\u0000b")])),
@@ -125,7 +129,7 @@ class CatalogSchemaTest < Minitest::Test
   end
 
   def test_future_schema_message_does_not_suggest_restoring
-    write(JSON.generate('schema'=>3,'revision'=>0,'items'=>[]))
+    write(JSON.generate('schema'=>4,'revision'=>0,'items'=>[]))
     assert_match(/más nuevo/,assert_raises(PlanosSanto::ExportError) { @store.read }.message)
   end
 
@@ -158,7 +162,7 @@ class CatalogSchemaTest < Minitest::Test
   def test_import_accepts_v1_and_v2_exports_unapproved_without_foreign_links
     v1=v1_library
     imported=@store.import(v1,0)
-    assert_equal 2,imported['schema'];assert_equal 3,imported['items'].length
+    assert_equal 3,imported['schema'];assert_equal 3,imported['items'].length
     assert imported['items'].none? { |row| row['approved'] }
     assert imported['items'].all? { |row| row['compatibleIds'].empty? && row['variantOf'].nil? }
     export=File.join(@dir,'copia.json');@store.export(export)
@@ -204,7 +208,10 @@ class CatalogSchemaTest < Minitest::Test
     variant=v1_item('Melamina blanca 15','sheet','supplier'=>'Maderera QA','thicknessMm'=>15,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'compatibleIds'=>[edge['id']]).merge('variantOf'=>sheet['id'],'notes'=>'','suggested'=>{'source'=>'variant','fields'=>%w[compatibleIds grain lengthMm supplier widthMm],'presetId'=>nil})
     original=write({'schema'=>2,'revision'=>12,'items'=>[sheet,edge,variant]})
     data=@store.read
-    assert_equal JSON.parse(original),data,'Se lee sin migrar ni reescribir nada'
+    # 0.8.17: se lee migrado en memoria (sólo se agregan los espesores estándar); el archivo no se reescribe.
+    assert_equal JSON.parse(original)['items'],data['items'].map { |row| row.reject { |key,_| key=='thicknessesMm' } },'Ningún dato v2 cambia'
+    assert_equal original,File.binread(@path)
+    assert_equal [[3,5,12,15,18,25],[0.45,2],[3,5,12,15,18,25]],data['items'].map { |row| row['thicknessesMm'] }
     assert_equal [true,true,false],data['items'].map { |row| PlanosSanto::CatalogStore.complete?(row) },'La variante sin SKU queda incompleta'
     assert_equal [sheet['compatibleIds'],variant['suggested']],[data['items'][0]['compatibleIds'],data['items'][2]['suggested']],'Compatibilidades y procedencia se conservan aunque ya no se usen'
     # Al vaciar el proveedor de una ficha aprobada, 0.8.15 la rechazaba: ahora se guarda y la marca cae para que el archivo siga siendo legible por 0.8.15.
@@ -214,5 +221,6 @@ class CatalogSchemaTest < Minitest::Test
     assert saved['items'].select { |row| row['approved'] }.all? { |row| PlanosSanto::CatalogStore.legacy_approved?(row) }
     assert_equal [true,true,true],saved['items'].map { |row| PlanosSanto::CatalogStore.complete?(row) }
     assert_equal saved,@store.read;assert_equal 1,backups.length
+    assert File.basename(backups.first).start_with?('catalog-v2-premigracion-12-'),'Respaldo explícito antes de la primera escritura v3'
   end
 end

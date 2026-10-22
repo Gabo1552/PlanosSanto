@@ -123,7 +123,7 @@ module PlanosSanto
           { 'catalogId' => item['id'], 'available' => available, 'assetHash' => record && record['assetHash'],
             'assetName' => record && record['assetName'], 'status' => available ? 'available' : 'needs_review',
             'designReady' => MaterialPolicy.paintable?(item,directory:@directory), 'supplierReady' => CatalogStore.complete?(item), 'warnings' => MaterialPolicy.warnings(item) }
-        end, 'issues' => [] }
+        end, 'issues' => [], 'ambiguous' => link_plan(catalog)['ambiguous'] }
     end
 
     def validate_request(data, message = 'Confirmá el vínculo del material.')
@@ -208,12 +208,12 @@ module PlanosSanto
 
     # Index publication is rolled back if the model operation cannot commit.
     # Orphan content-addressed archives are harmless and never considered active.
-    def mutate(index)
+    def mutate(index, operation = 'Planos Santo — vincular material')
       previous = File.file?(@path) ? File.binread(@path) : nil
       started = false
       published = false
       begin
-        raise ExportError, 'No se pudo iniciar la operación.' if @model.start_operation('Planos Santo — vincular material', true) == false
+        raise ExportError, 'No se pudo iniciar la operación.' if @model.start_operation(operation, true) == false
         started = true
         result, changed = yield
         if changed
@@ -437,6 +437,241 @@ module PlanosSanto
         end
       end
       with_status ? status.merge(result) : result
+    end
+
+    # --- 0.8.17: vinculación automática ficha ↔ material nativo ----------------
+    # Gabriel: «no tengo que estar vinculando nada». The link resolves itself when
+    # the library loads or a material is chosen to paint:
+    #   1. the own attribute (PlanosSantoMaterial/binding_v1) wins when it is healthy;
+    #   2. a material without it takes the ficha whose name matches without ambiguity;
+    #   3. a broken link is repaired: deleted ficha → by name, reclassified ficha →
+    #      same ficha with its new kind, copied UUID → new UUID, stale commercial
+    #      fingerprint → refreshed, photo texture changed → photo reinstalled in place.
+    # Nothing foreign is overwritten: an OpenCutList type typed by the user, a photo
+    # that is not the ficha's, or a binding of a newer version are left as they are.
+    # Only a real ambiguity stays as a notice, solved with #resolve_link in one click.
+    AUTO_LINK_OPERATION = 'Planos Santo — vincular materiales automáticamente'
+
+    def link_name(value)
+      value.to_s.unicode_normalize(:nfc).strip.sub(/\A\[(.*)\]\z/, '\1').gsub(/\s+/, ' ').downcase
+    rescue ArgumentError, EncodingError
+      value.to_s.strip.downcase
+    end
+
+    def display_name(material)
+      (material.respond_to?(:display_name) ? material.display_name : material.name).to_s
+    end
+
+    def ocl_type(material)
+      material.respond_to?(:get_attribute) ? material.get_attribute(OclAttributes::DICT, 'type', nil) : nil
+    end
+
+    # nil when the OpenCutList type agrees with the kind (or is untyped, or was
+    # written by Planos Santo); :ocl_type when the user typed something else.
+    def ocl_conflict(material, kind)
+      type = ocl_type(material)
+      return nil if type.nil? || type == OclAttributes::UNKNOWN || type == OclAttributes::TYPES[kind]
+      OclAttributes.written(material)['type'] == type ? nil : :ocl_type
+    end
+
+    def link_compatible(material, item)
+      conflict = ocl_conflict(material, item['kind'])
+      return conflict if conflict
+      return :texture if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item, material, directory: @directory, require_source: false)
+      nil
+    end
+
+    # A binding written by a newer Planos Santo is not ours to judge.
+    def newer_binding?(material)
+      raw = material.get_attribute(MaterialResolver::DICT, MaterialResolver::KEY, nil)
+      data = raw.is_a?(String) && raw.bytesize <= MaterialResolver::MAX_BYTES ? JSON.parse(raw) : nil
+      data.is_a?(Hash) && data['schema'].is_a?(Integer) && data['schema'] > MaterialResolver::SCHEMA
+    rescue JSON::ParserError, JSON::NestingError
+      false
+    end
+
+    def photo_reinstallable?(item, material)
+      photo = MaterialPolicy.photo(item)
+      MaterialPolicy.metadata_valid?(item) && material.respond_to?(:texture=) &&
+        MaterialPolicy.file_matches?(@directory, 'photo-assets', photo['imageAsset'], photo['sourceHash'])
+    end
+
+    def link_candidate(material, by_name, served)
+      list = by_name[link_name(display_name(material))] || []
+      return [nil, nil, []] if list.empty?
+      return [nil, :name, list] if list.length > 1
+      item = list.first
+      return [nil, :served, list] if served.include?(item['id'])
+      reason = link_compatible(material, item)
+      reason ? [nil, reason, list] : [item, nil, list]
+    end
+
+    def ambiguity(material, reason, items)
+      name = display_name(material)
+      kinds = { 'sheet' => 'placa', 'edge' => 'canto' }
+      message = if reason == :name
+        "«#{name}» del modelo coincide con #{items.length} fichas con el mismo nombre. Elegí cuál es."
+      else
+        "OpenCutList tiene a «#{name}» con otro tipo; la ficha «#{items.first['name']}» es #{kinds[items.first['kind']]}. Elegí la ficha para usarla (OpenCutList toma su tipo)."
+      end
+      { 'materialId' => material_id(material), 'name' => name, 'reason' => reason.to_s, 'message' => message,
+        'candidates' => items.map { |item| item.slice('name', 'kind', 'thicknessMm').merge('catalogId' => item['id']) } }
+    end
+
+    def skip_entry(material, reason)
+      { 'materialId' => material_id(material), 'name' => display_name(material), 'reason' => reason }
+    end
+
+    # Read-only: what #auto_link! would do. Never writes the model or the library.
+    def link_plan(catalog = @catalog.read)
+      archived = begin
+        archived_ids
+      rescue ExportError
+        []
+      end
+      active = catalog['items'].select { |item| %w[sheet edge].include?(item['kind']) && !archived.include?(item['id']) }
+      by_name = active.group_by { |item| link_name(item['name']) }
+      rows = materials.sort_by { |material| material.entityID.to_i }.map { |material| [material, observed(material)] }
+      served = rows.filter_map do |_material, observation|
+        binding = observation['binding']
+        binding && catalog['items'].any? { |item| item['id'] == binding['catalogId'] && item['kind'] == binding['kind'] } ? binding['catalogId'] : nil
+      end
+      claimed = {}
+      actions = []; ambiguous = []; skipped = []
+      add = lambda { |type, material, item, extra = {}| actions << { 'type' => type, 'material' => material, 'item' => item }.merge(extra) }
+      by_candidate = lambda do |material, type|
+        item, reason, list = link_candidate(material, by_name, served)
+        if item
+          served << item['id']
+          add.call(type, material, item)
+        elsif %i[name ocl_type].include?(reason)
+          ambiguous << ambiguity(material, reason, list)
+        elsif reason
+          skipped << skip_entry(material, reason.to_s)
+        end
+        item
+      end
+      rows.each do |material, observation|
+        case observation['status']
+        when 'absent'
+          by_candidate.call(material, 'bind')
+        when 'invalid'
+          next skipped << skip_entry(material, 'newer') if newer_binding?(material)
+          add.call('clear', material, nil) if !by_candidate.call(material, 'relink') && material.respond_to?(:delete_attribute)
+        else
+          binding = observation['binding']
+          item = catalog['items'].find { |row| row['id'] == binding['catalogId'] }
+          # Deleted ficha: by name; otherwise left alone (it may live in another PC's library).
+          next by_candidate.call(material, 'relink') unless item
+          rekind = item['kind'] != binding['kind']
+          if rekind
+            # A ficha that is no longer a sheet or edge cannot be painted: the link waits for it to be reclassified.
+            next skipped << skip_entry(material, 'kind') unless %w[sheet edge].include?(item['kind'])
+            next ambiguous << ambiguity(material, :ocl_type, [item]) if ocl_conflict(material, item['kind'])
+          end
+          if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item, material, directory: @directory, require_source: false)
+            if photo_reinstallable?(item, material)
+              add.call('retexture', material, item)
+            else
+              skipped << skip_entry(material, 'photo_missing')
+            end
+          end
+          uuid = binding['uuid']
+          copied = claimed.key?(uuid)
+          claimed[uuid] = true
+          stale = MaterialResolver.item_fingerprint(item) != binding['catalogFingerprint']
+          add.call('rebind', material, item, 'uuid' => copied ? nil : uuid, 'oclType' => rekind) if copied || stale || rekind
+        end
+      end
+      { 'actions' => actions, 'ambiguous' => ambiguous, 'skipped' => skipped }
+    end
+
+    LINK_MESSAGES = {
+      'bind' => 'vinculado por nombre', 'relink' => 'vuelto a vincular por nombre', 'rebind' => 'vínculo actualizado',
+      'retexture' => 'foto reinstalada', 'clear' => 'vínculo dañado quitado'
+    }.freeze
+
+    def link_summary(plan, done)
+      { 'changed' => done.length, 'noChanges' => done.empty?,
+        'linked' => done.map do |action|
+          { 'type' => action['type'], 'materialId' => material_id(action['material']), 'name' => display_name(action['material']),
+            'catalogId' => action['item'] && action['item']['id'], 'message' => LINK_MESSAGES[action['type']] }
+        end,
+        'ambiguous' => plan['ambiguous'], 'skipped' => plan['skipped'] }
+    end
+
+    # Caller holds an open operation (#mutate). Returns true when the visual index changed.
+    def apply_link(action, index)
+      material = action['material']; item = action['item']
+      case action['type']
+      when 'clear'
+        material.delete_attribute(MaterialResolver::DICT, MaterialResolver::KEY)
+        false
+      when 'retexture'
+        photo = MaterialPolicy.photo(item); scale = photo['textureScale']
+        path = File.join(@directory, 'photo-assets', photo['imageAsset'])
+        material.texture = scale['verified'] ? [path, scale['widthMm'] / 25.4, scale['heightMm'] / 25.4] : path
+        material.set_attribute(MaterialResolver::DICT, MaterialPolicy::PHOTO_KEY, JSON.generate('schema' => 1, 'sourceHash' => photo['sourceHash']))
+        raise ExportError, "SketchUp no reinstaló la foto de «#{item['name']}»; no se cambió nada." unless MaterialPolicy.native_valid?(item, material, directory: @directory, require_source: false)
+        false
+      else
+        binding = MaterialResolver.binding_for(item, action['uuid'] || SecureRandom.uuid)
+        material.set_attribute(MaterialResolver::DICT, MaterialResolver::KEY, JSON.generate(binding))
+        current = ocl_type(material)
+        if action['oclType'] && !current.nil? && current != OclAttributes::UNKNOWN && OclAttributes.written(material)['type'] == current
+          # Only the OpenCutList type Planos Santo wrote itself follows the new kind.
+          type = OclAttributes::TYPES[item['kind']]
+          material.set_attribute(OclAttributes::DICT, 'type', type)
+          OclAttributes.record_written(material, OclAttributes.written(material).merge('type' => type))
+        end
+        # The model material becomes the ficha's reusable visual when it had none.
+        %w[bind relink].include?(action['type']) && !MaterialPolicy.photo?(item) ? archive(material, item, index, false) : false
+      end
+    end
+
+    # One undoable operation, only when something changes.
+    def auto_link!
+      plan = link_plan
+      return link_summary(plan, []) if plan['actions'].empty?
+      done = locked('revision' => @catalog.read['revision'], 'confirmed' => true) do |catalog, index|
+        plan = link_plan(catalog)
+        next [] if plan['actions'].empty?
+        mutate(index, AUTO_LINK_OPERATION) do
+          changed = false
+          plan['actions'].each { |action| changed = apply_link(action, index) || changed }
+          [plan['actions'], changed]
+        end
+      end
+      link_summary(plan, done)
+    end
+
+    # One click for a real ambiguity: this material is this ficha. The operator's
+    # choice also sets OpenCutList's type to the ficha's kind (recorded as written).
+    def resolve_link(data)
+      raise ExportError, 'Elegí el material del modelo y la ficha.' unless data.is_a?(Hash) && data['materialId'].is_a?(String) && data['catalogId'].is_a?(String)
+      result = locked(data.merge('confirmed' => true)) do |catalog, index|
+        item = current_item(catalog, data['catalogId'], for_bind: true)
+        material = materials.find { |candidate| material_id(candidate) == data['materialId'] }
+        raise ExportError, 'El material ya no está en el modelo; volvé a cargar la biblioteca.' unless material
+        if MaterialPolicy.photo?(item) && !MaterialPolicy.native_valid?(item, material, directory: @directory, require_source: false)
+          raise ExportError, "La textura de «#{display_name(material)}» no es la foto de «#{item['name']}»; elegí otra ficha."
+        end
+        old = observed(material)['binding']
+        keep = old && old['catalogId'] == item['id'] && !duplicate_uuids.include?(old['uuid'])
+        mutate(index, 'Planos Santo — elegir la ficha del material') do
+          binding = MaterialResolver.binding_for(item, keep ? old['uuid'] : SecureRandom.uuid)
+          material.set_attribute(MaterialResolver::DICT, MaterialResolver::KEY, JSON.generate(binding))
+          type = OclAttributes::TYPES[item['kind']]; current = ocl_type(material)
+          updated = !(current.nil? || current == OclAttributes::UNKNOWN || current == type)
+          if updated
+            material.set_attribute(OclAttributes::DICT, 'type', type)
+            OclAttributes.record_written(material, OclAttributes.written(material).merge('type' => type))
+          end
+          changed = MaterialPolicy.photo?(item) ? false : archive(material, item, index, false)
+          [{ 'materialId' => material_id(material), 'binding' => binding, 'oclTypeUpdated' => updated }, changed]
+        end
+      end
+      status.merge(result)
     end
 
     # --- Hito 7: duplicate and archive (MATERIALES-08/09) ---------------------
@@ -823,8 +1058,8 @@ module PlanosSanto
       reject!('el paquete tiene demasiadas compatibilidades.') if total>MAX_COMPATIBLE_TOTAL
       items.each do |item|
         reject!('canto compatible inexistente o de otro tipo.') unless item['compatibleIds'].all? { |id| id.is_a?(String) && kinds[id]=='edge' }
-        # Hito 4: packages of schema-1 libraries migrate explicitly; variant links are foreign references.
-        item.merge!('variantOf'=>nil,'notes'=>'','suggested'=>nil) if item.keys.sort==CatalogStore::FIELDS_V1.sort
+        # Hito 4 / 0.8.17: packages of schema-1/2 libraries migrate explicitly; variant links are foreign references.
+        item.replace(CatalogStore.upgrade_row(item))
         item['variantOf']=nil
         begin
           @catalog.validate({'schema'=>CatalogStore::SCHEMA,'revision'=>0,'items'=>[item.merge('compatibleIds'=>[])]})

@@ -669,7 +669,9 @@ module PlanosSanto
       active!
       directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
       catalog=CatalogStore.new(directory:directory)
-      native=MaterialLibrary.new(@model,catalog:catalog,directory:directory).status
+      library=MaterialLibrary.new(@model,catalog:catalog,directory:directory)
+      linked=auto_link_materials(library)
+      native=library.status
       photos=photo_material.thumbnails
       status=skm_importer.status
       status['rows'].each { |row| row['thumbnail']=photos[row['catalogId']] if photos[row['catalogId']] }
@@ -680,7 +682,25 @@ module PlanosSanto
         row['thumbnail']=photos[item['id']]
         row['designReady']=MaterialPolicy.paintable?(item,directory:directory)
       end
-      status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'])
+      status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'],
+        'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all)
+    end
+
+    # 0.8.17: loading the library resolves the ficha ↔ model material links by
+    # itself (one undoable operation, only when something changes). Never while
+    # painting or with unsaved guide/order edits; a busy library just waits for
+    # the next load. Errors never block the library listing.
+    def auto_link_materials(library)
+      return {'changed'=>0,'deferred'=>true} if @dirty || @workshop_dirty || (@smart_state && @smart_state['active'] && @smart_state['mode']!='highlight')
+      result=library.auto_link!
+      if result['changed'].to_i>0
+        refresh_after_material_change(result)
+        notify_material_library_changed('auto_link')
+      end
+      result.slice('changed','linked')
+    rescue StandardError => error
+      warn("Planos Santo: vinculación automática pospuesta: #{error.class}: #{error.message}") unless error.is_a?(ExportError)
+      {'changed'=>0,'error'=>error.message}
     end
 
     def photo_material
@@ -699,7 +719,7 @@ module PlanosSanto
     MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
       catalog_bind catalog_install skm_commit skm_install material_photo_create
       material_photo_install smart_assign_color smart_material_prepare smart_quick_start
-      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync].freeze
+      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync material_link_resolve].freeze
     def dispatch(action, data)
       result=dispatch_action(action,data)
       if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
@@ -1485,7 +1505,7 @@ module PlanosSanto
     # the smart paint tool; mutations are refused while it is active.
     MATERIAL_MANAGEMENT_ACTIONS=%w[material_extras material_duplicate material_archive
       material_package_export material_package_preview material_package_commit material_package_cancel
-      material_texture_preview material_texture_apply material_ocl_sync viewport_focus].freeze
+      material_texture_preview material_texture_apply material_ocl_sync material_link_resolve viewport_focus].freeze
     MATERIAL_MANAGEMENT_READONLY=%w[material_extras material_package_cancel viewport_focus].freeze
     def material_management_directory
       ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
@@ -1548,6 +1568,10 @@ module PlanosSanto
         clean_for_paint! unless data['dryRun']==true
         result=management_library.ocl_sync(data)
         result['changed'].to_i>0 ? refresh_after_material_change(result) : result
+      when 'material_link_resolve'
+        # 0.8.17: the one click left for a real ambiguity (two fichas with the same name).
+        active!;clean_for_paint!
+        refresh_after_material_change(management_library.resolve_link(data))
       when 'material_texture_preview'
         active!
         photo_material.texture_preview(data)
