@@ -145,12 +145,14 @@ export default function App(){
     try{await operation();return true;}catch(error){const text=error instanceof Error?error.message:String(error);setError(text,noticeActionFor(text,label));return false;}
     finally{setBusy('');}
   }
-  function markDirty(){if(dirty)return;setDirty(true);void request('dirty',{value:true}).catch(()=>{});}
+  // Edits by the operator since the last analysis or generation: only those block the automatic refresh.
+  const userEdited=useRef(false);
+  function markDirty(){userEdited.current=true;if(dirty)return;setDirty(true);void request('dirty',{value:true}).catch(()=>{});}
   function changeFurniture(change:(f:Furniture)=>Furniture){
     setProject(previous=>previous?{...previous,furniture:previous.furniture.map(f=>f.id===furniture?.id?change(f):f)}:previous);markDirty();
   }
   const acceptScan=useCallback((result:Scan,mode?:'all'|'selected')=>{
-    heldScan.current=undefined;editSnapshot.current=undefined;setNameBatch(undefined);setContextChanged(false);setModelAnalysisStale(false);setWorkCode(result.guide.workCode||'');setPieceQuery('');setOnlySelected(false);setEditingPieceId('');setHideFurniture(false);setScan(result);setProject(undefined);setOrphans({});setRenumbered(new Set());setDirty(false);setPicking(undefined);
+    heldScan.current=undefined;editSnapshot.current=undefined;userEdited.current=false;setNameBatch(undefined);setContextChanged(false);setModelAnalysisStale(false);setWorkCode(result.guide.workCode||'');setPieceQuery('');setOnlySelected(false);setEditingPieceId('');setHideFurniture(false);setScan(result);setProject(undefined);setOrphans({});setRenumbered(new Set());setDirty(false);setPicking(undefined);
     const available=new Set(allIds(result.tree.roots));
     const stored=result.guide.selection.filter(id=>available.has(id));
     const roots=result.tree.roots.filter(n=>n.children.length>0&&countPieces(n)>0).map(n=>n.id);
@@ -170,6 +172,21 @@ export default function App(){
       acceptScan(await request<Scan>('scan'),mode);
     });
   }
+  // The analysis refreshes itself when the model changes (painting, native edits), like OpenCutList's
+  // cutlist: no «Reanalizar» click. Guides that were open are generated again with the same pieces.
+  // With edits made by the operator it waits: rescanning would discard them, so the banner stays.
+  // A freshly generated guide that nobody touched counts as unsaved but not edited: it refreshes.
+  const autoRefresh=useRef<()=>Promise<void>>(async()=>{});
+  autoRefresh.current=async()=>{
+    const hadGuides=!!project,pieces=ids,target=destination;
+    await analyze(undefined,true);
+    if(hadGuides&&pieces.length)await generate(pieces,target,true);
+  };
+  useEffect(()=>{
+    if(!modelAnalysisStale||userEdited.current||busy||contextChanged||!scan)return;
+    const timer=window.setTimeout(()=>{if(!userEdited.current)void autoRefresh.current();},1200);
+    return()=>window.clearTimeout(timer);
+  },[modelAnalysisStale,dirty,busy,contextChanged,scan]);
   useEffect(()=>{
     let mounted=true;setBusy('Analizando modelo…');
     // ARQ-07: opening Materiales or Maderera never scans; the banner offers Analizar.
@@ -196,7 +213,7 @@ export default function App(){
   useEffect(()=>{
     function action(event:Event){consumeQuick((event as CustomEvent<unknown>).detail);}
     function state(event:Event){const state=(event as CustomEvent<{contextChanged?:boolean;contextRestored?:boolean;error?:string}>).detail;if(state?.contextChanged){if(!heldScan.current)heldScan.current=currentScan.current;setContextChanged(true);setScan(undefined);setError(state.error||'Cambió el modelo activo. Los cambios de esta guía siguen en la ventana: copialos o guardalos en el modelo original antes de analizar otro.');}else if(state?.contextRestored){setContextChanged(false);setScan(heldScan.current||currentScan.current);heldScan.current=undefined;setError('');setMessage('Volviste al modelo de la guía. Los cambios pendientes se conservaron; revisalos antes de guardar.');}}
-    function invalidate(){setModelAnalysisStale(true);setMessage('Cambió el material del modelo desde Pintura Inteligente. Los cambios de la guía se conservan; volvé a analizar y generar antes de guardar o exportar.',{label:'Analizar de nuevo',kind:'analyze'});}
+    function invalidate(){setModelAnalysisStale(true);}
     window.addEventListener('planos-santo-document-invalidated',invalidate);window.addEventListener('planos-santo-quick-action',action);window.addEventListener('planos-santo-smart-paint',state);
     return()=>{window.removeEventListener('planos-santo-document-invalidated',invalidate);window.removeEventListener('planos-santo-quick-action',action);window.removeEventListener('planos-santo-smart-paint',state);};
   },[consumeQuick,setError,setMessage]);
@@ -214,7 +231,7 @@ export default function App(){
       const result=await request<Generated>('generate',{ids:selectedIds});
       const merged=mergeGuide(result.document,result.guide);
       merged.project.furniture=merged.project.furniture.map(f=>ensureGuide(withNaming(f,workCode)));
-      setDestination(target);setIds(selectedIds);setProject(merged.project);setOrphans(merged.orphans);setUnsavedCodes(merged.unsaved);setRenumbered(new Set());setRevision(result.guide.revision);setFingerprint(result.fingerprint);
+      userEdited.current=false;setDestination(target);setIds(selectedIds);setProject(merged.project);setOrphans(merged.orphans);setUnsavedCodes(merged.unsaved);setRenumbered(new Set());setRevision(result.guide.revision);setFingerprint(result.fingerprint);
       const unsaved=editsFor(merged.project,merged.orphans).some(f=>JSON.stringify(f)!==JSON.stringify(withoutCodeHistory(result.guide.furniture.find(saved=>saved.id===f.id))));
       setPieceQuery('');setOnlySelected(false);setFurnitureId(merged.project.furniture[0].id);setPieceId('');setNoteId('');setPicking(undefined);setDirty(unsaved);
       await request('dirty',{value:unsaved});setMessage('Guías generadas. Revisá las piezas, agregá tus indicaciones y guardá la guía.');
@@ -378,10 +395,11 @@ export default function App(){
     if(busy)return `Esperá a que termine «${busy.replace(/…$/,'')}»`;
     if(kind==='nav')return undefined;
     if(kind==='tools')return scan?undefined:'Esperá a que se analice el modelo abierto';
+    // Painting works on the live model with its own per-click inventory, like OpenCutList: it never waits for the analysis or the guide.
+    if(kind==='paint')return libraryDirty&&!allowLibrary?'Guardá o cancelá los cambios de Materiales':undefined;
     if(contextChanged)return 'Volvé al modelo original de la guía';
     if(modelAnalysisStale)return 'El análisis está desactualizado; volvé a analizar y generar las guías';
     if(draftHidden!==null)return 'Aplicá o cancelá las piezas ocultas';
-    if(kind==='paint')return !scan?'Esperá a que se analice el modelo abierto':dirty?'Guardá la guía antes de pintar':libraryDirty&&!allowLibrary?'Guardá o cancelá los cambios de Materiales':workshopDirty?'Guardá o cancelá los cambios de biblioteca o pedido':undefined;
     if(!project)return 'Primero generá las guías en Muebles';
     if(kind==='export'&&selectionChanged)return 'Cambiaste los muebles; pulsá Generar guías';
     return undefined;

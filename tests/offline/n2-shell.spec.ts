@@ -32,7 +32,6 @@ async function boot(page:Page,folder:string,viewport={width:1500,height:1100}){
  await page.clock.install();await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
  await expect.poll(()=>calls.filter(call=>call.action==='ui_ready').length).toBe(1);
 }
-const count=(action:string)=>calls.filter(call=>call.action===action).length;
 const rail=(page:Page,name:string)=>page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name,exact:true});
 async function generated(page:Page){await page.keyboard.press('Alt+3');await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();}
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
@@ -63,7 +62,7 @@ test('axe no encuentra violaciones serious ni critical en las vistas del shell',
  await page.keyboard.press('Alt+5');await expect(page.getByRole('heading',{level:2,name:'Primero generá las guías en Muebles'})).toBeVisible();found.push(...await axe(page,'Planos A4 vacío'));
  await generated(page);found.push(...await axe(page,'Muebles'));
  await page.getByLabel('Nombre P01',{exact:true}).fill('');await expect(page.locator('.warnings').first()).toBeVisible();found.push(...await axe(page,'Muebles con advertencias'));
- await page.getByRole('button',{name:'Pintar placas y cantos',exact:true}).click({force:true});await expect(page.getByRole('alert')).toBeVisible();found.push(...await axe(page,'Aviso de error'));
+ await page.evaluate(()=>window.dispatchEvent(new Event('planos-santo-document-invalidated')));await page.keyboard.press('Control+Shift+E');await expect(page.getByRole('alert')).toBeVisible();found.push(...await axe(page,'Aviso de error'));
  await page.getByRole('button',{name:/^Generar guías/}).first().click();await expect(page.locator('.ux-confirm')).toBeVisible();found.push(...await axe(page,'Confirmación'));
  await page.getByRole('button',{name:'Seguir editando',exact:true}).click();
  await page.keyboard.press('Alt+5');await expect(page.locator('.a4-sheet-preview')).toBeVisible();found.push(...await axe(page,'Planos A4'));
@@ -116,10 +115,9 @@ test('una advertencia no sobrevive al cambiar de sección con el riel',async({pa
  await rail(page,'Muebles').click();await expect(warning).toHaveCount(0);
 });
 
-test('Pintura avanzada bloqueada conserva el foco, se lee el motivo y no abre la paleta',async({page},info)=>{
+test('con la guía sin guardar, Pintura avanzada sigue disponible y abre la paleta (pintar no depende de la guía)',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Nombre pendiente');
- const advanced=page.getByRole('button',{name:'Pintura avanzada',exact:true});await expect(advanced).toHaveAttribute('aria-disabled','true');await expect(advanced).not.toHaveAttribute('disabled');
- await expect(advanced).toHaveAccessibleDescription('Guardá la guía antes de pintar');
- await advanced.focus();await page.keyboard.press('Enter');await expect(page.getByRole('alert')).toContainText('No se puede pintar. Guardá la guía antes de pintar.');
- await expect(advanced).toBeFocused();expect(count('smart_palette_compact')).toBe(0);await expect(page.locator('.smart-paint-palette')).toHaveCount(0);
+ const advanced=page.getByRole('button',{name:'Pintura avanzada',exact:true});await expect(advanced).not.toHaveAttribute('aria-disabled','true');
+ await advanced.focus();await page.keyboard.press('Enter');await expect(page.locator('.smart-paint-palette')).toHaveCount(1);
+ await expect(page.getByRole('alert').filter({hasText:'No se puede pintar'})).toHaveCount(0);
 });
