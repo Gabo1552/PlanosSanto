@@ -67,12 +67,14 @@ class EdgeSidesTest < Minitest::Test
   assert_equal ['?']*4,map(@row,@g.merge('rectangular'=>false))
   input=diagnostic;input['complete']=false;assert_equal ['?']*4,map(@row,@g,R.from_diagnostic(input))
  end
- def test_real_face_mapping_must_match_roles_approved_bindings_and_user_orientation
+ def test_real_face_mapping_must_match_roles_bindings_and_user_orientation
   assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(@report,@row.merge('edgeMap'=>[0,0,0,0]),@g,@catalog)}
   assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(@report,@row.merge('edgeBindings'=>[]),@g,@catalog)}
   assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(@report,@row.merge('frontSign'=>-1),@g,@catalog)}
   assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(@report,@row.merge('principalId'=>'other'),@g,@catalog)}
-  @catalog['items'][0]['approved']=false;assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(@report,@row,@g,@catalog)}
+  # «Aprobado» ya no existe como requisito: el vínculo tiene que apuntar a un canto real.
+  @catalog['items'][0]['approved']=false;R.verify_edge_mapping(@report,@row,@g,@catalog)
+  @catalog['items'][0]['kind']='sheet';assert_raises(PlanosSanto::ExportError){R.verify_edge_mapping(@report,@row,@g,@catalog)}
  end
  def test_absent_geometry_and_inherited_unknown_material_do_not_create_a_side
   @report['pieces'][0]['faces'].each { |face| face['vertices_mm']=nil };assert_equal ['?']*4,map
