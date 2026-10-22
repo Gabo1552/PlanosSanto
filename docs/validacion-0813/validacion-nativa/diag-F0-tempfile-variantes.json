@@ -1,0 +1,6 @@
+{
+  "abierto_punto": "ArgumentError: failed to load image",
+  "cerrado_punto": "ok nil 1200",
+  "abierto_sin_punto": "ArgumentError: failed to load image",
+  "cerrado_sin_punto": "ok nil 1200"
+}

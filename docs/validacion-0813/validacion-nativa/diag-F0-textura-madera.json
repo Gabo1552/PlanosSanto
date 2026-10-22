@@ -1,0 +1,9 @@
+{
+  "image_info": {
+    "widthPx": 1024,
+    "heightPx": 512,
+    "format": "jpg"
+  },
+  "tempfile": "<tmp>/.planos-photo-20261022-2940-6bunbx.jpg",
+  "load_file": "ArgumentError: failed to load image @ <local>/automation/diag_foto.rb:21:in `load_file' | <local>/automation/diag_foto.rb:21:in `block in diag_foto' | C:/Program Files/SketchUp/SketchUp 2026/SketchUp/Tools/RubyStdLib/tempfile.rb:407:in `create'"
+}

@@ -1,0 +1,31 @@
+{
+  "version": "0.8.13",
+  "versionManifiesto": "0.8.13",
+  "versionEsperada": "0.8.13",
+  "versionOk": true,
+  "sketchupVersion": "26.2.243",
+  "rubyVersion": "3.2.2",
+  "installedFiles": 64,
+  "mismatches": [
+
+  ],
+  "extras": [
+
+  ],
+  "faltantes": [
+
+  ],
+  "toolbar": [
+    "edge",
+    "furniture",
+    "guides",
+    "main",
+    "materials",
+    "order",
+    "remove_edge",
+    "sample",
+    "sheet"
+  ],
+  "passed": true,
+  "productionApproved": false
+}

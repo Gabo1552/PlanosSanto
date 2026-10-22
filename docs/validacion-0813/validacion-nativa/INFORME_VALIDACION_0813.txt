@@ -1,0 +1,227 @@
+PLANOS SANTO 0.8.13 — INFORME DE VALIDACIÓN NATIVA (HITOS 1 A 7)
+22 de octubre de 2026 — SketchUp 2026 real / Windows
+
+DECISIÓN: CANDIDATA NO APROBADA. CORRIDA DETENIDA EN F0.
+productionApproved: false.
+
+La instalación pasa (integridad passed: true, 0.8.13, sin mismatches, extras ni faltantes).
+F0 falla: un JPG válido de 1200×1200 se rechaza con «Elegí una imagen JPG o PNG válida…»,
+igual que en la 0.8.8. También se rechazan PNG RGB, PNG con alfa y una textura de madera.
+La guía (§1) y el encargo piden detener la corrida si fallan la instalación o F0–F2:
+todo lo de foto depende de esto. No se ejecutaron los bloques 2 a 13. No se modificó el
+código del producto.
+
+======================================================================
+1. ENTORNO
+======================================================================
+- Sketchup.version: 26.2.243
+- RUBY_VERSION: 3.2.2
+- Windows 11 Home Single Language 10.0.26300
+- Pantallas: principal 1707×1067 lógicos (panel interno con escalado de Windows, previsiblemente
+  150 %); secundaria 1920×1080. UI.scale_factor informado por SketchUp: 1.0.
+  La corrida se hizo sólo en la pantalla principal; no se probó 100 % vs 150 % (P-k, AV6, 10.1).
+- OpenCutList 7.1.0 instalado y activo (ladb_opencutlist.rb: ex.version = "7.1.0"). No se
+  desinstaló ni se actualizó. SketchUp avisó «6 extensiones listas para ser actualizadas»: se
+  eligió «Ignorar».
+- Control de SketchUp: clics y teclado reales en Windows (computer-use) y consola Ruby nativa.
+  No se usaron dobles de la API.
+- Repositorio: main en 4f12405 (Merge pull request #12 …encargo-local-0813), git limpio.
+- sketchup_offline/version.json: {"version": "0.8.13"}.
+- RBZ instalado: dist/PlanosSanto-0.8.13-candidata.rbz
+  SHA-256 a9e3d99fb9c844fe436ad01e08ec90c0ce566ef6103c769f170c312f90d16eb7 (coincide con el
+  publicado). Se instaló una copia byte a byte de ese archivo.
+- Instalación: Extensiones › Administrador de extensiones › Instalar extensión, con SketchUp
+  lanzado con PLANOS_SANTO_DATA_DIR=<local>\qa-library. Antes había instalada la 0.8.8 (respaldada
+  en <local>, junto con planos_santo.rb). Se cerró SketchUp y se reabrió sobre la copia de M-S con
+  la misma variable; Planos Santo cargó desde la biblioteca QA (comprobado con ENV en la consola).
+- Verificador: docs/validacion-0811/verificar_0811_sketchup.rb de main (VERSION = '0.8.13'),
+  cargado desde un auxiliar local que sólo guarda cada resultado como JSON. No se cargó ningún
+  verificador de versiones anteriores.
+
+======================================================================
+2. RESPALDOS Y AISLAMIENTO
+======================================================================
+- %LOCALAPPDATA%\PlanosSanto\ copiada completa (45 archivos) a <local>\backups\library-original;
+  SHA-256 de cada archivo anotado (las 45 copias coinciden con el origen).
+- Biblioteca QA: copia de esa biblioteca en <local>\qa-library. SketchUp corrió siempre con
+  PLANOS_SANTO_DATA_DIR apuntando ahí. Al final la biblioteca QA sigue con 45 archivos y ninguno
+  modificado durante la corrida.
+- Modelos originales respaldados con SHA-256 (los mismos tres de la corrida 0.8.8; los valores
+  coinciden con los anotados entonces):
+    M-S  ccdb16a6da1880aecebce7cd09abe328eee94f5bf699d977420f6290a693f194
+    M-C  78d17cf6a61225537a0fd11731ccc7105924714e928f3d21a46a27ef35a4d5de
+    M-L  a6147996fb4fe130327ff9d752137359d9c6819f93413add86ec8bc925a3d859
+  Se trabajó sólo con copias (<local>\models\*-0813.skp). Se abrió únicamente la copia de M-S.
+- Fotos de prueba: sintéticas, generadas para esta corrida (sin datos del taller):
+    jpg-1200.jpg        1200×1200, 206.074 B, sha256 4cbc788d7c4a19cf584b1fa685ae33fe54777ceee7f346f1962f97cd82372270
+    textura-madera.jpg  1024×512,  74.168 B,  sha256 7fd863ef05793c1c90c229fb3150e52cf821023592ca5d29153476c2957b0002
+    png-rgb.png         800×600,   2.824 B,   sha256 c6c011ae9b6edaf5563ca2d3218e2c2129eb984831ee7e5eefdef5a55bb57475
+    png-alfa.png        600×600,   4.385 B,   sha256 078059dbb3a9c2823e19eb3a1c2aa27a851ff22382f8c030231ddb9dc6b90893
+    jpg-24mp.jpg, texto-renombrado.jpg, jpg-truncado.jpg (para F4; no se usaron por la detención)
+  El JPG 1200×1200 original de la 0.8.8 (SHA 4af47551…) no estaba en la PC; se usó uno sintético
+  de las mismas dimensiones.
+- No se cerraron ni guardaron ventanas de SketchUp ajenas: al empezar no había ningún proceso de
+  SketchUp abierto. Sólo se cerraron los procesos propios de esta corrida, con el modelo sin
+  modificar (model.modified? = false antes de cerrar).
+
+======================================================================
+3. COMPROBACIÓN FINAL DE ORIGINALES
+======================================================================
+- Biblioteca de producción %LOCALAPPDATA%\PlanosSanto\: 45 de 45 archivos con el mismo SHA-256
+  que al inicio; ningún archivo nuevo.
+- M-S, M-C y M-L originales: SHA-256 iguales a los iniciales.
+- Copia de trabajo M-S-0813: abierta y cerrada sin modificar (9 materiales, 83 definiciones,
+  346 entidades al inicio y al final).
+- Queda instalada la 0.8.13 en SketchUp. El respaldo de la 0.8.8 instalada sigue en <local>
+  para volver atrás si se decide.
+
+======================================================================
+4. FALLA BLOQUEANTE F0 — CAUSA UBICADA (SIN PARCHE)
+======================================================================
+Síntoma: V.foto('<local>/jpg-1200.jpg') →
+  imageRep: loadReturn nil, 1200×1200, bitsPerPixel 24, rowPadding 0, dataBytes 4.320.000
+  producto: aceptada false, «Elegí una imagen JPG o PNG válida de hasta12MiB,16megapíxeles y
+  16.384píxeles por lado.»
+Lo mismo con png-rgb (24 bpp), png-alfa (32 bpp) y textura-madera (24 bpp). Es decir: SketchUp
+decodifica bien la ruta original, pero el producto rechaza la foto.
+
+Diagnóstico de solo lectura (diag_foto.rb, mismos pasos de PhotoMaterial#pick sin el rescue que
+oculta el error; no crea materiales, fichas ni archivos de biblioteca):
+  1. image_info (encabezado): OK en las 4 imágenes.
+  2. Sketchup::ImageRep#load_file sobre la COPIA TEMPORAL que arma pick:
+     ArgumentError: failed to load image   (las 4 imágenes)
+  3. Variantes con el mismo JPG (diag-F0-tempfile-variantes.json):
+       Tempfile abierto,  nombre «.planos-photo-…jpg»  → ArgumentError: failed to load image
+       Tempfile cerrado,  nombre «.planos-photo-…jpg»  → ok (load_file nil, width 1200)
+       Tempfile abierto,  nombre «planos-photo-…jpg»   → ArgumentError: failed to load image
+       Tempfile cerrado,  nombre «planos-photo-…jpg»   → ok (load_file nil, width 1200)
+
+Causa probable: en Windows, ImageRep#load_file no puede leer un archivo que Ruby todavía tiene
+abierto. PhotoMaterial#temporary escribe los bytes en un Tempfile y llama al bloque SIN cerrar el
+archivo; load_image lanza ArgumentError y el rescue StandardError lo convierte en reject_image!.
+El punto inicial del nombre no influye.
+  - sketchup_offline/photo_material.rb:76-80   (temporary: Tempfile.create … file.flush; yield file.path)
+  - sketchup_offline/photo_material.rb:125     (pick: temporary(bytes,…) { |copy| image_preview(load_image(copy,…)) })
+  - sketchup_offline/photo_material.rb:57      (rep.load_file(path) lanza ArgumentError)
+  - sketchup_offline/photo_material.rb:73-74   (rescue StandardError → reject_image!: oculta la causa real)
+Por qué no lo vieron las pruebas: el doble de ImageRep (sketchup_offline/test/photo_material_double.rb:138)
+lee el archivo aunque esté abierto; no reproduce el bloqueo de Windows.
+Corrección sugerida (no aplicada): cerrar el Tempfile antes de ceder la ruta (file.close antes de
+yield, dentro del mismo Tempfile.create para que igual se borre) y registrar en consola la clase y
+el mensaje del error antes de convertirlo en reject_image!.
+
+Relación con la 0.8.8: en la 0.8.8 el rechazo venía de photo_material.rb:51 (exigía load_file ==
+true). La 0.8.9–0.8.13 acepta nil, pero la copia temporal abierta sigue impidiendo la decodificación.
+F1 (+ Material → Guardar y pintar) y F2 (Asignar foto) usan el mismo pick, así que fallan por la
+misma causa. No se repitieron por interfaz porque la guía indica detener la corrida.
+
+======================================================================
+5. OTRAS OBSERVACIONES DE LA CORRIDA
+======================================================================
+O1. Aviso de Ruby al cargar la extensión (consola, texto visible):
+      C:/Users/<local>/AppData/Roaming/SketchUp/SketchUp 2026/SketchUp/Plugins/planos_santo/
+      smart_paint_tool.rb:751: warning: already initialized constant PlanosSanto::SmartPaintTool::ALT_MASK
+      C:/Users/<local>/AppData/Roaming/SketchUp/SketchUp 2026/SketchUp/Plugins/planos_santo/
+      smart_paint_tool.rb:739: warning: previous definition of ALT_MASK was here
+    Causa: la constante ALT_MASK está definida dos veces con el mismo valor en
+    sketchup_offline/smart_paint_tool.rb:739 y :751. No cambia el comportamiento (mismo valor);
+    es ruido en la consola que la guía pide revisar. No es FAIL funcional.
+O2. V.cursores → ok: false, pero los 5 PNG son válidos (32×32) y la API de cursores existe. El
+    producto trae un quinto cursor, paint-sample.png (cuentagotas), y el verificador compara contra
+    una lista fija de 4 (docs/validacion-0811/verificar_0811_sketchup.rb:20 CURSORES y :174
+    expected.sort == CURSORES.sort). Es un desajuste del verificador, no del producto. Por eso el
+    resumen muestra cursores sin ok. La revisión visual de cursores (P-k) quedó PENDIENTE.
+O3. V.perfil_maderera → disponible: true (clases MaderaProfile y MaderaProfileStore). La biblioteca
+    QA no tiene archivos de perfil todavía (archivos: []), lo esperable antes de H4-4.
+O4. V.colisiones → [] en la copia de M-S: la biblioteca QA no tiene hoy una ficha instalable cuyo
+    SKM repita un nombre del modelo. Para S0–S3 habrá que preparar el caso (Caju 18mm contra
+    «Melamina petiribi18mm») antes de la próxima corrida.
+O5. Fixtures que la guía pide y no existen en la PC: modelos A (bajo mesada de 6 módulos con 4
+    puertas copia), B (casos raros), BM17, placard de unas 30 piezas, cocina de más de 40 piezas, y
+    el JPG de la 0.8.8. Hay que prepararlos (copias, con datos de prueba) antes de los Hitos 2, 3 y 5.
+
+======================================================================
+6. MATRIZ PASS / FAIL / PENDIENTE / NO APLICA
+======================================================================
+Regla: un PASS confirma sólo la variante anotada. PENDIENTE = no ejecutado por la detención en F0
+salvo que se indique otra cosa.
+
+Instalación y preparación
+  0.1 Entorno ......................... PASS  (ver §1; 100 %/150 % no comparados)
+  0.2 Respaldo biblioteca ............. PASS  (45 archivos con SHA-256)
+  0.3 Biblioteca QA ................... PASS  (PLANOS_SANTO_DATA_DIR verificado en consola)
+  0.4 Modelos ......................... PASS parcial (M-S, M-C, M-L respaldados; A, B, BM17 no existen: O5)
+  0.5 OpenCutList 7.1.0 ............... PASS
+  0.6 Instalador ...................... PASS  (RBZ publicado; SHA-256 coincide)
+  0.7 Instalación ..................... PASS  (Administrador de extensiones, reinicio)
+  0.8 Consola y logs .................. PASS con observación O1
+  0.9 Versión ......................... NO APLICA (anexo 0.8.12: versión ya subida; integridad 0.8.13 passed)
+  0.10 Fotos de prueba ................ PASS  (sintéticas, ver §2)
+  Integridad (V.integridad) ........... PASS  (passed true, 64 archivos, sin mismatches/extras/faltantes)
+  ImageRep#resize definido ............ PASS  (false, como se espera)
+
+§1 Fotos e ImageRep (Hito 1)
+  F0 ..... FAIL  (JPG 1200×1200 sintético: aceptada false; causa en §4)
+  F1 (V1)  FAIL  (mismo PhotoMaterial#pick que F0; no repetido por UI por la detención)
+  F2 (V15) FAIL  (mismo pick; no repetido por UI por la detención)
+  F3 ..... FAIL  (PNG RGB 24 bpp, PNG alfa 32 bpp y textura de madera 24 bpp: ImageRep decodifica, el producto rechaza; misma causa)
+  F4 (A3)  PENDIENTE
+  F5 ..... PENDIENTE
+
+§2 SKM con nombre repetido: S0 PENDIENTE (V.colisiones = [] en M-S, ver O4); S1–S5 PENDIENTE
+§3 Pincel (Hito 2): P-a, P-a2, P-a1, P-b, P-c, P-d, P-e, P-f, P-g, P-h, P-i, P-j, P-l PENDIENTE;
+   P-k PENDIENTE (V.cursores ok false por el verificador, ver O2)
+§4 ModelWatch: W0 PASS (registrado false, ok true, sin análisis abierto); W1–W12 PENDIENTE
+§5 Paquete .zip: Z1–Z7 PENDIENTE
+§6 Rendimiento: R1–R11 PENDIENTE (sin mediciones nativas en esta corrida)
+§7 Pincel avanzado: AV1–AV9 PENDIENTE; ajustes del pincel al inicio: recientes {}, tecla
+   del cuentagotas «alt (por defecto)», cantos por clic 1
+§8 Modelo → TXT (Hito 3): T1–T9 PENDIENTE
+§9 A4 y etiquetas (Hito 5): A1–A6 PENDIENTE
+§10.1 Ventanas (ARQ-06, pasos 4.1–4.9): PENDIENTE
+§10.2 Materiales: M1–M6 PENDIENTE
+§11 Regresión Hito 1: V2, V3, V7, V12 (foto nueva) FAIL por dependencia de F0/F1 (no se puede
+   crear una foto nueva); V4, V5, V8, V9, V10, V11, V13, V14, V16, V17 PENDIENTE; V18 (TXT) PENDIENTE
+Hito 4 (docs/hito4/VALIDACION_SKETCHUP.md): perfil encontrado (V.perfil_maderera disponible true,
+   O3); H4-1 a H4-15 PENDIENTE. Mínimos del anexo 0.8.12 (perfil sin aprobar no cambia nada,
+   migración v1→v2 con copia, paquete con fichas v1) PENDIENTE.
+Anexo 0.8.12: §3 latencia en modo Cara/lote PENDIENTE; vista previa con token PENDIENTE;
+   §4 «Listón» PENDIENTE; §5 «Preparar de nuevo» bloquea edición PENDIENTE.
+Anexo 0.8.13: §1 PINTURA-09 latencia contra la línea base sintética (p95 ~37 ms) PENDIENTE;
+   §2 tecla del cuentagotas con el pincel detenido PENDIENTE.
+
+======================================================================
+7. ACEPTACIÓN POR HITO
+======================================================================
+  Instalación ... APROBADA (integridad passed true en 0.8.13)
+  Hito 1 ........ NO APROBADO (F0, F1, F2 FAIL)
+  Hito 2 ........ PENDIENTE (no ejecutado)
+  Hito 3 ........ PENDIENTE (no ejecutado)
+  Hito 4 ........ PENDIENTE (no ejecutado; el perfil existe en la candidata)
+  Hito 5 ........ PENDIENTE (no ejecutado)
+  Hito 6 ........ PENDIENTE (sólo W0 PASS; sin mediciones)
+  Hito 7 ........ PENDIENTE (no ejecutado)
+Rendimiento contra objetivos: sin datos nativos en esta corrida (scan < 10 s y clic < 150 ms
+quedan sin medir). Referencia anterior (0.8.8, M-L 1.560 piezas): plan de clic 544,9 ms.
+
+======================================================================
+8. ARCHIVOS EN ESTA CARPETA (saneados, rutas como <local>)
+======================================================================
+  resumen.json, integridad.json, imagerep-resize.json, foto-jpg-1200.json, foto-png-rgb.json,
+  foto-png-alfa.json, foto-textura-madera.json, colisiones.json, perfil_maderera.json,
+  cursores.json, model_watch-W0.json, ajustes_pincel.json,
+  diag-F0-jpg-1200.json, diag-F0-png-rgb.json, diag-F0-png-alfa.json, diag-F0-textura-madera.json,
+  diag-F0-tempfile-variantes.json, diag_foto.rb (auxiliar de diagnóstico de solo lectura).
+No generados por la detención: atributos_ocl, model_watch W1/W10/W11, huella, tiempo_clic,
+tiempos_pincel, paquete, analisis, pedido, referencias_parciales, replyStats, TXT y manifiesto.
+No se subieron modelos, SKM, fotos, texturas, catálogos ni capturas.
+
+======================================================================
+9. PRÓXIMO PASO
+======================================================================
+1. Corregir PhotoMaterial#temporary para cerrar el Tempfile antes de load_file (§4), sumar una
+   prueba que reproduzca el bloqueo (un doble que falle si el archivo sigue abierto) y publicar
+   una candidata nueva.
+2. Opcional: quitar la segunda definición de ALT_MASK (O1) y actualizar CURSORES del verificador
+   a 5 (O2).
+3. Preparar los fixtures que faltan (O4, O5) y repetir la corrida completa desde F0.
