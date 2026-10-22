@@ -27,7 +27,7 @@ require_relative '../model_watch'
 
 module PlanosSanto
   class ExportError < StandardError;end unless const_defined?(:ExportError, false)
-  module Release;VERSION = '0.8.13';end
+  module Release;VERSION = '0.8.14';end
   module QuickToolbar
     def self.registry;{ commands: { 'paint' => 1, 'materials' => 2 } };end
   end
@@ -68,7 +68,7 @@ module PlanosSanto
     def plan(data, light:);SmartPaint.calls << [data, light];{ 'ok' => true };end
   end
   class SmartPaintTool
-    CURSORS = { 'piece' => 'paint-piece.png', 'edge' => 'paint-edge.png', 'remove' => 'paint-remove.png', 'blocked' => 'paint-blocked.png' }.freeze
+    CURSORS = { 'piece' => 'paint-piece.png', 'edge' => 'paint-edge.png', 'remove' => 'paint-remove.png', 'blocked' => 'paint-blocked.png', 'sample' => 'paint-sample.png' }.freeze
   end
   module MaterialResolver
     def self.observe_binding(material);{ 'binding' => material.binding };end
@@ -212,7 +212,7 @@ class Verificador0811Test < Minitest::Test
   end
 
   # Instalación sintética: cada módulo exigido, los cursores y un manifiesto con sus hashes.
-  def build_install(version: '0.8.13')
+  def build_install(version: '0.8.14')
     FileUtils.mkdir_p(File.join(@folder, 'cursors'))
     File.write(File.join(@root, 'planos_santo.rb'), "# cargador\n")
     files = { 'planos_santo.rb' => nil }
@@ -274,7 +274,7 @@ class Verificador0811Test < Minitest::Test
     PlanosSanto::Release.send(:remove_const, :VERSION);PlanosSanto::Release.const_set(:VERSION, '0.8.10')
     assert V.integridad(version: '0.8.10')['passed']
   ensure
-    PlanosSanto::Release.send(:remove_const, :VERSION);PlanosSanto::Release.const_set(:VERSION, '0.8.13')
+    PlanosSanto::Release.send(:remove_const, :VERSION);PlanosSanto::Release.const_set(:VERSION, '0.8.14')
   end
 
   def test_integridad_rechaza_rutas_peligrosas_y_otra_version_de_sketchup
@@ -368,6 +368,12 @@ class Verificador0811Test < Minitest::Test
     result = V.cursores
     assert result['ok'], result.inspect
     assert(result['cursores'].all? { |row| row['ancho'] == 32 && row['alto'] == 32 })
+  end
+
+  # 0.8.13 nativo: el producto trae 5 cursores (se sumó el del cuentagotas) y el verificador esperaba 4.
+  def test_cursores_incluye_el_del_cuentagotas
+    assert_includes V::CURSORES, 'paint-sample.png'
+    assert V.cursores['ok']
   end
 
   def test_cursores_detecta_archivo_que_no_es_png

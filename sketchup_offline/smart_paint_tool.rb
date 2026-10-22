@@ -748,7 +748,6 @@ module PlanosSanto
       invalidate(@model.active_view) if @model.respond_to?(:active_view)
       emit("Cuentagotas: sostené #{key_label} y hacé clic en una cara para tomar su material.")
     end
-    ALT_MASK = Object.const_defined?(:ALT_MODIFIER_MASK) ? Object.const_get(:ALT_MODIFIER_MASK) : 32
     def sample_flag?(flags)
       return false unless @select_material && flags.is_a?(Integer)
       (flags & (@eyedropper_key=='shift' ? SHIFT_MASK : ALT_MASK))!=0
