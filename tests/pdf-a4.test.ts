@@ -73,7 +73,7 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
   expect((legend as A4FitError).reason).toMatch(/^Las notas y observaciones no caben/);expect((legend as Error).message).toBe(`${notes.furniture[0].name}: Las notas y observaciones no caben legiblemente debajo de las vistas. ${(legend as A4FitError).detail} Qué hacer: Acortá observaciones o notas.`);expect((legend as A4FitError).detail).toMatch(/^Necesita \d+ mm de 42 mm\.$/);
   const blank=sample();blank.furniture[0].pieces[0].name='';expect(await failure(blank)).toMatchObject({kind:'names'});
   const table=sample('exterior'),template=table.furniture[0].pieces[0];table.furniture[0].pieces=Array.from({length:40},(_,i)=>({...template,id:`physical/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Pieza ${i+1}`,mesh:box(18,450,700)}));
-  expect(await failure(table)).toMatchObject({kind:'table',action:'Activá Agrupar componentes iguales en este mueble.',detail:expect.stringMatching(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/)});
+  expect(await failure(table)).toMatchObject({kind:'table',action:'Activá Agrupar componentes iguales en este mueble. También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.',detail:expect.stringMatching(/^Necesita \d+ mm de 139 mm: sobran unas \d+ filas\.$/)});
   const glyph=sample();glyph.furniture[0].presentation!.guide!.observations='Usar tornillo 🪚 largo';
   const g=await failure(glyph);expect(g).toMatchObject({kind:'glyph',character:'🪚',furniture:glyph.furniture[0].name,action:'Reemplazá el carácter «🪚».'});expect((g as Error).message).toBe(`${glyph.furniture[0].name}: El PDF no puede representar el carácter «🪚». Qué hacer: Reemplazá el carácter «🪚».`);
  });

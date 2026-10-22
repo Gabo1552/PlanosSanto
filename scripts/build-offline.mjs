@@ -20,6 +20,7 @@ const copies={
   'planos_santo/p1_diagnostics.rb':'sketchup_offline/p1_diagnostics.rb',
   'planos_santo/release.rb':'sketchup_offline/release.rb',
   'planos_santo/ocl_reader.rb':'sketchup_offline/ocl_reader.rb',
+  'planos_santo/order_references.rb':'sketchup_offline/order_references.rb',
   'planos_santo/catalog_store.rb':'sketchup_offline/catalog_store.rb',
   'planos_santo/material_resolver.rb':'sketchup_offline/material_resolver.rb',
   'planos_santo/photo_material.rb':'sketchup_offline/photo_material.rb',
@@ -32,10 +33,13 @@ const copies={
   'planos_santo/smart_paint_tool.rb':'sketchup_offline/smart_paint_tool.rb',
   'planos_santo/material_sample_tool.rb':'sketchup_offline/material_sample_tool.rb',
   'planos_santo/quick_toolbar.rb':'sketchup_offline/quick_toolbar.rb',
+  'planos_santo/model_watch.rb':'sketchup_offline/model_watch.rb',
   'planos_santo/bounded_zip.rb':'sketchup_offline/bounded_zip.rb',
   'planos_santo/skm_import.rb':'sketchup_offline/skm_import.rb',
   'planos_santo/piece_highlight_tool.rb':'sketchup_offline/piece_highlight_tool.rb',
   'planos_santo/supplier_order.rb':'sketchup_offline/supplier_order.rb',
+  'planos_santo/maderera_profile.rb':'sketchup_offline/maderera_profile.rb',
+  'planos_santo/presets-taller.json':'sketchup_offline/presets-taller.json',
   'planos_santo/workshop.rb':'sketchup_offline/workshop.rb',
   'planos_santo/order_proposal.rb':'sketchup_offline/order_proposal.rb',
   'planos_santo/names.rb':'sketchup_offline/names.rb',
@@ -50,7 +54,10 @@ const copies={
 for(const action of ['sheet','edge','remove_edge','sample','furniture','order','guides','materials','main']){
   for(const size of [24,32])copies[`planos_santo/icons/${action}-${size}.png`]=`sketchup_offline/icons/${action}-${size}.png`;
 }
+// Own paint cursors (Hito 2, PINTURA-12); the Tool degrades to the native cursor if one is missing.
+for(const key of ['piece','edge','remove','blocked','sample'])copies[`planos_santo/cursors/paint-${key}.png`]=`sketchup_offline/cursors/paint-${key}.png`;
 await mkdir(resolve(out,'planos_santo/icons'),{recursive:true});
+await mkdir(resolve(out,'planos_santo/cursors'),{recursive:true});
 for(const [target,source] of Object.entries(copies)){
   if(target==='planos_santo/exporter.rb'){
     const original=await readFile(resolve(root,source),'utf8');

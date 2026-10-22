@@ -12,6 +12,8 @@ import type {Furniture,Project} from '../lib/model';
 const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf');
 const mono=readFileSync('sketchup_offline/assets/DejaVuSansMono.ttf');
 const logo=readFileSync('sketchup_offline/assets/santo-carpintero.png');
+/** OPT-14: every list that does not fit also offers the hoja 2 consent. */
+const HOJA2=' También podés activar «Permitir hoja 2: despiece completo» en Vistas de la guía A4.';
 
 /** Módulo bajo del demo, solo, con guía de una vista y sin observaciones. */
 function single(observations=''):Project{
@@ -150,10 +152,11 @@ describe('Nombre del archivo descargado',()=>{
   const name=previewFileName({name:'A'.repeat(79)+'-B',furniture:[]},day);
   expect(name).toBe(`${'A'.repeat(79)}-A4-2026-10-05.pdf`);
  });
- // BUG-TS-02 (docs/qa/BUGS_ENCONTRADOS_TS.md): slice(0,80) corta por unidades UTF-16.
- it.skip('no parte un emoji en el corte de 80 caracteres (BUG-TS-02: deja un surrogate suelto en el nombre)',()=>{
+ // BUG-TS-02 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido; el corte es por puntos de código.
+ it('no parte un emoji en el corte de 80 caracteres (BUG-TS-02)',()=>{
   const name=previewFileName({name:'A'.repeat(79)+'😀',furniture:[]},day);
   expect(name).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  expect(name).toBe(`${'A'.repeat(79)}😀-A4-2026-10-05.pdf`);
  });
 });
 
@@ -182,9 +185,12 @@ describe('Errores de encaje A4: causa, acción y detalle',()=>{
   expect(error.kind).toBe('glyph');expect(error.character).toBe('漢');
   expect(error.message).toBe(`${project.furniture[0].name}: El PDF no puede representar el carácter «漢». Qué hacer: Reemplazá el carácter «漢».`);
  });
- // BUG-TS-01 (docs/qa/BUGS_ENCONTRADOS_TS.md): una tabulación pegada desde una planilla bloquea con un carácter invisible.
- it.skip('una tabulación pegada en observaciones no bloquea el PDF con «» invisible (BUG-TS-01)',async()=>{
+ // BUG-TS-01 (docs/qa/BUGS_ENCONTRADOS_TS.md): corregido; tabulación y CR se imprimen como espacio.
+ it('una tabulación pegada en observaciones no bloquea el PDF con «» invisible (BUG-TS-01)',async()=>{
   await expect(createOfflinePdf(single('Tornillos\t4 × 50'),regular,mono)).resolves.toBeInstanceOf(Uint8Array);
+  await expect(createOfflinePdf(single('Línea 1\r\nLínea 2'),regular,mono)).resolves.toBeInstanceOf(Uint8Array);
+  const project=single();project.furniture[0].pieces[0].name='Lateral\tizq';
+  await expect(createOfflinePdf(project,regular,mono)).resolves.toBeInstanceOf(Uint8Array);
  });
  it('un código de pieza demasiado ancho para la columna ID bloquea con su acción',async()=>{
   const project=single();project.furniture[0].pieces[0].code='P0000001';
@@ -229,26 +235,26 @@ describe('Errores de encaje A4: causa, acción y detalle',()=>{
   const references=Object.fromEntries(f.pieces.map(p=>[p.id,{...placa,board:'Melamina Blanco Nieve 18 mm de primera calidad con veta horizontal'}]));
   const error=await fitError(project,references);
   expect(error.kind).toBe('table');
-  expect(error.action).toBe('Desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado o activá «Agrupar por medidas en el listado A4».');
+  expect(error.action).toBe('Desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado o activá «Agrupar por medidas en el listado A4».'+HOJA2);
  });
  it('un listado largo de componentes iguales sugiere agruparlos antes que acortar nombres',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:30},(_,i)=>({...template,id:`igual/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`Lateral ${i+1}`}));
-  expect((await fitError(project)).action).toBe('Activá Agrupar componentes iguales en este mueble.');
+  expect((await fitError(project)).action).toBe('Activá Agrupar componentes iguales en este mueble.'+HOJA2);
  });
  it('un listado largo de piezas distintas con medidas repetidas sugiere plegar por medidas',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:30},(_,i)=>({...template,id:`medida/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:'Lateral',definition:`def-${i}`}));
-  expect((await fitError(project)).action).toBe('Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.');
+  expect((await fitError(project)).action).toBe('Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.'+HOJA2);
  });
  it('un listado largo sin otra palanca nombra las filas de nombres más largos o sugiere separar el mueble',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
   f.pieces=Array.from({length:22},(_,i)=>({...template,id:`largo/${i}`,code:`P${String(i+1).padStart(2,'0')}`,definition:`def-${i}`,
    name:i<3?`Lateral con nombre muy descriptivo del taller número ${i+1}`:`Pieza ${i+1}`,dimensions:[100+i,450,18] as [number,number,number]}));
-  expect((await fitError(project)).action).toBe('Acortá los nombres más largos: P01, P02, P03.');
+  expect((await fitError(project)).action).toBe('Acortá los nombres más largos: P01, P02, P03.'+HOJA2);
   const short=single(),g=short.furniture[0];
   g.pieces=Array.from({length:40},(_,i)=>({...template,id:`corto/${i}`,code:`P${String(i+1).padStart(2,'0')}`,definition:`def-${i}`,name:`P ${i+1}`,dimensions:[100+i,450,18] as [number,number,number]}));
-  expect((await fitError(short)).action).toBe('Separá el mueble en dos grupos de SketchUp para imprimir cada uno en su hoja.');
+  expect((await fitError(short)).action).toBe('Separá el mueble en dos grupos de SketchUp para imprimir cada uno en su hoja.'+HOJA2);
  });
 });
 

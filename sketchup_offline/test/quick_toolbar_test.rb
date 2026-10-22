@@ -78,7 +78,7 @@ class QuickToolbarTest < Minitest::Test
     end
     assert_equal %w[main materials sheet edge remove_edge sample furniture order guides],registry[:commands].keys
     assert_equal 'Planos Santo',registry[:menu].name
-    assert_equal 12,registry[:menu].items.length
+    assert_equal 13,registry[:menu].items.length
     registry[:commands].each do |key,command|
       assert_includes registry[:menu].items.map(&:first),command
       refute_empty command.tooltip
@@ -115,7 +115,7 @@ class QuickToolbarTest < Minitest::Test
     assert_same first,install
     assert_equal 1,UI.toolbars.length
     assert_equal 1,UI.menu('Extensions').submenus.length
-    assert_equal 12,first[:menu].items.length
+    assert_equal 13,first[:menu].items.length
   end
   def test_operator_hidden_toolbar_is_never_forced_visible
     UI.toolbar_states={'Planos Santo'=>TB_VISIBLE,'Planos Santo - Herramientas'=>TB_HIDDEN}
@@ -181,5 +181,14 @@ class QuickToolbarTest < Minitest::Test
     diagnose.last.call;open.last.call
     assert_equal 1,PlanosSanto::P1Diagnostics.runs
     assert_equal 'openDocument:',Sketchup.sent_action
+  end
+  def test_menu_offers_reset_windows_without_requiring_it_from_older_controllers
+    registry=install
+    item=registry[:menu].items.find { |label,_| label=='Restablecer ventanas' }
+    refute_nil item
+    item[1].call # older controller double: no reset_windows, no failure
+    resets=0;@controller.define_singleton_method(:reset_windows) { resets+=1 }
+    item[1].call
+    assert_equal 1,resets
   end
 end

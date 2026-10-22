@@ -1,3 +1,18 @@
+# Entrega 0.8.11 — candidata noche (Hitos 1 a 7), PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.11-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp y comprobar el `.sha256`. Sobre la 0.8.10 suma:
+- Hito 2: pincel diario completo (cursores, cantos y sincronización con el modelo).
+- Hito 3: pedido desde el modelo, con propuesta, confirmación en bloque y código módulo·pieza.
+- Hito 4: perfil de maderera, presupuesto y catálogo v2.
+- Hito 5: codificar el despiece, etiquetas y referencias parciales.
+- Hito 6: análisis desactualizado sin reescaneo automático y caché de malla.
+- Hito 7: materiales, paquetes y pincel avanzado (cuentagotas, recientes, profundidad, varias caras por lado).
+- Mejoras de UI/UX en las pantallas extra.
+
+`PlanosSanto-0.8.11-Validacion-Local.zip` trae la guía por riesgo, el verificador de solo lectura y el encargo para la sesión local. No se instala. Todo se probó con dobles de la API, no en SketchUp. Producción no aprobada.
+
+---
+
 # Entrega 0.8.10 — candidata Hito 1 = 0.8.9 + mejoras, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.10-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp. Es la 0.8.9 sin cambios, más cuatro mejoras: clic sin huella geométrica (V19), clic cerca del borde del canto, una sola paleta abierta y verificador con diagnóstico de foto. `PlanosSanto-0.8.10-Validacion-Local-Hito1.zip` trae la guía 0.8.9 completa y el anexo `VALIDACION_0810.md`. No se instala. Validar esta candidata en lugar de la 0.8.9. Producción no aprobada.

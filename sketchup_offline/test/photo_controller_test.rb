@@ -68,7 +68,7 @@ class PhotoControllerTest < Minitest::Test
     data={'token'=>'native-choice','revision'=>0,'action'=>'new','name'=>'Foto QA','kind'=>'sheet','confirmed'=>true}
     result=dispatch('material_photo_create',data)
     assert_equal [:create,'native-choice',data.reject { |key,_| key=='token' }],@service.calls.last
-    assert result['scan'];assert result['library'];assert_equal 'photo-candidate',result['catalogId']
+    assert result['stale'];refute result.key?('scan');assert result['library'];assert_equal 'photo-candidate',result['catalogId']
     refute @controller.instance_variable_get(:@photo_preview_active)
     assert_empty @model.operations
   end
