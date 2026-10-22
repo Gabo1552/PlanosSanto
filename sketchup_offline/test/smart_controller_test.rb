@@ -69,7 +69,8 @@ class SmartControllerTest < Minitest::Test
     assert_raises(SyntaxError) { Sketchup.read_default('PlanosSanto','smart_paint_settings_v1','{}') }
     assert_equal({},@controller.smart_settings)
     @controller.remember_smart_settings(chosen)
-    expected=chosen.slice(*PlanosSanto::OfflineController::SMART_SETTING_KEYS)
+    # Hito 2 (PINTURA-02): the consent for every copy is never persisted.
+    expected=chosen.slice(*PlanosSanto::OfflineController::SMART_SETTING_KEYS).merge('scope'=>'unique')
     assert_equal expected,PlanosSanto::OfflineController.new.smart_settings
     encoded=Sketchup.smart_prefs.fetch(['PlanosSanto','smart_paint_settings_v2'])
     assert_match(/\Aps2:[A-Za-z0-9+\/=]+\z/,encoded)

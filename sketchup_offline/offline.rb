@@ -224,7 +224,12 @@ module PlanosSanto
     # model when missing (0.8.8), then the current bound material is used.
     def quick_paint_start(data,install:true)
       active!;clean_for_paint!
-      raise ExportError,'El pintado rápido usa una instancia. Revisá el alcance avanzado para afectar otras.' if data['scope'] && data['scope']!='unique'
+      # Hito 2 (PINTURA-02): «Todas las iguales» is authorized only by
+      # allowShared:true in this same request; it is never remembered.
+      scope=data['scope'] || 'unique'
+      raise ExportError,'Alcance de pintado inválido.' unless %w[unique all].include?(scope)
+      raise ExportError,'Configuración de pintado inválida.' if data.key?('allowShared') && ![true,false].include?(data['allowShared'])
+      raise ExportError,'Para pintar todas las copias, activá «Todas las iguales» en la paleta.' if scope=='all' && data['allowShared']!=true
       mode=data.fetch('mode','sheet')
       raise ExportError,'Modo rápido inválido.' unless %w[sheet edge remove_edge].include?(mode)
       # Hito 2 (PINTURA-01): 1, 2 opposite or 4 edges per click, exact Integer;
@@ -239,9 +244,9 @@ module PlanosSanto
       # Daily painting is one safe occurrence, both physical sides of the board,
       # no deferred batch and no inherited face/XY/shared settings from old UI.
       # The service infers the local cutting axes from each clicked piece.
-      options={'mode'=>mode,'side'=>'both','scope'=>'unique','axes'=>[0,1],
+      options={'mode'=>mode,'side'=>'both','scope'=>scope,'axes'=>[0,1],
         'paintScope'=>mode=='sheet' ? 'piece' : 'face','edgeCount'=>count,'batch'=>false,
-        'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>false}
+        'immediate'=>true,'immediatePiece'=>mode=='sheet','confirmed'=>true,'allowShared'=>scope=='all'}
       if mode=='remove_edge' && data['catalogId'].to_s.empty? && !data['materialUuid'].to_s.empty?
         raise ExportError,'Elegí la placa de restauración completa o usá la detección de la pieza.'
       end
@@ -263,12 +268,16 @@ module PlanosSanto
       result=if smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         # Validate the new material BEFORE changing the active Tool. Normal
         # material changes neither deselect the Tool nor require reactivation.
+        # A different material or mode drops the «Todas las iguales» consent.
+        current=(@smart_tool.respond_to?(:status) && @smart_tool.status['options']) || @quick_options || {}
+        options.merge!('scope'=>'unique','allowShared'=>false) if current['mode']!=options['mode'] || current['catalogId']!=options['catalogId']
         @smart_tool.update_options(options)
         remember_smart_settings(options)
         {'toolState'=>smart_state}
       else
         dispatch('smart_tool_start',{'options'=>options})
       end
+      @quick_options=options
       return result unless prepared
       result=result.merge('prepared'=>prepared.slice('catalogId','materialUuid','installed','message'))
       prepared['installed'] ? result.merge(paint_palette_state) : result
@@ -805,6 +814,7 @@ module PlanosSanto
     def remember_smart_settings(options)
       return unless Sketchup.respond_to?(:write_default)
       settings=options.slice(*SMART_SETTING_KEYS)
+      settings['scope']='unique' if settings.key?('scope') # consent for every copy never survives
       if options['immediate']==true || options['immediatePiece']==true
         previous=smart_settings
         # Sheet forces one edge per click; it must not forget the edge preference.
@@ -823,7 +833,8 @@ module PlanosSanto
         options['axes'].is_a?(Array) && options['axes'].length==2 && options['axes'].uniq.length==2 && options['axes'].all? { |axis| axis.is_a?(Integer) && (0..2).include?(axis) }
       raise ExportError,'Elegí modo, superficie, alcance y ejes; activá explícitamente la herramienta.' unless valid
       if options['immediate']==true || options['immediatePiece']==true
-        raise ExportError,'No se puede pintar esta instancia con seguridad.' unless options['scope']=='unique' && options['side']=='both' && options['batch']!=true && options['allowShared']!=true
+        scoped=(options['scope']=='unique' && options['allowShared']!=true) || (options['scope']=='all' && options['allowShared']==true)
+        raise ExportError,'No se puede pintar esta instancia con seguridad.' unless scoped && options['side']=='both' && options['batch']!=true
       end
       raise ExportError,'Elegí 1, 2 opuestos o 4 cantos.' if options.key?('edgeCount') && !(options['edgeCount'].is_a?(Integer) && [1,2,4].include?(options['edgeCount']))
       raise ExportError,'Elegí pieza o cara.' if options.key?('paintScope') && !%w[piece face].include?(options['paintScope'])

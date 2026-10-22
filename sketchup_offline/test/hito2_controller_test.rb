@@ -105,4 +105,27 @@ class Hito2ControllerTest < Minitest::Test
     assert_equal 2,@controller.smart_settings['edgeCount']
     assert_equal 2,@controller.dispatch('smart_palette_load',{})['settings']['edgeCount']
   end
+  def test_scope_all_needs_allow_shared_in_the_same_request_and_is_never_persisted
+    [{'scope'=>'all'},{'scope'=>'all','allowShared'=>false},{'scope'=>'all','allowShared'=>'true'},{'scope'=>'todas'},{'scope'=>'unique','allowShared'=>'yes'}].each do |patch|
+      assert_raises(PlanosSanto::ExportError) { quick({'mode'=>'sheet','catalogId'=>'placa'}.merge(patch)) }
+    end
+    assert_empty @prepared;assert_empty @selected.compact
+    quick('mode'=>'sheet','catalogId'=>'placa','scope'=>'all','allowShared'=>true)
+    assert_equal 'all',tool.options['scope'];assert_equal true,tool.options['allowShared']
+    assert_equal 'unique',@controller.smart_settings['scope'];refute @controller.smart_settings.key?('allowShared')
+    quick('mode'=>'sheet','catalogId'=>'placa')
+    assert_equal 'unique',tool.options['scope'];assert_equal false,tool.options['allowShared']
+  end
+  def test_changing_material_or_mode_resets_the_authorization
+    quick('mode'=>'sheet','catalogId'=>'placa','scope'=>'all','allowShared'=>true)
+    quick('mode'=>'sheet','catalogId'=>'placa2','scope'=>'all','allowShared'=>true)
+    assert_equal 'unique',tool.options['scope'];assert_equal false,tool.options['allowShared'];assert_equal 'uuid-placa2',tool.options['materialUuid']
+    quick('mode'=>'sheet','catalogId'=>'placa2','scope'=>'all','allowShared'=>true);assert_equal 'all',tool.options['scope']
+    quick('mode'=>'edge','catalogId'=>'canto','scope'=>'all','allowShared'=>true)
+    assert_equal 'unique',tool.options['scope'];assert_equal 'edge',tool.options['mode']
+  end
+  def test_advanced_tool_settings_never_store_all
+    @controller.remember_smart_settings('mode'=>'sheet','scope'=>'all','side'=>'front','axes'=>[0,1],'catalogId'=>'placa')
+    assert_equal 'unique',@controller.smart_settings['scope']
+  end
 end

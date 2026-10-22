@@ -198,3 +198,69 @@ class Hito2EdgeCountTest < Minitest::Test
     @tool.draw(@view);assert_equal 2*6,@view.draws.find { |mode,_| mode==4 }[1]
   end
 end
+
+class Hito2ScopeTest < Minitest::Test
+  include Hito2Fixture
+  def setup;build_fixture;end
+  def definitions;@doors.map(&:definition);end
+  def test_all_identical_doors_paint_in_one_undo_without_make_unique
+    before=definitions;undo=@model.undo_states.length
+    @doors.each { |door| door.define_singleton_method(:make_unique) { raise 'make_unique must not run for scope all' } }
+    result=@smart.apply_immediate(sheet_request(@doors[2],'scope'=>'all','allowShared'=>true))
+    assert result['changed'];assert_equal undo+1,@model.undo_states.length
+    assert_equal before,definitions;assert definitions.all? { |definition| definition.equal?(@board) }
+    assert @doors.all? { |door| faces_of(door).first(2).all? { |face| face.material.equal?(@sheet) && face.back_material.equal?(@sheet) } }
+    assert_equal @doors.map { |door| "1/#{door.persistent_id}" }.sort,result['affectedPaths'].sort
+    @model.undo;assert @board.entities.first(2).none? { |face| face.material.equal?(@sheet) }
+  end
+  def test_all_without_authorization_in_the_same_request_falls_back_to_one_isolated_door
+    undo=@model.undo_states.length
+    result=@smart.apply_immediate(sheet_request(@doors[0],'scope'=>'all'))
+    assert result['changed'];assert result['unique'];assert_equal undo+1,@model.undo_states.length
+    refute_same @board,@doors[0].definition;assert @doors.drop(1).all? { |door| door.definition.equal?(@board) }
+    assert faces_of(@doors[0]).first(2).all? { |face| face.material.equal?(@sheet) }
+    assert @board.entities.first(2).none? { |face| face.material.equal?(@sheet) }
+  end
+  def test_unique_isolates_only_the_clicked_door
+    @smart.apply_immediate(sheet_request(@doors[1],'scope'=>'unique','allowShared'=>false))
+    assert_equal 2,definitions.uniq.length;refute_same @board,@doors[1].definition
+  end
+  def test_repainting_already_painted_doors_is_a_real_no_op_for_all_and_unique
+    @smart.apply_immediate(sheet_request(@doors[0],'scope'=>'all','allowShared'=>true))
+    undo=@model.undo_states.length;operations=@model.operations.length;before=definitions
+    [{'scope'=>'all','allowShared'=>true},{'scope'=>'unique'}].each do |patch|
+      result=@smart.apply_immediate(sheet_request(@doors[3],**patch.transform_keys(&:to_sym)))
+      refute result['changed'];assert result['noChanges']
+    end
+    assert_equal undo,@model.undo_states.length;assert_equal operations,@model.operations.length;assert_equal before,definitions
+  end
+  def test_four_edges_on_all_copies_in_one_click
+    paint_sheet_on_board!;undo=@model.undo_states.length
+    result=@smart.apply_immediate(edge_request(@doors[0],'102',count:4,scope:'all',allowShared:true))
+    assert result['changed'];assert_equal undo+1,@model.undo_states.length
+    assert @board.entities.drop(2).all? { |face| face.material.equal?(@edge) };assert definitions.all? { |definition| definition.equal?(@board) }
+  end
+  def test_tool_hover_reports_shared_count_and_highlights_every_copy_only_when_authorized
+    build_tool(tool_options('sheet'))
+    hover_on(@doors[0]);@tool.draw(@view)
+    assert_equal 4,@tool.status['hover']['sharedCount'];assert_equal 'unique',@tool.status['hover']['scope']
+    assert_equal 1,@view.draws.count { |mode,_| mode==4 }
+    @view.draws.clear
+    build_tool(tool_options('sheet','scope'=>'all','allowShared'=>true))
+    hover_on(@doors[0]);@tool.draw(@view)
+    assert_equal 'all',@tool.status['hover']['scope'];assert_equal 4,@tool.status['hover']['sharedCount']
+    assert_equal 2*6*4,@view.draws.select { |mode,_| mode==4 }.sum { |_,count| count } # 2 broad faces on 4 copies
+    undo=@model.undo_states.length;click_on(@doors[0])
+    assert @events.last['changed'];assert_equal undo+1,@model.undo_states.length;assert definitions.all? { |definition| definition.equal?(@board) }
+    assert @doors.all? { |door| faces_of(door).first(2).all? { |face| face.material.equal?(@sheet) } }
+    click_on(@doors[1]);refute @events.last['changed'];assert_equal undo+1,@model.undo_states.length
+  end
+  def test_arrow_material_change_resets_the_all_copies_authorization
+    other={'catalogId'=>'otra','materialUuid'=>'otra-uuid','name'=>'Otra'}
+    @smart.define_singleton_method(:material_choices) { |_data| [other] }
+    build_tool(tool_options('sheet','scope'=>'all','allowShared'=>true))
+    @tool.onKeyDown(39,1,0,@view)
+    assert_equal 'unique',@tool.status['options']['scope'];assert_equal 'otra-uuid',@tool.status['options']['materialUuid']
+    assert_equal false,@tool.instance_variable_get(:@options)['allowShared']
+  end
+end

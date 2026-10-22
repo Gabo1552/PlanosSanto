@@ -34,6 +34,30 @@ module PlanosSanto
     end
   end
 
+  # Copies of each definition in the model, rebuilt once per transaction
+  # generation. Walks instances only (never faces) and never writes.
+  class OccurrenceIndex
+    LIMIT=20000
+    attr_reader :builds
+    def initialize(model);@model=model;@builds=0;end
+    def paths(definition,generation)
+      build(generation) unless @paths && @generation==generation
+      @paths[definition] || []
+    end
+    def build(generation)
+      @generation=generation;@builds+=1;@paths={}.compare_by_identity;count=0
+      walk=lambda do |entities,prefix|
+        entities.each do |entity|
+          next unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
+          return if (count+=1)>LIMIT
+          path=prefix+[entity];(@paths[entity.definition] ||= []) << path
+          walk.call(entity.is_a?(Sketchup::Group) ? entity.entities : entity.definition.entities,path) if prefix.length<32
+        end
+      end
+      walk.call(@model.entities,[])
+    end
+  end
+
   class SmartPaintTool
     SHIFT_MASK = Object.const_defined?(:CONSTRAIN_MODIFIER_MASK) ? Object.const_get(:CONSTRAIN_MODIFIER_MASK) : 4
     CTRL_MASK = Object.const_defined?(:COPY_MODIFIER_MASK) ? Object.const_get(:COPY_MODIFIER_MASK) : 8
@@ -43,7 +67,13 @@ module PlanosSanto
     def initialize(model, service:, options:, on_event:, guard:, remember:nil)
       @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember
       @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
-      @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil)
+      @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil);@occurrences=OccurrenceIndex.new(model)
+      @copy_triangles=[]
+    end
+    COPY_DRAW_LIMIT=200
+    def scope;@options['scope']=='all' && @options['allowShared']==true ? 'all' : 'unique';end
+    def copies_of(target)
+      @occurrences.paths(target['_instances'].last.definition,@generation)
     end
     def edge_count;@options['mode']=='sheet' ? 1 : @options.fetch('edgeCount',1);end
     def verdict_for(target)
@@ -76,7 +106,7 @@ module PlanosSanto
     def invalidate(view);view.invalidate if view && view.respond_to?(:invalidate);end
     def clear
       @service.cancel
-      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@queued_targets=[];@queued_overlays={}
+      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@copy_triangles=[];@queued_targets=[];@queued_overlays={}
     end
     def verify_guard!
       raise ExportError,'El modelo o la guía cambió. Volvé a abrir el pintado.' if @guard && @guard.call==false
@@ -159,6 +189,7 @@ module PlanosSanto
     end
     def service_options(targets)
       allowed=%w[mode side scope axes catalogId materialUuid replacementKind sourceMaterialUuid paintScope edgeCount immediate immediatePiece]
+      allowed << 'allowShared' if immediate?
       @options.select { |key,_| allowed.include?(key) }.merge('targets'=>targets)
     end
     def target_data(target);target.slice('pieceId','faceIds');end
@@ -166,13 +197,21 @@ module PlanosSanto
       if immediate?
         # Pick-local feedback only: no inventory, geometry classification,
         # catalog I/O, UUID validation or mutation until the actual click.
-        @target=target;@preview=nil
-        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>@options.fetch('scope','unique')}
+        @target=target;@preview=nil;@copy_triangles=[]
+        copies=copies_of(target)
+        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>[copies.length,1].max}
         verdict=verdict_for(target)
         if verdict
           @hover['expandedFaceIds']=verdict['expandedFaceIds'];@hover['verdict']={'ok'=>verdict['ok'],'reason'=>verdict['reason']}
           faces=verdict['ok'] ? verdict['faces'] : @options['mode']=='sheet' ? entities_for(target['_instances'].last).grep(Sketchup::Face) : [target['_face']]
           overlay_faces(target,faces)
+          if verdict['ok'] && scope=='all'
+            main=[@triangles,@normal_line];own=target['_instances']
+            copies.reject { |path| path==own }.first(COPY_DRAW_LIMIT).each do |path|
+              overlay_faces(target.merge('_instances'=>path),faces);@copy_triangles.concat(@triangles)
+            end
+            @triangles,@normal_line=main
+          end
           emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'])
           return
         end
@@ -219,7 +258,7 @@ module PlanosSanto
       verify_guard!
       target=hit(view,x,y)
       unless target
-        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
+        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
         @service.cancel;emit('Apuntá a una cara de una pieza.');invalidate(view);return
       end
       key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds'],@generation]
@@ -228,7 +267,7 @@ module PlanosSanto
       end
       invalidate(view)
     rescue StandardError=>error
-      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
+      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
       @service.cancel;emit('No se puede preparar esta cara.',error:error.message);invalidate(view)
     end
     def authorized!(result)
@@ -256,7 +295,7 @@ module PlanosSanto
       result=@service.preview(service_options(targets));authorized!(result)
       verify_guard!
       applied=@service.apply('token'=>result.fetch('token'),'confirmed'=>true)
-      @queued_targets=[];@queued_overlays={};@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
+      @queued_targets=[];@queued_overlays={};@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
       emit(applied['changed'] ? 'Pintado aplicado. Podés deshacerlo con Undo.' : 'Las caras ya tenían ese material.',changed:applied['changed']==true)
     end
     def onLButtonDown(flags,x,y,view)
@@ -323,6 +362,7 @@ module PlanosSanto
       clear
       @options.merge!(chosen.slice('catalogId','materialUuid'))
       @options['allowShared']=false
+      @options['scope']='unique' if immediate?
       event=status.merge('requiresSharedReview'=>!immediate?,'message'=>immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.")
       @on_event.call(event) if @on_event
     end
@@ -396,6 +436,10 @@ module PlanosSanto
         view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,overlay[:triangles]) unless overlay[:triangles].empty?
         view.drawing_color='green'
         view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,overlay[:normal]) unless overlay[:normal].empty?
+      end
+      unless (@copy_triangles || []).empty?
+        view.drawing_color='orange'
+        view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@copy_triangles)
       end
       return if @triangles.nil? || @triangles.empty?
       view.drawing_color='orange'

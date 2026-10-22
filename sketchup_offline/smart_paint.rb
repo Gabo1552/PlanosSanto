@@ -118,7 +118,9 @@ module PlanosSanto
     def plan(data,light:false)
       if data.is_a?(Hash) && (data['immediate']==true || data['immediatePiece']==true)
         raise ExportError,'Modo de pintura inmediata inválido.' unless %w[sheet edge remove_edge].include?(data['mode'])
-        data=data.merge('immediate'=>true,'side'=>'both','scope'=>'unique')
+        # Hito 2 (PINTURA-02): every copy of the definition only with the
+        # authorization in the SAME request; otherwise one isolated occurrence.
+        data=data.merge('immediate'=>true,'side'=>'both','scope'=>data['scope']=='all' && data['allowShared']==true ? 'all' : 'unique')
         data=data.merge('immediatePiece'=>true,'paintScope'=>'piece') if data['mode']=='sheet'
       end
       raise ExportError,'Solicitud de pintura inteligente inválida.' unless data.is_a?(Hash) && %w[sheet edge remove_edge replace].include?(data['mode']) && %w[front back both].include?(data['side']) && %w[all unique].include?(data['scope'])
