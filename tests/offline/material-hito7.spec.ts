@@ -152,6 +152,7 @@ test('búsqueda: Escape la limpia, las flechas recorren tarjetas y "Pintar en el
  await cards.nth(0).focus();await page.keyboard.press('End');await expect(cards.nth(2)).toBeFocused();await page.keyboard.press('Home');await expect(cards.nth(0)).toBeFocused();
  await page.keyboard.press('ArrowRight');await expect(cards.nth(1)).toBeFocused();await expect(cards.nth(1)).toHaveAttribute('tabindex','0');
  await expect(page.getByRole('group',{name:'Materiales visuales del taller'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Placas',exact:true})).toHaveAccessibleDescription(/^\d+ material(es)?$/);
  await select(page,'Roble foto QA');await details(page).getByRole('button',{name:'Pintar en el modelo',exact:true}).click();
  expect(requests('__paint')[0].data).toEqual({id:uuid(1),autoStart:true});
  expect(errors).toEqual([]);

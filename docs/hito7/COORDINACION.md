@@ -20,5 +20,5 @@ Puntos de contacto con el schema que la migración no debe romper:
 ## Pendientes fuera del alcance de esta rama (archivos que no toqué)
 
 - Paleta de pintura: resuelto en la UI (`SmartPaintPalette.tsx`), que pide `material_extras` y oculta las fichas archivadas de la lista, los recientes y "requiere atención", salvo la que esté elegida. `paint_materials.rb` y `smart_palette_load` no cambiaron; si otra sesión mueve el filtrado a Ruby, puede quitar el de la UI.
-- `smart_paint*.rb`: sin cambios. MATERIALES-19 se resolvió con la acción aislada `viewport_focus` que la UI llama después de iniciar la herramienta desde la biblioteca (único cambio en `SmartPaintPalette.tsx`: esa llamada best effort).
+- `smart_paint*.rb`: sin cambios. MATERIALES-19 se resolvió con la acción aislada `viewport_focus` que la UI llama después de iniciar la herramienta desde la biblioteca (en `SmartPaintPalette.tsx`, esa llamada best effort y el filtro de archivadas descrito arriba).
 - `Sketchup.focus` existe solo en APIs recientes: la acción devuelve `method:'unsupported'` si no está. **Falta verificar en SketchUp 2026 real** que el foco pase al viewport.
