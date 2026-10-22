@@ -37,22 +37,22 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 
 test('A4 UX: 1/2 vistas y clic para ocultar por ruta conservan modelo, tabla y guardado',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();
- await page.getByRole('button',{name:'1 vista',exact:true}).click();await expect(page.getByLabel('Vistas en el PDF',{exact:true})).toHaveValue('exterior');
- await page.getByRole('button',{name:'Interior',exact:true}).click();await expect(page.getByLabel('Vistas en el PDF',{exact:true})).toHaveValue('interior');
- await page.getByRole('button',{name:'2 vistas',exact:true}).click();await expect(page.getByLabel('Vistas en el PDF',{exact:true})).toHaveValue('both');
+ await page.getByRole('radio',{name:'Exterior',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior',exact:true})).toHaveAttribute('aria-checked','true');
+ await page.getByRole('radio',{name:'Interior',exact:true}).click();await expect(page.getByRole('radio',{name:'Interior',exact:true})).toHaveAttribute('aria-checked','true');
+ await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior + interior',exact:true})).toHaveAttribute('aria-checked','true');
  await page.getByRole('button',{name:'Ocultar pieza en el dibujo',exact:true}).click();
  await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
- const chip=page.getByRole('button',{name:'Mostrar pieza oculta 1/11',exact:true});await expect(chip).toBeVisible();
+ const chip=page.getByRole('button',{name:/^Mostrar P01 · .+ \(1\/11\)$/});await expect(chip).toBeVisible();
  await expect(page.locator('[data-piece-row]')).toHaveCount(2);
  await chip.click();await expect(chip).toHaveCount(0);
  await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
  await page.getByRole('button',{name:'Aplicar visibilidad interior',exact:true}).click();await save(page);
  const after=await snapshot();unchanged(before,after);expect(after.guide!.furniture[0].pieces).toHaveLength(2);expect(after.guide!.furniture[0].presentation!.guide!.hiddenPieceIds).toEqual(['1/11']);
- await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('button',{name:'Mostrar pieza oculta 1/11',exact:true})).toBeVisible();
+ await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('button',{name:/^Mostrar P01 · .+ \(1\/11\)$/})).toBeVisible();
 });
 
 for(const viewCount of [1,2])test(`A4 UX: ${viewCount} vistas, la vista previa usa PDF real y coincide píxel a píxel con la exportación`,async({page},info)=>{
- await boot(page,info.outputDir);await page.getByRole('button',{name:viewCount===1?'1 vista':'2 vistas',exact:true}).click();
+ await boot(page,info.outputDir);await page.getByRole('radio',{name:viewCount===1?'Exterior':'Exterior + interior',exact:true}).click();
  await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota completa de la vista previa');await save(page);
  await page.getByRole('button',{name:'Planos A4',exact:true}).click();
  const link=page.getByRole('link',{name:'Descargar vista previa',exact:true});await expect(link).toBeVisible();

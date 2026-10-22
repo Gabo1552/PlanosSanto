@@ -135,7 +135,7 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
   await page.keyboard.press('Escape');await expect(popup).toHaveCount(0);await expect(help).toBeFocused();
   await page.getByRole('button',{name:'Ayuda: PDF para imprimir',exact:true}).click();
   await expect(page.getByRole('dialog',{name:'PDF para imprimir',exact:true})).toContainText('una hoja A4 horizontal por mueble');
-  await page.locator('.guide-heading h1').click();await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.locator('.guide-heading h2').click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button',{name:'Ayuda: Guardar guía',exact:true}).click();
   await page.getByRole('button',{name:'Cerrar ayuda: Guardar guía',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(input).toHaveValue(original);expect(calls).not.toContain('save');expect(calls).not.toContain('pdf');
@@ -148,7 +148,7 @@ test('al cambiar muebles exige regenerar antes del PDF y Escape cancela el ancla
   await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.pick-hint')).toHaveCount(0);await expect(page.getByTestId('note-box')).toHaveCount(0);
   await page.getByRole('checkbox',{name:'Mueble repetido sintético',exact:false}).first().uncheck();
   await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeDisabled();await expect(page.locator('.selection-notice')).toBeVisible();
-  page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();
+  await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await page.getByRole('alertdialog',{name:'Descartar cambios y regenerar las guías'}).getByRole('button',{name:'Descartar y regenerar',exact:true}).click();
   await expect(page.locator('.furniture-tabs button')).toHaveCount(1);await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeEnabled();
 });
 

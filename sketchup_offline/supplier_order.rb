@@ -37,22 +37,27 @@ module PlanosSanto
       raise ExportError,'Pedido incompatible o geometría modificada: volvé a preparar.' unless draft.is_a?(Hash) && draft['schema']==1 && draft['fingerprint']==@fingerprint
       raise ExportError,'La biblioteca cambió; volvé a preparar y revisar el pedido.' unless draft['catalogRevision']==@catalog['revision']
       rows=draft['rows'];raise ExportError,'Listado físico de pedido incompleto o duplicado.' unless rows.is_a?(Array) && rows.map { |r| r['id'] }.sort==@nodes.keys.sort
-      profile=draft['profile'];raise ExportError,'Perfil TXT inválido.' unless profile.is_a?(Hash) && profile.keys.sort==%w[decimal encoding header] && %w[utf8 windows1252].include?(profile['encoding']) && ['.',','].include?(profile['decimal']) && [true,false].include?(profile['header'])
+      profile=draft['profile'];raise ExportError,'El perfil del archivo TXT no es válido: revisá codificación, decimal y encabezado en «Perfil del archivo para la maderera».' unless profile.is_a?(Hash) && profile.keys.sort==%w[decimal encoding header] && %w[utf8 windows1252].include?(profile['encoding']) && ['.',','].include?(profile['decimal']) && [true,false].include?(profile['header'])
       rows.each do |row|
         raise ExportError,'Campos de pedido no permitidos.' unless row.is_a?(Hash) && row.keys.sort==ROW_KEYS.sort
         raise ExportError,'Estado de inclusión inválido.' unless [true,false].include?(row['include'])
         %w[excludeReason detail reviewNote].each { |key| CatalogStore.new.text(row[key]) }
         unless row['include']
           if row['excludeReason'].strip.length<3
-            if collect_errors;errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>'Indicá por qué se excluye esta pieza.'};else;raise ExportError,'Indicá por qué se excluye cada pieza.';end
+            if collect_errors;errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>'Indicá por qué se excluye esta pieza.','reasons'=>['Indicá por qué se excluye esta pieza.']};else;raise ExportError,'Indicá por qué se excluye cada pieza.';end
           end
           next
         end
-        begin
-          validate_row(row)
-        rescue ExportError => error
-          raise unless collect_errors
-          errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>error.message}
+        if collect_errors
+          reasons=validate_row(row,collect:true)
+          errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>reasons.first,'reasons'=>reasons} unless reasons.empty?
+        else
+          begin
+            validate_row(row)
+          rescue ExportError => error
+            # Check/export stop at the first problem: name the piece so the message is actionable.
+            raise ExportError,"#{row['detail'].to_s.strip.empty? ? 'Pieza sin detalle' : row['detail']} (#{row['id']}): #{error.message}"
+          end
         end
       end
       raise ExportError,'No hay piezas incluidas en el pedido.' unless rows.any? { |row| row['include'] }
@@ -60,46 +65,109 @@ module PlanosSanto
     end
     def material(id,kind)
       found=@catalog['items'].find { |item| item['id']==id && item['kind']==kind && item['approved'] }
-      raise ExportError,"Elegí #{kind=='sheet' ? 'una placa' : 'un canto'} aprobado de la biblioteca." unless found
+      raise ExportError,"Elegí #{kind=='sheet' ? 'una placa aprobada' : 'un canto aprobado'} de la biblioteca." unless found
       found
     end
-    def validate_row(row)
-      node=@nodes.fetch(row['id']);g=geometry(node)
-      raise ExportError,"#{row['detail']}: geometría no rectangular; verificar/excluir explícitamente." unless g['rectangular']
-      axes=row['axes'];raise ExportError,'Elegí ejes U/V distintos y la cara frontal de la vista 2D.' unless axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |n| n.is_a?(Integer) && n.between?(0,2) } && [-1,1].include?(row['frontSign'])
-      %w[flipX flipY orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed grainConfirmed].each { |key| raise ExportError,'Confirmaciones de pedido inválidas.' unless [true,false].include?(row[key]) }
-      raise ExportError,"#{row['detail']}: falta confirmar orientación, material, medidas o cantos." unless %w[orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed].all? { |key| row[key] }
-      raise ExportError,'Elegí cómo verificaste los cantos: caras observadas o inspección manual documentada.' unless %w[observed manual].include?(row['edgeResolution'])
-      bindings=row['edgeBindings'];raise ExportError,'Vínculos de cantos inválidos.' unless bindings.is_a?(Array) && bindings.length<=100 && bindings.all? { |r| r.is_a?(Hash) && r.keys.sort==%w[catalogId observedId] && r.values.all? { |v| v.is_a?(String) && v.length.between?(1,200) } } && bindings.map { |r| r['observedId'] }.uniq.length==bindings.length
-      CatalogStore.new.text(row['edgeOverrideReason'])
-      raise ExportError,'Documentá por qué el mapa manual representa los cantos reales.' if row['edgeResolution']=='manual' && row['edgeOverrideReason'].strip.length<8
-      board=material(row['materialId'],'sheet');thickness=g['lengths'][(0..2).find { |i| !axes.include?(i) }]
-      raise ExportError,'El espesor del catálogo no coincide con el eje de espesor elegido.' if (thickness-board['thicknessMm']).abs>0.1
-      raise ExportError,'Completá detalle y justificación de medidas de corte/terminadas.' if row['detail'].strip.empty? || row['detail'].length>80 || row['reviewNote'].strip.length<8
-      raise ExportError,'Elegí medidas terminadas aceptadas o medidas de corte explícitas.' unless %w[finished_accepted explicit_cut].include?(row['dimensionRule'])
-      if row['dimensionRule']=='explicit_cut'
-        %w[cutBase cutHeight].each { |key| n=row[key];raise ExportError,'Medidas de corte inválidas.' unless n.is_a?(Numeric) && n.finite? && n>0 && n<=100000 }
+    def mm(number)
+      # Same convention as the UI (es-AR): 1.234,5
+      whole,fraction=format('%.2f',number).split('.')
+      whole=whole.reverse.scan(/\d{1,3}/).join('.').reverse.prepend(number<0 ? '-' : '')
+      fraction=fraction.sub(/0+\z/,'')
+      fraction.empty? ? whole : "#{whole},#{fraction}"
+    end
+    # Independent groups of checks. Normal mode raises the first problem (same order as
+    # always); collect mode keeps going so one audit lists every problem of the piece.
+    def validate_row(row,collect: false)
+      reasons=[]
+      check=lambda do |&block|
+        block.call
+        true
+      rescue ExportError => error
+        raise unless collect
+        reasons << error.message
+        false
       end
-      mapping=row['edgeMap'];raise ExportError,'Mapa de cantos inválido.' unless mapping.is_a?(Array) && mapping.length==4 && mapping.all? { |v| v.is_a?(Integer) && v.between?(0,2) }
-      raise ExportError,'Los cantos principal y secundario deben ser distintos.' if row['principalId'] && row['principalId']==row['secondaryId']
-      %w[principalId secondaryId].each_with_index do |key,index|
-        next unless row[key] || mapping.include?(index+1)
-        edge=material(row[key],'edge')
-        raise ExportError,'El canto no cubre el espesor de la placa.' if edge['widthMm']+0.1<thickness
-        raise ExportError,'Confirmá compatibilidad placa/canto en la biblioteca.' unless board['compatibleIds'].include?(edge['id'])
+      node=@nodes.fetch(row['id']);g=geometry(node);axes=row['axes'];board=nil;mapping=row['edgeMap']
+      return reasons unless check.call { raise ExportError,'Geometría no rectangular: verificala o excluila explícitamente.' unless g['rectangular'] }
+      structure=check.call do
+        raise ExportError,'Elegí ejes U/V distintos y la cara frontal de la vista 2D.' unless axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |n| n.is_a?(Integer) && n.between?(0,2) } && [-1,1].include?(row['frontSign'])
+        %w[flipX flipY orientationConfirmed materialConfirmed dimensionsConfirmed edgesConfirmed grainConfirmed].each { |key| raise ExportError,'Confirmaciones de pedido inválidas.' unless [true,false].include?(row[key]) }
       end
-      raise ExportError,'Confirmá la dirección de veta de la pieza en la vista 2D.' unless row['grainConfirmed'] && (board['grain'] ? row['grainAxis']=='u' : row['grainAxis']=='none')
-      raise ExportError,'Confirmá si la pieza admite rotación.' unless %w[locked rotate].include?(row['grainPolicy'])
-      if row['grainPolicy']=='rotate'
-        raise ExportError,'No se permite girar una placa con veta o sin veta confirmada.' unless board['grain']==false
-        raise ExportError,'Cantos asimétricos: mantener rota=0 hasta validar el proveedor.' unless mapping.uniq.length==1
+      return reasons unless structure
+      check.call do
+        missing={'orientationConfirmed'=>'orientación','materialConfirmed'=>'material','dimensionsConfirmed'=>'medidas','edgesConfirmed'=>'cantos'}.reject { |key,_| row[key] }.values
+        raise ExportError,"Falta confirmar #{missing.join(', ')}." unless missing.empty?
       end
-      if row['edgeResolution']=='observed'
-        raise ExportError,'Se necesita releer las caras del modelo para validar cantos observados.' unless @edge_review
-        @edge_evidence ||= {};@edge_evidence[row['id']]=@edge_review.call(row,g)
+      check.call do
+        raise ExportError,'Elegí cómo verificaste los cantos: caras observadas o inspección manual documentada.' unless %w[observed manual].include?(row['edgeResolution'])
+        bindings=row['edgeBindings'];raise ExportError,'Vínculos de cantos inválidos.' unless bindings.is_a?(Array) && bindings.length<=100 && bindings.all? { |r| r.is_a?(Hash) && r.keys.sort==%w[catalogId observedId] && r.values.all? { |v| v.is_a?(String) && v.length.between?(1,200) } } && bindings.map { |r| r['observedId'] }.uniq.length==bindings.length
+        CatalogStore.new.text(row['edgeOverrideReason'])
+        raise ExportError,'Documentá por qué el mapa manual representa los cantos reales.' if row['edgeResolution']=='manual' && row['edgeOverrideReason'].strip.length<8
       end
-      @source_review.call(row,g) if @source_review
-      base,height=dimensions(row);raise ExportError,'La pieza no entra en el formato de placa aprobado.' if !((base<=board['lengthMm']+0.1 && height<=board['widthMm']+0.1) || (row['grainPolicy']=='rotate' && height<=board['lengthMm']+0.1 && base<=board['widthMm']+0.1))
+      thickness=g['lengths'][(0..2).find { |i| !axes.include?(i) }]
+      check.call do
+        board=material(row['materialId'],'sheet')
+        raise ExportError,'La placa aprobada no tiene espesor cargado en la biblioteca.' unless board['thicknessMm'].is_a?(Numeric)
+        raise ExportError,"El espesor no coincide: el eje de espesor mide #{mm(thickness)} mm y la placa aprobada tiene #{mm(board['thicknessMm'])} mm." if (thickness-board['thicknessMm']).abs>0.1
+      end
+      sized=check.call do
+        raise ExportError,'Completá detalle y justificación de medidas de corte/terminadas.' if row['detail'].strip.empty? || row['detail'].length>80 || row['reviewNote'].strip.length<8
+        raise ExportError,'Elegí medidas terminadas aceptadas o medidas de corte explícitas.' unless %w[finished_accepted explicit_cut].include?(row['dimensionRule'])
+        if row['dimensionRule']=='explicit_cut'
+          %w[cutBase cutHeight].each { |key| n=row[key];raise ExportError,'Medidas de corte inválidas: cargá base y altura de corte mayores que cero.' unless n.is_a?(Numeric) && n.finite? && n>0 && n<=100000 }
+        end
+      end
+      # Map structure first; then each edge role on its own so collect mode reports both roles.
+      mapped=check.call do
+        raise ExportError,'Mapa de cantos inválido: cada lado debe ser 0, 1 o 2.' unless mapping.is_a?(Array) && mapping.length==4 && mapping.all? { |v| v.is_a?(Integer) && v.between?(0,2) }
+      end
+      distinct=check.call do
+        raise ExportError,'Los cantos principal y secundario deben ser distintos.' if row['principalId'] && row['principalId']==row['secondaryId']
+      end
+      if mapped && distinct
+        %w[principalId secondaryId].each_with_index do |key,index|
+          next unless row[key] || mapping.include?(index+1)
+          role=index.zero? ? 'principal (1)' : 'secundario (2)'
+          check.call do
+            edge=@catalog['items'].find { |item| item['id']==row[key] && item['kind']=='edge' && item['approved'] }
+            raise ExportError,"Elegí un canto #{role} aprobado de la biblioteca." unless edge
+            if board
+              width=edge['widthMm'].is_a?(Numeric) ? "#{mm(edge['widthMm'])} mm" : 'sin cargar'
+              raise ExportError,"El canto #{role} no cubre el espesor de la placa: ancho #{width} y espesor #{mm(thickness)} mm." unless edge['widthMm'].is_a?(Numeric) && edge['widthMm']+0.1>=thickness
+              raise ExportError,"Confirmá compatibilidad placa/canto #{role} en la biblioteca." unless board['compatibleIds'].include?(edge['id'])
+            end
+          end
+        end
+      end
+      if board
+        check.call do
+          raise ExportError,'Confirmá la dirección de veta de la pieza en la vista 2D.' unless row['grainConfirmed'] && (board['grain'] ? row['grainAxis']=='u' : row['grainAxis']=='none')
+          raise ExportError,'Confirmá si la pieza admite rotación.' unless %w[locked rotate].include?(row['grainPolicy'])
+          if row['grainPolicy']=='rotate'
+            raise ExportError,'No se permite girar una placa con veta o sin veta confirmada.' unless board['grain']==false
+            raise ExportError,'Cantos asimétricos: mantener rota=0 hasta validar la maderera.' if mapped && mapping.uniq.length!=1
+          end
+        end
+      end
+      # Model rereads only make sense once the row itself is coherent.
+      if reasons.empty?
+        check.call do
+          if row['edgeResolution']=='observed'
+            raise ExportError,'Se necesita releer las caras del modelo para validar cantos observados.' unless @edge_review
+            @edge_evidence ||= {};@edge_evidence[row['id']]=@edge_review.call(row,g)
+          end
+          @source_review.call(row,g) if @source_review
+        end
+      end
+      if board && sized
+        check.call do
+          raise ExportError,'La placa aprobada no tiene largo y ancho cargados en la biblioteca.' unless board['lengthMm'].is_a?(Numeric) && board['widthMm'].is_a?(Numeric)
+          base,height=dimensions(row)
+          fits=(base<=board['lengthMm']+0.1 && height<=board['widthMm']+0.1) || (row['grainPolicy']=='rotate' && height<=board['lengthMm']+0.1 && base<=board['widthMm']+0.1)
+          raise ExportError,"La pieza no entra en el formato de placa aprobado: mide #{mm(base)} × #{mm(height)} mm y la placa aprobada es #{mm(board['lengthMm'])} × #{mm(board['widthMm'])} mm." unless fits
+        end
+      end
+      reasons
     end
     def dimensions(row)
       return [row['cutBase'],row['cutHeight']] if row['dimensionRule']=='explicit_cut'

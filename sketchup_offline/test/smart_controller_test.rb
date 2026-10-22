@@ -69,7 +69,8 @@ class SmartControllerTest < Minitest::Test
     assert_raises(SyntaxError) { Sketchup.read_default('PlanosSanto','smart_paint_settings_v1','{}') }
     assert_equal({},@controller.smart_settings)
     @controller.remember_smart_settings(chosen)
-    expected=chosen.slice(*PlanosSanto::OfflineController::SMART_SETTING_KEYS)
+    # Hito 2 (PINTURA-02): the consent for every copy is never persisted.
+    expected=chosen.slice(*PlanosSanto::OfflineController::SMART_SETTING_KEYS).merge('scope'=>'unique')
     assert_equal expected,PlanosSanto::OfflineController.new.smart_settings
     encoded=Sketchup.smart_prefs.fetch(['PlanosSanto','smart_paint_settings_v2'])
     assert_match(/\Aps2:[A-Za-z0-9+\/=]+\z/,encoded)
@@ -106,7 +107,7 @@ class SmartControllerTest < Minitest::Test
     end
     assert_empty @selections;assert_empty @model.operations
   end
-  def test_changes_invalidate_session_immediately_and_stop_returns_saved_guide_scan
+  def test_changes_invalidate_session_immediately_and_stop_marks_analysis_stale
     @controller.dispatch('generate',{'ids'=>['1']})
     original=@controller.instance_variable_get(:@session)
     start;@tool.changed
@@ -114,7 +115,7 @@ class SmartControllerTest < Minitest::Test
     refute_same original,session;assert_nil session.document
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('generate',{'ids'=>['1']}) }
     result=@controller.dispatch('smart_tool_stop',{})
-    assert result['scan'];assert result['toolState']['changed'];refute result['toolState']['active']
+    assert result['stale'];refute result.key?('scan');refute result['toolState']['changed'];refute result['toolState']['active']
     assert_equal false,@controller.dispatch('smart_tool_status',{})['toolState']['changed']
     assert_nil @selections.last;assert_empty @model.operations
   end
@@ -137,7 +138,7 @@ class SmartControllerTest < Minitest::Test
     @tool.changed
     assert @controller.dispatch('smart_tool_status',{})['toolState']['changed']
     result=@controller.dispatch('smart_tool_stop',{})
-    assert result['scan'];refute result['toolState']['active']
+    assert result['stale'];refute result.key?('scan');refute result['toolState']['active']
     assert_nil @selections.last
   end
   def test_compact_palette_can_resize_below_old_editor_minimum_and_restore
@@ -145,7 +146,7 @@ class SmartControllerTest < Minitest::Test
     @controller.instance_variable_set(:@dialog,dialog)
     assert @controller.dispatch('smart_palette_compact',{'compact'=>true})['compact']
     refute @controller.dispatch('smart_palette_compact',{'compact'=>false})['compact']
-    assert_equal [[440,760],[1440,920]],sizes
+    assert_equal [[440,760],PlanosSanto::OfflineController::MAIN_INITIAL_SIZE],sizes # ARQ-06: no fixed 1440x920
     assert_raises(PlanosSanto::ExportError) { @controller.dispatch('smart_palette_compact',{'compact'=>'true'}) }
   end
   def test_corrupt_saved_preferences_do_not_change_model_or_prevent_palette

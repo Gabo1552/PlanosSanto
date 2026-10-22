@@ -62,6 +62,8 @@ module PlanosSanto
         menu.add_item('Mostrar / ocultar barra rápida') do
           main_toolbar.visible? ? main_toolbar.hide : main_toolbar.show
         end
+        # ARQ-06: recover a window left off-screen or too small.
+        menu.add_item('Restablecer ventanas') { @controller.reset_windows if @controller.respond_to?(:reset_windows) }
         menu.add_item('Diagnóstico de integración (solo lectura)…') { P1Diagnostics.run }
         menu.add_item('Abrir archivo .skp…') { Sketchup.send_action('openDocument:') }
         restore_if_visible(main_toolbar)

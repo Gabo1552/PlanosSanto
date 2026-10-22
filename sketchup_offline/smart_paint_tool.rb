@@ -1,44 +1,313 @@
 # frozen_string_literal: true
 require 'json'
+require 'time'
+require 'fileutils'
 
 module PlanosSanto
   # Public SketchUp Tool. Hover, picking and queued selection never write model
   # state. Only the service executes one confirmed, reversible operation.
+  # Hover-time aptitude (PINTURA-08): geometry is evaluated once per definition,
+  # transaction generation, mode, edge count, physical scale and pointed side.
+  # It never writes, never reads the catalog and never hashes files.
+  class PaintVerdict
+    attr_reader :calls
+    def initialize(native);@native=native;@cache={};@calls=0;end
+    def available?;!@native.nil?;end
+    def node_for(target)
+      instances=target['_instances'];{'_entity'=>instances.last,'_parents'=>instances[0...-1],'id'=>target['pieceId']}
+    end
+    def scales(instances)
+      m=instances.inject(Geom::Transformation.new) { |world,entity| world*entity.transformation }.to_a
+      [m[0,3],m[4,3],m[8,3]].map { |axis| Math.sqrt(axis.sum { |v| v*v }).round(3) }
+    end
+    NO_SHEET='Canto sin placa: pintá primero la placa de esta pieza.'
+    LOCKED='La pieza o un contenedor está bloqueado.'
+    def inherited(instances);instances.reverse.find { |entity| entity.respond_to?(:material) && entity.material }&.material;end
+    def for(target,mode:,edge_count:,generation:)
+      instances=target['_instances'];entity=instances.last
+      return {'ok'=>false,'reason'=>LOCKED,'expandedFaceIds'=>[],'faces'=>[]} if instances.any? { |e| e.respond_to?(:locked?) && e.locked? }
+      inherited=mode=='edge' ? inherited(instances) : nil
+      key=[entity.definition.guid.to_s,generation,mode,edge_count,scales(instances),mode=='sheet' ? nil : target['faceIds'].first,inherited&.object_id]
+      @cache.clear if @cache.length>500
+      @cache[key] ||= compute(node_for(target),target['_face'],mode,edge_count,inherited)
+    end
+    def sheet?(material)
+      material && defined?(MaterialResolver) && MaterialResolver.observe_binding(material).dig('binding','kind')=='sheet'
+    end
+    def compute(node,face,mode,count,inherited)
+      @calls+=1
+      axes=@native.automatic_axes(node)
+      faces=@native.expanded_faces(node,[face],mode=='sheet' ? {'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'} : {'mode'=>mode,'axes'=>axes,'edgeCount'=>count})
+      if mode=='edge'
+        # F-PINT-B: an edge needs a recognized sheet on a broad face (own or inherited).
+        broad=begin
+          @native.expanded_faces(node,[face],{'mode'=>'sheet','axes'=>axes,'paintScope'=>'piece'})
+        rescue ExportError
+          @native.faces(node)-faces
+        end
+        raise ExportError,NO_SHEET unless broad.any? { |f| sheet?(f.material || inherited) || sheet?(f.back_material || inherited) }
+      end
+      {'ok'=>true,'reason'=>nil,'expandedFaceIds'=>faces.map { |f| @native.face_id(f) },'faces'=>faces,'axes'=>axes}
+    rescue ExportError=>error
+      {'ok'=>false,'reason'=>error.message,'expandedFaceIds'=>[],'faces'=>[]}
+    end
+  end
+
+  # PINTURA-09: cost of each immediate click (hit + verdict + apply). A ring of
+  # 200 entries in memory plus one JSONL line per click, rotated to .1 past 512 KB.
+  class PaintTimingLog
+    RING=200
+    MAX_BYTES=512*1024
+    attr_reader :entries
+    def initialize(directory:);@directory=directory;@entries=[];end
+    def path;@directory && File.join(@directory,'diagnostico','pincel-tiempos.jsonl');end
+    def record(entry)
+      @entries << entry;@entries.shift while @entries.length>RING
+      write(entry);entry
+    end
+    def write(entry)
+      return unless path
+      FileUtils.mkdir_p(File.dirname(path))
+      if File.file?(path) && File.size(path)>MAX_BYTES
+        File.delete(path+'.1') if File.exist?(path+'.1')
+        File.rename(path,path+'.1')
+      end
+      File.open(path,'a') { |file| file.write(JSON.generate(entry)+"\n") }
+    rescue StandardError=>error
+      warn("Planos Santo pincel: no se pudo registrar el tiempo del clic (#{error.class}).")
+    end
+    def summary
+      values=@entries.map { |entry| entry['ms'] }.compact.sort
+      return {'count'=>0,'p50'=>nil,'p95'=>nil,'max'=>nil,'last'=>nil} if values.empty?
+      rank=lambda { |p| values[[(p*values.length).ceil-1,0].max] }
+      {'count'=>values.length,'p50'=>rank.call(0.5),'p95'=>rank.call(0.95),'max'=>values.last,'last'=>@entries.last}
+    end
+  end
+
+  # Minimal ModelObserver: only counts transactions, never walks the model.
+  class PaintGenerationObserver
+    def initialize(&block);@bump=block;end
+    def onTransactionCommit(_model);@bump.call;end
+    def onTransactionUndo(_model);@bump.call;end
+    def onTransactionRedo(_model);@bump.call;end
+    def onTransactionAbort(_model);@bump.call;end
+    def onTransactionEmpty(_model);@bump.call;end
+  end
+
+  # Copies of each definition in the model, rebuilt once per transaction
+  # generation. Walks instances only (never faces) and never writes.
+  class OccurrenceIndex
+    LIMIT=20000
+    attr_reader :builds
+    def initialize(model,limit:LIMIT);@model=model;@limit=limit;@builds=0;@truncated=false;end
+    # Past the limit the index is partial: counts are a lower bound ("N+").
+    def truncated?;@truncated;end
+    def paths(definition,generation)
+      build(generation) unless @paths && @generation==generation
+      @paths[definition] || []
+    end
+    def build(generation)
+      @generation=generation;@builds+=1;@paths={}.compare_by_identity;@truncated=false;count=0
+      walk=lambda do |entities,prefix|
+        entities.each do |entity|
+          next unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
+          return @truncated=true if (count+=1)>@limit
+          path=prefix+[entity];(@paths[entity.definition] ||= []) << path
+          walk.call(entity.is_a?(Sketchup::Group) ? entity.entities : entity.definition.entities,path) if prefix.length<32
+        end
+      end
+      walk.call(@model.entities,[])
+    end
+  end
+
   class SmartPaintTool
     SHIFT_MASK = Object.const_defined?(:CONSTRAIN_MODIFIER_MASK) ? Object.const_get(:CONSTRAIN_MODIFIER_MASK) : 4
-    attr_reader :queued_targets
+    CTRL_MASK = Object.const_defined?(:COPY_MODIFIER_MASK) ? Object.const_get(:COPY_MODIFIER_MASK) : 8
+    EDGE_COUNTS=[1,2,4].freeze
+    attr_reader :queued_targets,:verdicts,:generation
 
-    def initialize(model, service:, options:, on_event:, guard:)
-      @model=model;@service=service;@on_event=on_event;@guard=guard
-      @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false
+    HOVER_INTERVAL=0.1
+    def initialize(model, service:, options:, on_event:, guard:, remember:nil, switch_mode:nil, clock:nil, timing:nil)
+      @model=model;@service=service;@on_event=on_event;@guard=guard;@remember=remember;@switch_mode=switch_mode;@timing=timing
+      @clock=clock || lambda { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+      @options=copy(options);@queued_targets=[];@queued_overlays={};@active=false;@generation=0
+      @verdicts=PaintVerdict.new(service.respond_to?(:native) ? service.native : nil);@occurrences=OccurrenceIndex.new(model)
+      @copy_triangles=[]
+    end
+    COPY_DRAW_LIMIT=200
+    def scope;@options['scope']=='all' && @options['allowShared']==true ? 'all' : 'unique';end
+    def copies_of(target)
+      @occurrences.paths(target['_instances'].last.definition,@generation)
+    end
+    def edge_count;@options['mode']=='sheet' ? 1 : @options.fetch('edgeCount',1);end
+    def verdict_for(target)
+      return nil unless immediate? && @verdicts.available?
+      @verdicts.for(target,mode:@options['mode'],edge_count:edge_count,generation:@generation)
     end
     def copy(value);JSON.parse(JSON.generate(value));end
     def immediate?;@options['immediate']==true || @options['immediatePiece']==true;end
+    def observe!
+      return if @observer || !@model.respond_to?(:add_observer)
+      @observer=PaintGenerationObserver.new { @generation+=1 }
+      @model.add_observer(@observer)
+    rescue StandardError
+      @observer=nil
+    end
+    def unobserve!
+      return unless @observer
+      @model.remove_observer(@observer) if @model.respond_to?(:remove_observer)
+      @observer=nil # only once removed: a failed removal is retried, never leaked
+    rescue StandardError
+      nil
+    end
     def activate
+      observe!
+      @generation+=1 # transactions while inactive were not observed
       @active=true;emit(immediate? ? 'Hacé clic en una pieza para pintar. Escape termina.' : 'Elegí una cara. Mayús agrega caras; Enter aplica la selección. Esc cancela.')
     end
     def deactivate(view)
-      @active=false;clear;emit('Herramienta desactivada.');invalidate(view)
+      unobserve!;@active=false;clear;emit('Herramienta desactivada.');invalidate(view)
     end
     def suspend(view);invalidate(view);end
     def resume(view);invalidate(view);end
     def update_options(options)
-      @options=copy(options);clear;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
+      @options=copy(options);clear;@last_error=nil;emit(immediate? ? 'Material activo. Hacé clic en otra pieza; Escape termina.' : 'Configuración actualizada; elegí nuevamente las caras.')
     end
     def status
       {'active'=>@active,'mode'=>@options['mode'],'hover'=>@hover && copy(@hover),'queuedCount'=>@queued_targets.sum { |target| target['faceIds'].length },'options'=>@options.slice('mode','paintScope','edgeCount','immediate','immediatePiece','catalogId','materialUuid','side','scope','axes','batch')}
     end
-    def emit(message,error:nil,changed:nil)
-      event=status.merge('message'=>message)
+    # hover:true -> limited (F-ARQ-B): only on a new signature and >=100 ms
+    # after the previous hover event, else pending until a timer or the next
+    # event. hover::clear -> deduplicated but immediate. Anything else
+    # (clicks, errors, options, activate/stop) is sent at once and drops the pending.
+    def emit(message,error:nil,changed:nil,hover:false,extra:nil)
+      event=status.merge(extra || {}).merge('message'=>message)
       event['error']=error if error || immediate?
       event['changed']=changed unless changed.nil?
-      @on_event.call(event) if @on_event
+      @last_error=error if error && !hover
+      status_text!
+      return event unless @on_event
+      signature=signature(event)
+      if hover
+        if signature==@sent_signature
+          @pending=nil;return event
+        end
+        if hover==true
+          now=@clock.call
+          if @hover_sent_at && now-@hover_sent_at<HOVER_INTERVAL
+            @pending=event;schedule_flush;return event
+          end
+          @hover_sent_at=now
+        end
+      end
+      @pending=nil;@sent_signature=signature
+      @on_event.call(event)
       event
+    end
+    def signature(event)
+      hover=event['hover'] || {};verdict=hover['verdict'] || {}
+      [event['message'],event['error'],hover['pieceId'],hover['faceId'],hover['sharedCount'],hover['sharedTruncated'],verdict['ok'],verdict['reason'],hover['edgeCount'],hover['scope'],event['mode']]
+    end
+    def schedule_flush
+      return if @flush_scheduled || !(defined?(UI) && UI.respond_to?(:start_timer))
+      @flush_scheduled=true
+      UI.start_timer(HOVER_INTERVAL,false) { @flush_scheduled=false;flush_pending }
+    rescue StandardError
+      @flush_scheduled=false
+    end
+    def flush_pending
+      event=@pending;@pending=nil
+      return unless event && @on_event
+      @hover_sent_at=@clock.call;@sent_signature=signature(event)
+      @on_event.call(event)
+    end
+    # ---- In-view feedback (ARQ-10 stage 1): status bar, tooltip, color, cursor.
+    def scope_label(count=nil,truncated=false)
+      return scope=='all' ? 'Todas las iguales' : 'Solo esta' unless count
+      count="#{count}+" if truncated
+      scope=='all' ? "Todas las iguales (#{count})" : "Solo esta (de #{count})"
+    end
+    def mode_short
+      @options['mode']=='sheet' ? 'Pieza' : @options['mode']=='remove_edge' ? 'Quitar canto' : edge_label(edge_count)
+    end
+    # Name/color of the active native material by its UUID; no catalog I/O.
+    def material_info
+      uuid=@options['materialUuid']
+      return nil if uuid.to_s.empty? || !@model.respond_to?(:materials) || !defined?(MaterialResolver)
+      key=[uuid,@generation]
+      return @material_info[1] if @material_info && @material_info[0]==key
+      material=@model.materials.to_a.find { |m| MaterialResolver.observe_binding(m).dig('binding','uuid')==uuid }
+      info=material && {'name'=>(material.respond_to?(:display_name) ? material.display_name : material.name).to_s,'color'=>material.color}
+      @material_info=[key,info];info
+    rescue StandardError
+      nil
+    end
+    def status_text!
+      return unless immediate? && defined?(Sketchup) && Sketchup.respond_to?(:status_text=)
+      label=MODE_LABELS[@options['mode']].to_s
+      label+=" · #{edge_label(edge_count)}" if @options['mode']=='edge'
+      info=material_info
+      parts=[label,info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material'),@hover ? scope_label(@hover['sharedCount'],@hover['sharedTruncated']) : scope_label(@shared_count,@shared_truncated)]
+      parts << "último error: #{@last_error}" if @last_error
+      text=parts.join(' · ')
+      return if text==@status_text
+      @status_text=text;Sketchup.status_text=text
+    rescue StandardError
+      nil
+    end
+    def rgba(color,alpha)
+      rgb=color.respond_to?(:red) ? [color.red,color.green,color.blue] : color.to_a.first(3)
+      begin
+        Sketchup::Color.new(*rgb.map(&:to_i),alpha)
+      rescue ArgumentError,TypeError
+        rgb.map(&:to_i)+[alpha]
+      end
+    end
+    def blocked?;@hover && @hover['verdict'] && @hover['verdict']['ok']==false;end
+    def hover_color(alpha)
+      return rgba([220,30,30],alpha) if blocked?
+      info=material_info
+      info && info['color'] ? rgba(info['color'],alpha) : 'orange'
+    end
+    def draw_tooltip(view)
+      return unless immediate? && @hover && @mouse && view.respond_to?(:draw_text)
+      scale=defined?(UI) && UI.respond_to?(:scale_factor) ? UI.scale_factor.to_f : 1.0
+      klass=defined?(Geom::Point3d) ? Geom::Point3d : Sketchup::Point
+      x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
+      info=material_info
+      line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],mode_short,scope_label(@hover['sharedCount'],@hover['sharedTruncated'])].join(' · ')
+      line2=blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
+      color=lambda { |rgb| Sketchup::Color.new(*rgb) rescue rgb }
+      view.draw_text(klass.new(x,y,0),line1,{color:color.call([30,30,30]),size:11})
+      view.draw_text(klass.new(x,y+16*scale,0),line2,{color:color.call(blocked? ? [200,0,0] : [0,128,0]),size:11})
+    rescue StandardError
+      nil
+    end
+    CURSORS={'piece'=>'paint-piece.png','edge'=>'paint-edge.png','remove'=>'paint-remove.png','blocked'=>'paint-blocked.png'}.freeze
+    # One native cursor per file and per process; nil -> native cursor.
+    def self.cursor_id(name)
+      @cursor_ids||={}
+      return @cursor_ids[name] if @cursor_ids.key?(name)
+      path=File.join(__dir__,'cursors',CURSORS.fetch(name))
+      @cursor_ids[name]=defined?(UI) && UI.respond_to?(:create_cursor) && File.file?(path) ? UI.create_cursor(path,3,3) : nil
+    rescue StandardError
+      @cursor_ids[name]=nil
+    end
+    def cursor_name
+      return 'blocked' if blocked?
+      {'sheet'=>'piece','edge'=>'edge','remove_edge'=>'remove'}[@options['mode']]
+    end
+    def onSetCursor
+      name=cursor_name;id=name && self.class.cursor_id(name)
+      return false unless id && defined?(UI) && UI.respond_to?(:set_cursor)
+      UI.set_cursor(id);true
+    rescue StandardError
+      false
     end
     def invalidate(view);view.invalidate if view && view.respond_to?(:invalidate);end
     def clear
       @service.cancel
-      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@queued_targets=[];@queued_overlays={}
+      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@copy_triangles=[];@queued_targets=[];@queued_overlays={}
     end
     def verify_guard!
       raise ExportError,'El modelo o la guía cambió. Volvé a abrir el pintado.' if @guard && @guard.call==false
@@ -121,6 +390,7 @@ module PlanosSanto
     end
     def service_options(targets)
       allowed=%w[mode side scope axes catalogId materialUuid replacementKind sourceMaterialUuid paintScope edgeCount immediate immediatePiece]
+      allowed << 'allowShared' if immediate?
       @options.select { |key,_| allowed.include?(key) }.merge('targets'=>targets)
     end
     def target_data(target);target.slice('pieceId','faceIds');end
@@ -128,8 +398,25 @@ module PlanosSanto
       if immediate?
         # Pick-local feedback only: no inventory, geometry classification,
         # catalog I/O, UUID validation or mutation until the actual click.
-        @target=target;@preview=nil
-        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side']}
+        @target=target;@preview=nil;@copy_triangles=[]
+        copies=copies_of(target);@shared_count=[copies.length,1].max;@shared_truncated=@occurrences.truncated?
+        @hover={'pieceId'=>target['pieceId'],'faceId'=>target['faceIds'].first,'name'=>target['name'],'side'=>@options['side'],'edgeCount'=>edge_count,'scope'=>scope,'sharedCount'=>@shared_count}
+        @hover['sharedTruncated']=true if @shared_truncated
+        verdict=verdict_for(target)
+        if verdict
+          @hover['expandedFaceIds']=verdict['expandedFaceIds'];@hover['verdict']={'ok'=>verdict['ok'],'reason'=>verdict['reason']}
+          faces=verdict['ok'] ? verdict['faces'] : @options['mode']=='sheet' ? entities_for(target['_instances'].last).grep(Sketchup::Face) : [target['_face']]
+          overlay_faces(target,faces)
+          if verdict['ok'] && scope=='all'
+            main=[@triangles,@normal_line];own=target['_instances']
+            copies.reject { |path| path==own }.first(COPY_DRAW_LIMIT).each do |path|
+              overlay_faces(target.merge('_instances'=>path),faces);@copy_triangles.concat(@triangles)
+            end
+            @triangles,@normal_line=main
+          end
+          emit(verdict['ok'] ? (@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.') : 'No se puede pintar acá.',error:verdict['reason'],hover:true)
+          return
+        end
         if @options['mode']=='sheet'
           triangles=[]
           entities_for(target['_instances'].last).grep(Sketchup::Face).each do |face|
@@ -139,7 +426,7 @@ module PlanosSanto
         else
           build_overlay(target)
         end
-        emit(@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.')
+        emit(@options['mode']=='sheet' ? 'Clic para pintar esta pieza. Escape termina.' : 'Clic para pintar este canto. Escape termina.',hover:true)
         return
       end
       result=@service.preview(service_options([target_data(target)]))
@@ -148,7 +435,12 @@ module PlanosSanto
               'affectedPaths'=>result.fetch('affectedPaths',[]),'faceCount'=>result['faceCount'] || result.fetch('faces',[]).length,
               'sharedCount'=>result['sharedCount'] || result.fetch('affectedPaths',[]).length,'side'=>@options['side']}
       build_preview_overlay(target,result)
-      emit((result['warnings'] || []).join(' ').empty? ? 'Cara preparada; revisá la ruta y hacé clic para aplicar.' : result['warnings'].join(' '))
+      emit((result['warnings'] || []).join(' ').empty? ? 'Cara preparada; revisá la ruta y hacé clic para aplicar.' : result['warnings'].join(' '),hover:true)
+    end
+    def overlay_faces(target,faces)
+      triangles=[];normals=[]
+      faces.each { |face| build_overlay(target.merge('_face'=>face));triangles.concat(@triangles);normals.concat(@normal_line) }
+      @triangles=triangles;@normal_line=@options['mode']=='sheet' ? [] : normals
     end
     def build_preview_overlay(target,result)
       expanded=result.fetch('expandedTargets',[]).find { |row| row['pieceId']==target['pieceId'] }
@@ -165,20 +457,24 @@ module PlanosSanto
       @hover['expandedFaceIds']=ids if @hover
     end
     def onMouseMove(_flags,x,y,view)
+      @mouse=[x,y];key=nil
       verify_guard!
       target=hit(view,x,y)
       unless target
-        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
-        @service.cancel;emit('Apuntá a una cara de una pieza.');invalidate(view);return
+        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+        @service.cancel;emit('Apuntá a una cara de una pieza.',hover: :clear);invalidate(view);return
       end
-      key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds']]
+      key=[target['pieceId'],immediate? && @options['mode']=='sheet' ? nil : target['faceIds'],@generation]
+      # An unexpected failure is not recomputed on every move: only a new key retries.
+      return invalidate(view) if key==@failed_key
       unless key==@hit_key
-        hover!(target);@hit_key=key
+        @failed_key=nil;hover!(target);@hit_key=key
       end
       invalidate(view)
     rescue StandardError=>error
-      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
-      @service.cancel;emit('No se puede preparar esta cara.',error:error.message);invalidate(view)
+      @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+      @failed_key=error.is_a?(ExportError) ? nil : key
+      @service.cancel;emit('No se puede preparar esta cara.',error:error.message,hover: :clear);invalidate(view)
     end
     def authorized!(result)
       raise ExportError,'Confirmá material, cara y alcance en la paleta antes de pintar.' unless @options['confirmed']==true
@@ -205,16 +501,31 @@ module PlanosSanto
       result=@service.preview(service_options(targets));authorized!(result)
       verify_guard!
       applied=@service.apply('token'=>result.fetch('token'),'confirmed'=>true)
-      @queued_targets=[];@queued_overlays={};@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[]
+      @queued_targets=[];@queued_overlays={};@hover=nil;@target=nil;@preview=nil;@hit_key=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
       emit(applied['changed'] ? 'Pintado aplicado. Podés deshacerlo con Undo.' : 'Las caras ya tenían ese material.',changed:applied['changed']==true)
+    end
+    def timed!(ok,changed)
+      started=@click_started;@click_started=nil
+      return unless @timing && started
+      @timing.record('at'=>Time.now.utc.iso8601(3),'ms'=>((@clock.call-started)*1000).round(1),'mode'=>@options['mode'],'edgeCount'=>edge_count,
+                     'scope'=>scope,'changed'=>changed==true,'ok'=>ok)
+    rescue StandardError
+      nil
     end
     def onLButtonDown(flags,x,y,view)
       if immediate?
+        @click_started=@clock.call
         verify_guard!
         @pick_cache=nil
         target=hit(view,x,y)
         return unless target
+        @shared_count=[copies_of(target).length,1].max;@shared_truncated=@occurrences.truncated?
+        verdict=verdict_for(target)
+        # The hover verdict only anticipates a refusal: the service validates everything again.
+        raise ExportError,verdict['reason'] if verdict && !verdict['ok']
         applied=@service.apply_immediate(service_options([target_data(target)]))
+        @generation+=1;@last_error=nil
+        timed!(true,applied['changed'])
         clear
         emit(applied['changed'] ? 'Pieza pintada. Hacé clic en otra; Ctrl+Z deshace.' : 'La pieza ya tiene este material. Hacé clic en otra.',changed:applied['changed']==true)
         invalidate(view)
@@ -230,6 +541,7 @@ module PlanosSanto
       end
       invalidate(view)
     rescue StandardError=>error
+      timed!(false,false)
       @service.cancel;emit('No se aplicó el pintado.',error:error.message);invalidate(view)
     end
     def keyboard_submode(backwards=false)
@@ -249,6 +561,28 @@ module PlanosSanto
       end
       emit('Submodo actualizado; se cancelaron las caras pendientes. Revisá el resaltado antes de hacer clic.')
     end
+    def edge_label(count);count==1 ? '1 canto' : "#{count} cantos";end
+    # Ctrl+Tab (immediate): 1 -> 2 opposite -> 4 -> 1, Shift reverses. Remembered.
+    def cycle_edge_count(backwards=false)
+      return emit('Los cantos por clic se eligen en modo canto (Tab cambia de modo).') unless %w[edge remove_edge].include?(@options['mode'])
+      position=EDGE_COUNTS.index(@options.fetch('edgeCount',1)) || 0
+      clear;@last_error=nil;@options['edgeCount']=EDGE_COUNTS[(position+(backwards ? -1 : 1))%EDGE_COUNTS.length]
+      @remember.call(copy(@options)) if @remember
+      emit("#{edge_label(@options['edgeCount'])} por clic. Revisá el resaltado antes de hacer clic.")
+    end
+    MODE_LABELS={'sheet'=>'Pintar pieza','edge'=>'Pintar canto','remove_edge'=>'Quitar canto'}.freeze
+    # Tab / Shift+Tab (immediate, PINTURA-06): sheet <-> edge with the last
+    # material of the destination mode, resolved by the controller (never installs).
+    def switch_mode
+      destination=@options['mode']=='sheet' ? 'edge' : 'sheet'
+      missing="Elegí #{destination=='edge' ? 'un canto' : 'una placa'} en la paleta para usar Tab."
+      options=@switch_mode && @switch_mode.call(destination)
+      return emit(missing) unless options.is_a?(Hash)
+      clear;@last_error=nil;@options=copy(options).merge('scope'=>'unique','allowShared'=>false)
+      emit("#{MODE_LABELS[destination]}. Hacé clic en una pieza; Tab vuelve al otro modo.")
+    rescue ExportError=>error
+      emit('No se cambió de modo.',error:error.message)
+    end
     def keyboard_material(backwards=false)
       return emit('Elegí un material desde la paleta para este modo.') unless @service.respond_to?(:material_choices)
       choices=@service.material_choices(service_options([]))
@@ -256,11 +590,12 @@ module PlanosSanto
       index=choices.index { |choice| choice['materialUuid']==@options['materialUuid'] } || (backwards ? 0 : -1)
       chosen=choices[(index+(backwards ? -1 : 1))%choices.length]
       return emit('El material seleccionado ya está activo.') if chosen['materialUuid']==@options['materialUuid']
-      clear
+      clear;@last_error=nil
       @options.merge!(chosen.slice('catalogId','materialUuid'))
       @options['allowShared']=false
-      event=status.merge('requiresSharedReview'=>!immediate?,'message'=>immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.")
-      @on_event.call(event) if @on_event
+      @options['scope']='unique' if immediate?
+      # Instant, through the limiter: drops a stale pending hover and resets the signature.
+      emit(immediate? ? "Material activo: #{chosen['name']}. Hacé clic en otra pieza." : "Material activo: #{chosen['name']}. Compartidos requieren revisar nuevamente el alcance.",extra:{'requiresSharedReview'=>!immediate?})
     end
     def onKeyDown(key,repeat,flags,view)
       if key==27
@@ -270,7 +605,14 @@ module PlanosSanto
       elsif key==9
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
-        keyboard_submode((flags & SHIFT_MASK)!=0);invalidate(view);true
+        if immediate? && (flags & CTRL_MASK)!=0
+          cycle_edge_count((flags & SHIFT_MASK)!=0)
+        elsif immediate?
+          switch_mode
+        else
+          keyboard_submode((flags & SHIFT_MASK)!=0)
+        end
+        invalidate(view);true
       elsif [37,38,39,40].include?(key)
         verify_guard!
         return true if repeat.is_a?(Integer) && repeat>1
@@ -279,12 +621,21 @@ module PlanosSanto
     rescue StandardError=>error
       @service.cancel;emit('No se aplicó la selección.',error:error.message);invalidate(view)
     end
-    def onCancel(_reason,view)
-      stop(view)
-      @model.select_tool(nil) if @model.respond_to?(:select_tool)
+    # SketchUp reasons: 0 Escape, 1 tool reselected, 2 Undo. Ctrl+Z (which the
+    # messages recommend) must keep the operator in the brush.
+    def onCancel(reason,view)
+      case reason
+      when 2
+        @hover=nil;@target=nil;@preview=nil;@hit_key=nil;@failed_key=nil;@pick_cache=nil;@triangles=[];@normal_line=[];@copy_triangles=[]
+        @generation+=1;invalidate(view)
+      when 1 then nil
+      else
+        stop(view)
+        @model.select_tool(nil) if @model.respond_to?(:select_tool)
+      end
     end
     def stop(view=nil)
-      clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
+      unobserve!;clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
       invalidate(view)
     end
     def world_point(point,matrix)
@@ -328,8 +679,13 @@ module PlanosSanto
         view.drawing_color='green'
         view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,overlay[:normal]) unless overlay[:normal].empty?
       end
+      unless (@copy_triangles || []).empty?
+        view.drawing_color=immediate? ? hover_color(60) : 'orange'
+        view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@copy_triangles)
+      end
+      draw_tooltip(view)
       return if @triangles.nil? || @triangles.empty?
-      view.drawing_color='orange'
+      view.drawing_color=immediate? ? hover_color(110) : 'orange'
       view.draw(Object.const_defined?(:GL_TRIANGLES) ? Object.const_get(:GL_TRIANGLES) : 4,@triangles)
       view.drawing_color='blue'
       view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,@normal_line) unless @normal_line.empty?

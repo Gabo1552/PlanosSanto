@@ -130,8 +130,22 @@ class WorkshopTest < Minitest::Test
   workshop.save_plan(service.proposal);assert_raises(PlanosSanto::ExportError){workshop.references}
   draft['rows'][1]['include']=false;draft['rows'][1]['excludeReason']='Exclusión sintética revisada'
   workshop.save_plan(draft);references=workshop.references
-  assert_equal ['1/11'],references.keys;assert_includes references['1/11'],'TEST-18';assert_includes references['1/11'],'Arr:EDGE-1'
+  assert_equal ['1/11'],references.keys;assert_includes references['1/11']['text'],'TEST-18';assert_includes references['1/11']['text'],'Arr:EDGE-1'
   catalog=@store.read;@store.save(catalog['items'],catalog['revision']);assert_raises(PlanosSanto::ExportError){workshop.references}
+ end
+ def test_references_carry_the_same_edge_map_board_and_cut_as_the_supplier_txt
+  service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  catalog=@store.read;second=@store.new_item('Canto secundario','edge');second.merge!('sku'=>'EDGE-2','supplier'=>'Proveedor de prueba','thicknessMm'=>0.4,'widthMm'=>22,'approved'=>true)
+  items=catalog['items'];items[0]['compatibleIds']=[items[1]['id'],second['id']];saved=@store.save([*items,second],catalog['revision'])
+  service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,saved);draft=service.proposal.merge('rows'=>draft['rows'])
+  draft['catalogRevision']=saved['revision'];draft['rows'].each { |row| row.merge!('secondaryId'=>second['id'],'edgeMap'=>[1,1,0,2]) }
+  draft['rows'][1].merge!('include'=>false,'excludeReason'=>'Exclusión sintética revisada')
+  workshop.save_plan(draft);reference=workshop.references.fetch('1/11')
+  base,height=service.dimensions(draft['rows'][0])
+  assert_equal({'board'=>'TEST-18 / 19.05 mm','edgeMap'=>[1,1,0,2],'principal'=>'EDGE-1','secondary'=>'EDGE-2','base'=>base,'height'=>height},reference.reject { |key,_| key=='text' })
+  assert_equal 'TEST-18 / 19.05 mm · Arr:EDGE-1 Aba:EDGE-1 Izq:sin Der:EDGE-2',reference['text']
+  result=service.export(draft,@dir);line=File.read(File.join(result['directory'],'lote-01.txt')).lines.map { |l| l.chomp.split("\t") }.find { |cols| cols[0]=~/\A\d+\z/ }
+  assert_equal reference['edgeMap'],line[5,4].map(&:to_i)
  end
  def test_nested_non_uniform_scale_and_rotation_cannot_become_a_rectangular_order
   catalog=approved_catalog;document=Marshal.load(Marshal.dump(@session.document))
@@ -168,6 +182,45 @@ class WorkshopTest < Minitest::Test
   service,draft=order;draft['rows'][0].merge!('include'=>false,'excludeReason'=>'');draft['rows'][1]['orientationConfirmed']=false
   errors=service.validate(draft,collect_errors:true);assert_equal ['1/11','1/13/12'],errors.map { |row| row['id'] };assert_includes errors[0]['reason'],'excluye'
   assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+ end
+
+ def test_ux2_audit_lists_every_independent_reason_and_keeps_first_as_reason
+  service,draft=order;row=draft['rows'][0]
+  row.merge!('orientationConfirmed'=>false,'reviewNote'=>'','grainAxis'=>'u','dimensionRule'=>'explicit_cut','cutBase'=>3500,'cutHeight'=>600)
+  blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
+  assert_equal blocked['reasons'].first,blocked['reason'];assert_operator blocked['reasons'].length,:>=,3
+  assert_includes blocked['reasons'][0],'Falta confirmar orientación'
+  assert blocked['reasons'].any? { |r| r.include?('justificación') }
+  assert blocked['reasons'].any? { |r| r.include?('dirección de veta') }
+  refute blocked['reasons'].any? { |r| r.include?('no entra') },'Las medidas inválidas no se comparan con la placa'
+  row.merge!('reviewNote'=>'Medidas sintéticas revisadas para la prueba')
+  blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
+  assert blocked['reasons'].any? { |r| r.include?('mide 3.500 × 600 mm y la placa aprobada es 3.000 × 2.000 mm') },blocked['reasons'].inspect
+ end
+ def test_ux2_audit_reports_principal_and_secondary_edge_problems_together
+  _service,draft=order;catalog=@store.read;catalog['items'][1]['widthMm']=10
+  service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog);row=draft['rows'][0];row['edgeMap']=[1,2,0,0];row['secondaryId']=nil
+  blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
+  assert_includes blocked['reasons'],'El canto principal (1) no cubre el espesor de la placa: ancho 10 mm y espesor 19,05 mm.',blocked['reasons'].inspect
+  assert_includes blocked['reasons'],'Elegí un canto secundario (2) aprobado de la biblioteca.'
+  normal=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+  assert normal.message.end_with?(blocked['reasons'].first),normal.message
+ end
+ def test_ux2_check_and_export_errors_name_the_piece_and_show_values
+  service,draft=order;row=draft['rows'][1];row['materialConfirmed']=false
+  error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+  assert_equal "#{row['detail']} (#{row['id']}): Falta confirmar material.",error.message
+  row['materialConfirmed']=true;row['axes']=[0,2]
+  error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
+  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa aprobada tiene 19,05 mm\.\z/,error.message)
+  draft['profile']['decimal']=';'
+  assert_includes assert_raises(PlanosSanto::ExportError){service.validate(draft)}.message,'Perfil del archivo para la maderera'
+ end
+ def test_ux2_draft_errors_say_how_to_recover
+  _service,draft=order;workshop=PlanosSanto::Workshop.new(@model,@session,directory:@dir)
+  stale=draft.merge('fingerprint'=>'otro');assert_includes assert_raises(PlanosSanto::ExportError){workshop.save_plan(stale)}.message,'usá «Preparar de nuevo»'
+  partial=draft.merge('rows'=>draft['rows'].first(1));assert_includes assert_raises(PlanosSanto::ExportError){workshop.save_plan(partial)}.message,'mismas piezas'
+  error=assert_raises(PlanosSanto::ExportError){workshop.add_item({'name'=>'X'},99)};assert_includes error.message,'volvé a abrirla'
  end
 
  def test_rectangular_mirrors_are_not_consolidated_as_same_orientation
