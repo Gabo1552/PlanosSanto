@@ -615,7 +615,7 @@ module PlanosSanto
         catalog=CatalogStore.new(directory:directory)
         {'catalog'=>catalog.read,'visuals'=>MaterialLibrary.new(@model,catalog:catalog,directory:directory).status,
          'paintStates'=>paint_materials.states,
-         'settings'=>smart_settings,'toolState'=>smart_state,'thumbnails'=>material_thumbnails}
+         'settings'=>{'sampleKey'=>'shift'}.merge(smart_settings),'toolState'=>smart_state,'thumbnails'=>material_thumbnails}
       when 'smart_material_prepare'
         # Advanced palette: install/verify the chosen material without starting a Tool.
         active!;clean_for_paint!
@@ -673,6 +673,8 @@ module PlanosSanto
           raise
         end
         stopped.merge('toolState'=>smart_state)
+      when 'smart_tool_option'
+        smart_tool_option(data)
       when 'smart_tool_status'
         (@smart_state && !@smart_state['active'] && @smart_changed ? stop_smart_tool : {'toolState'=>smart_state}).merge('timings'=>smart_timing.summary)
       when 'smart_tool_stop'
@@ -889,6 +891,28 @@ module PlanosSanto
       raise ExportError,'El material tomado no coincide con el listo en este modelo. Revisá la biblioteca.' unless options['materialUuid']==info['materialUuid']
       @quick_options=options
       options.merge('sampleName'=>info['name'])
+    end
+
+    # Hito 7 (§7): live options of the brush. Only these two keys; it never
+    # installs nor paints. sampleKey persists even without an active Tool;
+    # reviewMissing needs the active immediate Tool and is never remembered.
+    def smart_tool_option(data)
+      raise ExportError,'Opción de herramienta inválida.' unless data.is_a?(Hash)
+      key=data['key'];value=data['value'];tool=smart_state['active']==true && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate? ? @smart_tool : nil
+      case key
+      when 'sampleKey'
+        raise ExportError,'Tecla del cuentagotas inválida.' unless value.is_a?(String) && SAMPLE_KEYS.include?(value)
+        remember_smart_settings(smart_settings.merge('sampleKey'=>value))
+        tool.tool_option(key,value) if tool && tool.respond_to?(:tool_option)
+      when 'reviewMissing'
+        raise ExportError,'Valor de revisión inválido.' unless [true,false].include?(value)
+        raise ExportError,'Activá el pincel para revisar lo que falta.' unless tool && tool.respond_to?(:tool_option)
+        active!
+        tool.tool_option(key,value)
+      else
+        raise ExportError,'Opción de herramienta inválida.'
+      end
+      {'toolState'=>smart_state}
     end
 
     # One click-time log per process; its folder is the Planos Santo data folder.

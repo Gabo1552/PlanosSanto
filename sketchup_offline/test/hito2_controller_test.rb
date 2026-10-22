@@ -194,4 +194,36 @@ class Hito2ControllerTest
     assert_equal true,@controller.smart_state['sampling']
     @controller.smart_event('options'=>{});refute @controller.smart_state.key?('sampling');refute @controller.smart_state.key?('review')
   end
+  def option(data);with_tool { @controller.dispatch('smart_tool_option',data) };end
+  def test_smart_tool_option_persists_the_sample_key_even_without_a_tool_and_applies_it_live
+    assert_equal 'shift',@controller.dispatch('smart_palette_load',{})['settings']['sampleKey']
+    result=option('key'=>'sampleKey','value'=>'alt');assert result.key?('toolState')
+    assert_equal 'alt',@controller.smart_settings['sampleKey'];assert_equal 'alt',@controller.dispatch('smart_palette_load',{})['settings']['sampleKey']
+    quick('mode'=>'sheet','catalogId'=>'placa');assert_equal 'alt',tool.args[:sample_key]
+    option('key'=>'sampleKey','value'=>'off');assert_equal [['sampleKey','off']],tool.option_calls
+    assert_equal 'off',@controller.smart_state['options']['sampleKey'];assert_equal 'off',@controller.smart_settings['sampleKey']
+    assert_equal 'placa',@controller.smart_settings['lastMaterials']['sheet'] # other settings survive
+    assert_empty @model.operations;assert_equal 1,@selected.compact.length
+  end
+  def test_review_missing_reaches_only_the_active_tool_and_is_never_persisted
+    assert_raises(PlanosSanto::ExportError) { option('key'=>'reviewMissing','value'=>true) }
+    quick('mode'=>'edge','catalogId'=>'canto')
+    result=option('key'=>'reviewMissing','value'=>true);assert_equal true,result['toolState']['options']['reviewMissing']
+    assert_equal [['reviewMissing',true]],tool.option_calls;refute @controller.smart_settings.key?('reviewMissing')
+    assert_equal 0,tool.stops;assert_equal 1,@selected.compact.length
+  end
+  def test_smart_tool_option_rejects_other_keys_and_values
+    quick('mode'=>'edge','catalogId'=>'canto')
+    [{'key'=>'scope','value'=>'all'},{'key'=>'sampleKey','value'=>'ctrl'},{'key'=>'sampleKey','value'=>nil},{'key'=>'reviewMissing','value'=>'true'},{},'x'].each do |bad|
+      assert_raises(PlanosSanto::ExportError) { option(bad) }
+    end
+    assert_empty tool.option_calls;refute @controller.smart_settings.key?('sampleKey')
+  end
+end
+class Hito2ToolDouble
+  def option_calls;@option_calls ||= [];end
+  def tool_option(key,value)
+    option_calls << [key,value];@options=@options.merge(key=>value)
+    @args[:on_event].call('active'=>true,'mode'=>@options['mode'],'options'=>@options)
+  end
 end

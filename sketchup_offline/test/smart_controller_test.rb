@@ -151,7 +151,8 @@ class SmartControllerTest < Minitest::Test
   end
   def test_corrupt_saved_preferences_do_not_change_model_or_prevent_palette
     Sketchup.smart_prefs[['PlanosSanto','smart_paint_settings_v1']]='{broken'
-    assert_equal({},@controller.dispatch('smart_palette_load',{})['settings'])
+    # Hito 7 §7: only the eyedropper default survives corrupt preferences.
+    assert_equal({'sampleKey'=>'shift'},@controller.dispatch('smart_palette_load',{})['settings'])
     assert_empty @model.operations
   end
 end
