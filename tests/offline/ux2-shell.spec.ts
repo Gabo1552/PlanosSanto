@@ -80,10 +80,11 @@ test('ayuda global: ? abre atajos y diagnóstico desde cualquier módulo, y el d
  await page.keyboard.press('Alt+4');await expect(rail(page,'Maderera')).toHaveAttribute('aria-current','page');
  await page.locator('.ux-module-heading').click();await page.keyboard.press('Shift+?');const help=page.getByRole('dialog',{name:'Atajos y diagnóstico'});await expect(help).toBeVisible();
  const shortcuts=help.locator('.ux-shortcuts');for(const [keys,label] of [['Alt+1','Inicio'],['Alt+2','Materiales'],['Alt+3','Muebles'],['Alt+4','Maderera'],['Alt+5','Planos A4'],['Ctrl+S','Guardar guía'],['Ctrl+Shift+E','Exportar PDF A4'],['Escape','Cancelar o cerrar']])await expect(shortcuts.locator('div').filter({hasText:keys}).filter({hasText:label}).first()).toBeVisible();
- await expect(help).toContainText('No envía tu modelo.');await help.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();await expect(help.locator('.ux-diagnostic')).toContainText('extensionVersion');
+ await expect(help).toContainText('En un campo de una línea funcionan Ctrl+S, Ctrl+Shift+E y Alt+1 a Alt+5; ? no, para que puedas escribirlo.');await expect(help).toContainText('No envía tu modelo.');await help.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();await expect(help.locator('.ux-diagnostic')).toContainText('extensionVersion');
  await help.getByRole('button',{name:'Copiar diagnóstico',exact:true}).click();await expect(help.getByRole('status')).toContainText(/Diagnóstico copiado|quedó seleccionado/);
  await page.keyboard.press('Escape');await expect(help).toHaveCount(0);await expect(page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true})).toBeFocused();
  await page.keyboard.press('Alt+3');await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();const name=page.getByLabel('Nombre P01',{exact:true});await name.fill('');await name.pressSequentially('Lateral?');await expect(name).toHaveValue('Lateral?');await expect(help).toHaveCount(0);
+ await page.keyboard.press('Alt+4');await expect(rail(page,'Maderera')).toHaveAttribute('aria-current','page');
  await expect(page.locator('#furniture-chooser')).not.toContainText('Ver diagnóstico');
 });
 
