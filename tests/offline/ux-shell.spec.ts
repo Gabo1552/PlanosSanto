@@ -25,7 +25,7 @@ async function boot(page:Page,folder:string){
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};'});
  page.on('pageerror',error=>errors.push(error.message));
  await page.route('https://planos-santo.test/**',async route=>{const name=new URL(route.request().url()).pathname.slice(1);if(!['index.html','app.js','app.css'].includes(name))throw Error('Unexpected resource');await route.fulfill({body:await readFile(resolve('sketchup_offline/build/planos_santo/ui',name)),contentType:name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'text/css'});});
- await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
+ await page.clock.install();await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');
  await expect.poll(()=>calls.filter(call=>call.action==='ui_ready').length).toBe(1);
 }
 const count=(action:string)=>calls.filter(call=>call.action===action).length;
@@ -65,12 +65,12 @@ test('motivo visible del bloqueo de exportar y avisos que se cierran o traen la 
  const confirm=page.getByRole('alertdialog',{name:'Descartar cambios y volver a analizar'});if(await confirm.count())await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(alert).toHaveCount(0);
 });
 
-test('los avisos de éxito se van solos salvo con el puntero encima; los errores quedan',async({page},info)=>{
+test('los avisos de éxito se van solos a los 20 s salvo con el puntero encima; los errores quedan',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
- const done=page.getByRole('status').filter({hasText:'Guías generadas'});await expect(done).toBeVisible();await done.hover();await page.waitForTimeout(6600);await expect(done).toBeVisible();
- await page.locator('.ux-module-heading').hover();await expect(done).toHaveCount(0,{timeout:9000});
+ const done=page.getByRole('status').filter({hasText:'Guías generadas'});await expect(done).toBeVisible();await page.clock.fastForward(8000);await expect(done).toBeVisible();await done.hover();await page.clock.fastForward(21000);await expect(done).toBeVisible();
+ await page.locator('.ux-module-heading').hover();await page.clock.fastForward(21000);await expect(done).toHaveCount(0);
  await page.getByRole('checkbox',{name:'Otro mueble',exact:false}).first().uncheck();await page.locator('.ux-module-heading').click();await page.keyboard.press('Control+Shift+E');
- const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. Cambiaste los muebles; pulsá Generar guías.');await page.waitForTimeout(6600);await expect(alert).toBeVisible();expect(count('pdf')).toBe(0);
+ const alert=page.getByRole('alert');await expect(alert).toContainText('No se puede exportar. Cambiaste los muebles; pulsá Generar guías.');await page.clock.fastForward(21000);await expect(alert).toBeVisible();expect(count('pdf')).toBe(0);
 });
 
 test('confirmación integrada al descartar cambios: Escape conserva, el botón nombra la acción y el progreso muestra segundos',async({page},info)=>{
@@ -80,7 +80,7 @@ test('confirmación integrada al descartar cambios: Escape conserva, el botón n
  await expect(confirm.getByRole('button',{name:'Seguir editando',exact:true})).toBeFocused();await page.keyboard.press('Control+s');expect(count('save')).toBe(0);
  await page.keyboard.press('Escape');await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();await expect(name).toHaveValue('Nombre a conservar');expect(count('scan')).toBe(scans);
  await reanalyze.click();await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();
- slow=true;await page.getByText('Si necesitás ayuda con un error',{exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
+ slow=true;await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
  const busy=page.locator('.ux-busy');await expect(busy).toHaveAttribute('role','status');await expect(busy).toContainText('Comprobando instalación…');await expect(busy.locator('.ux-spinner')).toHaveCount(1);await expect(busy).toContainText(/· [23] s/,{timeout:4000});
  await expect(rail(page,'Muebles')).toBeDisabled();await expect(rail(page,'Muebles')).toHaveAttribute('title',/Esperá a que termine «Comprobando instalación»/);await expect(busy).toHaveCount(0,{timeout:6000});
 });
@@ -95,5 +95,7 @@ test('un aviso de éxito que desaparece con el puntero o el foco encima no deja 
  await name.fill('Lateral puntero');await name.focus();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(1);
  await expect(saved).toBeVisible();await saved.getByRole('button',{name:'Cerrar aviso',exact:true}).focus();await page.keyboard.press('Enter');await expect(saved).toHaveCount(0);
  await name.fill('Lateral foco');await name.focus();await page.keyboard.press('Control+s');await expect.poll(()=>count('save')).toBe(2);
- await expect(saved).toBeVisible();await expect(saved).toHaveCount(0,{timeout:9000});
+ await expect(saved).toBeVisible();await page.clock.fastForward(21000);await expect(saved).toBeVisible();await expect(saved).toHaveClass(/warning/);
+ await saved.getByRole('button',{name:'Cerrar aviso',exact:true}).click();await expect(saved).toHaveCount(0);await page.mouse.move(5,5);
+ await quick(page,{sequence:1,action:'home',message:'Aviso informativo de prueba'});const notice=page.getByRole('status').filter({hasText:'Aviso informativo de prueba'});await expect(notice).toBeVisible();await page.clock.fastForward(21000);await expect(notice).toHaveCount(0);
 });
