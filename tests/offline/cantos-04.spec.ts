@@ -5,6 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {readFileSync,existsSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {openDetail} from './fixtures/order-detail';
 
 // CANTOS-04: five asymmetric pieces through the real Ruby controller (synthetic SketchUp doubles, no SKP):
 // the supplier TXT, the references printed on the A4 and the 2D view of the order mark the same sides.
@@ -67,7 +68,7 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   reviewed.axes=[0,1];await send('order_save',{plan});
   // 2D view of the order, piece by piece.
   await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
-  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
+  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
   const sides=['arriba','abajo','izquierda','derecha'];
   for(const [i,row] of rows.entries()){
     const map=fixture.pieces[i].edgeMap,line=lines.find(cols=>cols[3]===fixture.pieces[i].detail)!;

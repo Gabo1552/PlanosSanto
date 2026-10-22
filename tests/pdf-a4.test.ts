@@ -57,7 +57,7 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
   await expect(createOfflinePdf(notes,regular,mono)).rejects.toThrow(/notas y observaciones.*Acortá/);
  });
  it('resuelve el bajo mesada SINTÉTICO de 17 piezas en dos vistas con cotas completas e IDs agrupados',async()=>{
-  const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.cameras={front:{yaw:-30,pitch:45}};
+  const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.cameras={front:{yaw:-30,pitch:45}};f.presentation!.hideIds=false;
   expect(f.pieces).toHaveLength(17);const original=JSON.stringify(project);
   expect(editSchema.safeParse({revision:project.revision,furniture:[{id:f.id,explosion:f.explosion,zoom:f.zoom,pieces:f.pieces.map(p=>({id:p.id,name:p.name})),notes:f.notes,presentation:f.presentation}]}).success).toBe(true);
   const {text}=await exportPage(project);

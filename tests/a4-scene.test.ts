@@ -50,7 +50,8 @@ describe('Bajo mesada de 17 piezas SINTÉTICO, no confundir con el SKP privado',
   const {createA4Demo}=await import('../lib/a4Demo');const {groupedNameIssues}=await import('../lib/pieceGroups');const p=createA4Demo(),f=p.furniture[0];expect(p.source).toBe('demo');expect(p.name).toContain('SINTÉTICA');expect(f.pieces).toHaveLength(17);expect(f.pieces.filter(piece=>piece.id.includes('/drawer-'))).toHaveLength(9);expect(groupedNameIssues(f)).toEqual([]);
   const before=JSON.stringify(p),exterior=makeScene(f,{layout:'sheet'}),interior=makeScene(f,{layout:'sheet',view:'back'});
   expect(exterior.labels).toHaveLength(8);expect(interior.labels).toHaveLength(7);expect(exterior.labels.reduce((n,label)=>n+(label.quantity||1),0)).toBe(17);expect(interior.labels.reduce((n,label)=>n+(label.quantity||1),0)).toBe(15);expect(makeScene(f).labels).toHaveLength(17);expect(exterior.faces.filter(face=>face.pieceId.includes('/door-')).length).toBeGreaterThan(0);expect(interior.faces.some(face=>face.pieceId.includes('/door-'))).toBe(false);
-  expect(JSON.stringify(p)).toBe(before);expect(layoutWarnings(f).join()).toContain('No hay espacio legible para todas las cotas');
+  // Since 0.8.19 equal measures are drawn once and overlaps are resolved: every cota fits.
+  expect(JSON.stringify(p)).toBe(before);expect(layoutWarnings(f).join()).not.toMatch(/cotas/i);
  });
 });
 

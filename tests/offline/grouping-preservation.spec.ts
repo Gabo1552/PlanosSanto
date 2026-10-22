@@ -6,6 +6,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {showIds} from './ids';
 
 // Actual offline Ruby controller with synthetic SketchUp API/file-save doubles.
 // This is not a claim of native SketchUp validation or writing a real SKP.
@@ -38,7 +39,7 @@ test('agrupar nueve instancias con nombres diferentes solo cambia la presentaci�
  await boot(page,info.outputDir);const initial=await snapshot();
  await expect(page.locator('[data-piece-row]')).toHaveCount(9);
  await toPlanos(page);await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await page.getByRole('slider',{name:'Giro horizontal',exact:true}).fill('24');
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota física del lateral derecho');
+ await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P02',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota física del lateral derecho');
  await save(page);const baseline=await snapshot();expect(baseline.names).toEqual(initial.names);expect(baseline.simulatedSaves).toBe(1);
  await toMuebles(page);
  await page.getByRole('checkbox',{name:'Agrupar componentes iguales',exact:true}).check();await expect(page.locator('[data-piece-row]')).toHaveCount(1);await expect(page.locator('[data-piece-row]')).toContainText('×9');

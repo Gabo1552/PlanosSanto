@@ -6,6 +6,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {showIds} from './ids';
 
 // Synthetic browser + actual Ruby controller contracts; no SketchUp execution claimed.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
@@ -36,7 +37,7 @@ test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frent
  await boot(page,info.outputDir);const before=await snapshot();expect(before.names['11']).toBe('');expect(before.names['12']).toBe('');
  await page.getByLabel('Abreviatura de la obra').fill('VF');await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
  await toPlanos(page);await expect(page.getByText('Frente sin marcar: el exterior usa los ejes del grupo.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
+ await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
  // Planos never edits names: its link opens the proposals in Muebles.
  await page.getByRole('button',{name:'Proponer nombres en Muebles',exact:true}).click();await expect(page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Muebles',exact:true})).toHaveAttribute('aria-current','page');
  const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog.locator('[aria-label^="Nombre sugerido"]')).toHaveCount(2);

@@ -6,6 +6,7 @@ import {toPlanos} from './fixtures/modules';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {showIds} from './ids';
 
 // Actual Ruby controller and browser/PDF generation with synthetic API doubles.
 // These checks never open SketchUp or a customer's SKP.
@@ -41,7 +42,7 @@ test('A4 UX: 1/2 vistas y clic para ocultar por ruta conservan modelo, tabla y g
  await page.getByRole('radio',{name:'Exterior',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior',exact:true})).toHaveAttribute('aria-checked','true');
  await page.getByRole('radio',{name:'Interior',exact:true}).click();await expect(page.getByRole('radio',{name:'Interior',exact:true})).toHaveAttribute('aria-checked','true');
  await page.getByRole('radio',{name:'Exterior + interior',exact:true}).click();await expect(page.getByRole('radio',{name:'Exterior + interior',exact:true})).toHaveAttribute('aria-checked','true');
- await page.getByRole('button',{name:'Ocultar pieza en el dibujo',exact:true}).click();
+ await showIds(page);await page.getByRole('button',{name:'Ocultar pieza en el dibujo',exact:true}).click();
  await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();
  const chip=page.getByRole('button',{name:/^Mostrar P01 · .+ \(1\/11\)$/});await expect(chip).toBeVisible();
  await expect(page.locator('[data-piece-row]')).toHaveCount(2);
@@ -54,7 +55,7 @@ test('A4 UX: 1/2 vistas y clic para ocultar por ruta conservan modelo, tabla y g
 
 for(const viewCount of [1,2])test(`A4 UX: ${viewCount} vistas, la vista previa usa PDF real y coincide píxel a píxel con la exportación`,async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('radio',{name:viewCount===1?'Exterior':'Exterior + interior',exact:true}).click();
- await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota completa de la vista previa');await save(page);
+ await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Nota completa de la vista previa');await save(page);
  await page.getByRole('button',{name:'Planos A4',exact:true}).click();
  const link=page.getByRole('link',{name:'Descargar vista previa',exact:true});await expect(link).toBeVisible();
  const download=page.waitForEvent('download');await link.click();const previewPath=resolve(info.outputDir,'preview-A4.pdf');await (await download).saveAs(previewPath);

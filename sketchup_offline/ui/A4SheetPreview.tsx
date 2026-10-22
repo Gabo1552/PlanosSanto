@@ -1,6 +1,7 @@
 import {useEffect,useId,useRef,useState,type KeyboardEvent} from 'react';
-import type {Project} from '../../lib/model';
-import {A4FitError,createOfflinePdfPages,decode64,exportTableTsv,previewFileName,referenceCoverage,type A4FitKind,type A4Page,type OrderReferences} from './pdf';
+import type {Furniture,Project} from '../../lib/model';
+import type {View} from '../../lib/scene';
+import {A4FitError,a4ViewScene,createOfflinePdfPages,decode64,exportTableTsv,metricFont,previewFileName,referenceCoverage,type A4FitKind,type A4Page,type Metrics,type OrderReferences} from './pdf';
 import regularFont from '../assets/DejaVuSans.ttf';
 import monoFont from '../assets/DejaVuSansMono.ttf';
 import logo from '../assets/santo-carpintero.png?inline';
@@ -12,6 +13,15 @@ type Sheet={key:string;url:string;bytes:number;list:A4Page[];fileName:string};
 const SIZE=new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
 export function formatBytes(bytes:number){return bytes>=1024*1024?`${SIZE.format(bytes/1024/1024)} MB`:`${SIZE.format(Math.max(1,Math.round(bytes/1024)))} KB`;}
 const count=(n:number,one:string,many:string)=>`${n} ${n===1?one:many}`;
+let metrics:Metrics|undefined;
+/**
+ * The scene the editor viewer draws: the one page 1 of the PDF prints, composed with the same fonts (read once from
+ * the bundled assets), defaults and order references, so the viewer never needs a «generate and check» round.
+ */
+export function a4ViewerScene(f:Furniture,view:View,references?:OrderReferences,pending?:readonly string[]){
+  metrics??={regular:metricFont(decode64(regularFont)),mono:metricFont(decode64(monoFont))};
+  return a4ViewScene(f,view,metrics,references,pending);
+}
 /**
  * Controls of the editor that fix each kind of layout problem, by stable data attributes (no wiring through App).
  * The editor shows only the active furniture: they are looked up only once the furniture that fails is the active one.
@@ -129,6 +139,7 @@ export default function A4SheetPreview({project,references,pending,disabled=fals
         <p className="a4-live-status" role="status" aria-live="polite">{live}</p>
         {!disabled&&sheet&&!fresh&&<small id={blockedId} className="a4-link-reason">Esperá a que la hoja esté actualizada</small>}
         {!disabled&&sheet&&<small className="a4-sheet-size" data-testid="a4-sheet-size">{summary}</small>}
+        {!disabled&&sheet&&(notices=>!!notices?.length&&<small className="a4-sheet-notice" data-testid="a4-sheet-notice">{notices.join(' ')}</small>)(sheet.list[shown]?.notices)}
         {!disabled&&sheet&&(advice=>advice&&<small className="a4-sheet-fit" data-testid="a4-sheet-fit">El listado sigue en la hoja 2. {advice.detail} Para que entre en una sola hoja: {advice.action}</small>)(sheet.list.find(p=>p.fit&&p.furnitureId===sheet.list[shown]?.furnitureId)?.fit)}
       </div>
     </header>

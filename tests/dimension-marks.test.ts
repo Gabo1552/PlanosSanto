@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {createA4Demo} from '../lib/a4Demo';
-import {dimensionChoices,dimensionKey,dimensionMarkHitsRect,segmentHitsRect,type Dimension,type DimensionSegment,type Rect} from '../lib/dimensions';
+import {dimensionChoices,dimensionKey,dimensionMarkHitsRect,dimensionText,segmentHitsRect,type Dimension,type DimensionSegment,type Rect} from '../lib/dimensions';
 import {makeScene,sheetView} from '../lib/scene';
 
 // Public, synthetic geometry only: this fixture is not the operator's BM17 SKP.
@@ -20,6 +20,15 @@ function assertMarksRemainVisible(dimensions:Dimension[]){
     expect(inside,`${dimension.code} endpoint under ${other.code}`).toBe(false);
    }
   }
+ }
+}
+
+/** Each visible measure is drawn, or a drawn cota with the same printed text names it in `shared`. */
+function assertEveryMeasureDrawn(dimensions:Dimension[],choices:ReturnType<typeof dimensionChoices>){
+ for(const c of choices){
+  const own=dimensions.find(d=>d.pieceId===c.pieceId&&d.role===c.role);
+  if(own){expect(own.valueMm).toBeCloseTo(c.valueMm,8);continue;}
+  expect(dimensions.some(d=>d.shared?.includes(c.code)&&Math.abs(d.valueMm-c.valueMm)<=.5&&d.text.endsWith(dimensionText(c.valueMm))),`${dimensionKey(c.pieceId,c.role)} sin cota`).toBe(true);
  }
 }
 
@@ -46,25 +55,22 @@ describe('Cotas: máscaras de texto conservan marcas completas',()=>{
   for(const view of ['front','back'] as const){
    const scene=makeScene(f,{view,layout:'sheet'});
    expect(scene.warnings).toEqual([]);
-   expect(scene.dimensions).toHaveLength(view==='front'?14:12);
    assertMarksRemainVisible(scene.dimensions);
    const hidden=new Set(view==='back'?f.presentation!.guide!.hiddenPieceIds:[]);
-   const choices=dimensionChoices({...f,pieces:f.pieces.filter(p=>!hidden.has(p.id))}).filter(c=>c.visible);
-   expect(scene.dimensions.map(d=>dimensionKey(d.pieceId,d.role)).sort()).toEqual(choices.map(c=>dimensionKey(c.pieceId,c.role)).sort());
-   for(const d of scene.dimensions)expect(d.valueMm).toBeCloseTo(choices.find(c=>c.pieceId===d.pieceId&&c.role===d.role)!.valueMm,8);
+   assertEveryMeasureDrawn(scene.dimensions,dimensionChoices({...f,pieces:f.pieces.filter(p=>!hidden.has(p.id))}).filter(c=>c.visible));
   }
   expect(JSON.stringify(f)).toBe(before);
  });
- it('bloquea explícitamente una composición que no admite todas las cotas sin cambiar medidas ni geometría',()=>{
+ // 0.8.19: la composición que antes no admitía todas las cotas entra al acotar una vez las medidas iguales.
+ it('acota una composición densa sin perder medidas ni cambiar geometría',()=>{
   const f=furniture(-20,27,.7),before=JSON.stringify(f),choices=dimensionChoices(f).filter(c=>c.visible);
   const scene=makeScene(f,{view:'front',layout:'sheet'});
-  expect(scene.dimensions.length).toBeLessThan(choices.length);
-  expect(scene.warnings.join(' ')).toMatch(/No hay espacio legible para todas las cotas.*no se exportará un plano incompleto/);
+  expect(scene.warnings).toEqual([]);
   assertMarksRemainVisible(scene.dimensions);
-  for(const d of scene.dimensions)expect(d.valueMm).toBeCloseTo(choices.find(c=>c.pieceId===d.pieceId&&c.role===d.role)!.valueMm,8);
+  assertEveryMeasureDrawn(scene.dimensions,choices);
   expect(JSON.stringify(f)).toBe(before);
  });
- it('revalida una cota movida manualmente sobre la marca de otra y bloquea la exportación',()=>{
+ it('corre sola una cota movida sobre la marca de otra, sin bloquear la exportación',()=>{
   const f=furniture(),scene=makeScene(f,{view:'front',layout:'sheet'});
   expect(scene.warnings).toEqual([]);
   const moved=scene.dimensions[0],other=scene.dimensions.find(d=>d!==moved&&d.segments.some(s=>s.kind==='tick'))!;
@@ -73,9 +79,10 @@ describe('Cotas: máscaras de texto conservan marcas completas',()=>{
   f.presentation!.dimensionOffsets=[{pieceId:moved.pieceId,role:moved.role,view:'front',offset:[(target.x-moved.label.center.x)/width,(target.y-moved.label.center.y)/height]}];
   const before=JSON.stringify(f),changed=makeScene(f,{view:'front',layout:'sheet'});
   const updated=changed.dimensions.find(d=>d.pieceId===moved.pieceId&&d.role===moved.role)!;
-  expect(segmentHitsRect(tick.a,tick.b,updated.label.rect,1)).toBe(true);
-  expect(changed.warnings.join(' ')).toMatch(/texto de una cota tapa marcas de otra/);
-  expect(changed.dimensions.map(d=>[d.pieceId,d.role,d.valueMm])).toEqual(scene.dimensions.map(d=>[d.pieceId,d.role,d.valueMm]));
+  expect(changed.warnings).toEqual([]);
+  assertMarksRemainVisible(changed.dimensions);
+  expect(Math.hypot(updated.label.center.x-target.x,updated.label.center.y-target.y)).toBeLessThan(Math.hypot(moved.label.center.x-target.x,moved.label.center.y-target.y));
+  expect(changed.dimensions.map(d=>[d.pieceId,d.role,d.valueMm]).sort()).toEqual(scene.dimensions.map(d=>[d.pieceId,d.role,d.valueMm]).sort());
   expect(JSON.stringify(f)).toBe(before);
  });
 });

@@ -8,18 +8,20 @@ test('web: clic y lista ocultan/restauran cotas, persisten y llegan al PDF sin c
   await page.goto(`/?proyecto=${project.id}`);await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
   const before=await page.locator('[data-dimension]').evaluateAll(nodes=>nodes.map(n=>Number(n.getAttribute('data-mm'))));
   const pieces=project.furniture[0].pieces;
+  // P01 largo (700) also stood for the back panel's equal height: hiding it draws that one instead (0.8.19).
+  const own=page.locator(`[data-dimension][data-piece="${project.furniture[0].pieces[0].id}"][data-role="largo"]`);
   await page.getByRole('button',{name:/Ocultar cota P01 largo:/}).click();
-  await expect(page.locator('[data-dimension]')).toHaveCount(before.length-1);
+  await expect(own).toHaveCount(0);await expect(page.locator('[data-dimension]')).toHaveCount(before.length);
   await page.getByRole('button',{name:'Guardar ahora',exact:true}).click();
   await expect(page.getByRole('status').filter({hasText:'Guardado'})).toBeVisible();
   const stored=await (await request.get(`/api/projects/${project.id}`)).json() as Project;
   expect(stored.furniture[0].hiddenDimensions).toEqual([{pieceId:pieces[0].id,role:'largo'}]);expect(stored.furniture[0].pieces).toEqual(pieces);
-  await page.reload();await expect(page.locator('[data-dimension]')).toHaveCount(before.length-1);
+  await page.reload();await expect(own).toHaveCount(0);await expect(page.locator('[data-dimension]')).toHaveCount(before.length);
   const response=await request.get(`/api/pdf/${project.id}`);expect(response.ok()).toBe(true);await mkdir('artifacts',{recursive:true});
   const path='artifacts/cota-oculta-WEB-SINTETICO-A4.pdf';await writeFile(path,await response.body());
   const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','124','-W','246','-H','405','-raw',path,'-'],{encoding:'utf8'});
   const values=[...drawing.matchAll(/(\d+(?:,\d+)?)\s+mm\b/g)].map(m=>Number(m[1].replace(',','.'))).sort((a,b)=>a-b);
-  const expected=[...before];expected.splice(expected.indexOf(pieces[0].dimensions[0]),1);expect(values).toEqual(expected.sort((a,b)=>a-b));expect(drawing).toContain('1 OCULTA');
+  expect(values).toEqual([...before].sort((a,b)=>a-b));expect(drawing).toContain('1 OCULTA');
   await page.locator('.dimension-controls>summary').click();await expect(page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true})).not.toBeChecked();
   await page.getByRole('button',{name:'Mostrar todas las cotas',exact:true}).click();await expect(page.locator('[data-dimension]')).toHaveCount(before.length);
   const savedRestore=page.waitForResponse(response=>response.url().endsWith(`/api/projects/${project.id}`)&&response.request().method()==='PUT');
