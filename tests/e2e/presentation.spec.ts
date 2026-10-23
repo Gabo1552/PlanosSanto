@@ -14,7 +14,8 @@ test('web guarda rotación, IDs ocultos y cota movida; recarga y exporta las mis
  await page.getByRole('button',{name:'Guardar ahora',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Guardado'})).toBeVisible();
  const id=new URL(page.url()).searchParams.get('proyecto')!;
  const p=await(await request.get(`/api/projects/${id}`)).json() as Project;
- expect(p.furniture[0].presentation?.hideIds).toBe(true);expect(p.furniture[0].presentation?.cameras?.front?.yaw).toBe(1);
+ expect(p.furniture[0].presentation?.hideIds).toBe(true);// 0.8.20: the guide starts at the soft ¾ facing the front (yaw −15); one arrow step turns it 1°.
+ expect(p.furniture[0].presentation?.cameras?.front?.yaw).toBe(-14);
  expect(p.furniture[0].presentation?.dimensionOffsets).toHaveLength(1);
  await page.reload();await expect(page.locator('[data-label]')).toHaveCount(0);await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
  const response=await request.get(`/api/pdf/${id}`);expect(response.status()).toBe(200);
