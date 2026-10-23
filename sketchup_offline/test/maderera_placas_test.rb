@@ -8,6 +8,7 @@ require 'open3'
 require_relative '../../sketchup/test/fake_api'
 require_relative '../../sketchup/planos_santo/exporter'
 require_relative '../workshop'
+require_relative '../order_references'
 
 class MadereraPlacasTest < Minitest::Test
   R=PlanosSanto::OclReader
@@ -102,6 +103,56 @@ class MadereraPlacasTest < Minitest::Test
     assert_equal %w[0 0 1],rotated.map { |r| r[4] }
   end
 
+  def test_printed_references_share_board_edge_codes_with_txt_even_when_each_piece_has_its_own_principal
+    piece('1/1',[700,450,18],{'+y'=>'edge-a','-y'=>'edge-a'},name:'Lateral')
+    piece('1/2',[300,250,18],{'+y'=>'edge-b'},name:'Zócalo')
+    draft=plan;before=Marshal.dump(draft);service=@service
+    workshop=Object.new;workshop.define_singleton_method(:current_board_plan) { [service,draft] }
+    references=PlanosSanto::OrderReferences.partial(nil,workshop)
+    board=service.boards(draft)['boards'].first
+    exported=lines(service.board_txt(draft,board['key']))
+    assert_empty references['pending']
+    draft['rows'].each do |row|
+      reference=references['references'].fetch(row['id'])
+      line=exported.find { |cells| cells[3]==row['detail'] }
+      assert_equal line[5,4].map(&:to_i),reference['edgeMap']
+      assert_equal ['ABS-A','PVC-B'],reference.values_at('principal','secondary')
+      assert_equal 1,reference['lot']
+    end
+    assert_equal [2,0,0,0],references['references']['1/2']['edgeMap']
+    assert_includes references['references']['1/2']['text'],'Arr:PVC-B'
+    assert_equal before,Marshal.dump(draft),'referencias y TXT no cambian el borrador'
+  end
+
+  def test_references_leave_a_board_with_three_edge_products_pending
+    %w[edge-a edge-b edge-c].each_with_index { |edge,i| piece("1/#{i+1}",[700-i*100,450,18],{'+y'=>edge}) }
+    piece('2/1',[400,300,18],base:'oak')
+    draft=plan;service=@service;workshop=Object.new
+    workshop.define_singleton_method(:current_board_plan) { [service,draft] }
+    references=PlanosSanto::OrderReferences.partial(nil,workshop)
+    assert_equal %w[1/1 1/2 1/3],references['pending']
+    assert_equal ['2/1'],references['references'].keys
+    refute references['references']['2/1'].key?('lot')
+  end
+
+  def test_board_validation_rechecks_the_requested_rotation_without_mutating_the_draft
+    piece('1/1',[700,450,18],name:'Solo entra girada')
+    @sheet['lengthMm']=600;@sheet['widthMm']=800
+    draft=plan;before=Marshal.dump(draft)
+    locked=@service.boards(draft)['boards'].first
+    assert_match(/no entra/,locked['problems'].first['reasons'].join)
+    allowed=@service.boards(draft,rotate:true)['boards'].first
+    assert_empty allowed['problems']
+    assert_equal '1',lines(@service.board_txt(draft,allowed['key'],rotate:true)).first[4]
+    assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,allowed['key'],rotate:false) }
+    assert_equal before,Marshal.dump(draft)
+    # Permitir giro nunca lo fuerza con veta ni con cantos asimétricos.
+    @sheet['grain']=true;draft=plan
+    refute_empty @service.boards(draft,rotate:true)['boards'].first['problems']
+    @sheet['grain']=false;@pieces.clear;piece('1/1',[700,450,18],{'+y'=>'edge-a'});draft=plan
+    refute_empty @service.boards(draft,rotate:true)['boards'].first['problems']
+  end
+
   def test_grain_board_never_rotates_and_three_edges_block_only_that_board
     piece('1/1',[700,450,18],name:'Tapa',base:'oak')
     piece('1/2',[700,450,18],{'+y'=>'edge-a'},name:'Lateral');piece('1/3',[600,450,18],{'+y'=>'edge-b'},name:'Puerta');piece('1/4',[500,450,18],{'+y'=>'edge-c'},name:'Cajón')
@@ -149,6 +200,11 @@ class MadereraWorkshopTest < Minitest::Test
     written=workshop.write_board(prepared,target);assert_equal "#{target}.txt",written['path'];refute written.key?('content')
     text=File.binread(written['path']).force_encoding('UTF-8');refute text.start_with?("cant\t");refute_includes text,','
     assert text.split("\r\n").all? { |line| line.split("\t").length==9 }
+    # El A4 actual también ignora el perfil heredado: sus medidas de corte coinciden con este TXT.
+    references=PlanosSanto::OrderReferences.partial(@model,workshop)
+    assert_empty references['pending']
+    cut_sizes=text.split("\r\n").map { |line| line.split("\t")[1,2].map(&:to_f) }.uniq
+    assert_equal cut_sizes,references['references'].values.map { |reference| reference.values_at('base','height').map { |value| value.round(3) } }.uniq
     out,status=Open3.capture2e('python3',File.join(ROOT,'scripts/validar_txt_maderera.py'),written['path']);assert status.success?,out
     all=workshop.export_boards(false,@dir)
     assert_match(/-maderera-\d{8}-\d{4}\z/,all['directory']);assert_equal [board['fileName']],Dir.children(all['directory'])

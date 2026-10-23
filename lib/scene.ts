@@ -91,7 +91,7 @@ export function withViewCamera(f:Furniture,view:View,angles:CameraAngles):Presen
 const FRONT_TOLERANCE=20;
 /**
  * Pieces that cover the interior from the front: boards whose thickness faces the front, whose outer face lies on
- * the front plane of the furniture (within 20 mm) and that have a crosswise piece behind them (a shelf, a divider,
+ * the front plane of the candidate panels (within 20 mm) and that have a crosswise piece behind them (a shelf, a divider,
  * the sides of a drawer): doors and drawer fronts. A zócalo with nothing behind it, the laterals, the shelves and
  * the fondo stay. The interior hides them to be seen from the front.
  */
@@ -102,9 +102,14 @@ export function frontPieceIds(f:Furniture):string[]{
     const data=prepared(p),range=(axis:Vector3)=>{let min=Infinity,max=-Infinity;for(const v of data.world){const d=v.dot(axis);if(d<min)min=d;if(d>max)max=d;}return [min,max] as const;};
     return {id:p.id,depth:range(outward),up:range(up),across:range(across),facing:Math.abs(data.thin.dot(outward))>.9};
   });
-  const plane=Math.max(...rows.map(r=>r.depth[1]));
   const overlaps=(a:readonly [number,number],b:readonly [number,number])=>Math.min(a[1],b[1])-Math.max(a[0],b[0])>1;
-  return rows.filter(r=>r.facing&&r.depth[1]>=plane-FRONT_TOLERANCE&&rows.some(o=>o!==r&&!o.facing&&o.depth[1]<=r.depth[0]+1&&overlaps(o.up,r.up)&&overlaps(o.across,r.across))).map(r=>r.id);
+  // A projecting worktop or non-front-facing protrusion must not push the front plane past the doors.
+  // Only panels facing the front and covering a crosswise interior piece can establish that plane;
+  // rear panels and a zócalo with no interior behind it remain visible.
+  const candidates=rows.filter(r=>r.facing&&rows.some(o=>o!==r&&!o.facing&&o.depth[1]<=r.depth[0]+1&&overlaps(o.up,r.up)&&overlaps(o.across,r.across)));
+  if(!candidates.length)return [];
+  const plane=Math.max(...candidates.map(r=>r.depth[1]));
+  return candidates.filter(r=>r.depth[1]>=plane-FRONT_TOLERANCE).map(r=>r.id);
 }
 /**
  * Pieces hidden in the interior view. The stored choice wins; a guide that never chose (empty list) hides the front

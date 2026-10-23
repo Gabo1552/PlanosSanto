@@ -4,31 +4,37 @@ require 'json'
 module PlanosSanto
   # F-DESP-B / punto 17 (0.8.16): the A4 and the labels print the order rows that already validate, taken
   # from the order proposed from the painted model (crossed with the saved draft when there is one). Every
-  # other included row is «pendiente de pedido». No saved draft and no ticks are needed. Same per-row
-  # contract as Workshop#references (text, board, edge map, roles and cut of the supplier TXT) plus the TXT
+  # other included row is «pendiente de pedido». No saved draft and no ticks are needed. The board-level
+  # contract follows Maderera (text, board, edge map, roles and cut of the supplier TXT) plus the TXT
   # lot and the board grain; read-only.
   module OrderReferences
     SIDES=%w[Arr Aba Izq Der].freeze
     TXT_PROFILE={'encoding'=>'utf8','decimal'=>'.','header'=>false}.freeze
 
     def self.partial(_model,workshop)
-      service,draft=workshop.current_plan
+      service,draft=workshop.current_board_plan
       draft=SupplierOrder.normalize(draft)
       included=draft['rows'].select { |row| row['include'] }
       excluded=draft['rows'].reject { |row| row['include'] }.map { |row| row['id'] }
       # Nothing included yet: the sheet prints without order data instead of failing the whole draft.
       return {'references'=>{},'pending'=>[],'excluded'=>excluded} if included.empty?
-      # The TXT file profile (encoding, decimal, header) never reaches the A4 or the labels: an unfinished one does not block them.
-      failing=service.validate(draft.merge('profile'=>TXT_PROFILE),collect_errors:true).map { |error| error['id'] }
-      # Lots follow the supplier export: one TXT per board, thickness and edge roles, in draft order.
-      lots={}
-      included.each do |row|
-        board=usable(service,row['materialId'],'sheet') or next
-        lots[[row['materialId'],service.thickness_key(row),row['principalId'],row['secondaryId']]] ||= lots.length+1
+      # Same board grouping, dimensions and edge codes as the current Maderera TXT. A blocked board
+      # (e.g. three edge products) has no printable assignment; good rows on other boards remain usable.
+      listed=service.boards(draft)['boards']
+      # A SKU is not a unique catalog identity. Different boards with the same SKU/thickness
+      # need distinct printed labels, otherwise their independent code 1/2 legends collide again.
+      labels=listed.map { |board| "#{board['sku']} / #{service.mm(board['thicknessMm'])} mm" }
+      counts=labels.tally
+      assignments={}
+      listed.each_with_index do |board,index|
+        failed=board['problems'].map { |problem| problem['id'] }
+        label=counts[labels[index]]>1 ? "#{labels[index]} · #{board['name']} (placa #{index+1})" : nil
+        board['rowIds'].each { |id| assignments[id]=[board,index+1,label] unless board['blocker'] || failed.include?(id) }
       end
       references={};pending=[]
       included.each do |row|
-        reference=failing.include?(row['id']) ? nil : reference_for(service,row,lots)
+        assigned=assignments[row['id']]
+        reference=assigned ? reference_for(service,row,*assigned) : nil
         # Module·piece code of the saved guide (OrderProposal.codes): the same one the TXT detail carries.
         code=draft.fetch('codes',{})[row['id']].to_s
         reference['code']=code if reference && !code.empty?
@@ -50,13 +56,14 @@ module PlanosSanto
       [row['principalId'],row['secondaryId']].each_with_index.map { |id,index| id && row['edgeMap'].include?(index+1) ? service.material(id,'edge')['sku'] : nil }
     end
 
-    def self.reference_for(service,row,lots)
+    def self.reference_for(service,row,assignment,lot,label=nil)
       board=service.material(row['materialId'],'sheet')
-      roles=roles(service,row)
-      edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{SIDES[i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
-      board_text="#{board['sku']} / #{service.mm(service.row_thickness(row))} mm";base,height=service.dimensions(row)
-      {'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],
-       'base'=>base,'height'=>height,'lot'=>lots[[row['materialId'],service.thickness_key(row),row['principalId'],row['secondaryId']]],
+      mapping=service.board_edge_map(row,assignment)
+      roles=[1,2].map { |code| assignment['edges'].find { |edge| edge['code']==code }&.fetch('sku') }
+      edge_text=mapping.each_with_index.map { |role,i| "#{SIDES[i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
+      board_text=label || "#{board['sku']} / #{service.mm(service.row_thickness(row))} mm";base,height=service.dimensions(row)
+      {'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>mapping,'principal'=>roles[0],'secondary'=>roles[1],
+       'base'=>base,'height'=>height,'lot'=>lot,
        'grain'=>[true,false].include?(board['grain']) ? board['grain'] : nil}
     rescue ExportError
       nil

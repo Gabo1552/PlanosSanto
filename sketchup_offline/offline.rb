@@ -865,7 +865,7 @@ module PlanosSanto
             return {'cancelled'=>true} unless path
             workshop.export_order(data.fetch('plan'),path)
           # 0.8.20 «Maderera»: placas del proyecto y un TXT por placa (material + espesor), o todos en una carpeta.
-          when 'maderera_boards' then workshop.boards
+          when 'maderera_boards' then workshop.boards(rotate:data['rotate']==true)
           when 'maderera_txt'
             rotate=data['rotate']==true
             if data['all']==true

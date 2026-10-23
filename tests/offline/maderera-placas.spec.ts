@@ -14,15 +14,15 @@ import {existsSync} from 'node:fs';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={version:1;id:string;result:unknown;error:string|null};
 type Item=Record<string,unknown>&{id:string};type Library={catalog:{revision:number;items:Item[]}};
-let child:ChildProcessWithoutNullStreams,pending:Map<string,(r:Reply)=>void>,errors:string[],actions:string[];
+let child:ChildProcessWithoutNullStreams,pending:Map<string,(r:Reply)=>void>,errors:string[],actions:string[],boardRotations:boolean[];
 function raw(message:string):Promise<Reply>{return new Promise(done=>{pending.set(JSON.parse(message).id,done);child.stdin.write(message+'\n');});}
 async function send(action:string,data:unknown={}){const reply=await raw(JSON.stringify({version:1,id:randomUUID(),action,data}));expect(reply.error).toBeNull();return reply.result;}
 async function boot(page:Page,folder:string){
- await mkdir(folder,{recursive:true});pending=new Map();errors=[];actions=[];
+ await mkdir(folder,{recursive:true});pending=new Map();errors=[];actions=[];boardRotations=[];
  child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,'materials-cutlist'],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  child.stderr.on('data',()=>{});
  createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),done=pending.get(reply.id);if(done){pending.delete(reply.id);done(reply);}});
- await page.exposeFunction('namesNativeRequest',(message:string)=>{actions.push(JSON.parse(message).action);return raw(message);});
+ await page.exposeFunction('namesNativeRequest',(message:string)=>{const request=JSON.parse(message);actions.push(request.action);if(request.action==='maderera_boards')boardRotations.push(request.data.rotate===true);return raw(message);});
  await page.addInitScript({content:'window.sketchup={request:function(message){window.namesNativeRequest(message).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};'});
  page.on('pageerror',e=>errors.push(e.message));
  await page.route('https://planos-santo.test/**',async route=>{
@@ -140,4 +140,35 @@ test('maderera: una pieza que no entra en la medida útil avisa, una que no entr
  await problems.getByRole('button',{name:/^Ver en el modelo/}).first().click();await expect(region.getByRole('status').first()).toHaveText('Pieza resaltada en SketchUp. Volvé a esta ventana para seguir.');
  expect(await axe(page)).toEqual([]);
  expect(actions.filter(a=>a==='maderera_txt')).toEqual([]);
+});
+
+
+test('girar una placa sin veta revalida los botones y el TXT; volver a bloquear giro impide exportar',async({page},info)=>{
+ await boot(page,info.outputDir);await library({lengthMm:500,widthMm:700,grain:false});
+ const region=await openMaderera(page);
+ // El doble mide 609,6 × 406,4: entra en 500 × 700 solamente girado. Para aislar este caso, el borrador
+ // de ensayo tiene todas las piezas sin cantos (con cantos asimétricos Ruby debe seguir bloqueando).
+ const {plan}=await send('order_plan') as {plan:{rows:Record<string,unknown>[]}};
+ plan.rows.forEach(row=>Object.assign(row,{principalId:null,secondaryId:null,edgeMap:[0,0,0,0]}));
+ await send('order_save',{plan});
+ await region.getByRole('button',{name:'Actualizar desde el modelo',exact:true}).click();
+ const board=region.getByRole('region',{name:'Melamina Jade · 19,05 mm'});
+ const button=board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm',exact:true});
+ const all=region.getByRole('button',{name:'Exportar todos los TXT…',exact:true});
+ const rotate=region.getByRole('checkbox',{name:'Girar piezas en placas sin veta (rota 1)'});
+ await expect(button).toBeDisabled();await expect(all).toBeDisabled();
+ await expect(board.getByRole('list',{name:'Problemas de Melamina Jade · 19,05 mm'})).toContainText('no entra en la placa');
+ await rotate.check();
+ await expect(button).toBeEnabled();await expect(all).toBeEnabled();
+ await expect(board.getByRole('list',{name:'Problemas de Melamina Jade · 19,05 mm'})).toHaveCount(0);
+ expect(boardRotations.at(-1)).toBe(true);
+ await button.click();await expect(region.getByRole('status').first()).toContainText('TXT de Melamina Jade · 19,05 mm guardado');
+ const file=(await board.locator('.workshop-board-export small').textContent())!.replace(/^Archivo: /,'');
+ const cells=(await readFile(join(info.outputDir,file),'utf8')).trim().split('\r\n').map(line=>line.split('\t'));
+ expect(cells.every(row=>row.length===9&&row[4]==='1')).toBe(true);
+ expect(validate(join(info.outputDir,file))).toEqual(ok);
+ await rotate.uncheck();
+ await expect(button).toBeDisabled();await expect(all).toBeDisabled();
+ await expect(board.getByRole('list',{name:'Problemas de Melamina Jade · 19,05 mm'})).toContainText('no entra en la placa');
+ expect(boardRotations.at(-1)).toBe(false);
 });

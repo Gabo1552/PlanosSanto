@@ -1,0 +1,50 @@
+{
+  "version": "0.8.21",
+  "sourceBase": "6ac2cb1ec5b637e3415c981a2a601a78a18df41c",
+  "date": "2026-10-23",
+  "verificationPassed": true,
+  "ruby": {
+    "suites": 72,
+    "tests": 1060,
+    "assertions": 10227,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "typescript": {
+    "files": 50,
+    "tests": 437
+  },
+  "offlineUi": 236,
+  "webUi": 35,
+  "totalTests": 1768,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "offlineBuild": "PASS",
+  "webBuild": "PASS (advertencia Autoprefixer start/flex-start preexistente)",
+  "rbzSha256": "cf71c9cf75439f03ee51a0261d98b32b9bf3e7091dfd29b8742ba77a69269368",
+  "rbzBytes": 2150573,
+  "manifestFiles": 84,
+  "baseline0820Unchanged": true,
+  "nativeSketchupExecuted": false,
+  "productionApproved": false,
+  "privateAssetsIncluded": false,
+  "syntheticPdf": {
+    "file": "PlanosSanto-0.8.21-DEMO-cantos.pdf",
+    "pages": 1,
+    "sizeMm": [
+      297,
+      210
+    ],
+    "legend": "1 = ABS-A; 2 = PVC-B",
+    "visualInspection": "Render Poppler de demostración sintética revisado"
+  },
+  "newRegressionTests": 17,
+  "review": "REVISION.md",
+  "localValidation": "VALIDACION_LOCAL.md",
+  "pending": [
+    "Validación SketchUp 2026 y proveedor.",
+    "Límite preexistente: herraje plano puede confundirse con frente.",
+    "Límite preexistente: A4 consulta sin ajuste local de giro; puede marcar pendiente una pieza que el TXT admite girada."
+  ]
+}

@@ -64,16 +64,18 @@ type SectionProps={busy:boolean;run:Run;label:(action:string,text:string)=>strin
 
 /** 0.8.20 «Maderera»: optimización de todas las placas del proyecto y un TXT por placa. Nada se edita pieza por pieza. */
 function BoardsSection({busy,run,label,notify,keepFocus,current}:SectionProps&{keepFocus:()=>void;current:string}){
- const [data,setData]=useState<BoardsResult>(),[cut,setCut]=useState<CutSettings>(storedCut);
+ const [data,setData]=useState<BoardsResult>(),[validatedRotation,setValidatedRotation]=useState<boolean>(),[cut,setCut]=useState<CutSettings>(storedCut);
+ const rotation=useRef(cut.allowRotate),loadSequence=useRef(0);
  const [texts,setTexts]=useState<Record<CutField,string>>(()=>({kerfMm:String(cut.kerfMm),trimMm:String(cut.trimMm)}));
- const load=useCallback(async()=>{setData(await request<BoardsResult>('maderera_boards'));},[]);
+ const load=useCallback(async()=>{const sequence=++loadSequence.current,rotate=cut.allowRotate;setValidatedRotation(undefined);const result=await request<BoardsResult>('maderera_boards',{rotate});if(sequence===loadSequence.current&&rotation.current===rotate){setData(result);setValidatedRotation(rotate);}},[cut.allowRotate]);
  useEffect(()=>{void run(load,'Leyendo las piezas de los muebles analizados…','refresh');},[run,load]);
- const choose=(next:CutSettings)=>{setCut(next);storeCut(next);};
+ const choose=(next:CutSettings)=>{rotation.current=next.allowRotate;setCut(next);storeCut(next);};
  const edit=(field:CutField,value:string)=>{setTexts(current=>({...current,[field]:value}));const number=Number(value),[min,max]=cutFields[field].range;if(value.trim()!==''&&Number.isFinite(number)&&number>=min&&number<=max)choose({...cut,[field]:number});};
  const invalid=(field:CutField)=>{const value=texts[field],number=Number(value),[min,max]=cutFields[field].range;return value.trim()===''||!Number.isFinite(number)||number<min||number>max;};
  const reset=()=>{const next=parseCut(null);choose(next);setTexts({kerfMm:String(next.kerfMm),trimMm:String(next.trimMm)});notify(`Valores sugeridos: disco de ${mm(next.kerfMm)} mm, refilado de ${mm(next.trimMm)} mm por lado y sin girar.`);};
  const optimization=useMemo(()=>data?optimizeBoards(data.plan,data.catalog,data.boards,cut):undefined,[data,cut]);
- const ready=data?.boards.filter(boardReady)||[];
+ const validating=validatedRotation!==cut.allowRotate;
+ const ready=validating?[]:data?.boards.filter(boardReady)||[];
  // Si el modelo cambió entre la lista y la exportación, Ruby frena: la lista se vuelve a leer para mostrar lo vigente.
  const refreshAfter=async(operation:()=>Promise<void>)=>{try{await operation();}catch(e){try{await load();}catch{/* el error original es el que se muestra */}throw e;}};
  const exportBoard=(board:ProjectBoard)=>{keepFocus();void run(()=>refreshAfter(async()=>{
@@ -89,7 +91,7 @@ function BoardsSection({busy,run,label,notify,keepFocus,current}:SectionProps&{k
  return <>
   <fieldset className="workshop-cut" aria-describedby="workshop-cut-help"><legend>Corte de la seccionadora</legend>
    {(Object.keys(cutFields) as CutField[]).map(field=><label key={field}>{cutFields[field].label}<input type="number" inputMode="decimal" min={cutFields[field].range[0]} max={cutFields[field].range[1]} step="any" value={texts[field]} aria-invalid={invalid(field)||undefined} aria-describedby={invalid(field)?`workshop-cut-${field}`:undefined} onChange={e=>edit(field,e.target.value)}/>{invalid(field)&&<small id={`workshop-cut-${field}`} className="workshop-field-error">Entre {cutFields[field].range[0]} y {cutFields[field].range[1]} mm. Se sigue usando {mm(cut[field])} mm.</small>}</label>)}
-   <label className="workshop-cut-rotate"><input type="checkbox" checked={cut.allowRotate} onChange={e=>choose({...cut,allowRotate:e.target.checked})}/> Girar piezas en placas sin veta (rota 1)</label>
+   <label className="workshop-cut-rotate"><input type="checkbox" checked={cut.allowRotate} disabled={busy} onChange={e=>choose({...cut,allowRotate:e.target.checked})}/> Girar piezas en placas sin veta (rota 1)</label>
    <button type="button" disabled={busy} onClick={reset}>Valores sugeridos</button>
    <small id="workshop-cut-help" className="workshop-hint">Sugeridos: disco de 4 mm y 10 mm de refilado por lado, como una seccionadora de maderera. Girar solo afecta placas sin veta y piezas con cantos simétricos; con veta nunca se gira. Se recuerdan en esta computadora.</small>
   </fieldset>
@@ -97,7 +99,7 @@ function BoardsSection({busy,run,label,notify,keepFocus,current}:SectionProps&{k
    <div role="group" aria-label="Otras acciones" className="workshop-secondary-actions"><button disabled={busy} onClick={()=>void run(load,'Leyendo las piezas de los muebles analizados…','refresh')}>{label('refresh','Actualizar desde el modelo')}</button></div></div>
   {data&&optimization?<>
    <p className="workshop-hint">{plural(data.boards.length,'placa','placas')} en {data.modelName}: {plural(data.boards.reduce((sum,board)=>sum+board.rowIds.length,0),'pieza','piezas')}. «Exportar todos» guarda un TXT por placa en una carpeta nueva; cada placa también tiene su botón.</p>
-   <SheetOptimizationView result={optimization} boards={data.boards} busy={busy} exporting={current} onExport={exportBoard} onHighlight={highlight}/>
+   <SheetOptimizationView result={optimization} boards={data.boards} busy={busy||validating} exporting={current} onExport={exportBoard} onHighlight={highlight}/>
    <EdgeTotalsView plan={data.plan} catalog={data.catalog}/>
    <OutsideView items={data.outside}/>
   </>:<Loading busy={busy} text="Leyendo las piezas de los muebles analizados…" retry={()=>void run(load,'Leyendo las piezas de los muebles analizados…','refresh')}/>}

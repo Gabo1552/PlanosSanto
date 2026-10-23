@@ -1,3 +1,18 @@
+# Entrega 0.8.21 — correcciones de la revisión, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.21-candidata.rbz` sin descomprimirlo, con todas las ventanas de SketchUp cerradas antes de actualizar. Comprobar el SHA256 adjunto y respaldar la biblioteca: sigue siendo v4 y no la abren versiones hasta 0.8.19.
+
+- PDF y TXT comparten códigos de canto por placa; la leyenda identifica placas con asignaciones diferentes.
+- Importar bibliotecas conserva los cambios en listas de espesores y anchos.
+- Activar giro revalida la exportación y habilita los TXT que caben girados.
+- Las tapas salientes no impiden ocultar automáticamente las puertas.
+
+[Pruebas y resultados](../docs/validacion-0821/RESULTADOS.json) · [Cambios](../docs/validacion-0821/CAMBIOS.md) · [Validación local](../docs/validacion-0821/VALIDACION_LOCAL.md).
+
+Producción no aprobada. Las candidatas anteriores se conservan intactas.
+
+---
+
 # Entrega 0.8.20 — pintura nítida, varios espesores, visor 3D, piezas que se ven y maderera sólo optimización, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.20-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, **respaldar `%LOCALAPPDATA%\PlanosSanto\` (la biblioteca migra a v4 y la 0.8.19 no la abre después)** y comprobar el `.sha256`. Sobre la 0.8.19:

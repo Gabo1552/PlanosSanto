@@ -892,7 +892,6 @@ module PlanosSanto
     FOLDERS={'photo-assets'=>/\A[0-9a-f]{64}\.(?:png|jpg|jpeg)\z/,'material-assets'=>/\A[0-9a-f]{64}\.skm\z/,'skm-import-assets'=>/\A[0-9a-f]{64}\.skm\z/}.freeze
     MANIFEST_KEYS=%w[createdAt files format items schema visualRecords].freeze
     RECORD_KEYS=%w[assetHash assetName catalogFingerprint catalogId sourceName].freeze
-    COMPARED=%w[name kind sku supplier thicknessMm widthMm lengthMm grain price].freeze
     def initialize(library:,catalog:,directory:)
       @library=library;@catalog=catalog;@directory=directory;@pending=nil
     end
@@ -1097,7 +1096,7 @@ module PlanosSanto
     end
 
     def same_item?(existing,item)
-      existing['sourceHash']==item['sourceHash'] && COMPARED.all? { |key| existing[key]==item[key] }
+      existing['sourceHash']==item['sourceHash'] && CatalogStore.same_import_values?(existing,item)
     end
 
     def thumbnail(item,files)

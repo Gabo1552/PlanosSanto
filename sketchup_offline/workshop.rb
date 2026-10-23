@@ -264,20 +264,21 @@ module PlanosSanto
     # sin pintar o una pieza excluida, se respeta igual que en la A4). Nunca escribe el borrador ni aplica el
     # perfil de maderera: los dos quedan guardados tal como estaban, para poder volver a la pantalla anterior.
     # El giro lo decide el corte elegido en pantalla (rota 0 salvo que se pida girar) y el detalle va sin código.
+    def current_board_plan
+      @damaged=false;service=order(profile:false)
+      plan=build(stored_draft,service)['plan'].merge('detailCode'=>'none')
+      [service,service.board_draft(plan)]
+    end
     def board_plan
-      @board_plan ||= begin
-        @damaged=false;service=order(profile:false)
-        plan=build(stored_draft,service)['plan']
-        plan=plan.merge('profile'=>SupplierOrder::TXT_PROFILE.dup,'detailCode'=>'none','rows'=>plan['rows'].map { |row| row.merge('grainPolicy'=>'locked') })
-        [service,plan]
-      end
+      @board_plan ||= current_board_plan
     end
-    def board_list
-      @board_list ||= board_plan[0].boards(board_plan[1])
+    def board_list(rotate: false)
+      @board_lists ||= {}
+      @board_lists[rotate] ||= board_plan[0].boards(board_plan[1],rotate:rotate)
     end
-    def boards
-      _service,plan=board_plan;listed=board_list;names=board_file_names(listed['boards'])
-      {'plan'=>plan,'catalog'=>@order_catalog,'modelName'=>project_name,'boards'=>listed['boards'].map { |board| board.merge('fileName'=>names[board['key']]) },'outside'=>listed['outside']}
+    def boards(rotate: false)
+      service,plan=board_plan;listed=board_list(rotate:rotate);names=board_file_names(listed['boards'])
+      {'plan'=>service.board_draft(plan,rotate:rotate),'catalog'=>@order_catalog,'modelName'=>project_name,'boards'=>listed['boards'].map { |board| board.merge('fileName'=>names[board['key']]) },'outside'=>listed['outside']}
     end
     def project_name
       document=@session.document || {}
@@ -299,7 +300,7 @@ module PlanosSanto
     end
     # TXT de una placa listo para guardar (valida antes de abrir el diálogo de guardado).
     def board_export(key,rotate)
-      service,plan=board_plan;prepared=service.board_txt(plan,key,rotate:rotate,listed:board_list['boards'])
+      service,plan=board_plan;prepared=service.board_txt(plan,key,rotate:rotate,listed:board_list(rotate:rotate)['boards'])
       prepared.merge('fileName'=>board_file_names(board_list['boards'])[key])
     end
     def self.write_txt(bytes,target)
@@ -317,7 +318,7 @@ module PlanosSanto
     # «Exportar todos»: un TXT por placa en una carpeta nueva dentro de la elegida (nunca reemplaza nada).
     # Las placas con problemas no se exportan y vuelven con el motivo.
     def export_boards(rotate,directory)
-      service,plan=board_plan;listed=board_list['boards'];names=board_file_names(listed)
+      service,plan=board_plan;listed=board_list(rotate:rotate)['boards'];names=board_file_names(listed)
       raise ExportError,'No hay placas para exportar: pintá las piezas con placas de la biblioteca.' if listed.empty?
       ready=[];skipped=[]
       listed.each do |board|

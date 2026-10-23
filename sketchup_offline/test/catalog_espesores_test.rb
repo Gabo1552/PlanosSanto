@@ -124,4 +124,34 @@ class CatalogEspesoresTest < Minitest::Test
     package.validate_items([item])
     assert_equal [0.45,2],item['thicknessesMm']
   end
+  def test_json_import_preserves_changed_thickness_and_width_lists_as_conflicting_fichas
+    sheet=@store.new_item('Placa compartida','sheet').merge('thicknessesMm'=>[18])
+    edge=@store.new_item('Canto compartido','edge').merge('widthsMm'=>[22])
+    original=@store.save([sheet,edge],0)
+    incoming=JSON.parse(JSON.generate(original))
+    incoming['items'][0]['thicknessesMm']=[36,18]
+    incoming['items'][1]['widthsMm']=[45,22]
+    result=@store.import(incoming,original['revision'])
+    assert_equal 4,result['items'].length,'Las listas diferentes no son duplicados'
+    assert_equal original['items'],result['items'].first(2),'La importación no modifica fichas existentes'
+    assert_equal [[18,36],[22,45]],result['items'].drop(2).each_with_index.map { |row,i| row[i.zero? ? 'thicknessesMm' : 'widthsMm'] }
+    assert_equal 4,result['items'].map { |row| row['id'] }.uniq.length
+    assert result['items'].drop(2).all? { |row| row['approved']==false }
+    assert_equal 2,@store.conflicts(result).length,'Ambas diferencias quedan visibles como conflictos de nombre'
+    repeated=@store.import(incoming,result['revision'])
+    assert_equal result['items'],repeated['items'],'Reimportar la misma ampliación no genera otras fichas'
+  end
+
+  def test_json_import_normalizes_measure_lists_before_deduplicating
+    sheet=@store.new_item('Placa','sheet').merge('thicknessesMm'=>[18,36])
+    edge=@store.new_item('Canto','edge').merge('widthsMm'=>[22,45])
+    original=@store.save([sheet,edge],0)
+    incoming=JSON.parse(JSON.generate(original))
+    incoming['items'][0]['thicknessesMm']=[36.0,18.0,18]
+    incoming['items'][1]['widthsMm']=[45.0,22,45]
+    result=@store.import(incoming,original['revision'])
+    assert_equal original['items'],result['items'],'Orden, duplicados y representación numérica no crean conflictos'
+    assert_empty @store.conflicts(result)
+  end
+
 end

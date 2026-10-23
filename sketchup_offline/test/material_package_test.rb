@@ -105,6 +105,43 @@ class MaterialPackageTest < Minitest::Test
     assert @catalog.read['items'].any? { |item| item['name']=='Canto QA importado' && !item['approved'] }
   end
 
+  def test_changed_measure_lists_in_package_require_conflict_resolution_and_keep_both_versions
+    [[@sheet['id'],'thicknessesMm',[36,18]],[@edge['id'],'widthsMm',[64,45,22]]].each do |id,field,values|
+      original=@catalog.read['items'].find { |item| item['id']==id }
+      _result,path=export(catalog_ids:[id])
+      tamper(path) do |entries|
+        manifest=entries.find { |name,_| name=='manifest.json' }
+        data=JSON.parse(manifest[1]);data['items'].first[field]=values
+        manifest[1]=JSON.generate(data)
+      end
+      preview=@package.preview(path);row=preview['rows'].first
+      assert_equal 'conflict',row['status'],field
+      assert_raises(PlanosSanto::ExportError) { @package.commit(preview['token'],[row['id']],preview['revision'],confirmed:true) }
+      assert_equal original,@catalog.read['items'].find { |item| item['id']==id },'El conflicto no modifica la ficha local'
+      name=original['name']+' ampliado'
+      result=@package.commit(preview['token'],[row['id']],preview['revision'],confirmed:true,renames:{row['id']=>name})
+      assert_equal 1,result['imported']
+      imported=@catalog.read['items'].find { |item| item['name']==name }
+      assert_equal values.sort,imported[field]
+      refute imported['approved']
+      assert_equal original,@catalog.read['items'].find { |item| item['id']==id },'La versión original permanece intacta'
+    end
+  end
+
+  def test_package_deduplicates_equivalent_measure_lists_after_normalization
+    _result,path=export
+    tamper(path) do |entries|
+      manifest=entries.find { |name,_| name=='manifest.json' };data=JSON.parse(manifest[1])
+      data['items'].each do |item|
+        %w[thicknessesMm widthsMm].each do |field|
+          list=item[field];item[field]=list.reverse.map(&:to_f)+list.first(1)
+        end
+      end
+      manifest[1]=JSON.generate(data)
+    end
+    assert_equal %w[duplicate duplicate],@package.preview(path)['rows'].map { |row| row['status'] }
+  end
+
   def test_subset_export_prunes_compatibility_outside_package_and_can_include_archived
     result,path=export(catalog_ids:[@sheet['id']])
     assert_equal 1,result['items']

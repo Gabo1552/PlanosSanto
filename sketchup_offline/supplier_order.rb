@@ -292,8 +292,17 @@ module PlanosSanto
     def self.rotatable?(board,row);board['grain']==false && row['edgeMap'].is_a?(Array) && row['edgeMap'].uniq.length==1;end
     # Placas del proyecto con sus piezas, los cantos que llevan (1 el de más metros, 2 el siguiente; desempata
     # el id), los problemas que impiden su TXT y las piezas que no van a ninguna placa (con el motivo).
-    def boards(draft)
-      draft=self.class.normalize(draft);groups={};outside=[];items=@catalog['items'].to_h { |item| [item['id'],item] }
+    # The list and the actual TXT validate the same requested orientation; never mutate the saved draft.
+    def board_draft(draft,rotate: false)
+      items=@catalog['items'].to_h { |item| [item['id'],item] }
+      draft=self.class.normalize(draft)
+      draft.merge('profile'=>TXT_PROFILE.dup,'rows'=>draft['rows'].map do |row|
+        board=items[row['materialId']]
+        row.merge('grainPolicy'=>rotate && board && self.class.rotatable?(board,row) ? 'rotate' : 'locked')
+      end)
+    end
+    def boards(draft,rotate: false)
+      draft=board_draft(draft,rotate:rotate);groups={};outside=[];items=@catalog['items'].to_h { |item| [item['id'],item] }
       draft['rows'].each do |row|
         board=items[row['materialId']];board=nil unless board && board['kind']=='sheet'
         reason=if !row['include'] then 'excluded'
@@ -353,25 +362,35 @@ module PlanosSanto
     # TXT de una placa con las medidas de las piezas (no las del diagrama). Ruby revisa de nuevo cada pieza
     # de la placa y frena ante el primer problema. `rotate`: rota 1 en las piezas que se pueden girar.
     def board_txt(draft,key,rotate: false,listed: nil)
-      draft=self.class.normalize(draft).merge('profile'=>TXT_PROFILE.dup)
-      found=(listed || boards(draft)['boards']).find { |board| board['key']==key }
+      draft=board_draft(draft,rotate:rotate)
+      found=(listed || boards(draft,rotate:rotate)['boards']).find { |board| board['key']==key }
       raise ExportError,'Esa placa ya no está en el proyecto: la lista se actualizó; revisala y volvé a exportar.' unless found
       label="#{found['name']} #{mm(found['thicknessMm'])} mm"
       raise ExportError,"#{label}: #{found['blocker']}" if found['blocker']
-      board=material(found['materialId'],'sheet');ids=found['rowIds']
-      draft['rows']=draft['rows'].map { |row| ids.include?(row['id']) ? row.merge('grainPolicy'=>rotate && self.class.rotatable?(board,row) ? 'rotate' : 'locked') : row }
+      material(found['materialId'],'sheet');ids=found['rowIds']
       begin
         validate(draft,only:ids)
       rescue ExportError => error
         raise ExportError,"#{label}: #{error.message}"
       end
-      rows=draft['rows'].select { |row| ids.include?(row['id']) };codes=found['edges'].map { |edge| edge['catalogId'] }
-      _grouped,lines=txt_lines(draft,rows) { |row| row['edgeMap'].map { |role| role.zero? ? 0 : codes.index(row[role==1 ? 'principalId' : 'secondaryId'])+1 } }
+      rows=draft['rows'].select { |row| ids.include?(row['id']) }
+      _grouped,lines=txt_lines(draft,rows) { |row| board_edge_map(row,found) }
       bytes=(lines.join("\r\n")+"\r\n").encode('UTF-8').b
       {'content'=>bytes,'key'=>key,'name'=>found['name'],'sku'=>found['sku'],'thicknessMm'=>found['thicknessMm'],'edges'=>found['edges'],
        'pieces'=>rows.length,'textRows'=>lines.length,'rotated'=>rows.count { |row| row['grainPolicy']=='rotate' },'sha256'=>Digest::SHA256.hexdigest(bytes)}
     rescue Encoding::UndefinedConversionError,Encoding::InvalidByteSequenceError
       raise ExportError,'El texto no se puede representar en UTF-8.'
+    end
+
+    # Canonical codes for both the printed guide and its supplier TXT, scoped to one board.
+    def board_edge_map(row,board)
+      codes=board['edges'].to_h { |edge| [edge['catalogId'],edge['code']] }
+      row['edgeMap'].map do |role|
+        next 0 if role.zero?
+        code=codes[row[role==1 ? 'principalId' : 'secondaryId']]
+        raise ExportError,'El canto de la pieza no corresponde a los cantos de esta placa.' unless code
+        code
+      end
     end
 
     def export(draft,directory)

@@ -264,8 +264,17 @@ function edgeGlyph(page:PDFPage,reference:OrderReference&{edgeMap:number[]},righ
 function edgeLegend(rows:TableRow[]):{full:string;compact:string}|undefined{
   const structured=rows.map(r=>r.reference).filter(hasEdgeMap);
   if(!structured.length)return undefined;
-  const skus=(role:1|2)=>[...new Set(structured.filter(r=>r.edgeMap.includes(role)).map(r=>(role===1?r.principal:r.secondary)||'sin asignar'))].join(' / ');
-  const principal=skus(1),secondary=skus(2);
+  const skus=(group:typeof structured,role:1|2)=>[...new Set(group.filter(r=>r.edgeMap.includes(role)).map(r=>(role===1?r.principal:r.secondary)||'sin asignar'))];
+  // Codes belong to each supplier board. Different boards can legitimately use code 1 for different SKUs;
+  // keep that mapping explicit instead of printing a global «1 = ABS / PVC» with no board association.
+  if(skus(structured,1).length>1||skus(structured,2).length>1){
+    const groups=new Map<string,typeof structured>();
+    for(const reference of structured){const board=reference.board||'Placa sin identificación';groups.set(board,[...(groups.get(board)||[]),reference]);}
+    const assignments=[...groups].map(([board,group])=>`${board}: ${([1,2] as const).flatMap(role=>{const values=skus(group,role);return values.length?[`${role} = ${values.join(' / ')}`]:[];}).join(', ')}`).join(' · ');
+    return {full:`Cantos por placa: ${assignments} · 0 = sin canto · orden Arr·Aba·Izq·Der sobre base × altura del pedido.`,
+      compact:`Cantos Arr·Aba·Izq·Der por placa: ${assignments} · 0 = sin canto.`};
+  }
+  const principal=skus(structured,1).join(' / '),secondary=skus(structured,2).join(' / ');
   return {full:`Cantos: ${[principal&&`1 = ${principal} (principal)`,secondary&&`2 = ${secondary} (secundario)`,'0 = sin canto'].filter(Boolean).join(' · ')} · orden Arr·Aba·Izq·Der sobre base × altura del pedido.`,
     compact:`Cantos Arr·Aba·Izq·Der: ${[principal&&`1 = ${principal}`,secondary&&`2 = ${secondary}`,'0 = sin canto'].filter(Boolean).join(' · ')}.`};
 }

@@ -2,7 +2,7 @@
 
 Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.20:** [RBZ](dist/PlanosSanto-0.8.20-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.20-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.20-Validacion-Local.zip) · [qué cambió](docs/validacion-0820/ANEXO_0820.md) · [encargo de validación](docs/validacion-0820/ENCARGO_SESION_LOCAL_0820.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.21:** [RBZ](dist/PlanosSanto-0.8.21-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.21-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.21-Validacion-Local.zip) · [qué cambió](docs/validacion-0821/CAMBIOS.md) · [validación local](docs/validacion-0821/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
 
 ## Módulos de la extensión
 
@@ -24,7 +24,7 @@ Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, bibliote
 | `tests/` | Vitest (`*.test.ts`), Playwright offline (`tests/offline/`) y web (`tests/e2e/`) |
 | `scripts/` | Build del RBZ, runners de prueba y validadores del TXT de la maderera |
 | `docs/` | Validaciones por versión (`validacion-08xx/`), contratos por hito (`hito*/`), QA y auditorías |
-| `dist/` | Candidatas publicadas (las dos últimas; las anteriores están en el historial de git) |
+| `dist/` | Candidatas publicadas y sus paquetes de validación; versiones anteriores en el historial de git |
 | `app/`, `components/`, `sketchup/` | App web heredada (página de descarga del RBZ y editor web congelado) y su exportador 0.3 |
 
 ## Desarrollo

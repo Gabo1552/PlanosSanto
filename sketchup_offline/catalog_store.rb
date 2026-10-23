@@ -26,6 +26,8 @@ module PlanosSanto
     # standard widths in `widthsMm` (22 and 45 mm by default) and `widthMm` nil: the band is
     # trimmed after edging, so its width never blocks anything.
     FIELDS=(FIELDS_V3+%w[widthsMm]).freeze
+    # Shared by JSON and ZIP imports: v4 lists carry the commercial dimensions.
+    IMPORT_FIELDS=%w[name kind sku supplier thicknessMm thicknessesMm widthMm widthsMm lengthMm grain price].freeze
     MAX_THICKNESSES=32
     # Fallback when presets-taller.json has no valid `standardThicknessesMm` (Gabriel, 22/10).
     DEFAULT_THICKNESSES={'sheet'=>[3,5,12,15,18,25],'edge'=>[0.45,2]}.freeze
@@ -109,6 +111,10 @@ module PlanosSanto
       row=row.merge('widthsMm'=>width_list(row))
       row=row.merge('widthMm'=>nil) if row['kind']=='edge' && valid_list?(row['widthsMm'])
       row
+    end
+    def self.same_import_values?(left,right)
+      left=normalize_row(left);right=normalize_row(right)
+      IMPORT_FIELDS.all? { |key| left[key]==right[key] }
     end
     def self.valid_list?(list);list.is_a?(Array) && list.all? { |value| measure?(value) };end
     def self.default_directory
@@ -419,8 +425,7 @@ module PlanosSanto
       transaction(revision) do |current|
         candidates.each do |row|
           matches=current['items'].select { |existing| existing['sourceHash']==row['sourceHash'] }
-          fields=%w[name kind sku supplier thicknessMm widthMm lengthMm grain price]
-          next if !matches.empty? && (!library || matches.any? { |existing| fields.all? { |key| existing[key]==row[key] } })
+          next if !matches.empty? && (!library || matches.any? { |existing| self.class.same_import_values?(existing,row) })
           row['id']=SecureRandom.uuid if current['items'].any? { |existing| existing['id']==row['id'] }
           # Imported compatibility and variant IDs reference another library; reconcile explicitly.
           row['compatibleIds']=[];row['variantOf']=nil;row['approved']=false
