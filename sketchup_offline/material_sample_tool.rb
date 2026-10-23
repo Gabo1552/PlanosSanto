@@ -23,6 +23,12 @@ module PlanosSanto
       emit('Cuentagotas: acercá el cursor y hacé clic para elegir un material. No modifica el modelo.')
     end
 
+    # 0.8.20: the toolbar eyedropper shows the same dropper cursor as the
+    # brush's Alt eyedropper (it used to keep SketchUp's arrow).
+    def cursor_name
+      'sample'
+    end
+
     def status
       super.merge('mode' => 'sample', 'sample' => @active && @target && @sample ? copy(@sample) : nil, 'sampleSequence' => @sample_sequence)
     end

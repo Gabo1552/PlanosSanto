@@ -323,6 +323,8 @@ module PlanosSanto
             %w[sku supplier thicknessMm widthMm lengthMm grain compatibleIds price favorite approved].each { |key| item[key]=old[key] }
           end
           item['thicknessMm']=data['thicknessMm'] unless data['thicknessMm'].nil?
+          # Library v4: a sheet's thickness joins its list (and an edge's single width, its widths).
+          item=CatalogStore.normalize_row(item)
           previous_materials=@model.materials.to_a
           material=@model.materials.add(data['name'])
           raise ExportError,'SketchUp no pudo crear un material nuevo; el material existente no se modificó.' unless material && !previous_materials.include?(material) && material.respond_to?(:texture=)

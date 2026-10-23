@@ -28,18 +28,19 @@ class CatalogV2ActionsTest < Minitest::Test
 
   def test_presets_are_suggested_values_never_approved
     presets=dispatch('catalog_presets')['presets']
-    assert_equal %w[canto-22x045 canto-22x2 melamina-18-2600 melamina-18-2750],presets.map { |p| p['id'] }.sort
-    assert_equal({'widthMm'=>22,'thicknessMm'=>0.45},presets.find { |p| p['id']=='canto-22x045' }['values'])
-    library=dispatch('catalog_add_preset',{'presetId'=>'melamina-18-2750','name'=>'Melamina blanca 18','revision'=>0})
+    # Biblioteca v4 (0.8.20): las placas sugeridas valen para todos sus espesores y los cantos para sus anchos 22 y 45.
+    assert_equal %w[canto-045 canto-2 melamina-2600 melamina-2750],presets.map { |p| p['id'] }.sort
+    assert_equal({'thicknessMm'=>0.45},presets.find { |p| p['id']=='canto-045' }['values'])
+    library=dispatch('catalog_add_preset',{'presetId'=>'melamina-2750','name'=>'Melamina blanca','revision'=>0})
     item=library['catalog']['items'].first
-    assert_equal ['sheet',18,2750,1830,false],item.values_at('kind','thicknessMm','lengthMm','widthMm','approved')
-    assert_equal({'source'=>'preset','fields'=>%w[lengthMm thicknessMm widthMm],'presetId'=>'melamina-18-2750'},item['suggested'])
+    assert_equal ['sheet',nil,[3,5,12,15,18,25],2750,1830,false],item.values_at('kind','thicknessMm','thicknessesMm','lengthMm','widthMm','approved')
+    assert_equal({'source'=>'preset','fields'=>%w[lengthMm widthMm],'presetId'=>'melamina-2750'},item['suggested'])
     assert_equal '',item['sku'],'El SKU nunca se sugiere.'
-    edge=dispatch('catalog_add_preset',{'presetId'=>'canto-22x2','revision'=>1})['catalog']['items'].last
-    assert_equal ['Canto 22 × 2 mm','edge',2,22],edge.values_at('name','kind','thicknessMm','widthMm')
-    assert_raises(PlanosSanto::ExportError) { dispatch('catalog_add_preset',{'presetId'=>'canto-22x2','revision'=>2}) } # nombre repetido
+    edge=dispatch('catalog_add_preset',{'presetId'=>'canto-2','revision'=>1})['catalog']['items'].last
+    assert_equal ['Canto 2 mm','edge',2,[0.45,2],nil,[22,45]],edge.values_at('name','kind','thicknessMm','thicknessesMm','widthMm','widthsMm')
+    assert_raises(PlanosSanto::ExportError) { dispatch('catalog_add_preset',{'presetId'=>'canto-2','revision'=>2}) } # nombre repetido
     assert_raises(PlanosSanto::ExportError) { dispatch('catalog_add_preset',{'presetId'=>'inexistente','revision'=>2}) }
-    assert_raises(PlanosSanto::ExportError) { dispatch('catalog_add_preset',{'presetId'=>'canto-22x045','revision'=>0}) } # revisión vieja
+    assert_raises(PlanosSanto::ExportError) { dispatch('catalog_add_preset',{'presetId'=>'canto-045','revision'=>0}) } # revisión vieja
   end
 
   def test_thickness_variant_copies_commercial_data_as_suggestions_and_links_base
@@ -48,13 +49,14 @@ class CatalogV2ActionsTest < Minitest::Test
     sheet=store.new_item('Melamina blanca 18 mm','sheet').merge('sku'=>'MB18','supplier'=>'Maderera QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'approved'=>true,'compatibleIds'=>[edge['id']],
       'price'=>{'amount'=>1,'currency'=>'ARS','unit'=>'placa','date'=>'2026-10-01','source'=>'QA'})
     store.save([edge,sheet],0)
+    # Biblioteca v4: la variante de una placa es una ficha propia (SKU propio) de ese único espesor.
     variant=dispatch('catalog_variant',{'id'=>sheet['id'],'thicknessMm'=>15,'revision'=>1})['catalog']['items'].last
-    assert_equal ['Melamina blanca 15 mm',15,1830,2750,false,[edge['id']],sheet['id'],'',nil,false],
-      variant.values_at('name','thicknessMm','widthMm','lengthMm','grain','compatibleIds','variantOf','sku','price','approved')
+    assert_equal ['Melamina blanca 15 mm',nil,[15],1830,2750,false,[edge['id']],sheet['id'],'',nil,false],
+      variant.values_at('name','thicknessMm','thicknessesMm','widthMm','lengthMm','grain','compatibleIds','variantOf','sku','price','approved')
     assert_equal 'variant',variant['suggested']['source']
     second=dispatch('catalog_variant',{'id'=>variant['id'],'thicknessMm'=>25,'revision'=>2})['catalog']['items'].last
     assert_equal sheet['id'],second['variantOf'],'Variantes de variantes apuntan a la ficha base.'
-    assert_raises(PlanosSanto::ExportError) { dispatch('catalog_variant',{'id'=>sheet['id'],'thicknessMm'=>18,'revision'=>3}) }
+    assert_raises(PlanosSanto::ExportError) { dispatch('catalog_variant',{'id'=>variant['id'],'thicknessMm'=>15,'revision'=>3}) } # ya es de 15
     assert_raises(PlanosSanto::ExportError) { dispatch('catalog_variant',{'id'=>sheet['id'],'thicknessMm'=>-1,'revision'=>3}) }
     pending=store.read['items'].last.merge('sku'=>'MB25','approved'=>true)
     saved=store.save(store.read['items'][0..-2]+[pending],3)
@@ -73,7 +75,9 @@ class CatalogV2ActionsTest < Minitest::Test
     result=dispatch('skm_commit_typed',{'token'=>'t','selectedIds'=>%w[a b c],'revision'=>0,'confirmed'=>true,'kinds'=>{'a'=>'sheet','b'=>'edge'},'applySuggestions'=>true})
     assert_equal 3,result['imported']
     items=result['catalog']['items'].to_h { |item| [item['name'],item] }
-    assert_equal ['sheet',18.0,{'source'=>'skm','fields'=>['thicknessMm'],'presetId'=>nil}],items['Melamina Roble 18mm'].values_at('kind','thicknessMm','suggested')
+    # Biblioteca v4: el espesor sugerido por el nombre del SKM entra en la lista de la placa.
+    assert_equal ['sheet',nil,{'source'=>'skm','fields'=>['thicknessMm'],'presetId'=>nil}],items['Melamina Roble 18mm'].values_at('kind','thicknessMm','suggested')
+    assert_includes items['Melamina Roble 18mm']['thicknessesMm'],18
     assert_equal ['edge',nil,nil],items['Canto Roble'].values_at('kind','thicknessMm','suggested')
     assert_equal 'unknown',items['Otro']['kind']
     assert result['catalog']['items'].none? { |item| item['approved'] }
@@ -96,7 +100,7 @@ class CatalogV2ActionsTest < Minitest::Test
 
   def test_catalog_load_reports_pending_migration
     File.write(File.join(@dir,'catalog.json'),JSON.generate('schema'=>1,'revision'=>0,'items'=>[]))
-    assert_equal({'from'=>1,'to'=>3,'pending'=>true},dispatch('catalog_load')['migration'])
+    assert_equal({'from'=>1,'to'=>4,'pending'=>true},dispatch('catalog_load')['migration'])
     dispatch('catalog_save',{'items'=>[],'revision'=>0})
     assert_nil dispatch('catalog_load')['migration']
   end

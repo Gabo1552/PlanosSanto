@@ -1,10 +1,9 @@
 import {describe,it,expect} from 'vitest';
-import {legendKey,optimizeOrder,packSheets,sheetCost,usable,type SheetLayout,type SheetPiece,type SheetSpec} from '../sketchup_offline/ui/sheetOptimizer';
-import {optimizedBudget,type Budget} from '../sketchup_offline/ui/maderaRules';
-import {edgePurchase,edgeTotals,orderSize} from '../sketchup_offline/ui/workshopRules';
+import {canRotate,legendKey,optimizeBoards,packSheets,usable,type BoardGroup,type CutSettings,type SheetLayout,type SheetPiece,type SheetSpec} from '../sketchup_offline/ui/sheetOptimizer';
+import {DEFAULT_CUT,cutFields,edgeToBuy,edgeTotals,parseCut} from '../sketchup_offline/ui/workshopRules';
 import type {Catalog,CatalogItem,Geometry,OrderPlan,OrderRow} from '../sketchup_offline/ui/WorkshopPanel';
 
-// Datos sintéticos: placas, SKU y precios inventados para la prueba.
+// Datos sintéticos: placas y SKU inventados para la prueba.
 const spec=(patch:Partial<SheetSpec>={}):SheetSpec=>({lengthMm:2600,widthMm:1830,trimMm:0,kerfMm:0,...patch});
 const piece=(id:string,base:number,height:number,rotate=false):SheetPiece=>({id,detail:`Pieza ${id}`,base,height,rotate});
 const many=(count:number,base:number,height:number,rotate=false)=>Array.from({length:count},(_,i)=>piece(`p${String(i).padStart(3,'0')}`,base,height,rotate));
@@ -84,69 +83,67 @@ describe('Optimizador de placas (guillotina)',()=>{
 const item=(patch:Partial<CatalogItem>&{id:string;kind:string}):CatalogItem=>({name:patch.id,sku:`SKU-${patch.id}`,supplier:'Prueba',thicknessMm:18,widthMm:1830,lengthMm:2600,grain:false,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'',sourceHash:'',observed:{},...patch});
 const row=(id:string,patch:Partial<OrderRow>={}):OrderRow=>({id,include:true,excludeReason:'',detail:`Pieza ${id}`,axes:[0,1],flipX:false,flipY:false,frontSign:1,materialId:'mel',principalId:'can',secondaryId:null,edgeMap:[1,0,0,0],grainPolicy:'locked',dimensionRule:'finished_accepted',cutBase:null,cutHeight:null,edgeBindings:[],...patch});
 const geom=(x:number,y:number,z=18):Geometry=>({lengths:[x,y,z],bounds:{min:[0,0,0],max:[x,y,z]},scales:[1,1,1],mirrored:false,rectangular:true,vertices:[],triangles:[]});
-const catalog:Catalog={schema:2,revision:1,items:[item({id:'mel',kind:'sheet',price:{amount:50000,currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista de prueba'}}),item({id:'sin',kind:'sheet',lengthMm:null,widthMm:null}),item({id:'can',kind:'edge',widthMm:22,thicknessMm:0.45,price:{amount:300,currency:'ARS',unit:'metro',date:'2026-10-01',source:'Lista de prueba'}})]};
+const catalog:Catalog={schema:2,revision:1,items:[item({id:'mel',kind:'sheet'}),item({id:'sin',kind:'sheet',lengthMm:null,widthMm:null}),item({id:'can',kind:'edge',widthMm:22,thicknessMm:0.45})]};
 const plan=(rows:OrderRow[],geometry:Record<string,Geometry>):Pick<OrderPlan,'rows'|'geometry'>=>({rows,geometry});
+// Placas como las arma Ruby (SupplierOrder#boards): material + espesor real de la pieza.
+const board=(materialId:string,thicknessMm:number,rowIds:string[]):BoardGroup=>({key:`${materialId}|${Math.round(thicknessMm*10)}`,materialId,name:`Placa ${materialId}`,sku:`SKU-${materialId}`,thicknessMm,rowIds});
+const cut=(patch:Partial<CutSettings>={}):CutSettings=>({trimMm:10,kerfMm:4,allowRotate:false,...patch});
 
-describe('Optimización del pedido por placa',()=>{
- const profile={trimMm:10,kerfMm:4,dimensionRule:'finished'};
- it('agrupa por placa, usa la medida que recibe la maderera y separa lo que no se puede optimizar',()=>{
-  const p=plan([row('a'),row('b'),row('c',{include:false}),row('d',{materialId:''}),row('e',{axes:null}),row('f',{materialId:'sin'}),row('g')],{a:geom(1830,1300),b:geom(1830,1300),c:geom(100,100),d:geom(100,100),e:geom(100,100),f:geom(500,400),g:geom(2700,400)});
-  const result=optimizeOrder(p,catalog,profile),mel=result.materials.find(m=>m.materialId==='mel')!;
-  expect(result.skipped).toEqual({noBoard:1,noSize:1,notRectangular:0});
-  expect(mel).toMatchObject({status:'ok',pieces:3,trimMm:10,kerfMm:4});expect(mel.sheets).toHaveLength(2);expect(mel.oversize.map(o=>o.id)).toEqual(['g']);
+describe('Optimización por placa del proyecto',()=>{
+ it('una placa por material y espesor: cada una se optimiza aparte con la medida de las piezas',()=>{
+  const p=plan([row('a'),row('b'),row('c',{axes:null}),row('f',{materialId:'sin'}),row('g'),row('t')],{a:geom(1830,1300),b:geom(1830,1300),c:geom(100,100),f:geom(500,400),g:geom(2700,400),t:geom(1000,500,15)});
+  const result=optimizeBoards(p,catalog,[board('mel',18,['a','b','c','g']),board('mel',15,['t']),board('sin',18,['f'])],cut());
+  expect(result.materials.map(m=>[m.key,m.thicknessMm,m.pieces])).toEqual([['mel|180',18,3],['mel|150',15,1],['sin|180',18,1]]);
+  const mel=result.materials[0];
+  expect(mel).toMatchObject({status:'ok',trimMm:10,kerfMm:4,unsized:1,name:'Placa mel'});expect(mel.sheets).toHaveLength(2);expect(mel.oversize.map(o=>o.id)).toEqual(['g']);
   expect(mel.boughtM2).toBeCloseTo(2*2.6*1.83,6);expect(mel.utilization).toBeCloseTo(2*1.83*1.3/(2*2.6*1.83),6);
   // Mismas medidas, misma letra; la más grande primero.
   expect(mel.legend.map(e=>[e.key,e.base,e.height,e.count])).toEqual([['A',1830,1300,2],['B',2700,400,1]]);expect(mel.keys).toMatchObject({a:'A',b:'A',g:'B'});
   // Dos placas con la misma distribución se dibujan una sola vez.
   expect(mel.layouts.map(l=>l.sheetNumbers)).toEqual([[1,2]]);
-  expect(result.materials.find(m=>m.materialId==='sin')).toMatchObject({status:'no_format',sheets:[]});
+  expect(result.materials[1].sheets).toHaveLength(1);
+  expect(result.materials[2]).toMatchObject({status:'no_format',sheets:[]});
+  // Una placa cuya ficha ya no está en la biblioteca no se dibuja.
+  expect(optimizeBoards(p,catalog,[board('otra',18,['a'])],cut()).materials).toEqual([]);
  });
- it('costo por placa con precio vigente; desactualizado y pendiente aparte',()=>{
-  const mel=optimizeOrder(plan([row('a'),row('b')],{a:geom(1830,1300),b:geom(1830,1300)}),catalog,profile).materials[0];
-  expect(sheetCost(mel,new Date('2026-10-22T12:00:00Z'))).toEqual({amount:100000,currency:'ARS',status:'current_price'});
-  expect(sheetCost(mel,new Date('2027-03-01T12:00:00Z')).status).toBe('stale_price');
-  expect(sheetCost({...mel,price:{amount:10000,currency:'ARS',unit:'m2',date:'2026-10-01',source:'x'}},new Date('2026-10-22T12:00:00Z')).amount).toBeCloseTo(10000*mel.boughtM2,6);
-  expect(sheetCost({...mel,price:null},new Date('2026-10-22T12:00:00Z')).status).toBe('price_pending');
+ it('kerf y refilado solo cuentan para ubicar: las medidas de la leyenda son las de las piezas',()=>{
+  const p=plan([row('a'),row('b')],{a:geom(1300,900),b:geom(1300,900)}),groups=[board('mel',18,['a','b'])];
+  const thin=optimizeBoards(p,catalog,groups,cut({kerfMm:0,trimMm:0})).materials[0],thick=optimizeBoards(p,catalog,groups,cut({kerfMm:10,trimMm:50})).materials[0];
+  expect(thin.legend[0]).toMatchObject({base:1300,height:900});expect(thick.legend[0]).toMatchObject({base:1300,height:900});
+  expect(thin.sheets).toHaveLength(1);expect(thick.sheets).toHaveLength(2);
  });
- it('giro solo con placa sin veta y «permitir giro»; con veta nunca',()=>{
-  const grained:Catalog={...catalog,items:catalog.items.map(i=>i.id==='mel'?{...i,grain:true}:i)},p=plan([row('a',{grainPolicy:'rotate'})],{a:geom(1810,2000)});
-  expect(optimizeOrder(p,catalog,profile).materials[0].oversize).toEqual([]);
-  expect(optimizeOrder(p,grained,profile).materials[0].oversize.map(o=>o.id)).toEqual(['a']);
+ it('giro solo si se pide, con placa sin veta y cantos simétricos; con veta nunca',()=>{
+  const grained:Catalog={...catalog,items:catalog.items.map(i=>i.id==='mel'?{...i,grain:true}:i)},p=plan([row('a',{edgeMap:[0,0,0,0]})],{a:geom(1810,2000)}),groups=[board('mel',18,['a'])];
+  expect(optimizeBoards(p,catalog,groups,cut()).materials[0].oversize.map(o=>o.id)).toEqual(['a']);
+  const turned=optimizeBoards(p,catalog,groups,cut({allowRotate:true})).materials[0];expect(turned.oversize).toEqual([]);expect(turned.rotatable).toBe(1);
+  expect(optimizeBoards(p,grained,groups,cut({allowRotate:true})).materials[0].oversize.map(o=>o.id)).toEqual(['a']);
+  const asymmetric=plan([row('a',{edgeMap:[1,0,0,0]})],{a:geom(1810,2000)});
+  expect(optimizeBoards(asymmetric,catalog,groups,cut({allowRotate:true})).materials[0].oversize.map(o=>o.id)).toEqual(['a']);
+  expect(canRotate(row('x',{edgeMap:[1,1,1,1]}),catalog.items[0],{allowRotate:true})).toBe(true);
  });
- it('«descontar el canto» del perfil achica la medida como Ruby',()=>{
-  const r=row('a',{edgeMap:[1,1,1,0]});
-  expect(orderSize(r,geom(600,400),catalog,{...profile,dimensionRule:'deduct_edge'})).toEqual([599.55,399.1]);
-  expect(orderSize(r,geom(600,400),catalog,profile)).toEqual([600,400]);
- });
-});
-
-describe('Total de cantos',()=>{
- it('neto, con el margen del perfil y a comprar en metros enteros',()=>{
-  const p=plan([row('a',{edgeMap:[1,1,0,0]}),row('b',{edgeMap:[1,0,1,1]})],{a:geom(1000,400),b:geom(800,500)});
-  const [line]=edgeTotals(p,catalog).lines;expect(line.metres).toBeCloseTo(3.8,9);
-  const bought=edgePurchase(line.metres,15);expect(bought.withMargin).toBeCloseTo(4.37,9);expect(bought.buy).toBe(5);
-  expect(edgePurchase(4,0)).toEqual({net:4,withMargin:4,buy:4});expect(edgePurchase(4.0001,null).buy).toBe(5);expect(edgePurchase(0,15).buy).toBe(0);
+ it('determinístico: mismas placas aunque cambie el orden de las piezas',()=>{
+  const rows=Array.from({length:40},(_,i)=>row(`r${i}`)),geometry=Object.fromEntries(rows.map((r,i)=>[r.id,geom(200+(i*37)%900,150+(i*53)%600)]));
+  const a=optimizeBoards(plan(rows,geometry),catalog,[board('mel',18,rows.map(r=>r.id))],cut()),b=optimizeBoards(plan([...rows].reverse(),geometry),catalog,[board('mel',18,[...rows].reverse().map(r=>r.id))],cut());
+  expect(JSON.stringify(a.materials[0].sheets)).toBe(JSON.stringify(b.materials[0].sheets));
  });
 });
 
-describe('Presupuesto con placas optimizadas',()=>{
- const budget:Budget={profile:{id:'p',name:'Perfil de prueba',supplier:'Prueba',version:1,contentHash:'h',trimMm:10,kerfMm:4,dimensionRule:'finished',wastePercent:15},wastePercent:15,kerfMm:4,trimMm:10,priceAgeDays:90,
-  materials:[{materialId:'mel',name:'mel',sku:'SKU-mel',role:'board',unit:'m2',netQuantity:4.758,wasteQuantity:5.6,purchaseQuantity:3,purchaseUnit:'placa',netAmount:50000,wasteAmount:58000,purchaseAmount:150000,currency:'ARS',status:'current_price'},
-   {materialId:'can',name:'can',sku:'SKU-can',role:'edge',unit:'metro',netQuantity:3.8,wasteQuantity:4.37,purchaseQuantity:5,purchaseUnit:'metro',netAmount:1140,wasteAmount:1311,purchaseAmount:1500,currency:'ARS',status:'current_price'}],
-  totals:{net:{ARS:51140},waste:{ARS:59311},purchase:{ARS:151500}},services:[{kind:'cut',quantity:3,unit:'placa',amount:3000,currency:'ARS',status:'current_price',approximate:false}],servicesTotals:{ARS:3000},estimated:true,optimized:false};
- it('con formato: placas y m² comprados de la optimización; el corte por placa también',()=>{
-  const mel=optimizeOrder(plan([row('a'),row('b')],{a:geom(1830,1300),b:geom(1830,1300)}),catalog,{trimMm:10,kerfMm:4,dimensionRule:'finished'}).materials;
-  const {budget:out,optimizedIds,fallback}=optimizedBudget(budget,mel),board=out.materials[0],perM2=50000/4.758;
-  expect(optimizedIds).toEqual(['mel']);expect(fallback).toEqual([]);expect(out.optimized).toBe(true);
-  expect(board.purchaseQuantity).toBe(2);expect(board.wasteQuantity).toBeCloseTo(2*2.6*1.83,6);expect(board.purchaseAmount).toBeCloseTo(perM2*2*2.6*1.83,6);
-  expect(out.materials[1]).toEqual(budget.materials[1]);
-  expect(out.services[0]).toMatchObject({quantity:2,amount:2000});expect(out.servicesTotals).toEqual({ARS:2000});
-  expect(out.totals.purchase.ARS).toBeCloseTo(Math.round((perM2*2*2.6*1.83+1500)*100)/100,2);
+describe('Total de cantos del proyecto',()=>{
+ it('metros netos por canto y a comprar en metros enteros, sin margen',()=>{
+  const p=plan([row('a',{edgeMap:[1,1,0,0]}),row('b',{edgeMap:[1,0,1,1]}),row('c',{include:false,edgeMap:[1,1,1,1]})],{a:geom(1000,400),b:geom(800,500),c:geom(500,500)});
+  const {lines}=edgeTotals(p,catalog);expect(lines).toHaveLength(1);expect(lines[0].metres).toBeCloseTo(3.8,9);expect(lines[0]).toMatchObject({sides:5,pieces:2});
+  expect(edgeToBuy(lines[0].metres)).toBe(4);expect(edgeToBuy(4)).toBe(4);expect(edgeToBuy(4.0001)).toBe(5);expect(edgeToBuy(0)).toBe(0);
+  expect(edgeTotals(plan([row('d',{edgeMap:[2,0,0,0]})],{d:geom(100,100)}),catalog).unassigned).toBe(1);
  });
- it('sin formato o con piezas que no entran: queda la estimación por m² y se avisa',()=>{
-  const none=optimizedBudget(budget,[]);expect(none.budget.materials).toEqual(budget.materials);expect(none.fallback[0].reason).toBe('no se pudo optimizar');expect(none.budget.optimized).toBe(false);
-  const mel=optimizeOrder(plan([row('a'),row('g')],{a:geom(1830,1300),g:geom(2700,400)}),catalog,{trimMm:10,kerfMm:4,dimensionRule:'finished'}).materials;
-  expect(optimizedBudget(budget,mel).fallback[0].reason).toBe('1 pieza no entra en la medida útil');
-  const noFormat=optimizedBudget(budget,[{...mel[0],status:'no_format'}]);expect(noFormat.fallback[0].reason).toContain('falta el formato');expect(noFormat.budget.services).toEqual(budget.services);
+});
+
+describe('Corte de la seccionadora',()=>{
+ it('sugeridos: disco de 4 mm, 10 mm de refilado y sin girar; lo guardado vale campo por campo',()=>{
+  expect(DEFAULT_CUT).toEqual({kerfMm:4,trimMm:10,allowRotate:false});
+  expect(parseCut(null)).toEqual(DEFAULT_CUT);expect(parseCut('{roto')).toEqual(DEFAULT_CUT);expect(parseCut('[1,2]')).toEqual(DEFAULT_CUT);
+  expect(parseCut(JSON.stringify({kerfMm:3.2,trimMm:15,allowRotate:true}))).toEqual({kerfMm:3.2,trimMm:15,allowRotate:true});
+  expect(parseCut(JSON.stringify({kerfMm:11,trimMm:-1,allowRotate:'sí'}))).toEqual(DEFAULT_CUT);
+  expect(parseCut(JSON.stringify({kerfMm:0,trimMm:50}))).toEqual({kerfMm:0,trimMm:50,allowRotate:false});
+  expect(cutFields.kerfMm.range).toEqual([0,10]);expect(cutFields.trimMm.range).toEqual([0,50]);
  });
 });

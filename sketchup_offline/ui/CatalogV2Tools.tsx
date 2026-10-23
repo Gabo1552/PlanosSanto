@@ -1,8 +1,7 @@
 import {useState} from 'react';
 import {request} from './bridge';
 import type {Catalog,CatalogItem} from './WorkshopPanel';
-import {suggestedSummary,variantThickness} from './maderaRules';
-import {mm} from '../../lib/model';
+import {suggestedSummary} from './maderaRules';
 import './madera.css';
 
 type Run=(operation:()=>Promise<void>,label?:string,action?:string)=>Promise<void>;
@@ -37,18 +36,10 @@ export function ItemV2Tools({item,catalog,busy,disabled,run,onChanged}:{item:Cat
   {summary&&<p className="workshop-hint catalog-v2-suggested" role="note">Valores precargados desde {summary.source}: {summary.fields}. Corregilos si no coinciden con el producto.</p>}
   {base&&<p className="workshop-hint">Variante de espesor de «{base.name}».</p>}
   {['sheet','edge'].includes(item.kind)&&<details className="workshop-apply catalog-v2-variant"><summary>Crear variante de espesor</summary>
-   <p className="workshop-hint">Copia proveedor, formato y veta. SKU y precio quedan vacíos.{disabled?' Guardá la biblioteca antes de crear la variante.':''}</p>
+   <p className="workshop-hint">{item.kind==='sheet'?'Solo si ese espesor tiene SKU propio: la placa ya vale para todos sus espesores. ':''}Copia proveedor, formato y veta. SKU y precio quedan vacíos.{disabled?' Guardá la biblioteca antes de crear la variante.':''}</p>
    <label>Espesor de la variante (mm)<input type="number" min="0.001" step="any" value={thickness} disabled={busy} onChange={e=>setThickness(e.target.value)}/></label>
    <label>Nombre de la variante (opcional)<input value={name} maxLength={120} disabled={busy} onChange={e=>setName(e.target.value)}/></label>
    <button className="workshop-primary" disabled={busy||disabled||!(Number(thickness)>0)} onClick={create}>Crear variante</button></details>}
  </>;
 }
 
-/** Pedido: la pieza no tiene el espesor de la placa elegida. Tres salidas, sin confirmaciones: el pedido no se pierde al cambiar la biblioteca. */
-export function ThicknessOptions({board,thickness,catalog,busy,run,onChanged,onOtherBoard,onExclude}:{board:CatalogItem;thickness:number;catalog:Catalog;busy:boolean;run:Run;onChanged:Changed;onOtherBoard:()=>void;onExclude:()=>void}){
- const value=variantThickness(thickness);
- const variant=()=>void run(async()=>{const next=await request<Library>('catalog_variant',{id:board.id,thicknessMm:value,revision:catalog.revision}),made=added(catalog,next);onChanged(next,made?.id,`${made?`Variante «${made.name}» creada`:'Variante creada'} en la biblioteca. Completá su SKU para usarla en este pedido; el pedido se conserva.`);},'Creando variante de espesor…','catalog_variant');
- return <div className="thickness-options" role="group" aria-label="Opciones por espesor distinto"><p className="workshop-hint">La pieza mide {mm(value)} mm de espesor. Elegí una salida:</p>
-  <button disabled={busy} onClick={variant}>Crear variante de {board.name} de {mm(value)} mm</button><button disabled={busy} onClick={onOtherBoard}>Elegir otra placa</button><button disabled={busy} onClick={onExclude}>Excluir la pieza</button>
-  <small className="workshop-hint">La variante se agrega a la biblioteca; el pedido conserva tus cambios.</small></div>;
-}

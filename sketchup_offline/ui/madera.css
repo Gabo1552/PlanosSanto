@@ -1,14 +1,4 @@
-/* Hito 4: perfil de maderera, presupuesto con desperdicio y catálogo v2. Estados con texto además del color. */
-.madera-profile .workshop-list .workshop-badge{margin-left:6px}.madera-profile h4{margin:0 0 8px}
-.madera-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
-.madera-price{margin:10px 0}.madera-price legend{font-weight:700}
-.madera-budget td small,.madera-budget th small{display:block;font-size:12px;color:var(--ws-muted,#5d6b64)}
-.madera-budget td.is-pending small,.madera-budget tr.is-pending td:last-child{color:var(--ws-warn-ink,#6f4a12);font-weight:600}
-.madera-budget tfoot th,.madera-budget tfoot td{font-weight:700;border-top:2px solid var(--ws-line,#d9ded7)}
-.madera-budget caption:not(.workshop-sr-only){text-align:left;font-weight:700;margin:12px 0 4px}
-.madera-usable p{margin:4px 0 0}
-.thickness-options{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 10px;padding:8px 10px;border-left:4px solid var(--ws-warn-line,#d9a441);background:var(--ws-warn-bg,#fff6df);border-radius:4px}.thickness-options p,.thickness-options small{flex-basis:100%;margin:0}
+/* Catálogo v2 (valores sugeridos, variantes) y lote SKM tipado. Estados con texto además del color. */
 .catalog-v2-presets{flex-wrap:wrap}.catalog-v2-suggested{margin:8px 0}
 .skm-typed-batch{display:flex;flex-wrap:wrap;align-items:end;gap:8px 12px;margin:8px 0;padding:8px 12px;border:1px solid #d9ded7;border-radius:8px}.skm-typed-batch small{flex-basis:100%;color:#5d6b64}
 .skm-typed-row{display:flex;align-items:center;gap:6px;margin:4px 0}
-.madera-budget{margin:18px 0}.madera-budget.is-stale table{opacity:.7}

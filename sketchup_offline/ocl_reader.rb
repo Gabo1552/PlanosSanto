@@ -172,7 +172,7 @@ module PlanosSanto
         native=material && material['native_binding']
         if native
           raise ExportError,'El canto nativo pertenece a otro ítem de biblioteca; no se permite sustituir su SKU.' unless native['catalogId']==catalog_id && native['kind']=='edge'
-          raise ExportError,'El canto de biblioteca cambió desde el pintado; revisá y volvé a vincularlo.' unless native['catalogFingerprint']==MaterialResolver.item_fingerprint(edge)
+          raise ExportError,'El canto de biblioteca cambió desde el pintado; revisá y volvé a vincularlo.' unless MaterialResolver.fingerprint_current?(edge,native['catalogFingerprint'])
         end
         role=[row['principalId'],row['secondaryId']].index(catalog_id)
         raise ExportError,'El canto observado no está asignado como principal/secundario de este lote.' unless role

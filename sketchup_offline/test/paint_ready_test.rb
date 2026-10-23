@@ -315,7 +315,8 @@ class PaintReadyTest < Minitest::Test
     created=create_photo
     material_a=@first.materials.last
     assert_equal 2,material_a.get_attribute('ladb_opencutlist','type')
-    assert_equal '18mm',material_a.get_attribute('ladb_opencutlist','std_thicknesses')
+    # Biblioteca v4: OCL recibe todos los espesores de la placa, como su lista «std_thicknesses».
+    assert_equal '3mm;5mm;12mm;15mm;18mm;25mm',material_a.get_attribute('ladb_opencutlist','std_thicknesses')
     assert_nil material_a.get_attribute('ladb_opencutlist','thickness'),'en placas OCL usa std_thicknesses, no thickness'
     service.prepare(created['catalogId'],'sheet')
     assert_equal 2,@model.materials.last.get_attribute('ladb_opencutlist','type')
@@ -325,7 +326,7 @@ class PaintReadyTest < Minitest::Test
     canto=@first.materials.last
     assert_equal 4,canto.get_attribute('ladb_opencutlist','type')
     assert_equal '0.45mm',canto.get_attribute('ladb_opencutlist','thickness')
-    assert_equal '22mm',canto.get_attribute('ladb_opencutlist','std_widths')
+    assert_equal '22mm;45mm',canto.get_attribute('ladb_opencutlist','std_widths'),'Biblioteca v4: OCL recibe los anchos estándar del canto'
     assert_nil canto.get_attribute('ladb_opencutlist','std_thicknesses')
   end
   def test_existing_opencutlist_attributes_are_never_overwritten
@@ -398,7 +399,9 @@ class PaintReadyTest < Minitest::Test
     @first_photo.create(picked['token'],{'revision'=>picked['revision'],'name'=>'Camellia','kind'=>'sheet','thicknessMm'=>nil,'action'=>'replace','existingId'=>row['id'],'replaceConfirmed'=>true,'confirmed'=>true})
     after=item('Camellia')
     assert_equal row['id'],after['id']
-    %w[sku supplier thicknessMm widthMm lengthMm grain approved].each { |key| assert_equal row[key],after[key],key }
+    # Biblioteca v4: el espesor de la placa vive en su lista (thicknessMm queda nil al guardar).
+    %w[sku supplier widthMm lengthMm grain approved].each { |key| assert_equal row[key],after[key],key }
+    assert_nil after['thicknessMm'];assert_includes after['thicknessesMm'],18
     assert after.dig('observed','photo','designReady')
     assert_equal 'installable',service.states[row['id']]['state']
     prepared=service.prepare(row['id'],'sheet')

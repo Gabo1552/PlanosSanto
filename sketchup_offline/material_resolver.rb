@@ -24,6 +24,17 @@ module PlanosSanto
       Digest::SHA256.hexdigest(JSON.generate(value.sort.to_h))
     end
 
+    # True when a binding still describes the ficha. 0.8.20 (library v4): a sheet no longer has one
+    # thickness and an edge no longer has one width; a binding written while the ficha had one keeps
+    # matching as long as that value is still in its list, so the migration never stales a link.
+    def self.fingerprint_current?(item, fingerprint)
+      return true if item_fingerprint(item) == fingerprint
+      key, list = { 'sheet' => %w[thicknessMm thicknessesMm], 'edge' => %w[widthMm widthsMm] }.fetch(item['kind'], [])
+      return false unless key && item[key].nil? && item[list].is_a?(Array)
+      item[list].grep(Numeric).flat_map { |value| [value, value.to_f, value.to_f == value.to_i ? value.to_i : nil].compact.uniq }
+                .any? { |value| item_fingerprint(item.merge(key => value)) == fingerprint }
+    end
+
     def self.validate_binding(binding)
       valid = binding.is_a?(Hash) && binding.keys.sort == BINDING_KEYS.sort && binding['schema'].is_a?(Integer) && binding['schema'] == SCHEMA &&
         %w[uuid catalogId].all? { |key| binding[key].is_a?(String) && UUID.match?(binding[key]) } &&

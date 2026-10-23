@@ -24,7 +24,7 @@ module PlanosSanto
       lots={}
       included.each do |row|
         board=usable(service,row['materialId'],'sheet') or next
-        lots[[row['materialId'],board['thicknessMm'],row['principalId'],row['secondaryId']]] ||= lots.length+1
+        lots[[row['materialId'],service.thickness_key(row),row['principalId'],row['secondaryId']]] ||= lots.length+1
       end
       references={};pending=[]
       included.each do |row|
@@ -54,9 +54,9 @@ module PlanosSanto
       board=service.material(row['materialId'],'sheet')
       roles=roles(service,row)
       edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{SIDES[i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
-      board_text="#{board['sku']} / #{board['thicknessMm']} mm";base,height=service.dimensions(row)
+      board_text="#{board['sku']} / #{service.mm(service.row_thickness(row))} mm";base,height=service.dimensions(row)
       {'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],
-       'base'=>base,'height'=>height,'lot'=>lots[[row['materialId'],board['thicknessMm'],row['principalId'],row['secondaryId']]],
+       'base'=>base,'height'=>height,'lot'=>lots[[row['materialId'],service.thickness_key(row),row['principalId'],row['secondaryId']]],
        'grain'=>[true,false].include?(board['grain']) ? board['grain'] : nil}
     rescue ExportError
       nil

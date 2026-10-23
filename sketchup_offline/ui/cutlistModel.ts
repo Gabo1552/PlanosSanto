@@ -7,16 +7,19 @@ export type CutlistEdgeStatus='catalog'|'observed'|'none'|'unknown';
 export type CutlistEdge={side:CutlistSide;status:CutlistEdgeStatus;lengthMm:number;catalogId?:string;sku?:string|null;name?:string;observedIds?:string[];edgeKey?:string};
 /** Tira de canto de un lado: largo del lado, ancho de la ficha (o el espesor de la pieza, aproximado). */
 export type CutlistStrip={side:CutlistSide;label:string;edgeKey:string;lengthMm:number;widthMm:number;widthApprox:boolean;approximate:boolean};
-export type CutlistMaterial={source:'catalog'|'model'|'mixed';name:string;catalogId?:string;sku?:string|null;thicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null;observedId?:string;observedIds?:string[];category?:string;linked?:boolean};
+/** Biblioteca v4 (0.8.20): una ficha de placa trae sus espesores (`thicknessesMm`), no uno solo. */
+export type CutlistMaterial={source:'catalog'|'model'|'mixed';name:string;catalogId?:string;sku?:string|null;thicknessMm?:number|null;thicknessesMm?:number[];format?:[number,number]|null;grain?:boolean|null;observedId?:string;observedIds?:string[];category?:string;linked?:boolean};
 export type CutlistGrain='length'|'width'|'none'|null;
+/** `thicknessMm`: espesor real de la pieza (eje menor), el que separa las secciones y usa la maderera; `thicknessInList`: si está
+ * entre los de la ficha (null sin ficha de placa). */
 export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];name:string;furnitureId:string;furnitureName:string;quantity:number;
-  lengthMm:number;widthMm:number;thicknessMm:number;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
+  lengthMm:number;widthMm:number;thicknessMm:number;thicknessInList?:boolean|null;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
 export type SheetTotals={pieces:number;lengthM:number;areaM2:number;volumeM3:number};
 export type EdgeTotals={strips:number;lengthM:number;areaM2:number;volumeM3:number|null};
 export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';kind:'sheet'|'unknown';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;
-  catalogThicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null;colorRgb?:number[]|null;missing:string[];totals?:SheetTotals};
+  catalogThicknessMm?:number|null;standardThicknessesMm?:number[]|null;thicknessInList?:boolean|null;format?:[number,number]|null;grain?:boolean|null;colorRgb?:number[]|null;missing:string[];totals?:SheetTotals};
 export type CutlistEdgeSectionInfo={key:string;source:'catalog'|'model';kind:'edge';name:string;sku?:string|null;catalogId?:string|null;observedIds?:string[];
-  thicknessMm:number|null;widthMm:number|null;colorRgb?:number[]|null;missing:string[];widthApprox?:boolean;totals?:EdgeTotals};
+  thicknessMm:number|null;widthMm:number|null;widthsMm?:number[];colorRgb?:number[]|null;missing:string[];widthApprox?:boolean;totals?:EdgeTotals};
 export type CutlistData={schema:1;complete:boolean;readOnly:boolean;modelName:string;unit:'mm';furniture:{id:string;name:string}[];
   sections:CutlistSectionInfo[];edgeSections:CutlistEdgeSectionInfo[];pieces:CutlistPiece[]};
 export type CutlistFilter={furnitureId?:string;query?:string};
@@ -172,4 +175,31 @@ export function cutlistCsv(sections:CutlistSection[],edges:CutlistEdgeSection[])
     for(const {letter,piece,strip} of rows)lines.push(['Canto',info.name,info.thicknessMm,letter,stripDesignation(piece,strip),piece.furnitureName,codeText(piece,99),piece.quantity,
       strip.lengthMm,strip.widthMm,info.thicknessMm,strip.approximate||strip.widthApprox?'Sí':'No',warning]);}
   return lines.map(line=>line.map(csvCell).join(';')).join('\r\n')+'\r\n';
+}
+
+// «Ver en SketchUp» (0.8.20): clic en una fila → acción Ruby `piece_highlight` con todas las instancias de la fila,
+// selección y encuadre de la cámara. Clics sucesivos (o ‹ ›) recorren las instancias de a una.
+export type CutlistHighlightContext='kept'|'opened'|'mixed'|'unavailable';
+/** Respuesta de Ruby (`highlight` de `piece_highlight` con `frame`). */
+export type CutlistHighlight={pieceIds:string[];missing:string[];count:number;total:number;focus:number|null;selected:number;context:CutlistHighlightContext;framed:boolean;canRestore?:boolean};
+
+/** Siguiente paso del recorrido: todas (null) → 1 → 2 → … → n → todas; hacia atrás al revés. */
+export function nextFocus(current:number|null,total:number,step:1|-1):number|null{
+  if(total<2)return null;
+  if(current==null)return step===1?0:total-1;
+  const next=current+step;
+  return next<0||next>=total?null:next;
+}
+/** Rótulo del recorrido: «Todas (4)» o «2 de 4». */
+export const focusLabel=(focus:number|null,total:number)=>focus==null?`Todas (${total})`:`${focus+1} de ${total}`;
+
+/** Aviso de la fila después de mostrar la pieza en SketchUp. */
+export function highlightNotice(result:CutlistHighlight):string{
+  const one=result.focus!=null||result.count===1;
+  const parts=[`${one?'Pieza resaltada':`${result.count} piezas resaltadas`}${result.framed?` y ${one?'encuadrada':'encuadradas'}`:''} en SketchUp.`];
+  if(!result.framed)parts.push('No se pudo mover la cámara: buscala por el contorno rojo.');
+  if(result.focus==null&&result.context==='mixed')parts.push('Están en módulos distintos: con ‹ › se seleccionan de a una.');
+  if(result.context==='unavailable')parts.push('No se pudo abrir el grupo que la contiene: quedó marcada sin seleccionar.');
+  if(result.missing.length)parts.push(`${result.missing.length===1?'1 pieza ya no está':`${result.missing.length} piezas ya no están`} en el modelo: tocá Generar para volver a leer.`);
+  return parts.join(' ');
 }

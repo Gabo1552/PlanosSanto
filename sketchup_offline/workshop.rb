@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+require 'tempfile'
+require 'securerandom'
 require_relative 'catalog_store'
 require_relative 'supplier_order'
 require_relative 'maderera_profile'
@@ -56,18 +58,22 @@ module PlanosSanto
       raise ExportError,'Ya existe un material con ese nombre en la biblioteca.' if current['items'].any? { |row| row['name'].unicode_normalize(:nfc).downcase==item['name'].downcase }
       save_catalog(current['items']+[item],revision)
     end
+    # 0.8.20: «Agregar 16 mm a la ficha» from the cutlist or the order. Adding to a list commutes with any
+    # other edit, so it needs no revision from the window: the store reads the current one.
+    def add_thickness(id,thickness);data=@catalog.add_thickness(id,thickness);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
     def maderera_profiles
       {'profiles'=>@profiles.read,'template'=>MaderaProfile.template}
     end
     def save_maderera_profile(profile,revision);@profiles.save(profile,revision);maderera_profiles;end
     def approve_maderera_profile(id,version,revision);@profiles.approve(id,version,revision);maderera_profiles;end
     def activate_maderera_profile(id,revision);@profiles.activate(id,revision);maderera_profiles;end
-    def order
+    # profile: false (0.8.20, Maderera) leaves the supplier profile out: it stays saved, it is just not applied.
+    def order(profile: true)
       @session.check_current!
       catalog=@catalog.read;report=nil
       read=lambda { report ||= OclReader.capture(@model) }
       service=SupplierOrder.new(@session.document,@session.fingerprint,catalog,
-        material_proposal:lambda { |id| native_proposal(read.call,id,catalog) },maderera:active_maderera)
+        material_proposal:lambda { |id| native_proposal(read.call,id,catalog) },maderera:profile ? active_maderera : nil)
       service.detail_codes=codes;@read=read;@order_catalog=catalog
       service
     end
@@ -233,7 +239,7 @@ module PlanosSanto
         board=service.material(row['materialId'],'sheet')
         roles=OrderReferences.roles(service,row)
         edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{%w[Arr Aba Izq Der][i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
-        board_text="#{board['sku']} / #{board['thicknessMm']} mm";base,height=service.dimensions(row)
+        board_text="#{board['sku']} / #{service.mm(service.row_thickness(row))} mm";base,height=service.dimensions(row)
         # 'text' keeps the previous printed contract; the rest is the same edge map and cut as the supplier TXT (Arr·Aba·Izq·Der over base × height).
         [row['id'],{'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],'base'=>base,'height'=>height}]
       end
@@ -251,6 +257,86 @@ module PlanosSanto
       service.export(draft,directory)
     end
     def canonical(value);value.is_a?(Hash) ? value.sort.to_h.transform_values { |v| canonical(v) } : value.is_a?(Array) ? value.map { |v| canonical(v) } : value;end
+
+    # --- 0.8.20 · Maderera: optimización por placa y un TXT por material -----------------------------------
+    # Todas las piezas de todos los muebles analizados, propuestas desde el modelo pintado y la biblioteca y
+    # cruzadas con el borrador guardado (lo elegido a mano en versiones anteriores, como la placa de una pieza
+    # sin pintar o una pieza excluida, se respeta igual que en la A4). Nunca escribe el borrador ni aplica el
+    # perfil de maderera: los dos quedan guardados tal como estaban, para poder volver a la pantalla anterior.
+    # El giro lo decide el corte elegido en pantalla (rota 0 salvo que se pida girar) y el detalle va sin código.
+    def board_plan
+      @board_plan ||= begin
+        @damaged=false;service=order(profile:false)
+        plan=build(stored_draft,service)['plan']
+        plan=plan.merge('profile'=>SupplierOrder::TXT_PROFILE.dup,'detailCode'=>'none','rows'=>plan['rows'].map { |row| row.merge('grainPolicy'=>'locked') })
+        [service,plan]
+      end
+    end
+    def board_list
+      @board_list ||= board_plan[0].boards(board_plan[1])
+    end
+    def boards
+      _service,plan=board_plan;listed=board_list;names=board_file_names(listed['boards'])
+      {'plan'=>plan,'catalog'=>@order_catalog,'modelName'=>project_name,'boards'=>listed['boards'].map { |board| board.merge('fileName'=>names[board['key']]) },'outside'=>listed['outside']}
+    end
+    def project_name
+      document=@session.document || {}
+      name=(document['name'] || document['modelName']).to_s.strip
+      name.empty? ? 'Obra' : name
+    end
+    # Parte de un nombre de archivo sin lo que Windows no acepta.
+    def self.file_part(text,limit=60)
+      text.to_s.unicode_normalize(:nfc).gsub(/[\\\/:*?"<>|\x00-\x1f]/,' ').strip.squeeze(' ')[0,limit].to_s.strip.sub(/[. ]+\z/,'')
+    end
+    # obra-material-espesor.txt (18 mm → «18mm», 18,5 mm → «18,5mm»); dos placas que dan el mismo nombre se numeran.
+    def board_file_names(boards)
+      service,=board_plan;used=Hash.new(0);obra=self.class.file_part(project_name).then { |part| part.empty? ? 'Obra' : part }
+      boards.to_h do |board|
+        material=self.class.file_part(board['name']).then { |part| part.empty? ? 'Placa' : part }
+        base="#{obra}-#{material}-#{service.mm(board['thicknessMm'])}mm";used[base.downcase]+=1
+        [board['key'],used[base.downcase]>1 ? "#{base}-#{used[base.downcase]}.txt" : "#{base}.txt"]
+      end
+    end
+    # TXT de una placa listo para guardar (valida antes de abrir el diálogo de guardado).
+    def board_export(key,rotate)
+      service,plan=board_plan;prepared=service.board_txt(plan,key,rotate:rotate,listed:board_list['boards'])
+      prepared.merge('fileName'=>board_file_names(board_list['boards'])[key])
+    end
+    def self.write_txt(bytes,target)
+      target=target.to_s;target+='.txt' unless target.downcase.end_with?('.txt')
+      Tempfile.create(['.planos-santo-','.txt'],File.dirname(target)) do |file|
+        file.binmode;file.write(bytes);file.flush;file.fsync;file.close
+        File.rename(file.path,target)
+      end
+      target
+    end
+    def write_board(prepared,target)
+      path=self.class.write_txt(prepared['content'],target)
+      prepared.reject { |key,_| key=='content' }.merge('path'=>path,'bytes'=>prepared['content'].bytesize)
+    end
+    # «Exportar todos»: un TXT por placa en una carpeta nueva dentro de la elegida (nunca reemplaza nada).
+    # Las placas con problemas no se exportan y vuelven con el motivo.
+    def export_boards(rotate,directory)
+      service,plan=board_plan;listed=board_list['boards'];names=board_file_names(listed)
+      raise ExportError,'No hay placas para exportar: pintá las piezas con placas de la biblioteca.' if listed.empty?
+      ready=[];skipped=[]
+      listed.each do |board|
+        ready << service.board_txt(plan,board['key'],rotate:rotate,listed:listed).merge('fileName'=>names[board['key']])
+      rescue ExportError => error
+        skipped << {'key'=>board['key'],'name'=>board['name'],'thicknessMm'=>board['thicknessMm'],'reason'=>error.message}
+      end
+      raise ExportError,"No se exportó ninguna placa. #{skipped.first['reason']}" if ready.empty?
+      base="#{self.class.file_part(project_name).then { |part| part.empty? ? 'Obra' : part }}-maderera-#{Time.now.strftime('%Y%m%d-%H%M')}"
+      target=File.join(directory,base);suffix=1
+      target=File.join(directory,"#{base}-#{suffix+=1}") while File.exist?(target)
+      staging=File.join(directory,".#{File.basename(target)}-#{SecureRandom.hex(4)}.tmp");Dir.mkdir(staging,0o700)
+      ready.each { |entry| File.binwrite(File.join(staging,entry['fileName']),entry['content']) }
+      raise ExportError,'Ya existe esa carpeta; no se reemplazó.' if File.exist?(target)
+      File.rename(staging,target)
+      {'directory'=>target,'files'=>ready.map { |entry| entry.reject { |key,_| key=='content' }.merge('file'=>entry['fileName']) },'skipped'=>skipped}
+    ensure
+      FileUtils.remove_entry(staging) if staging && File.directory?(staging)
+    end
   end
 
   module OclGateway

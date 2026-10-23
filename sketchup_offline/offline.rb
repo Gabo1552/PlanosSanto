@@ -687,7 +687,8 @@ module PlanosSanto
         row['designReady']=MaterialPolicy.paintable?(item,directory:directory)
       end
       status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'],
-        'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all)
+        'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all,
+        'standardWidthsMm'=>CatalogStore.default_widths_all)
     end
 
     # 0.8.17: loading the library resolves the ficha ↔ model material links by
@@ -826,7 +827,7 @@ module PlanosSanto
         watch_model!
         mark_fresh!
         light_scan(result)
-      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_references_partial','order_edges','order_audit','order_propose','order_confirm_bulk','order_apply','ocl_open'
+      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_references_partial','order_edges','order_audit','order_propose','order_confirm_bulk','order_apply','ocl_open','maderera_boards','maderera_txt'
         active!
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -863,6 +864,20 @@ module PlanosSanto
             path= with_user_dialog { UI.select_directory(title:'Elegir carpeta para TXT y manifiesto') }
             return {'cancelled'=>true} unless path
             workshop.export_order(data.fetch('plan'),path)
+          # 0.8.20 «Maderera»: placas del proyecto y un TXT por placa (material + espesor), o todos en una carpeta.
+          when 'maderera_boards' then workshop.boards
+          when 'maderera_txt'
+            rotate=data['rotate']==true
+            if data['all']==true
+              path=with_user_dialog { UI.select_directory(title:'Elegir carpeta para los TXT de la maderera') }
+              return {'cancelled'=>true} unless path
+              workshop.export_boards(rotate,path)
+            else
+              prepared=workshop.board_export(data.fetch('key'),rotate)
+              path=with_user_dialog { UI.savepanel('Guardar TXT para la maderera',nil,prepared['fileName']) }
+              return {'cancelled'=>true} unless path
+              workshop.write_board(prepared,path)
+            end
           end
         end
       when 'cutlist'
@@ -877,9 +892,9 @@ module PlanosSanto
         target=with_user_dialog { UI.savepanel('Exportar piezas CSV',nil,Cutlist.csv_file_name(data['modelName'])) }
         target ? Cutlist.write_csv(text,target) : {'cancelled'=>true}
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
-      when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','skm_commit_typed'
+      when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','catalog_add_thickness','skm_commit_typed'
         active!
-        mutating=%w[maderera_profile_save maderera_profile_approve maderera_profile_activate catalog_add_preset catalog_variant skm_commit_typed].include?(action)
+        mutating=%w[maderera_profile_save maderera_profile_approve maderera_profile_activate catalog_add_preset catalog_variant catalog_add_thickness skm_commit_typed].include?(action)
         stop_brush_for!(action) if mutating
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -891,13 +906,15 @@ module PlanosSanto
         when 'catalog_presets' then workshop.presets
         when 'catalog_add_preset' then workshop.add_preset(data.fetch('presetId'),data['name'],data.fetch('revision'))
         when 'catalog_variant' then workshop.add_variant(data.fetch('id'),data.fetch('thicknessMm'),data.fetch('revision'),name:data['name'])
+        # 0.8.20: «Agregar 16 mm a la ficha» (Piezas y pedido): el espesor real de la pieza se suma a la lista.
+        when 'catalog_add_thickness' then workshop.add_thickness(data.fetch('id'),data.fetch('thicknessMm'))
         when 'skm_commit_typed'
           committed=skm_importer.commit(data.fetch('token'),data.fetch('selectedIds'),data.fetch('revision'),confirmed:data['confirmed']==true,renames:data.fetch('renames',{}),
             kinds:data.fetch('kinds',{}),apply_suggestions:data['applySuggestions']==true)
           @skm_preview_active=false
           committed.merge(skm_library)
         end
-        notify_material_library_changed(action) if %w[catalog_add_preset catalog_variant skm_commit_typed].include?(action)
+        notify_material_library_changed(action) if %w[catalog_add_preset catalog_variant catalog_add_thickness skm_commit_typed].include?(action)
         result
       # --- fin Hito 4 ---
       when 'material_photo_pick'
@@ -969,7 +986,11 @@ module PlanosSanto
         stop_smart_tool(refresh:false)
         generation=@tool_generation || 0
         @smart_state={'active'=>false,'mode'=>'highlight','changed'=>false,'queuedCount'=>0,'message'=>''}
-        @smart_tool=PieceHighlightTool.new(@model,piece_id:data.fetch('pieceId'),
+        # 0.8.20 (Piezas): every instance of a row (`pieceIds`, optional `focus`)
+        # and, with `frame`, selection + camera on them; the view from before the
+        # first look is kept for `piece_highlight_restore`.
+        ids=data.key?('pieceIds') ? data['pieceIds'] : [data.fetch('pieceId')]
+        @smart_tool=PieceHighlightTool.new(@model,piece_ids:ids,focus:data['focus'],
           guard:lambda { raise ExportError,'El resaltado se canceló.' unless generation==(@tool_generation || 0);active! },
           on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) })
         begin
@@ -978,7 +999,20 @@ module PlanosSanto
           @smart_tool.stop;@smart_tool=nil
           raise
         end
-        {'toolState'=>smart_state}
+        result={'toolState'=>smart_state}
+        if data['frame']==true
+          @highlight_view=nil unless @highlight_view && @highlight_view[:model].equal?(@model)
+          @highlight_view ||= PieceHighlightTool.snapshot(@model)
+          result['highlight']=@smart_tool.show!.merge('canRestore'=>true)
+          result['toolState']=smart_state
+        end
+        result
+      when 'piece_highlight_restore'
+        raise ExportError,'Cambió el modelo activo. Volvé a analizar.' unless @model && Sketchup.active_model.equal?(@model)
+        snap=@highlight_view;@highlight_view=nil
+        stop_smart_tool(refresh:false) if @smart_tool.is_a?(PieceHighlightTool)
+        restored=snap && snap[:model].equal?(@model) ? {'restored'=>true}.merge(PieceHighlightTool.restore(@model,snap)) : {'restored'=>false}
+        restored.merge('toolState'=>smart_state)
       when 'smart_palette_load'
         active!
         # One paint palette at a time: opening Pintar in the main window closes the

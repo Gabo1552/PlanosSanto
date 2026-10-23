@@ -344,7 +344,7 @@ class Hito2FeedbackTest < Minitest::Test
     hover_on(@doors[0]);@tool.draw(@view)
     (first,line1,options1),(second,line2,options2)=@view.texts.last(2)
     assert_equal 'Puerta 1 · 2 cantos · Solo esta (de 4)',line1;assert_equal 'Canto Blanco',line2
-    assert_equal [76.0,86.0],first.first(2).map(&:to_f) # 18 px * scale 2 from (40,50)
+    assert_equal [108.0,118.0],first.first(2).map(&:to_f) # 0.8.20: 34 px * scale 2 from (40,50), clear of the cursor badge
     assert_operator second[1],:>,first[1]
     assert_equal [0,128,0],rgb(options2[:color])
     rebate_x_min_side!;build_tool(tool_options('edge','edgeCount'=>4));hover_on(@doors[1]);@tool.draw(@view)
@@ -367,7 +367,7 @@ class Hito2FeedbackTest < Minitest::Test
     rebate_x_min_side!;build_tool(tool_options('edge'));hover_on(@doors[1]);@tool.onSetCursor
     build_tool(tool_options('sheet'));@tool.onSetCursor
     names=UI.hito2_created.map(&:first)
-    assert_equal %w[paint-blocked.png paint-edge.png paint-piece.png paint-remove.png],names.sort;assert UI.hito2_created.all? { |_,x,y| [x,y]==[3,3] }
+    assert_equal %w[paint-blocked.png paint-edge.png paint-piece.png paint-remove.png],names.sort;assert UI.hito2_created.all? { |_,x,y| [x,y]==[7,7] } # 0.8.20: crosshair centre
     ids=UI.hito2_created.to_h { |name,_,_| [name,1000+UI.hito2_created.index { |row| row.first==name }+1] }
     assert_equal ids.values_at('paint-piece.png','paint-edge.png','paint-remove.png','paint-blocked.png','paint-piece.png'),UI.hito2_set
   end

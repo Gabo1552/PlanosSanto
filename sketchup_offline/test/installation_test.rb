@@ -45,7 +45,7 @@ class InstallationTest < Minitest::Test
       import zipfile,sys,json,hashlib
       with zipfile.ZipFile(sys.argv[1]) as z:
         entries = [i.filename for i in z.infolist() if not i.is_dir()]
-        assert len(entries) == len(set(entries)) == 75
+        assert len(entries) == len(set(entries)) == 85
         manifest = json.loads(z.read('planos_santo/manifest.json'))
         assert manifest['version'] == sys.argv[2]
         assert set(entries) == set(manifest['files']) | {'planos_santo/manifest.json'}
@@ -58,6 +58,11 @@ class InstallationTest < Minitest::Test
           for name in (action + '-24.png', action + '-32.png', action + '.svg'):
             assert 'planos_santo/icons/' + name in manifest['files'], name
           assert z.read('planos_santo/icons/' + action + '.svg').startswith(b'<?xml'), action
+        for key in ('piece','edge','remove','blocked','sample'):
+          for name in ('paint-' + key + '.png', 'paint-' + key + '-64.png', 'paint-' + key + '.svg'):
+            assert 'planos_santo/cursors/' + name in manifest['files'], name
+          assert z.read('planos_santo/cursors/paint-' + key + '.svg').startswith(b'<?xml'), key
+          assert z.read('planos_santo/cursors/paint-' + key + '-64.png')[16:24] == (64).to_bytes(4,'big') * 2, key
     PYTHON
     assert status.success?, error + output
   end

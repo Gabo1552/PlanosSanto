@@ -34,8 +34,9 @@ class OclSyncTest < Minitest::Test
   def setup
     @directory=Dir.mktmpdir
     @catalog=PlanosSanto::CatalogStore.new(directory:@directory)
-    @sheet=@catalog.new_item('Blanco 18','sheet').merge('thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2600,'grain'=>false)
-    @catalog.save([@sheet],0)
+    # Biblioteca v4: los espesores de la placa son su lista; acá, solo 18 mm.
+    @sheet=@catalog.new_item('Blanco 18','sheet').merge('thicknessesMm'=>[18],'widthMm'=>1830,'lengthMm'=>2600,'grain'=>false)
+    @sheet=@catalog.save([@sheet],0)['items'].first
     @material=OclSyncFixture::Material.new(5,'Blanco 18')
     @model=OclSyncFixture::Model.new(@material)
     @library=PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory)
@@ -60,7 +61,7 @@ class OclSyncTest < Minitest::Test
     assert_equal 'written',first['materials'].first['status']
     assert_equal 2,@material.get_attribute(DICT,'type')
     @model.operations.clear
-    edit('thicknessMm'=>15,'widthMm'=>1500)
+    edit('thicknessesMm'=>[15],'widthMm'=>1500)
     @material.set_attribute(DICT,'std_sizes','2440mm x 1220mm')
     preview=sync(dry_run:true)
     row=preview['materials'].first
@@ -104,7 +105,7 @@ class OclSyncTest < Minitest::Test
   def test_damaged_record_is_treated_as_user_owned
     sync
     @material.set_attribute(PlanosSanto::MaterialResolver::DICT,PlanosSanto::OclAttributes::WRITTEN_KEY,'{roto')
-    edit('thicknessMm'=>15)
+    edit('thicknessesMm'=>[15])
     row=sync['materials'].first
     assert_equal '18mm',@material.get_attribute(DICT,'std_thicknesses')
     assert_equal 'std_thicknesses',row['kept'].first['key']

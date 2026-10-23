@@ -3,6 +3,7 @@
 require_relative 'names_double'
 require_relative 'cantos_double'
 require_relative 'ocl_read_double'
+require_relative 'highlight_view_double'
 $LOADED_FEATURES << 'sketchup.rb'
 module Kernel
   def file_loaded?(_file); true; end
@@ -12,14 +13,23 @@ module Sketchup
     @names_model ||= begin
       model=ARGV[1] == 'shared' ? NamingModelDouble.new(Fixture.model) : ARGV[1]=='cantos' ? CantosFixture.model : NamesFixture.model
       OclReadFixture.prepare(model) if ARGV[1].to_s.start_with?('materials')
-      if %w[materials-edges materials-cutlist].include?(ARGV[1])
+      if %w[materials-edges materials-cutlist materials-cutlist-pair].include?(ARGV[1])
         board=model.materials[0];first=model.materials[1]
         second=Sketchup::Material.new(890,'Canto secundario de prueba',Sketchup::Color.new(80,80,80),1,nil);second.ocl_attributes={'type'=>4,'thickness'=>'1mm','std_widths'=>'22mm'};model.materials << second
         faces=model.entities[0].entities[0].definition.entities;faces[1].material=nil;faces[3].material=first;faces[4].material=second
         model.entities[1].material=board
       end
       # Vista «Piezas»: el segundo mueble hereda otra placa en la cara sin pintar → sección con dos materiales.
-      model.entities[1].material=model.materials[2] if ARGV[1]=='materials-cutlist'
+      model.entities[1].material=model.materials[2] if ARGV[1].to_s.start_with?('materials-cutlist')
+      if ARGV[1]=='materials-cutlist-pair'
+        # Piezas 0.8.20: un segundo «Lateral - Blanco» dentro de «Interior estructural» (otro módulo del mismo mueble).
+        nested=model.entities[0].entities[1];left=model.entities[0].entities[0]
+        nested.entities << Sketchup::ComponentInstance.new(14,'Lateral - Blanco',left.definition,Geom::Transformation.translation(40,0,0))
+      end
+      if ARGV[1].to_s.start_with?('materials-cutlist')
+        # Cámara y vista sintéticas para «ver en SketchUp» (no se dibuja nada).
+        view=HighlightViewDouble.new;model.define_singleton_method(:active_view) { view }
+      end
       model
     end
   end
@@ -29,6 +39,8 @@ module UI
     return File.join(ARGV.fetch(0), 'materiales-cantos.json') if title.include?('materiales') && ARGV[1]=='materials'
     return File.join(ARGV.fetch(0),'biblioteca-exportada.json') if title.include?('biblioteca')
     return File.join(ARGV.fetch(0),'piezas-exportadas') if title.include?('CSV')
+    # Maderera (0.8.20): el TXT de una placa se guarda con el nombre que propone el diálogo.
+    return File.join(ARGV.fetch(0),_args[1].to_s) if title.include?('TXT')
     title.include?('PDF') ? File.join(ARGV.fetch(0), 'PlanosSanto-A4.pdf') : nil
   end
   def self.openpanel(*_args);File.join(ARGV.fetch(0),'candidatos.json');end
@@ -79,6 +91,15 @@ STDIN.each_line do |line|
     data=msg.fetch('data');item=PlanosSanto::CatalogStore.new(directory:ENV.fetch('PLANOS_SANTO_DATA_DIR')).read['items'].find { |row| row['id']==data.fetch('catalogId') }
     material=model.materials.find { |m| m.display_name==data.fetch('materialName') }
     material.planos_binding=JSON.generate(PlanosSanto::MaterialResolver.binding_for(item));controller.reply(msg['id'],result:true)
+  when '__delete_instance'
+    # Piezas 0.8.20: una pieza borrada después de leer el listado.
+    id=msg.fetch('data',{}).fetch('persistentId').to_s
+    model.all_instances.find { |e| e.persistent_id.to_s==id }.invalid_for_names=true;controller.reply(msg['id'],result:true)
+  when '__view_inspect'
+    # Piezas 0.8.20: cámara, transiciones, selección y contexto abierto del doble.
+    view=model.respond_to?(:active_view) ? model.active_view : nil
+    controller.reply(msg['id'],result:{'camera'=>view&.camera&.to_h,'transitions'=>view ? view.camera_calls.map(&:last) : [],
+      'selection'=>model.selection.to_a.map(&:persistent_id),'activePath'=>(model.active_path || []).map(&:persistent_id)})
   when '__names_geometry'
     model.entities[0].transformation=Geom::Transformation.translation(3,2,1);controller.reply(msg['id'],result:true)
   else

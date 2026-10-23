@@ -1,7 +1,7 @@
 import {describe,expect,it} from 'vitest';
-import {CSV_HEADER,DEFAULT_OPTIONS,buildEdgeSections,buildSections,codeText,cutlistCsv,designationDetail,edgeTotals,filterPieces,finalMm,formatM2,formatM3,formatMetres,grainNote,hexColor,
-  missingLabels,parseOptions,rowLetter,sectionTitle,sheetTotals,stripDesignation,summaryRows,
-  type CutlistData,type CutlistEdge,type CutlistPiece,type CutlistStrip} from '../sketchup_offline/ui/cutlistModel';
+import {CSV_HEADER,DEFAULT_OPTIONS,buildEdgeSections,buildSections,codeText,cutlistCsv,designationDetail,edgeTotals,filterPieces,finalMm,focusLabel,formatM2,formatM3,formatMetres,grainNote,hexColor,
+  highlightNotice,missingLabels,nextFocus,parseOptions,rowLetter,sectionTitle,sheetTotals,stripDesignation,summaryRows,
+  type CutlistData,type CutlistEdge,type CutlistHighlight,type CutlistPiece,type CutlistStrip} from '../sketchup_offline/ui/cutlistModel';
 
 const LABELS={arr:'Longitud del borde 1',aba:'Longitud del borde 2',izq:'Ancho del borde 1',der:'Ancho del borde 2'} as const;
 const edge=(side:CutlistEdge['side'],lengthMm:number,extra:Partial<CutlistEdge>={}):CutlistEdge=>({side,status:'none',lengthMm,...extra});
@@ -138,5 +138,20 @@ describe('listado de piezas: opciones y CSV',()=>{
     const tricky={...data,pieces:[piece('9/1',{name:'=SUMA(A1); "tapa"',furnitureName:'+Mueble',edges:[edge('arr',700),edge('aba',700),edge('izq',450),edge('der',450)]})]};
     const line=cutlistCsv(buildSections(tricky),[]).split('\r\n')[1];
     expect(line).toBe('Placa;Melamina Blanca;18;A;"\'=SUMA(A1); ""tapa""";\'+Mueble;;1;700;450;18;No;');
+  });
+
+  it('ver en SketchUp: recorrido de instancias y avisos de la fila',()=>{
+    // Todas → 1 → 2 → 3 → todas; hacia atrás al revés. Una sola instancia no se recorre.
+    const forward:(number|null)[]=[null];for(let i=0;i<4;i++)forward.push(nextFocus(forward.at(-1)!,3,1));
+    expect(forward).toEqual([null,0,1,2,null]);
+    expect([nextFocus(null,3,-1),nextFocus(0,3,-1),nextFocus(2,3,-1)]).toEqual([2,null,1]);
+    expect(nextFocus(null,1,1)).toBeNull();
+    expect([focusLabel(null,4),focusLabel(1,4)]).toEqual(['Todas (4)','2 de 4']);
+    const base:CutlistHighlight={pieceIds:['1/11','1/12'],missing:[],count:2,total:2,focus:null,selected:2,context:'opened',framed:true};
+    expect(highlightNotice(base)).toBe('2 piezas resaltadas y encuadradas en SketchUp.');
+    expect(highlightNotice({...base,focus:1,selected:1})).toBe('Pieza resaltada y encuadrada en SketchUp.');
+    expect(highlightNotice({...base,context:'mixed',selected:0})).toBe('2 piezas resaltadas y encuadradas en SketchUp. Están en módulos distintos: con ‹ › se seleccionan de a una.');
+    expect(highlightNotice({...base,pieceIds:['1/11'],count:1,total:3,missing:['1/12','1/13'],framed:false,context:'unavailable',selected:0}))
+      .toBe('Pieza resaltada en SketchUp. No se pudo mover la cámara: buscala por el contorno rojo. No se pudo abrir el grupo que la contiene: quedó marcada sin seleccionar. 2 piezas ya no están en el modelo: tocá Generar para volver a leer.');
   });
 });

@@ -8,7 +8,7 @@ import {createDemo,box} from '../lib/demo';
 import type {Project} from '../lib/model';
 const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf');
 const mono=readFileSync('sketchup_offline/assets/DejaVuSansMono.ttf');
-const LEGEND='Pendiente de pedido: la fila sigue en revisión en Biblioteca y pedidos; se imprime sin placa ni cantos.';
+const LEGEND='Pendiente de pedido: la fila sigue en revisión en Maderera; se imprime sin placa ni cantos.';
 const asymmetric:OrderReference={text:'TEST-18 / 18 mm',board:'TEST-18 / 18 mm',edgeMap:[1,1,0,2],principal:'EDGE-P',secondary:'EDGE-S',base:720,height:560};
 function sample(observations=''):Project{
  const project=createDemo();project.furniture=[project.furniture[0]];

@@ -39,6 +39,27 @@ class SupplierOrderCoverageTest < Minitest::Test
   def reasons(svc,d,id='1/11');(svc.validate(d,collect_errors:true).find { |e| e['id']==id }||{})['reasons']||[];end
   def refuse(svc,d,pattern);error=assert_raises(PlanosSanto::ExportError){svc.validate(d)};assert_match(pattern,error.message);error;end
 
+  # --- Biblioteca v4 (0.8.20): espesor por pieza y anchos estándar del canto --------------------
+  def test_thickness_never_blocks_and_each_lot_is_one_board_in_one_thickness
+    cat=catalog;document=Marshal.load(Marshal.dump(@session.document))
+    PlanosSanto::Exporter.each_node(document['furniture']) { |n| n['metadata']['localBounds']['max'][2]=n['metadata']['localBounds']['min'][2]+16 if n['id']=='1/13/12' }
+    svc=PlanosSanto::SupplierOrder.new(document,@session.fingerprint,cat);d=draft(svc,cat)
+    assert_equal [19.05,16.0],d['rows'].map { |row| svc.row_thickness(row) }
+    refute PlanosSanto::CatalogStore.in_list?(cat['items'][0]['thicknessesMm'],16.0),'16 mm no está en la lista de la placa'
+    assert_empty svc.validate(d,collect_errors:true),'Ningún espesor bloquea: la placa vale para todos y uno fuera de la lista solo se marca'
+    manifest=JSON.parse(File.read(File.join(svc.export(d,@dir)['directory'],'manifest.json')))
+    assert_equal [16.0,19.1],manifest['lots'].map { |lot| lot['thicknessMm'] }.sort,'Un lote por placa y espesor real'
+    assert_equal [16.0,19.05],svc.estimate(d)['lines'].map { |line| line['thicknessMm'] }.sort,'Cada línea del presupuesto lleva el espesor de la pieza'
+  end
+  def test_edge_blocks_only_when_every_standard_width_is_narrower_than_the_piece
+    cat=catalog;cat['items'][1]['widthsMm']=[10,45];svc=service(cat);d=draft(svc,cat)
+    assert_empty reasons(svc,d),'45 mm cubre la pieza de 19,05 mm: el canto se refila'
+    cat['items'][1]['widthsMm']=[10,12];svc=service(cat);d=draft(svc,cat)
+    assert_equal ['El canto principal (1) es más angosto que el espesor de la pieza con todos sus anchos (10, 12 mm) y la pieza mide 19,05 mm.'],reasons(svc,d)
+    cat=catalog;svc=service(cat);d=draft(svc,cat)
+    assert_equal [22,45],cat['items'][1]['widthsMm'];assert_empty reasons(svc,d),'Canto nuevo con 22 y 45: sin avisos'
+  end
+
   # --- Medidas es-AR -------------------------------------------------------
   def test_mm_uses_es_ar_thousands_dot_and_decimal_comma_without_trailing_zeros
     svc,_d=setup_order
@@ -110,7 +131,8 @@ class SupplierOrderCoverageTest < Minitest::Test
     row['grainPolicy']='rotate';assert_empty reasons(svc,d)
   end
   def test_edge_role_problems_width_unknown_compatibility_and_duplicates
-    cat=catalog(second:true);cat['items'][1]['widthMm']=nil;svc=service(cat);d=draft(svc,cat)
+    # Biblioteca v4: el canto incompleto es el que no tiene ningún ancho estándar.
+    cat=catalog(second:true);cat['items'][1].merge!('widthMm'=>nil,'widthsMm'=>[]);svc=service(cat);d=draft(svc,cat)
     assert_includes reasons(svc,d),'La ficha del canto «Canto ABS 22» está incompleta: falta ancho. Completala en la biblioteca.'
     cat=catalog(second:true);svc=service(cat);d=draft(svc,cat)
     d['rows'][0].merge!('secondaryId'=>cat['items'][2]['id'],'edgeMap'=>[1,2,0,0])
@@ -145,7 +167,8 @@ class SupplierOrderCoverageTest < Minitest::Test
     d['rows'][0]['axes']=[0,1];d['rows'][0]['flipX']='no';assert_equal ['Orientación de la pieza inválida.'],reasons(svc,d)
   end
   def test_board_without_thickness_or_format_and_unknown_material_kind
-    cat=catalog;cat['items'][0]['thicknessMm']='18';svc=service(cat);d=draft(svc,cat)
+    # Biblioteca v4: a la placa le falta espesor cuando su lista de espesores está vacía.
+    cat=catalog;cat['items'][0]['thicknessesMm']=[];svc=service(cat);d=draft(svc,cat)
     assert_includes reasons(svc,d),'La ficha de la placa «Melamina Blanca 18» está incompleta: falta espesor. Completala en la biblioteca.'
     cat=catalog;cat['items'][0]['lengthMm']=nil;svc=service(cat);d=draft(svc,cat)
     assert_equal ['La ficha de la placa «Melamina Blanca 18» está incompleta: falta largo. Completala en la biblioteca.'],reasons(svc,d)

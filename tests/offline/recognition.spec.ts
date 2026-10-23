@@ -36,7 +36,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frente persistido y un único guardado reversible',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();expect(before.names['11']).toBe('');expect(before.names['12']).toBe('');
  await page.getByLabel('Abreviatura de la obra').fill('VF');await page.getByLabel('Módulo de este mueble').fill('M01');await page.getByRole('button',{name:'Otro mueble 1 pieza',exact:true}).click();await page.getByLabel('Módulo de este mueble').fill('M02');await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
- await toPlanos(page);await expect(page.getByText('Frente sin marcar: el exterior usa los ejes del grupo.',{exact:false})).toBeVisible();
+ await toPlanos(page);await expect(page.getByText('Frente sin marcar: las vistas miran el frente propuesto.',{exact:false})).toBeVisible();
  await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
  // Planos never edits names: its link opens the proposals in Muebles.
  await page.getByRole('button',{name:'Proponer nombres en Muebles',exact:true}).click();await expect(page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Muebles',exact:true})).toHaveAttribute('aria-current','page');
@@ -52,9 +52,9 @@ test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frent
  await dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  const after=await snapshot();expect(saves).toBe(1);expect(after.names['11']).toBe('VF M01 Estante corregido');expect(after.names['12']).toBe('VF M01 Piso revisado');expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);expect(after.operations.filter(op=>op[0]==='start')).toHaveLength(1);
  expect(after.guide!.furniture[0].naming!.reference).toEqual({upAxis:2,frontAxis:0,frontSign:1,confirmed:true});expect(after.guide!.furniture[0].notes).toHaveLength(1);expect(after.guide!.furniture[0].naming!.reviews).toEqual(expect.arrayContaining([expect.objectContaining({id:'1/11',base:'Estante corregido'})]));
- // Planos orients the views by itself from the saved front (+X): nothing to rotate or confirm.
- await toPlanos(page);await expect(page.getByText('Exterior mirando el frente marcado en Muebles; interior desde el lado opuesto.',{exact:true})).toBeVisible();
- await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('90');
+ // Planos orients both views by itself to the saved front (+X), with the soft ¾ of 0.8.20 (30° off the front): nothing to rotate or confirm.
+ await toPlanos(page);await expect(page.getByText('Exterior e interior miran el frente marcado en Muebles; el interior, sin puertas ni frentes.',{exact:true})).toBeVisible();
+ await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue('75');
  await page.reload();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();const reopened=await openProposals(page);await expect(reopened.getByLabel('Frente local',{exact:true})).toHaveValue('0,1');await expect(reopened.getByLabel('Confirmé frente y vertical en el dibujo',{exact:true})).toHaveCount(0);await expect(reopened).toContainText('No hay piezas sin nombre pendientes');
  await reopened.getByRole('button',{name:'Cerrar',exact:true}).click();await send('__names_undo');const undone=await snapshot();expect(undone.names).toEqual(before.names);expect(undone.guide).toEqual(before.guide);expect(undone.geometryHash).toBe(before.geometryHash);
 });

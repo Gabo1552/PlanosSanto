@@ -1,3 +1,16 @@
+# Entrega 0.8.20 — pintura nítida, varios espesores, visor 3D, piezas que se ven y maderera sólo optimización, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.20-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, **respaldar `%LOCALAPPDATA%\PlanosSanto\` (la biblioteca migra a v4 y la 0.8.19 no la abre después)** y comprobar el `.sha256`. Sobre la 0.8.19:
+- Barra, tira y cursores del pincel más grandes y nítidos.
+- La placa vale para todos sus espesores; el despiece separa por el espesor real. Cantos con anchos 22 y 45.
+- Muebles: girar, acercar, mover y separar piezas en el visor. Planos: siempre de frente y dibujo 3D sin superposiciones. Etiquetas ocultas.
+- Piezas: clic encuadra y resalta en SketchUp; el resumen lleva a cada sección.
+- Maderera: sólo optimización por placa (material + espesor) y un TXT por placa.
+
+Validar con `docs/validacion-0820/ENCARGO_SESION_LOCAL_0820.md`. Producción no aprobada.
+
+---
+
 # Entrega 0.8.19 — Muebles y Planos separados, zócalo, cotas sin repetir y maderera optimizada, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.19-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, respaldar `%LOCALAPPDATA%\PlanosSanto\` y comprobar el `.sha256`. Sobre la 0.8.18:
@@ -11,18 +24,6 @@ Validar con `docs/validacion-0819/ENCARGO_SESION_LOCAL_0819.md`. Producción no 
 
 ---
 
-# Entrega 0.8.18 — listado de piezas y nitidez, PENDIENTE DE VALIDACIÓN REAL
-
-Instalar `PlanosSanto-0.8.18-candidata.rbz` sin descomprimirlo. Antes de actualizar, cerrar todas las ventanas de SketchUp, respaldar `%LOCALAPPDATA%\PlanosSanto\` y comprobar el `.sha256`. Sobre la 0.8.17:
-- Pestaña «Piezas» al estilo «Listado de partes»: resumen por material con Σ longitud, área y volumen, secciones de placa y de canto, avisos en rojo, Exportar CSV e Imprimir.
-- Miniaturas de materiales a 512 px con promedio de área (antes 256 px por vecino más cercano).
-- Barra y tira de pintura en la vista alineadas a píxel y con texto escalado.
-- Íconos de la barra en SVG.
-
-Validar con `docs/validacion-0818/ENCARGO_SESION_LOCAL_0818.md`. Producción no aprobada.
-
----
-
 # Versiones anteriores
 
-Las candidatas 0.8.7 a 0.8.17 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.
+Las candidatas 0.8.7 a 0.8.18 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.

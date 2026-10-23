@@ -2,7 +2,7 @@
 
 Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.19:** [RBZ](dist/PlanosSanto-0.8.19-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.19-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.19-Validacion-Local.zip) · [qué cambió](docs/validacion-0819/ANEXO_0819.md) · [encargo de validación](docs/validacion-0819/ENCARGO_SESION_LOCAL_0819.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.20:** [RBZ](dist/PlanosSanto-0.8.20-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.20-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.20-Validacion-Local.zip) · [qué cambió](docs/validacion-0820/ANEXO_0820.md) · [encargo de validación](docs/validacion-0820/ENCARGO_SESION_LOCAL_0820.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
 
 ## Módulos de la extensión
 
@@ -13,7 +13,7 @@ Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, bibliote
 | Muebles | Elegir muebles, marcar el frente, proponer y guardar nombres, codificar el despiece |
 | Planos | Vistas exterior/interior, cotas, notas y hoja A4 (el visor es la hoja) |
 | Piezas | Listado de piezas por material, CSV e impresión |
-| Maderera | Optimización estimada de placas, total de cantos, presupuesto y TXT para la maderera |
+| Maderera | Optimización estimada por placa (material + espesor) y un TXT por placa |
 
 ## Estructura
 
