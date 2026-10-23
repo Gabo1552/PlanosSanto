@@ -86,3 +86,6 @@ desktop.ini
 coverage/
 blob-report/
 playwright/.cache/
+
+# graphify: grafo del código regenerable (graphify update .); no se versiona.
+graphify-out/
