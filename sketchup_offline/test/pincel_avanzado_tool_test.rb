@@ -580,23 +580,25 @@ class PinturaEnVistaToolTest < Minitest::Test
     assert_equal [binding_of(@sheet)['catalogId'],OTHER['catalogId'],NUEVA['catalogId']],rows.map { |row| row['catalogId'] }
     assert_equal %w[ready ready installable],rows.map { |row| row['state'] }
     @tool.draw(@view)
-    # Bottom strip: dark band 72 px high (36 at scale 1), «Ningún material» and one wide cell per material.
-    assert_equal [[0,828],[1600,828],[1600,900],[0,900]],quads_at(828).first[1].map { |p| p.map(&:round) }
-    assert_equal PlanosSanto::SmartPaintTool::BAND,quads_at(828).first[2].to_a.first(3)
+    # Bottom strip (0.8.20): dark band 116 px high (58 at scale 1), «Ningún material» and one wide cell per material.
+    assert_equal [[0,784],[1600,784],[1600,900],[0,900]],quads_at(784).first[1].map { |p| p.map(&:round) }
+    assert_equal PlanosSanto::SmartPaintTool::BAND,quads_at(784).first[2].to_a.first(3)
     cells=layout[:items].select { |kind,| kind==:cell }
     assert_equal [0,1,2],cells.map { |_,index,| index }
-    assert_equal 414,(cells[0][2][2]-cells[0][2][0]).round,'420 px por celda menos la separación'
+    assert_equal 400,(cells[0][2][2]-cells[0][2][0]).round,'410 px por celda menos la separación'
+    assert_equal 96,(cells[0][2][3]-cells[0][2][1]).round,'celdas de 48 px lógicos de alto'
     assert_equal [:none,'none'],layout[:items].find { |kind,| kind==:none }.first(2)
     assert(@view.texts.any? { |_,text,| text=='Ningún material' })
     assert(@view.texts.any? { |_,text,| text=='Roble nuevo' })
-    # Active cell: orange border 3 px, drawn 1.5 px inside the cell (pixel
-    # centres, 0.8.18); the installable one has a corner mark (a white square quad).
-    active=@view.draws2d.find { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[1]==835.5 }
+    # Active cell: orange border 3 logical px (6 at scale 2, 0.8.20), drawn 3 px
+    # inside the cell (pixel edges, 0.8.18); the installable one has a corner
+    # mark (a white square quad).
+    active=@view.draws2d.find { |mode,points,color,width| mode==2 && width==6 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[1]==797 }
     refute_nil active,'borde naranja en la celda activa'
-    assert_equal cells[0][2][0]+1.5,active[1].first[0]
-    mark=@view.draws2d.find { |mode,points,color| mode==7 && points.first[1]==834 && points.first[0]>cells[2][2][0] && color.to_a.first(3)==[255,255,255] }
+    assert_equal cells[0][2][0]+3,active[1].first[0]
+    mark=@view.draws2d.find { |mode,points,color| mode==7 && points.first[1]==794 && points.first[0]>cells[2][2][0] && color.to_a.first(3)==[255,255,255] }
     refute_nil mark,'marca de esquina «se instala al elegirlo»'
-    assert_equal [[cells[2][2][2]-20,834],[cells[2][2][2],834],[cells[2][2][2],854],[cells[2][2][2]-20,854]],mark[1],'20 px a escala 2'
+    assert_equal [[cells[2][2][2]-24,794],[cells[2][2][2],794],[cells[2][2][2],818],[cells[2][2][2]-24,818]],mark[1],'24 px a escala 2'
     refute(@view.draws2d.any? { |mode,| mode==4 },'sin triángulos en la barra ni en la tira')
     @tool.onMouseMove(0,*center(:cell,2),@view)
     assert_match(/Roble nuevo\. Clic para usarlo \(se instala en el modelo\); no pinta\./,@events.last['message'])
@@ -616,12 +618,14 @@ class PinturaEnVistaToolTest < Minitest::Test
   def test_top_bar_has_the_three_tabs_with_the_active_one_in_orange_and_switches_without_picking
     build_vista(tool_options('sheet'));wide!;stack!(entry(@doors[0]))
     @tool.draw(@view)
-    assert_equal [[0,0],[1600,0],[1600,60],[0,60]],quads_at(0).first[1].map { |p| p.map(&:round) },'barra superior: 60 px a escala 2'
+    assert_equal [[0,0],[1600,0],[1600,80],[0,80]],quads_at(0).first[1].map { |p| p.map(&:round) },'barra superior: 80 px a escala 2 (40 lógicos)'
     tabs=layout[:items].select { |kind,| kind==:tab }
     assert_equal [['sheet','Pintar piezas'],['edge','Pintar cantos'],['remove_edge','Quitar canto']],tabs.map { |_,key,_,label| [key,label] }
     orange=@view.draws2d.select { |mode,_points,color| mode==7 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE }
     assert_equal 1,orange.length;assert_equal tabs[0][2][0].round,orange.first[1].first[0].round
-    assert(@view.texts.any? { |_,text,| text=='PINTAR' });assert(@view.texts.any? { |_,text,| text=='Tab cambia · Esc termina' })
+    assert(@view.texts.any? { |_,text,| text=='PINTAR' })
+    assert_nil layout[:bands][:hint],'800 px lógicos con texto de 13 pt: el atajo no entra y se omite'
+    with_scale(1.0) { assert_equal 'Tab cambia · Esc termina',@tool.ui_layout(@view)[:bands][:hint],'a 100 % entra' }
     assert_nil layout[:bands][:sub],'en Pintar piezas no hay 1 · 2 · 4'
     picks=@picker.picks
     @tool.onMouseMove(0,*center(:tab,'edge'),@view)
@@ -631,12 +635,12 @@ class PinturaEnVistaToolTest < Minitest::Test
     assert_nil @tool.status['options']['materialUuid'];assert_match(/Elegí un material/,@events.last['message'])
     assert_equal ['edge'],@recent_calls.drop(1),'the strip follows the new mode'
     # Edge mode: a light band «Cantos por clic 1 2 4» under the tabs.
-    assert_equal [0,60,1600,112],layout[:bands][:sub].map(&:round)
+    assert_equal [0,80,1600,156],layout[:bands][:sub].map(&:round)
     click_ui(:count,'count4')
     assert_equal 4,@tool.status['options']['edgeCount'];assert_equal 4,@remembered.last['edgeCount']
     @view.draws2d.clear;@tool.draw(@view)
     four=item(:count,'count4')[2]
-    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==2 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0]==four[0]+1 })
+    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==4 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0]==four[0]+2 })
     click_ui(:tab,'edge')
     assert_match(/ya está activo/,@events.last['message'])
     assert_equal picks,@picker.picks;assert_empty @model.operations
@@ -705,17 +709,20 @@ class PinturaEnVistaToolTest < Minitest::Test
     assert_match(/Sin material\. Elegí un material/,@events.last['message'])
     @view.draws2d.clear;@tool.draw(@view)
     none=item(:none,'none')[2]
-    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==3 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0]==none[0]+1.5 })
+    assert(@view.draws2d.any? { |mode,points,color,width| mode==2 && width==6 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::ORANGE && points.first[0]==none[0]+3 })
     assert_empty @model.operations
   end
 
   def test_many_materials_page_with_arrows_and_small_views_keep_the_tabs_inside
-    build_vista(tool_options('sheet')) # 800 px wide at scale 2: two cells per page
+    build_vista(tool_options('sheet')) # 800 px wide at scale 2 (400 logical): one 150 px cell per page
     cells=layout[:items].select { |kind,| kind==:cell }.map { |_,index,| index }
-    assert_equal [0,1],cells;refute_nil item(:nav,'next');assert_nil item(:nav,'prev')
-    click_ui(:nav,'next')
+    assert_equal [0],cells;refute_nil item(:nav,'next');assert_nil item(:nav,'prev')
+    click_ui(:nav,'next');click_ui(:nav,'next')
     assert_equal [2],layout[:items].select { |kind,| kind==:cell }.map { |_,index,| index }
-    refute_nil item(:nav,'prev')
+    refute_nil item(:nav,'prev');assert_nil item(:nav,'next')
+    strip=layout[:bands][:strip]
+    assert layout[:items].all? { |_,_,(left,_,right)| left>=0 && right<=800 },'nada de la tira se sale de la vista'
+    assert_equal [0,484,800,600],strip
     click_ui(:cell,2);assert_equal [[NUEVA['catalogId'],'sheet']],@picked
     tabs=layout[:items].select { |kind,| kind==:tab }.map { |_,_,rect,| rect }
     assert tabs.all? { |left,_,right,| left>=0 && right<=800 },'las pestañas no desbordan la vista'
@@ -725,20 +732,20 @@ class PinturaEnVistaToolTest < Minitest::Test
   def test_swatch_text_keeps_contrast_and_long_names_are_shortened
     tool=build_vista(tool_options('sheet'))
     assert_equal [255,255,255],tool.contrast([40,30,20]);assert_equal PlanosSanto::SmartPaintTool::DARK_TEXT,tool.contrast([240,240,235])
-    assert_equal 'Melamina B…',tool.fit_text(@view,'Melamina Blanca Texturada',150)
-    assert_equal 'Corto',tool.fit_text(@view,'Corto',150)
+    assert_equal 'Melamina B…',tool.fit_text(@view,'Melamina Blanca Texturada',220) # 13 pt at scale 2: ~19 px per character
+    assert_equal 'Corto',tool.fit_text(@view,'Corto',220)
   end
 
   def test_the_bars_follow_ui_scale_factor
     build_vista(tool_options('edge'));wide!
-    assert_equal [0,0,1600,60],layout[:bands][:top].map(&:round)
-    assert_equal 48,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
+    assert_equal [0,0,1600,80],layout[:bands][:top].map(&:round)
+    assert_equal 60,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
     UI.singleton_class.send(:alias_method,:pav_scale_was,:scale_factor)
     UI.define_singleton_method(:scale_factor) { 1.0 }
     begin
-      assert_equal [0,0,1600,30],layout[:bands][:top].map(&:round)
-      assert_equal [0,864,1600,900],layout[:bands][:strip].map(&:round)
-      assert_equal 24,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
+      assert_equal [0,0,1600,40],layout[:bands][:top].map(&:round)
+      assert_equal [0,842,1600,900],layout[:bands][:strip].map(&:round)
+      assert_equal 30,(item(:count,'count1')[2][2]-item(:count,'count1')[2][0]).round
     ensure
       UI.singleton_class.send(:alias_method,:scale_factor,:pav_scale_was)
     end
@@ -810,15 +817,18 @@ class PinturaEnVistaToolTest < Minitest::Test
       assert(@view.texts.any? { |_,text,| text=='Recientes · clic o 1–6' })
     end
   end
+  # 0.8.20 (Gabriel: «muy pixelado y chico»): 13 pt labels (17 logical px of
+  # em, 10 px in 0.8.19) and one adjustment point, font_size(view,pt).
   def test_text_size_follows_ui_scale_factor_and_uses_a_readable_font
-    { 1.0=>[10,11],1.25=>[13,14],1.5=>[15,17],2.0=>[20,22] }.each do |scale,(label,tooltip)|
+    { 1.0=>[17,19],1.25=>[22,23],1.5=>[26,28],2.0=>[35,37] }.each do |scale,(label,count)|
       with_scale(scale) do
         build_vista(tool_options('edge'));wide!;stack!(entry(@doors[0]))
         @tool.onMouseMove(0,*center(:count,'count1'),@view);@tool.draw(@view)
         sizes=@view.texts.to_h { |_,text,options| [text,options[:size]] }
         assert_equal label,sizes['Cantos por clic'],"etiquetas a escala #{scale}"
         assert_equal label,sizes['Pintar piezas'];assert_equal label,sizes['PINTAR']
-        assert_equal tooltip,sizes[@tool.bar_hint('count1')],"globo a escala #{scale}"
+        assert_equal count,sizes['1'],"1 2 4 a escala #{scale}"
+        assert_equal label,sizes[@tool.bar_hint('count1')],"globo a escala #{scale}"
         assert @view.texts.all? { |_,_,options| options[:size].is_a?(Integer) }
       end
     end
@@ -833,7 +843,17 @@ class PinturaEnVistaToolTest < Minitest::Test
   class BoundsView < PavWideView
     Bounds=Struct.new(:width,:height)
     attr_reader :measured
-    def text_bounds(_point,text,options);(@measured||=[]) << [text,options];Bounds.new(text.length*options[:size]*0.55,options[:size]*1.3);end
+    # px per :size unit as this double's SketchUp would draw it (0.55 em per character).
+    def unit;1.0;end
+    def text_bounds(_point,text,options);(@measured||=[]) << [text,options];Bounds.new(text.length*options[:size]*0.55*unit,options[:size]*1.3*unit);end
+  end
+  # A SketchUp that scales :size by the display itself (×UI.scale_factor).
+  class DpiBoundsView < BoundsView
+    def unit;UI.scale_factor;end
+  end
+  # A SketchUp whose :size is in points (×4/3) and scaled by the display.
+  class PointBoundsView < BoundsView
+    def unit;UI.scale_factor*4.0/3;end
   end
   def test_centred_labels_use_text_bounds_and_start_on_a_whole_pixel
     with_text_constants do
@@ -843,12 +863,129 @@ class PinturaEnVistaToolTest < Minitest::Test
         drawn=@view.texts.find { |_,text,| text=='Pintar piezas' }
         refute_nil drawn
         point,_,options=drawn
-        width='Pintar piezas'.length*13*0.55
+        # Ten digits at size 100 measure 550 px: 0.982 px per unit; 13 pt × 4/3 × 1.25 = 21.7 px -> size 22.
+        assert_equal 22,options[:size]
+        width='Pintar piezas'.length*22*0.55
         assert_equal [((left+right)/2-width/2.0).round,(top+bottom)/2],point.first(2)
         assert_equal TextAlignLeft,options[:align];assert_equal TextVerticalAlignCenter,options[:vertical_align]
-        assert(@view.measured.any? { |text,measured| text=='Pintar piezas' && measured[:size]==13 },'se mide con la misma fuente que se dibuja')
+        assert(@view.measured.any? { |text,measured| text=='Pintar piezas' && measured[:size]==22 },'se mide con la misma fuente que se dibuja')
+        assert(@view.measured.any? { |text,measured| text=='0000000000' && measured[:size]==100 },'calibra con diez dígitos a tamaño 100')
         assert_sharp_drawing('con text_bounds')
       end
+    end
+  end
+  # Hypothesis (a) of 0.8.20: whatever SketchUp does with :size (pixels,
+  # points, scaled by the display or not), the label ends at the same em in
+  # view pixels: never scaled twice (too big) nor not at all (too small).
+  def test_the_em_on_screen_is_the_same_whatever_sketchup_does_with_size
+    [1.0,1.5,2.0].each do |scale|
+      with_scale(scale) do
+        ems=[BoundsView,DpiBoundsView,PointBoundsView].map do |klass|
+          build_vista(tool_options('sheet'));@view=klass.new(@picker);@tool.draw(@view)
+          size=@view.texts.find { |_,text,| text=='Pintar piezas' }[2][:size]
+          size*0.982*@view.unit # view pixels of em the double would draw
+        end
+        target=13*4.0/3*scale
+        ems.each { |em| assert_in_delta target,em,0.8*@view.unit,"em a escala #{scale}: #{ems.inspect}" }
+      end
+    end
+  end
+  def test_a_nonsense_measure_falls_back_to_pixels
+    zero=Class.new(BoundsView) { def text_bounds(_point,_text,_options);Bounds.new(0,0);end }
+    with_scale(1.5) do
+      build_vista(tool_options('sheet'));@view=zero.new(@picker);@tool.draw(@view)
+      assert_equal 26,@view.texts.find { |_,text,| text=='Pintar piezas' }[2][:size]
+    end
+  end
+  # Hypothesis (d): borders and the tooltip box follow the scale; tooltip
+  # light-on-dark beside the cursor badge, inside the view.
+  def test_borders_scale_and_the_tooltip_is_a_dark_box_inside_the_view
+    with_scale(1.5) do
+      build_vista(tool_options('sheet'));wide!;stack!(entry(@doors[0]))
+      @tool.onMouseMove(0,1590,450,@view);@tool.draw(@view)
+      box=@view.draws2d.select { |mode,_points,color| mode==7 && color.to_a.first(3)==PlanosSanto::SmartPaintTool::BAND }.last
+      refute_nil box,'globo con fondo oscuro'
+      xs=box[1].map(&:first);assert_operator xs.max,:<=,1600,'el globo no se sale por la derecha'
+      assert_operator xs.max,:<,1590,'cerca del borde derecho va a la izquierda del cursor'
+      line1=@view.texts.find { |_,text,| text.start_with?('Puerta 1') }
+      assert_equal PlanosSanto::SmartPaintTool::LIGHT_TEXT,line1[2][:color].to_a.first(3)
+      assert_sharp_drawing('globo a 1,5')
+      cells=@view.draws2d.select { |mode,_,_,width| mode==2 && width }.map { |_,_,_,width| width }.uniq.sort
+      assert_includes cells,2,'borde de 1 px lógico = 2 px a 150 %'
+      assert_includes cells,5,'borde activo de 3 px lógicos = 5 px a 150 % (4,5 redondeado)'
+    end
+  end
+  # Hypothesis (c): real texture thumbnails in the swatches (2020+ API),
+  # cropped without stretching, released on deactivate; flat colour otherwise.
+  class TextureView < PavWideView
+    attr_reader :loaded,:released,:textured
+    def initialize(picker);super;@loaded=[];@released=[];@textured=[];end
+    def load_texture(rep);@loaded << rep;700+@loaded.length;end
+    def release_texture(id);@released << id;true;end
+    def draw2d(mode,points,**options)
+      return super(mode,points) if options.empty?
+      @textured << [mode,points.map { |p| p.to_a.first(2) },options]
+    end
+  end
+  FakeRep=Struct.new(:width,:height)
+  class FakeTexture
+    def initialize(width,height);@width=width;@height=height;end
+    def image_width;@width;end
+    def image_height;@height;end
+    def image_rep(_colorize=false);FakeRep.new(@width,@height);end
+  end
+  def test_swatches_draw_the_material_texture_and_fall_back_to_colour
+    @sheet.define_singleton_method(:texture) { FakeTexture.new(1024,512) }
+    build_vista(tool_options('sheet'));@view=TextureView.new(@picker);@tool.draw(@view);@tool.draw(@view)
+    assert_equal 1,@view.loaded.length,'una textura por material y sesión'
+    mode,points,options=@view.textured.first
+    assert_equal 7,mode;assert_equal 701,options[:texture]
+    cell=item(:cell,0)[2];assert_equal [[cell[0],cell[1]],[cell[2],cell[1]],[cell[2],cell[3]],[cell[0],cell[3]]],points
+    uvs=options[:uvs];assert_equal 4,uvs.length
+    aspect=(cell[2]-cell[0]).to_f/(cell[3]-cell[1])
+    assert_in_delta 1.0,uvs[1][0]-uvs[0][0],1e-9,'imagen 2:1 en celda más ancha: todo el ancho'
+    assert_in_delta 2.0/aspect,uvs[0][1]-uvs[3][1],1e-9,'y el centro de su alto, sin estirar'
+    assert(@view.draws2d.any? { |m,_,color| m==7 && color.to_a.first(3)==[10,20,30] },'la muestra sin material en el modelo sigue con su color plano')
+    @tool.deactivate(@view);assert_equal [701],@view.released
+  end
+  def test_without_load_texture_or_with_a_failure_the_swatch_is_flat
+    [lambda { raise IOError,'sin imagen' },lambda { FakeTexture.new(8192,8192) }].each do |texture|
+      @sheet.define_singleton_method(:texture,&texture)
+      build_vista(tool_options('sheet'));@view=TextureView.new(@picker);@tool.draw(@view);@tool.draw(@view)
+      assert_empty @view.textured;assert_empty @view.loaded
+      color=@sheet.color.then { |c| [c.red,c.green,c.blue] }
+      assert(@view.draws2d.any? { |m,points,rgb| m==7 && points.first==item(:cell,0)[2].first(2) && rgb.to_a.first(3)!=[255,255,255] },"color plano: #{color.inspect}")
+    end
+    build_vista(tool_options('sheet'));@tool.draw(@view) # PavWideView: no load_texture
+    assert(@view.draws2d.any? { |m,points| m==7 && points.first==item(:cell,0)[2].first(2) })
+  end
+  def png_size(path);File.binread(path,24)[16,8].unpack('NN');end
+  def test_every_cursor_has_svg_32_and_64_px_versions_with_the_same_drawing
+    folder=File.expand_path('../cursors',__dir__)
+    PlanosSanto::SmartPaintTool::CURSORS.each_value do |name|
+      base=name.delete_suffix('.png')
+      assert_equal [32,32],png_size(File.join(folder,name)),name
+      assert_equal [64,64],png_size(File.join(folder,"#{base}-64.png")),name
+      svg=File.read(File.join(folder,"#{base}.svg"),encoding:'UTF-8')
+      assert svg.start_with?('<?xml'),name;assert_includes svg,'viewBox="0 0 32 32"'
+      refute_match(/<(?:script|style|text|image|filter)\b/,svg,'SVG simple: solo formas')
+      assert_includes svg,'<rect x="6" y="6" width="2" height="2" fill="#111111"/>','punto activo: el centro de la cruz en (7,7)'
+    end
+  end
+  # Cursors (0.8.20): SVG on Windows, 64 px at >= 150 % without it, 32 px otherwise.
+  def test_cursor_file_prefers_the_svg_on_windows_and_scales_the_png_hot_spot
+    klass=PlanosSanto::SmartPaintTool
+    assert_equal ['paint-piece.png',7,7],klass.cursor_file('piece').then { |path,x,y| [File.basename(path),x,y] },'macOS / sin plataforma: PNG de 32'
+    Sketchup.singleton_class.send(:define_method,:platform) { :platform_win }
+    begin
+      assert_equal ['paint-edge.svg',7,7],klass.cursor_file('edge').then { |path,x,y| [File.basename(path),x,y] }
+      original=File.method(:file?)
+      File.stub(:file?,lambda { |path| path.to_s.end_with?('.svg') ? false : original.call(path) }) do
+        assert_equal ['paint-edge-64.png',14,14],klass.cursor_file('edge').then { |path,x,y| [File.basename(path),x,y] },'escala 2 sin SVG'
+        with_scale(1.25) { assert_equal ['paint-edge.png',7,7],klass.cursor_file('edge').then { |path,x,y| [File.basename(path),x,y] } }
+      end
+    ensure
+      Sketchup.singleton_class.send(:remove_method,:platform)
     end
   end
 

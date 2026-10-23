@@ -73,6 +73,14 @@ class MaterialSampleToolTest < Minitest::Test
   def hover; @tool.onMouseMove(0,12,34,@view); end
   def click(flags=0); @tool.onLButtonDown(flags,12,34,@view); end
 
+  # 0.8.20: the toolbar eyedropper uses the brush's dropper cursor.
+  def test_toolbar_eyedropper_uses_the_dropper_cursor
+    assert_equal 'sample', @tool.cursor_name
+    path, x, y = PlanosSanto::SmartPaintTool.cursor_file(@tool.cursor_name)
+    assert File.file?(path), path
+    assert_equal [7, 7], [x, y]
+  end
+
   def test_hover_and_overlay_are_readonly_without_selecting_a_material
     before=snapshot
     @tool.activate;hover;@tool.draw(@view)
