@@ -119,9 +119,10 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  expect(await page.locator('polygon[data-piece]').first().getAttribute('points')).not.toBe(original);
  await page.getByRole('button',{name:'Rotar con el mouse',exact:true}).click();
  await page.locator('.diagram').scrollIntoViewIfNeeded();
- const svg=await page.locator('.diagram').boundingBox();
+ const svg=await page.locator('.diagram').boundingBox(),startYaw=Number(await page.getByRole('slider',{name:'Giro horizontal',exact:true}).inputValue());
  await page.mouse.move(svg!.x+svg!.width*.75,svg!.y+svg!.height*.8);await page.mouse.down();await page.mouse.move(svg!.x+svg!.width*.75+20,svg!.y+svg!.height*.8-4,{steps:3});await page.mouse.up();
- const yaw=Number(await page.getByRole('slider',{name:'Giro horizontal',exact:true}).inputValue());expect(yaw).toBeGreaterThan(1);
+ // 0.8.20: the guide starts at the soft ¾ (yaw −15 for this front); dragging right turns it further.
+ const yaw=Number(await page.getByRole('slider',{name:'Giro horizontal',exact:true}).inputValue());expect(yaw).toBeGreaterThan(startYaw+1);
  await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue(String(yaw));
  await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
  // IDs start hidden in the A4 (0.8.19): showing and hiding them again saves the explicit choice.
@@ -279,7 +280,8 @@ test('clic sobre geometría encuadrada selecciona la pieza y guarda la flecha en
   for(const node of [...nodes].reverse()){
    const polygon=node as SVGPolygonElement,svg=polygon.ownerSVGElement!;
    const coords=(polygon.getAttribute('points')||'').split(' ').map(pair=>pair.split(',').map(Number));
-   const point=svg.createSVGPoint();point.x=coords.reduce((sum,p)=>sum+p[0],0)/3;point.y=coords.reduce((sum,p)=>sum+p[1],0)/3;
+   // 0.8.20: a face is one polygon per plane (quads, not triangles): its centroid is the mean of its corners.
+   const point=svg.createSVGPoint();point.x=coords.reduce((sum,p)=>sum+p[0],0)/coords.length;point.y=coords.reduce((sum,p)=>sum+p[1],0)/coords.length;
    const screen=point.matrixTransform(svg.getScreenCTM()!);
    if(document.elementFromPoint(screen.x,screen.y)===polygon)return {x:screen.x,y:screen.y,id:polygon.getAttribute('data-piece')!};
   }

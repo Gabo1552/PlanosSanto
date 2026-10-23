@@ -1,7 +1,7 @@
 'use client';
-import { useMemo, type PointerEvent } from 'react';
+import { Fragment, useMemo, type PointerEvent } from 'react';
 import { Ray, Vector3 } from 'three';
-import { makeScene, pickAnchor, type Point, type View } from '@/lib/scene';
+import { makeScene, pickAnchor, type Face, type Point, type View } from '@/lib/scene';
 import { bounds, type Furniture, type Piece, type Vec3 } from '@/lib/model';
 import { sheetCaption } from '@/lib/sheet';
 import DimensionLayer from './DimensionLayer';
@@ -21,8 +21,15 @@ function anchorIn(scene:ReturnType<typeof makeScene>,p:Piece,screen:Point):Vec3{
   }
   return (nearest||bounds(p.mesh).getCenter(new Vector3())).toArray();
 }
-type Props={ fit?:boolean; highlight?:boolean; furniture:Furniture; view?:View; layout?:'editor'|'sheet'; selected?:string; print?:boolean; paper?:boolean; scene?:ReturnType<typeof makeScene>; onOrbit?:(delta:[number,number])=>void; onMoveDimension?:(pieceId:string,role:Dimension['role'],delta:[number,number])=>void; onHideDimension?:(pieceId:string,role:Dimension['role'])=>void; onPick?:(pieceId:string,anchor:Vec3)=>void; onMove?:(noteId:string,position:[number,number])=>void; onNote?:(id:string)=>void };
-export default function Diagram({furniture:f,view='front',layout='editor',selected,print=false,paper=false,scene:suppliedScene,onPick,onMove,onNote,onHideDimension,onMoveDimension,onOrbit,fit=false,highlight=false}:Props) {
+/** `pickFaces` false leaves face clicks to a parent (the Muebles viewer tells a click from a drag); ID labels still pick. `caption` false drops the footer line. */
+/** Consecutive faces of the same piece (makeScene emits each piece's faces together). */
+function pieceRuns(faces:Face[]):Face[][]{
+  const runs:Face[][]=[];
+  for(const face of faces){const last=runs[runs.length-1];if(last&&last[0].pieceId===face.pieceId)last.push(face);else runs.push([face]);}
+  return runs;
+}
+type Props={ fit?:boolean; highlight?:boolean; pickFaces?:boolean; caption?:boolean; furniture:Furniture; view?:View; layout?:'editor'|'sheet'; selected?:string; print?:boolean; paper?:boolean; scene?:ReturnType<typeof makeScene>; onOrbit?:(delta:[number,number])=>void; onMoveDimension?:(pieceId:string,role:Dimension['role'],delta:[number,number])=>void; onHideDimension?:(pieceId:string,role:Dimension['role'])=>void; onPick?:(pieceId:string,anchor:Vec3)=>void; onMove?:(noteId:string,position:[number,number])=>void; onNote?:(id:string)=>void };
+export default function Diagram({furniture:f,view='front',layout='editor',selected,print=false,paper=false,scene:suppliedScene,onPick,onMove,onNote,onHideDimension,onMoveDimension,onOrbit,fit=false,highlight=false,pickFaces=true,caption=true}:Props) {
   const scene=useMemo(()=>suppliedScene||makeScene(f,{view,layout}),[f,suppliedScene,view,layout]);
   const groups=useMemo(()=>groupedPieces(f),[f]);
   const selectedIds=useMemo(()=>new Set(f.presentation?.guide?(selected?[selected]:[]):groups.find(group=>group.some(p=>p.id===selected))?.map(p=>p.id)||[]),[groups,selected,f.presentation?.guide]);
@@ -42,7 +49,7 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
     return p.matrixTransform(svg.getScreenCTM()!.inverse());
   }
   function pick(e:PointerEvent<SVGElement>,id:string) {
-    if(onOrbit||!onPick) return;
+    if(onOrbit||!onPick||!pickFaces) return;
     const p=f.pieces.find(p=>p.id===id)!;
     onPick(id,suppliedScene?anchorIn(suppliedScene,p,point(e)):pickAnchor(f,p,point(e),{view,layout}));
   }
@@ -54,7 +61,12 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
     <defs><marker id={`arrow-${f.id}-${view}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4d78"/></marker></defs>
     <rect x={fitted?-10000:0} y={fitted?-10000:0} width={fitted?20000:scene.width} height={fitted?20000:scene.height} fill={print||paper?'#ffffff':'#f8f8f4'}/>
     {!print&&!paper && <g stroke="#e8e9e2" strokeWidth="1">{Array.from({length:24},(_,i)=><path key={i} d={`M ${i*40} 0 V ${scene.height} M 0 ${i*40} H ${scene.width}`}/>)}</g>}
-    {scene.faces.map(face=><g key={face.key} opacity={!print&&highlight&&selected&&!selectedIds.has(face.pieceId)?0.22:1}><polygon data-piece={face.pieceId} points={face.points} fill={selectedIds.has(face.pieceId) && !print?'#c7daee':face.fill} stroke={selectedIds.has(face.pieceId) && !print?'#c7daee':face.fill} strokeWidth="0.4" onPointerDown={e=>pick(e,face.pieceId)} style={{cursor:onPick?'pointer':undefined}}/><path d={face.outline.join(' ')} stroke={!print&&selectedIds.has(face.pieceId)?'#1f609d':'#756e5c'} strokeWidth={!print&&selectedIds.has(face.pieceId)?'1.8':'0.8'} fill="none" pointerEvents="none"/></g>)}
+    {/* One group per piece, in painter's order; a convex board draws its edges once, after its faces. */}
+    {pieceRuns(scene.faces).map(run=>{const id=run[0].pieceId,chosen=!print&&selectedIds.has(id),edge=(d:string,key?:string)=><path key={key} d={d} stroke={chosen?'#1f609d':'#756e5c'} strokeWidth={chosen?'1.8':'0.8'} fill="none" pointerEvents="none"/>,solid=run.every(face=>face.convex);
+      return <g key={run[0].key} opacity={!print&&highlight&&selected&&!selectedIds.has(id)?0.22:1}>
+        {run.map(face=><Fragment key={face.key}><polygon data-piece={id} points={face.points} fill={chosen?'#c7daee':face.fill} stroke={chosen?'#c7daee':face.fill} strokeWidth="0.4" onPointerDown={e=>pick(e,id)} style={{cursor:onPick&&pickFaces?'pointer':undefined}}/>{!solid&&edge(face.outline.join(' '))}</Fragment>)}
+        {solid&&edge([...new Set(run.flatMap(face=>face.outline))].join(' '))}
+      </g>;})}
     <DimensionLayer dimensions={visibleScene.dimensions} phase="lines"/>
     {scene.notes.filter(n=>n.marker).map(note=><g key={note.id} data-note-marker={note.number}>
       <path d={`M${note.rect.x+12},${note.rect.y+12} L${note.target.x},${note.target.y}`} fill="none" stroke="#1f4d78" strokeWidth="1.8" markerEnd={`url(#arrow-${f.id}-${view})`}/>
@@ -85,13 +97,13 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
       </g>
     </g>)}
     {visibleScene.labels.map(label=><g key={label.pieceId} className="piece-label" data-label={label.code} aria-pressed={onPick?selectedIds.has(label.pieceId):undefined} role={onPick?'button':undefined} aria-label={onPick?labelNames.get(label.pieceId):undefined} tabIndex={onPick?0:undefined} onPointerDown={e=>{if(!onPick)return;e.stopPropagation();const p=f.pieces.find(p=>p.id===label.pieceId)!;onPick?.(p.id,p.mesh.vertices[0]);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const p=f.pieces.find(p=>p.id===label.pieceId)!;onPick?.(p.id,p.mesh.vertices[0]);}}}>
-      <path d={`M${label.anchor.x},${label.anchor.y} L${label.x+label.w/2},${label.y+12}`} stroke="#1f4d78" strokeWidth="1"/>
-      <circle cx={label.anchor.x} cy={label.anchor.y} r="2" fill="#1f4d78"/>
+      <path d={`M${label.anchor.x},${label.anchor.y} L${label.x+label.w/2},${label.y+12}`} stroke="#1f4d78" strokeWidth="1" pointerEvents="none"/>
+      <circle cx={label.anchor.x} cy={label.anchor.y} r="2" fill="#1f4d78" pointerEvents="none"/>
       <rect x={label.x} y={label.y} width={label.w} height={24} rx="4" fill={!print&&selectedIds.has(label.pieceId)?'#080c2e':'#ffffff'} stroke="#080c2e" strokeWidth="1.2"/>
       <text x={label.x+label.w/2} y={label.y+16.5} textAnchor="middle" fontFamily="Arial, sans-serif" fontWeight="700" fontSize="13" fill={!print&&selectedIds.has(label.pieceId)?'white':'#080c2e'}>{label.code}{label.quantity&&label.quantity>1?` ×${label.quantity}`:''}</text>
     </g>)}
     {/* Text and its opaque backing stay above every note/ID leader. */}
     <DimensionLayer dimensions={visibleScene.dimensions} phase="labels" onHide={print?undefined:onHideDimension} onMove={print?undefined:onMoveDimension}/>
-    {!fitted&&<text x="12" y={scene.height-16} fontFamily="Arial, sans-serif" fontSize="11" fill="#68746a">{f.presentation?.guide&&layout==='sheet'?sheetCaption(f,view):f.presentation?.guide?`${view==='front'?'EXTERIOR':'INTERIOR'} · ${dimensionCaption(f)}`:scene.sheet&&view==='back'?(f.presentation?.hideIds?'TRASERA · SIN COTAS':'TRASERA · MISMOS CÓDIGOS · SIN COTAS'):dimensionCaption(f)}</text>}
+    {!fitted&&caption&&<text x="12" y={scene.height-16} fontFamily="Arial, sans-serif" fontSize="11" fill="#68746a">{f.presentation?.guide&&layout==='sheet'?sheetCaption(f,view):f.presentation?.guide?`${view==='front'?'EXTERIOR':'INTERIOR'} · ${dimensionCaption(f)}`:scene.sheet&&view==='back'?(f.presentation?.hideIds?'TRASERA · SIN COTAS':'TRASERA · MISMOS CÓDIGOS · SIN COTAS'):dimensionCaption(f)}</text>}
   </svg>;
 }

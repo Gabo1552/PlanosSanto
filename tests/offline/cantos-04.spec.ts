@@ -58,9 +58,9 @@ test('cinco piezas asimétricas: el TXT de la placa y la referencia de la A4 mar
   await page.keyboard.press('Alt+5');await page.locator('details.save-options summary').click();
   await page.getByLabel('Incluir materiales y cantos del pedido revisado en el PDF').check();
   await expect(page.locator('.a4-order-pill')).toContainText('4 de 5 piezas');await expect(page.locator('.a4-order-pill')).toContainText('1 pendiente');
-  // Labels for the same five pieces, from the guides view.
-  await page.getByTestId('labels-generate').click();await expect(page.getByTestId('labels-status')).toContainText('5 etiquetas');
-  await expect(page.getByTestId('labels-download')).toHaveAttribute('href',/^blob:/);
+  // 0.8.20: the workshop does not use labels; Planos no longer shows their panel (labels.test.ts and the
+  // labels.spec.ts harness keep testing the generator and the panel themselves).
+  await expect(page.getByTestId('labels-panel')).toHaveCount(0);await expect(page.getByRole('button',{name:'Generar etiquetas'})).toHaveCount(0);
   reviewed.axes=[0,1];await send('order_save',{plan});
   // TXT of the board from «Maderera»: columns 6-9 are Arr·Aba·Izq·Der over base × height; canto 1 is the edge with
   // more metres on the board (EDGE-1 here), canto 2 the other one.
