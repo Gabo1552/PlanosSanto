@@ -105,7 +105,7 @@ class EdgeSidesTest < Minitest::Test
   Dir.mktmpdir do |directory|
    result=service.export(draft,directory);manifest=JSON.parse(File.read(File.join(result['directory'],'manifest.json')))
    assert_equal({'1/11'=>'manual'},manifest['lots'][0]['edgeSource']);refute manifest['production_ready']
-   assert system('python3','planos-santo-loop-068/scripts/validar_txt_maderera.py',File.join(result['directory'],'lote-01.txt'),out:File::NULL)
+   assert system('python3','scripts/validar_txt_maderera.py',File.join(result['directory'],'lote-01.txt'),out:File::NULL)
    assert_equal %w[1 0 2 0],File.read(File.join(result['directory'],'lote-01.txt')).chomp.split("\t")[5,4]
   end
  end

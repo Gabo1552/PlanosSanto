@@ -490,7 +490,7 @@ test('cantos por cara: se leen solos de las caras, se vinculan los materiales si
  await panel.getByRole('button',{name:'Exportar TXT…',exact:true}).click();await expect(panel.getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
  const folder=(await readdir(info.outputDir)).find(name=>name.startsWith('PlanosSanto-pedido-'))!,manifest=JSON.parse(await readFile(resolve(info.outputDir,folder,'manifest.json'),'utf8'));
  expect(manifest.lots).toHaveLength(1);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(Object.values(manifest.lots[0].edgeSource)).toEqual(['model','model','model']);expect(manifest.production_ready).toBe(false);
- const {execFileSync}=await import('node:child_process');execFileSync('python3',['planos-santo-loop-068/scripts/validar_txt_maderera.py',resolve(info.outputDir,folder,'lote-01.txt')]);
+ const {execFileSync}=await import('node:child_process');execFileSync('python3',['scripts/validar_txt_maderera.py',resolve(info.outputDir,folder,'lote-01.txt')]);
  const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);
  // Reversing the shown face keeps every edge on its physical face: left and right swap, nothing is re-read or lost.
  const sidesBefore=await values(),face=page.getByLabel('Cara mostrada de la vista 2D');await face.selectOption((await face.inputValue())==='1'?'-1':'1');
