@@ -983,7 +983,11 @@ module PlanosSanto
         stop_smart_tool(refresh:false)
         generation=@tool_generation || 0
         @smart_state={'active'=>false,'mode'=>'highlight','changed'=>false,'queuedCount'=>0,'message'=>''}
-        @smart_tool=PieceHighlightTool.new(@model,piece_id:data.fetch('pieceId'),
+        # 0.8.20 (Piezas): every instance of a row (`pieceIds`, optional `focus`)
+        # and, with `frame`, selection + camera on them; the view from before the
+        # first look is kept for `piece_highlight_restore`.
+        ids=data.key?('pieceIds') ? data['pieceIds'] : [data.fetch('pieceId')]
+        @smart_tool=PieceHighlightTool.new(@model,piece_ids:ids,focus:data['focus'],
           guard:lambda { raise ExportError,'El resaltado se canceló.' unless generation==(@tool_generation || 0);active! },
           on_event:lambda { |event| smart_event(event) if generation==(@tool_generation || 0) })
         begin
@@ -992,7 +996,20 @@ module PlanosSanto
           @smart_tool.stop;@smart_tool=nil
           raise
         end
-        {'toolState'=>smart_state}
+        result={'toolState'=>smart_state}
+        if data['frame']==true
+          @highlight_view=nil unless @highlight_view && @highlight_view[:model].equal?(@model)
+          @highlight_view ||= PieceHighlightTool.snapshot(@model)
+          result['highlight']=@smart_tool.show!.merge('canRestore'=>true)
+          result['toolState']=smart_state
+        end
+        result
+      when 'piece_highlight_restore'
+        raise ExportError,'Cambió el modelo activo. Volvé a analizar.' unless @model && Sketchup.active_model.equal?(@model)
+        snap=@highlight_view;@highlight_view=nil
+        stop_smart_tool(refresh:false) if @smart_tool.is_a?(PieceHighlightTool)
+        restored=snap && snap[:model].equal?(@model) ? {'restored'=>true}.merge(PieceHighlightTool.restore(@model,snap)) : {'restored'=>false}
+        restored.merge('toolState'=>smart_state)
       when 'smart_palette_load'
         active!
         # One paint palette at a time: opening Pintar in the main window closes the

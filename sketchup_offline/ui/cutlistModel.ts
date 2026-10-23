@@ -173,3 +173,30 @@ export function cutlistCsv(sections:CutlistSection[],edges:CutlistEdgeSection[])
       strip.lengthMm,strip.widthMm,info.thicknessMm,strip.approximate||strip.widthApprox?'Sí':'No',warning]);}
   return lines.map(line=>line.map(csvCell).join(';')).join('\r\n')+'\r\n';
 }
+
+// «Ver en SketchUp» (0.8.20): clic en una fila → acción Ruby `piece_highlight` con todas las instancias de la fila,
+// selección y encuadre de la cámara. Clics sucesivos (o ‹ ›) recorren las instancias de a una.
+export type CutlistHighlightContext='kept'|'opened'|'mixed'|'unavailable';
+/** Respuesta de Ruby (`highlight` de `piece_highlight` con `frame`). */
+export type CutlistHighlight={pieceIds:string[];missing:string[];count:number;total:number;focus:number|null;selected:number;context:CutlistHighlightContext;framed:boolean;canRestore?:boolean};
+
+/** Siguiente paso del recorrido: todas (null) → 1 → 2 → … → n → todas; hacia atrás al revés. */
+export function nextFocus(current:number|null,total:number,step:1|-1):number|null{
+  if(total<2)return null;
+  if(current==null)return step===1?0:total-1;
+  const next=current+step;
+  return next<0||next>=total?null:next;
+}
+/** Rótulo del recorrido: «Todas (4)» o «2 de 4». */
+export const focusLabel=(focus:number|null,total:number)=>focus==null?`Todas (${total})`:`${focus+1} de ${total}`;
+
+/** Aviso de la fila después de mostrar la pieza en SketchUp. */
+export function highlightNotice(result:CutlistHighlight):string{
+  const one=result.focus!=null||result.count===1;
+  const parts=[`${one?'Pieza resaltada':`${result.count} piezas resaltadas`}${result.framed?` y ${one?'encuadrada':'encuadradas'}`:''} en SketchUp.`];
+  if(!result.framed)parts.push('No se pudo mover la cámara: buscala por el contorno rojo.');
+  if(result.focus==null&&result.context==='mixed')parts.push('Están en módulos distintos: con ‹ › se seleccionan de a una.');
+  if(result.context==='unavailable')parts.push('No se pudo abrir el grupo que la contiene: quedó marcada sin seleccionar.');
+  if(result.missing.length)parts.push(`${result.missing.length===1?'1 pieza ya no está':`${result.missing.length} piezas ya no están`} en el modelo: tocá Generar para volver a leer.`);
+  return parts.join(' ');
+}
