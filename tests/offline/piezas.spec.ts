@@ -15,14 +15,14 @@ type Totals=Record<string,number|null>;type Cutlist={modelName:string;sections:{
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,calls:{action:string;data:Record<string,unknown>}[],replies:Map<string,Reply>,errors:string[];
 function native(message:string):Promise<Reply>{return new Promise((resolve,reject)=>{const msg=JSON.parse(message);pending.set(msg.id,{resolve,reject});child.stdin.write(message+'\n');});}
 async function send(action:string,data:unknown={}){const reply=await native(JSON.stringify({version:1,id:randomUUID(),action,data}));expect(reply.error).toBeNull();return reply.result;}
-async function boot(page:Page,folder:string){
+async function boot(page:Page,folder:string,mode='materials-cutlist'){
  await mkdir(folder,{recursive:true});pending=new Map();calls=[];replies=new Map();errors=[];await page.setViewportSize({width:1500,height:1100});
- child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,'materials-cutlist'],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
+ child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,mode],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  let stderr='';child.stderr.on('data',chunk=>{stderr+=String(chunk);});createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),entry=pending.get(reply.id);if(entry){pending.delete(reply.id);entry.resolve(reply);}});child.on('exit',()=>{for(const entry of pending.values())entry.reject(new Error(stderr));pending.clear();});
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  const reply=await native(raw);replies.set(msg.id,reply);if(['piece_highlight','cutlist','cutlist_csv'].includes(action))replies.set(action,reply);return reply;
+  const reply=await native(raw);replies.set(msg.id,reply);if(['piece_highlight','piece_highlight_restore','cutlist','cutlist_csv'].includes(action))replies.set(action,reply);return reply;
  });
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};window.__prints=[];window.print=function(){window.__prints.push(document.body.className);};'});
  page.on('pageerror',error=>errors.push(error.message));
@@ -63,10 +63,10 @@ test('Piezas: resumen, secciones de placa y canto, plegar, ocultar, filtrar, res
  await expect(summary.locator('thead th')).toHaveText(['Tipo','Espesor / Material','Cantidad','Σ','Longitud','Área','Volumen']);
  const rows=summary.locator('tbody tr');await expect(rows).toHaveCount(4);
  await expect(rows.locator('td.type .sr-only')).toHaveText(['Placa','Canto','Canto','Sin tipo definido']);
- await expect(cells(rows.nth(0))).toHaveText(['Placa','Jade synthetic / 19,05 mmSin ficha en la biblioteca','2','1,22 m','0,50 m²','0,009 m³']);
- await expect(cells(rows.nth(1))).toHaveText(['Canto','Canto de prueba / 19,05 mmSin ficha en la biblioteca','3','1,83 m','0,03 m²','—Sin espesor en la ficha']);
+ await expect(cells(rows.nth(0))).toHaveText(['Placa','Ir a la sección Jade synthetic / 19,05 mmSin ficha en la biblioteca','2','1,22 m','0,50 m²','0,009 m³']);
+ await expect(cells(rows.nth(1))).toHaveText(['Canto','Ir a la sección Canto de prueba / 19,05 mmSin ficha en la biblioteca','3','1,83 m','0,03 m²','—Sin espesor en la ficha']);
  await expect(rows.nth(1).locator('.is-approx')).toHaveAttribute('title','Ancho aproximado: espesor de la pieza');
- await expect(cells(rows.nth(2))).toHaveText(['Canto','Canto secundario de prueba / 19,05 mmSin ficha en la biblioteca','3','1,22 m','0,02 m²','—Sin espesor en la ficha']);
+ await expect(cells(rows.nth(2))).toHaveText(['Canto','Ir a la sección Canto secundario de prueba / 19,05 mmSin ficha en la biblioteca','3','1,22 m','0,02 m²','—Sin espesor en la ficha']);
  await expect(rows.nth(3).locator('td.material')).toContainText('Jade synthetic / Placa sin aplicar / 19,05 mm');
  await expect(rows.nth(3).locator('td.is-hatched')).toHaveCount(3);
  await expect(rows.nth(3).locator('.cutlist-material-name')).toHaveCSS('font-style','italic');
@@ -111,12 +111,12 @@ test('Piezas: resumen, secciones de placa y canto, plegar, ocultar, filtrar, res
  await view.getByRole('button',{name:'Expandir todo',exact:true}).click();
  await expect(groups.locator('button[aria-expanded="true"][aria-controls]')).toHaveCount(4);
 
- // Ojo: oculta la sección del listado (la fila del resumen queda atenuada); «Ir a la sección» la trae de vuelta.
+ // Ojo: oculta la sección del listado (la fila del resumen queda atenuada); un clic en la fila del resumen la trae de vuelta.
  await groups.nth(1).getByRole('button',{name:'Ocultar la sección Canto de prueba',exact:true}).click();
  await expect(groups).toHaveCount(3);await expect(rows.nth(1)).toHaveClass(/is-off/);
  await expect(summary.getByRole('button',{name:'Mostrar la sección Canto de prueba',exact:true})).toHaveAttribute('aria-pressed','false');
  await expect(view.locator('.cutlist-totals')).toHaveText('3 piezas · 2 materiales · 0,74 m² · 1,22 m de canto');
- await summary.getByRole('button',{name:'Ir a la sección Canto de prueba',exact:true}).click();
+ await rows.nth(1).locator('td.qty').click();
  await expect(groups).toHaveCount(4);await expect(view.getByRole('heading',{level:3,name:'Canto de prueba / 19,05 mm'})).toBeFocused();
  await expect(summary.getByRole('button',{name:'Mostrar la sección Canto de prueba',exact:true})).toHaveAttribute('aria-pressed','true');
  // Menú «⋮»: teclado y Escape; «Ocultar la sección» desde el menú.
@@ -140,14 +140,16 @@ test('Piezas: resumen, secciones de placa y canto, plegar, ocultar, filtrar, res
  await view.getByLabel('Buscar',{exact:true}).fill('no existe');await expect(view.getByText('Ninguna pieza coincide con el filtro.')).toBeVisible();await expect(summary).toHaveCount(0);
  await view.getByLabel('Buscar',{exact:true}).fill('');
 
- // Clic en una fila: resalta la pieza en SketchUp con la acción existente; también desde una tira de canto.
+ // Clic en una fila: SketchUp selecciona y encuadra la pieza (todas las instancias de la fila); también desde una tira de canto.
+ const highlights=()=>calls.filter(call=>call.action==='piece_highlight').map(call=>call.data);
  const row=board.locator('tbody tr').filter({hasText:'Lateral - Blanco'});
  await row.locator('td.num').first().click();
- await expect.poll(()=>calls.filter(call=>call.action==='piece_highlight').map(call=>call.data.pieceId)).toEqual(['1/11']);
+ await expect.poll(highlights).toEqual([{pieceIds:['1/11'],frame:true}]);
  await expect.poll(()=>replies.has('piece_highlight')?replies.get('piece_highlight')!.error:'pendiente').toBeNull();
  await expect(row).toHaveAttribute('aria-current','true');
+ await expect(row.locator('.cutlist-look')).toContainText('Pieza resaltada y encuadrada en SketchUp.');
  await tape.locator('tbody tr').nth(2).locator('td.no').click();
- await expect.poll(()=>calls.filter(call=>call.action==='piece_highlight').map(call=>call.data.pieceId)).toEqual(['1/11','2/21']);
+ await expect.poll(()=>highlights().map(data=>data.pieceIds)).toEqual([['1/11'],['2/21']]);
  await expect(row).not.toHaveAttribute('aria-current','true');await expect(tape.locator('tbody tr').nth(2)).toHaveAttribute('aria-current','true');
  // También con teclado, desde el nombre.
  await view.getByRole('button',{name:'Base ajena',exact:true}).focus();await page.keyboard.press('Enter');
@@ -190,9 +192,9 @@ test('Piezas: fichas vinculadas, «Ancho no definido», lápiz a Materiales y CS
  const rows=summary.locator('tbody tr');
  // Con la placa vinculada, la pieza que mezclaba materiales también resuelve su placa: ya no queda «?».
  await expect(rows.locator('td.type .sr-only')).toHaveText(['Placa','Canto','Canto']);
- await expect(cells(rows.nth(0))).toHaveText(['Placa','Melamina Jade / 19,05 mm','3','1,83 m','0,74 m²','0,014 m³']);
+ await expect(cells(rows.nth(0))).toHaveText(['Placa','Ir a la sección Melamina Jade / 19,05 mm','3','1,83 m','0,74 m²','0,014 m³']);
  // El canto sin ancho en la ficha: aviso rojo en la fila y en su sección, ancho aproximado en rojo.
- await expect(cells(rows.nth(1)).nth(1)).toHaveText('Canto ABS sin ancho / 0,8 mm x 19,05 mmAncho no definido');
+ await expect(cells(rows.nth(1)).nth(1)).toHaveText('Ir a la sección Canto ABS sin ancho / 0,8 mm x 19,05 mmAncho no definido');
  await expect(rows.nth(1).locator('.cutlist-warn')).toHaveText('Ancho no definido');
  await expect(cells(rows.nth(1)).locator('nth=5')).toHaveText('0,000 m³');
  expect(result.edgeSections[0]).toMatchObject({name:'Canto ABS sin ancho',missing:['ancho'],totals:{strips:3,lengthM:1.829,areaM2:0.035,volumeM3:0.00003}});
@@ -226,5 +228,90 @@ test('Piezas: fichas vinculadas, «Ancho no definido», lápiz a Materiales y CS
  await expect(rail(page,'Materiales')).toHaveAttribute('aria-current','page');
  const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});await expect(panel).toBeVisible();
  await expect(panel.getByRole('group',{name:'Materiales de biblioteca'}).getByRole('button',{name:/Melamina Jade/})).toHaveAttribute('aria-pressed','true');
+ expect(found).toEqual([]);
+});
+
+test('Piezas: el resumen lleva a cada sección y una fila de varias piezas se ve y se recorre en SketchUp',async({page},info)=>{
+ // Doble: un segundo «Lateral - Blanco» en otro módulo del mismo mueble (misma fila, Cant. 2) y una cámara sintética.
+ await boot(page,info.outputDir,'materials-cutlist-pair');const found:string[]=[];
+ const {view,summary,groups}=await openPieces(page);await page.setViewportSize({width:1500,height:560});
+ // axe arriba de todo: la barra de avisos fija de la ventana tapa lo que pasa por debajo al hacer scroll (no es de esta vista).
+ const audit=async(label:string)=>{await page.evaluate(()=>window.scrollTo(0,0));found.push(...await axe(page,label));};
+ const rows=summary.locator('tbody tr'),inspect=async()=>await send('__view_inspect') as {camera:Record<string,unknown>;transitions:(number|null)[];selection:number[];activePath:number[]};
+ const before=await inspect();expect(before).toMatchObject({transitions:[],selection:[],activePath:[]});
+
+ // Resumen → sección: clic en cualquier celda de la fila. Plegada se despliega, oculta se muestra, queda arriba y marcada un instante.
+ const sheetTitle=view.getByRole('heading',{level:3,name:'Jade synthetic / 19,05 mm'});
+ await view.getByRole('button',{name:'Plegar Jade synthetic / 19,05 mm',exact:true}).click();
+ await groups.nth(2).getByRole('button',{name:'Ocultar la sección Canto secundario de prueba',exact:true}).click();await expect(groups).toHaveCount(3);
+ await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
+ await rows.nth(0).locator('td.num').last().click();
+ await expect(sheetTitle).toBeFocused();await expect(groups.nth(0)).toHaveClass(/is-flash/);
+ await expect(view.getByRole('table',{name:'Piezas de Jade synthetic / 19,05 mm'})).toBeVisible();
+ // Arriba, debajo de la barra de avisos fija de la ventana (no la tapa).
+ const covered=async()=>{const bar=await page.locator('.ux-notices').boundingBox();return bar&&bar.height>0?bar.y+bar.height:0;};
+ await expect.poll(async()=>Math.round((await groups.nth(0).boundingBox())!.y-await covered())).toBeLessThan(30);
+ expect(Math.round((await groups.nth(0).boundingBox())!.y-await covered())).toBeGreaterThanOrEqual(8);
+ await expect(groups.nth(0)).not.toHaveClass(/is-flash/);
+ await rows.nth(2).locator('td.type').click();
+ await expect(groups).toHaveCount(4);await expect(view.getByRole('heading',{level:3,name:'Canto secundario de prueba / 19,05 mm'})).toBeFocused();
+ // Con teclado: el nombre del material es el botón; la flecha de la sección vuelve a su fila del resumen.
+ const link=summary.getByRole('button',{name:'Ir a la sección Canto de prueba / 19,05 mm',exact:true});
+ await expect(link).toHaveAccessibleDescription('Lleva a la sección con el detalle de este material.');
+ await link.focus();await page.keyboard.press('Enter');
+ await expect(view.getByRole('heading',{level:3,name:'Canto de prueba / 19,05 mm'})).toBeFocused();
+ await groups.nth(1).getByRole('button',{name:'Volver al resumen desde Canto de prueba',exact:true}).click();await expect(link).toBeFocused();
+ // Los botones de la fila (ojo, lápiz) no navegan: solo ocultan o editan.
+ await summary.getByRole('button',{name:'Mostrar la sección Canto de prueba',exact:true}).click();await expect(groups).toHaveCount(3);await expect(link).not.toBeFocused();
+ await summary.getByRole('button',{name:'Mostrar la sección Canto de prueba',exact:true}).click();await expect(groups).toHaveCount(4);
+ await audit('Resumen navegable');
+
+ // Clic en la pieza: una sola acción con TODAS las instancias de la fila, selección y encuadre.
+ const board=view.getByRole('table',{name:'Piezas de Jade synthetic / 19,05 mm'});
+ const row=board.locator('tbody tr').filter({hasText:'Lateral - Blanco'}),panel=row.locator('.cutlist-look');
+ await expect(row.locator('td.qty')).toHaveText('2');
+ const highlights=()=>calls.filter(call=>call.action==='piece_highlight').map(call=>call.data);
+ await row.locator('td.no').click();
+ await expect.poll(highlights).toEqual([{pieceIds:['1/11','1/13/14'],frame:true}]);
+ await expect(panel).toContainText('2 piezas resaltadas y encuadradas en SketchUp. Están en módulos distintos: con ‹ › se seleccionan de a una.');
+ await expect(panel.locator('.cutlist-look-count')).toHaveText('Todas (2)');
+ let state=await inspect();
+ // Cámara movida con transición; en módulos distintos la selección de Gabriel no se toca.
+ expect(state.transitions).toEqual([0.4]);expect(state.camera).not.toEqual(before.camera);expect(state).toMatchObject({selection:[],activePath:[]});
+ await audit('Pieza vista en SketchUp');
+ await page.screenshot({path:info.outputPath('piezas-ver-en-sketchup-SINTETICO.png'),fullPage:true});
+ // Otro clic en la misma fila: de a una («1 de 2»), con su grupo abierto y seleccionada.
+ await row.locator('td.num').first().click();
+ await expect(panel.locator('.cutlist-look-count')).toHaveText('1 de 2');await expect(panel).toContainText('Pieza resaltada y encuadrada en SketchUp.');
+ expect(highlights().at(-1)).toEqual({pieceIds:['1/11','1/13/14'],focus:0,frame:true});
+ state=await inspect();expect(state).toMatchObject({selection:[11],activePath:[1]});
+ // Flechas desde el nombre: la siguiente, dentro de «Interior estructural».
+ await row.getByRole('button',{name:'Lateral - Blanco',exact:true}).focus();await page.keyboard.press('ArrowRight');
+ await expect(panel.locator('.cutlist-look-count')).toHaveText('2 de 2');
+ await expect.poll(async()=>(await inspect()).selection).toEqual([14]);expect((await inspect()).activePath).toEqual([1,13]);
+ await panel.getByRole('button',{name:'Instancia siguiente',exact:true}).click();await expect(panel.locator('.cutlist-look-count')).toHaveText('Todas (2)');
+ await panel.getByRole('button',{name:'Instancia anterior',exact:true}).click();await expect(panel.locator('.cutlist-look-count')).toHaveText('2 de 2');
+ await expect(page.locator('[role=dialog],[role=alertdialog]')).toHaveCount(0);
+
+ // «Volver a la vista anterior»: la cámara, el grupo abierto y la selección de antes de mirar piezas.
+ await panel.getByRole('button',{name:'Volver a la vista anterior',exact:true}).click();
+ await expect.poll(()=>calls.filter(call=>call.action==='piece_highlight_restore').length).toBe(1);
+ await expect(panel).toContainText('Volviste a la vista anterior en SketchUp.');
+ await expect(view.getByRole('button',{name:'Volver a la vista anterior',exact:true})).toHaveCount(0);
+ state=await inspect();expect(state.camera).toEqual(before.camera);expect(state).toMatchObject({selection:[],activePath:[]});
+ expect(state.transitions.at(-1)).toBe(0.4);
+ // Después de volver, otro clic empieza de nuevo por todas.
+ await row.locator('td.no').click();await expect(panel.locator('.cutlist-look-count')).toHaveText('Todas (2)');
+ expect(highlights().at(-1)).toEqual({pieceIds:['1/11','1/13/14'],frame:true});
+
+ // Pieza borrada después de leer el listado: aviso en su fila, sin diálogos; «Volver a la vista anterior» sigue a mano.
+ await send('__delete_instance',{persistentId:12});
+ const base=board.locator('tbody tr').filter({hasText:/^A?Base/});
+ await base.locator('td.num').first().click();
+ await expect(base.locator('.cutlist-look.is-error')).toContainText('No se pudo mostrar en SketchUp: La pieza cambió o la ruta de instancia no es completa.');
+ await expect(base.getByRole('button',{name:'Volver a la vista anterior',exact:true})).toBeVisible();
+ await expect(page.locator('[role=dialog],[role=alertdialog]')).toHaveCount(0);
+ await audit('Pieza borrada');
+ expect(calls.some(call=>['save','order_save','names_apply','catalog_save','paint_apply'].includes(call.action))).toBe(false);
  expect(found).toEqual([]);
 });

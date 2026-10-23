@@ -26,10 +26,13 @@ class PieceHighlightToolTest < Minitest::Test
     PlanosSanto::PieceHighlightTool.new(@model,piece_id:path,guard:lambda { @allowed },on_event:lambda { |event| @events << event })
   end
   def snapshot
-    JSON.generate([@model.state,@model.active_path.map(&:persistent_id),@model.selection.map(&:persistent_id),
+    JSON.generate([@model.state,(@model.active_path || []).map(&:persistent_id),@model.selection.map(&:persistent_id),
       @model.all_instances.map { |e| [e.persistent_id,e.name,e.transformation.to_a,e.definition.entities.grep(Sketchup::Face).map { |f| [f.mesh.points.map(&:to_a),f.mesh.polygons,f.material&.entityID,f.back_material&.entityID] }] },@model.operations])
   end
   def test_all_own_faces_are_drawn_in_world_space_without_model_or_selection_changes
+    # Outside the open context the path is composed as is (inside it, see
+    # piece_highlight_view_test: SketchUp already reports world coordinates).
+    @model.active_path=nil
     before=snapshot;tool=build;tool.activate;tool.onMouseMove(0,2,3,@view);tool.draw(@view)
     assert_equal before,snapshot
     assert tool.status['active'];assert_equal 'highlight',tool.status['mode'];assert_equal ['1/11'],tool.status['hover']['affectedPaths']
@@ -88,7 +91,8 @@ class PieceHighlightToolTest < Minitest::Test
   def test_escape_click_deactivate_and_stop_clear_only_the_overlay
     tool=build;before=snapshot;tool.activate;tool.onKeyDown(27,0,0,@view)
     refute tool.status['active'];assert_nil @model.selected_tool;assert_equal before,snapshot
-    tool=build;tool.activate;tool.onLButtonDown(0,1,1,@view);refute tool.status['active']
+    # 0.8.20: a click no longer ends it (the click that brings SketchUp to the front erased it).
+    tool=build;tool.activate;tool.onLButtonDown(0,1,1,@view);assert tool.status['active'];tool.stop(@view)
     tool=build;tool.activate;tool.deactivate(@view);refute tool.status['active']
     tool=build;tool.activate;tool.stop(@view);refute tool.status['active'];assert_nil tool.status['hover']
     assert_equal before,snapshot;assert_empty @model.operations
