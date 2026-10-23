@@ -32,7 +32,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 // (la maderera es la optimización por placa: maderera-placas.spec.ts). Queda la biblioteca v2 de Materiales.
 test('biblioteca v2: alta desde valor sugerido y variante de espesor; la ficha dice qué le falta, sin aprobar nada',async({page},info)=>{
  await boot(page,info.outputDir);
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
  await panel.getByRole('button',{name:'Alta rápida desde valores sugeridos',exact:true}).click();
  const quick=panel.getByRole('group',{name:'Alta rápida desde valores sugeridos'});await expect(quick).toContainText('Con medidas sugeridas; completá el SKU.');
  await quick.getByLabel('Valor sugerido').selectOption('melamina-18-2750');await quick.getByLabel('Nombre (opcional)').fill('Melamina blanca');

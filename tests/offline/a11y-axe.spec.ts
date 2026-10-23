@@ -47,7 +47,7 @@ async function catalog(items:{name:string;kind:string;patch:Record<string,unknow
 async function openWorkshop(page:Page){
  await generate(page);await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();
  const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(panel).toBeVisible();return panel;
 }
 /** 0.8.20: la Maderera es la optimización de todas las placas del proyecto (sección del riel, sin diálogo). */

@@ -377,7 +377,7 @@ test('cancelar el informe de materiales no modifica el modelo ni la guía',async
 test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin tocar geometría',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();
  await writeFile(resolve(info.outputDir,'candidatos.json'),JSON.stringify({items:[{nombre_en_modelos:'Placa prueba E2E',tipo_opencutlist:'2'}]}));
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();
  await page.getByRole('button',{name:'Importar JSON…',exact:true}).click();
  await page.getByRole('button',{name:/Placa prueba E2E/}).click();
  await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, espesor, largo, ancho, veta');await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);
@@ -393,7 +393,7 @@ test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin toca
  await page.getByRole('button',{name:'Exportar copia…',exact:true}).click();await expect(page.getByRole('status')).toContainText('Copia de biblioteca exportada');
  const library=JSON.parse(await readFile(resolve(info.outputDir,'biblioteca-exportada.json'),'utf8'));expect(library.items[0].price).toBeNull();expect(library.items[0].approved).toBe(false);// la casilla vieja queda en el JSON por compatibilidad, sin usarse
  await page.getByRole('button',{name:'Cerrar biblioteca',exact:true}).click();await page.reload();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
  await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
  await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
  await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toContainText('Falta: espesor');

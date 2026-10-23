@@ -41,7 +41,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prompt nativo',async({page},info)=>{
  await boot(page,info.outputDir);await catalog([{name:'Placa existente',kind:'sheet',patch:{}},{name:'Canto existente',kind:'edge',patch:{}}]);
  let prompted=false;page.on('dialog',dialog=>{prompted=true;void dialog.dismiss();});
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
  const list=panel.getByRole('group',{name:'Materiales de biblioteca'});await expect(list.getByRole('button')).toHaveCount(2);
  await expect(list.locator('.workshop-badge',{hasText:'Incompleta'})).toHaveCount(2);
  await list.getByRole('button').first().focus();await page.keyboard.press('ArrowDown');
