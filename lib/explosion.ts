@@ -4,7 +4,17 @@ import {bounds, type Furniture} from './model';
 // Millimetre gaps between assembly layers, plus separation along each board's
 // own thickness normal. Never normalize a radial vector by the model diagonal:
 // that collapses short axes and makes long wardrobes fan out around the middle.
+// The viewer recomputes the scene on every frame of a drag: offsets are cached per pieces array and factor.
+const cache=new WeakMap<object,Map<number,Map<string,Vector3>>>();
 export function explodedOffsets(furniture:Furniture):Map<string,Vector3>{
+  if(furniture.explosion===0)return new Map(furniture.pieces.map(piece=>[piece.id,new Vector3()]));
+  const byFactor=cache.get(furniture.pieces)||new Map<number,Map<string,Vector3>>(),hit=byFactor.get(furniture.explosion);
+  if(hit)return new Map([...hit].map(([id,offset])=>[id,offset.clone()]));
+  const result=computeOffsets(furniture);
+  byFactor.set(furniture.explosion,result);cache.set(furniture.pieces,byFactor);
+  return new Map([...result].map(([id,offset])=>[id,offset.clone()]));
+}
+function computeOffsets(furniture:Furniture):Map<string,Vector3>{
   const pieces=furniture.pieces.map(piece=>{
     const transform=new Matrix4().fromArray(piece.transform),local=bounds(piece.mesh);
     const size=local.getSize(new Vector3()).toArray();

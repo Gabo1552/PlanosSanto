@@ -62,9 +62,9 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   await page.keyboard.press('Alt+5');await page.locator('details.save-options summary').click();
   await page.getByLabel('Incluir materiales y cantos del pedido revisado en el PDF').check();
   await expect(page.locator('.a4-order-pill')).toContainText('4 de 5 piezas');await expect(page.locator('.a4-order-pill')).toContainText('1 pendiente');
-  // Labels for the same five pieces, from the guides view.
-  await page.getByTestId('labels-generate').click();await expect(page.getByTestId('labels-status')).toContainText('5 etiquetas');
-  await expect(page.getByTestId('labels-download')).toHaveAttribute('href',/^blob:/);
+  // 0.8.20: the workshop does not use labels; Planos no longer shows their panel (labels.test.ts and the
+  // labels.spec.ts harness keep testing the generator and the panel themselves).
+  await expect(page.getByTestId('labels-panel')).toHaveCount(0);await expect(page.getByRole('button',{name:'Generar etiquetas'})).toHaveCount(0);
   reviewed.axes=[0,1];await send('order_save',{plan});
   // 2D view of the order, piece by piece.
   await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});

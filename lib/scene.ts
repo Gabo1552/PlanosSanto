@@ -12,10 +12,11 @@ export const WIDTH = 960, HEIGHT = 580;
 export type View = 'front'|'back';
 /**
  * `camera`, `offsets`, `explosion`, `zoom`, `pan` and `frame` serve the interactive viewer of Muebles: angles and
- * pieces moved only on screen (never stored). `labels`/`notes`/`dimensions` false skip that layer.
+ * pieces moved only on screen (never stored). `labels`/`notes`/`dimensions` false skip that layer; a set of ids
+ * labels only those pieces.
  * `frame: 'sphere'` fits the bounding sphere, so the drawing keeps its size while it turns.
  */
-export type SceneOptions = {view?:View;layout?:'editor'|'sheet';width?:number;height?:number;camera?:CameraAngles;offsets?:ReadonlyMap<string,Vector3>;explosion?:number;zoom?:number;pan?:[number,number];frame?:'bounds'|'sphere';labels?:boolean;notes?:boolean;dimensions?:boolean};
+export type SceneOptions = {view?:View;layout?:'editor'|'sheet';width?:number;height?:number;camera?:CameraAngles;offsets?:ReadonlyMap<string,Vector3>;explosion?:number;zoom?:number;pan?:[number,number];frame?:'bounds'|'sphere';labels?:boolean|ReadonlySet<string>;notes?:boolean;dimensions?:boolean};
 export function cameraBasis(view:View='front',angles?:CameraAngles){
   const sign=view==='front'?1:-1;
   const right=new Vector3(sign,sign,0).normalize();
@@ -145,7 +146,7 @@ const overlaps = (a: Rect,b: Rect,gap=5) => a.x < b.x+b.w+gap && a.x+a.w+gap > b
  * vertices without offsets, oriented triangle normals and fills, the outline edges, the face normals that can
  * separate it from another piece, its thickness normal and whether the board is convex.
  */
-type Prepared={world:Vector3[];normals:Vector3[];fills:string[];planes:string[];edges:{a:number;b:number;tris:number[];feature:boolean}[];axes:Vector3[];thin:Vector3;convex:boolean};
+type Prepared={world:Vector3[];normals:Vector3[];groups:{tris:number[];ring:number[];normal:Vector3;fill:string}[];groupOf:number[];edges:{a:number;b:number;tris:number[];feature:boolean}[];axes:Vector3[];thin:Vector3;convex:boolean};
 const preparedCache=new WeakMap<Piece,{transform:number[];mesh:Mesh;data:Prepared}>();
 const LIGHT=new Vector3(-0.3,-0.5,1).normalize();
 function prepared(p:Piece):Prepared{
@@ -159,8 +160,18 @@ function prepared(p:Piece):Prepared{
     const shade=Math.round(81+normal.dot(LIGHT)*9),material=p.mesh.faceMaterials?.[i].front,light=0.82+normal.dot(LIGHT)*0.15;
     return material?`rgb(${material.color.map(v=>Math.round(Math.max(0,Math.min(255,v*light)))).join(' ')})`:`hsl(37 27% ${shade}%)`;
   });
-  // Coplanar triangles with the same fill are drawn as one polygon (no hairline seams, half the SVG nodes).
-  const planes=normals.map((n,i)=>`${n.toArray().map(v=>Math.round(v*1e4)).join(',')}|${Math.round(world[p.mesh.triangles[i][0]].dot(n)*100)}|${fills[i]}`);
+  // Coplanar triangles with the same fill are drawn as one polygon (no hairline seams, half the SVG nodes); a plane
+  // whose border is not a single loop keeps its triangles. All triangles of a plane are visible or hidden together.
+  const byPlane=new Map<string,number[]>();
+  normals.forEach((n,i)=>{const key=`${n.toArray().map(v=>Math.round(v*1e4)).join(',')}|${Math.round(world[p.mesh.triangles[i][0]].dot(n)*100)}|${fills[i]}`,list=byPlane.get(key);if(list)list.push(i);else byPlane.set(key,[i]);});
+  const groups:Prepared['groups']=[],groupOf:number[]=[];
+  for(const list of byPlane.values()){
+    const ring=outlineLoop(list.map(i=>p.mesh.triangles[i]));
+    for(const part of ring?[{tris:list,ring}]:list.map(i=>({tris:[i],ring:[...p.mesh.triangles[i]]}))){
+      for(const i of part.tris)groupOf[i]=groups.length;
+      groups.push({...part,normal:normals[part.tris[0]],fill:fills[part.tris[0]]});
+    }
+  }
   const edgeMap=new Map<string,{a:number;b:number;tris:number[];feature:boolean}>();
   p.mesh.triangles.forEach((tri,i)=>{
     for(const [j,k] of [[tri[0],tri[1]],[tri[1],tri[2]],[tri[2],tri[0]]]){
@@ -179,7 +190,7 @@ function prepared(p:Piece):Prepared{
   // Thickness normal: the box axis along which the piece is thinnest.
   const local=bounds(p.mesh).getSize(new Vector3()).toArray(),columns=[0,1,2].map(i=>new Vector3().setFromMatrixColumn(m,i));
   const lengths=columns.map((c,i)=>c.length()*local[i]),thinAxis=lengths.indexOf(Math.min(...lengths));
-  const data={world,normals,fills,planes,edges:[...edgeMap.values()],axes,thin:columns[thinAxis].clone().normalize(),convex};
+  const data={world,normals,groups,groupOf,edges:[...edgeMap.values()],axes,thin:columns[thinAxis].clone().normalize(),convex};
   preparedCache.set(p,{transform:p.transform,mesh:p.mesh,data});
   return data;
 }
@@ -199,7 +210,8 @@ function outlineLoop(triangles:readonly (readonly number[])[]):number[]|undefine
 }
 
 export function makeScene(f: Furniture,options:SceneOptions={}) {
-  const codes=pieceCodeMap(f);
+  // Codes and groups are only needed for the ID labels: a viewer frame without labels skips them.
+  const labelling=options.labels!==false&&!f.presentation?.hideIds,codes=labelling?pieceCodeMap(f):new Map<string,string>();
   const view=options.view||'front',sheet=options.layout==='sheet';
   const config=sheetView(f);
   const width=options.width??(sheet?config.width:WIDTH),height=options.height??(sheet?config.height:HEIGHT);
@@ -215,7 +227,7 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
   const transforms = new Map<string,Matrix4>();
   const world=new Map<string,Vector3[]>();
   let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  const fitted:Vector3[]=[];
+  const lo=new Vector3(Infinity,Infinity,Infinity),hi=new Vector3(-Infinity,-Infinity,-Infinity);
   for (const p of f.pieces) {
     const offset = offsets.get(p.id)!.clone(),moved=options.offsets?.get(p.id);
     if(moved)offset.add(moved);
@@ -224,12 +236,12 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
     world.set(p.id,vertices);
     // The fit ignores pieces moved by hand: the drawing never rescales under the pointer.
     const framed=moved?base.map(v=>v.clone().add(offsets.get(p.id)!)):vertices;
-    for(const v of framed){const x=v.dot(right),y=v.dot(up);if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;if(options.frame==='sphere')fitted.push(v);}
+    for(const v of framed){const x=v.dot(right),y=v.dot(up);if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;lo.min(v);hi.max(v);}
   }
   let scale:number,cx:number,cy:number;
-  if(options.frame==='sphere'&&fitted.length){
+  if(options.frame==='sphere'&&Number.isFinite(lo.x)){
     // Rotation-invariant fit: the bounding sphere of the assembly.
-    const lo=fitted.reduce((m,v)=>m.min(v),fitted[0].clone()),hi=fitted.reduce((m,v)=>m.max(v),fitted[0].clone()),center=lo.clone().add(hi).multiplyScalar(.5),radius=Math.max(1,hi.distanceTo(lo)/2);
+    const center=lo.clone().add(hi).multiplyScalar(.5),radius=Math.max(1,hi.distanceTo(lo)/2);
     scale=Math.min(width,height)*.46/radius*(options.zoom??1);cx=center.dot(right);cy=center.dot(up);
   }else{
     scale = Math.min((sheet?(guide?width*.70:compact?400:270):540)/(maxX-minX || 1),(compactFront?180:sheet?(guide?height*.72:460):420)/(maxY-minY || 1)) * (options.zoom??f.zoom);
@@ -242,24 +254,17 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
   const pieceFaces:Face[][]=[],solids:Solid[]=[];
   for (const p of visiblePieces) {
     const data=prepared(p),vertices=world.get(p.id)!,screen=vertices.map(project);
-    const visible=data.normals.map(n=>n.dot(forward)>0.00001);
-    const groups=new Map<string,number[]>();
-    p.mesh.triangles.forEach((_,i)=>{if(!visible[i])return;const list=groups.get(data.planes[i]);if(list)list.push(i);else groups.set(data.planes[i],[i]);});
-    const faces:Face[]=[],faceOf=new Map<number,Face>();
-    for(const list of groups.values()){
-      const loop=outlineLoop(list.map(i=>p.mesh.triangles[i]));
-      const parts=loop?[{tris:list,ring:loop}]:list.map(i=>({tris:[i],ring:[...p.mesh.triangles[i]]}));
-      for(const part of parts){
-        const depth=part.tris.reduce((sum,i)=>sum+p.mesh.triangles[i].reduce((s,j)=>s+vertices[j].dot(forward),0)/3,0)/part.tris.length;
-        const face:Face={key:`${p.id}-${part.tris[0]}`,pieceId:p.id,points:part.ring.map(j=>`${screen[j].x},${screen[j].y}`).join(' '),fill:data.fills[part.tris[0]],depth,outline:[]};
-        faces.push(face);for(const i of part.tris)faceOf.set(i,face);
-      }
-    }
+    const faces:Face[]=[],faceOf:(Face|undefined)[]=data.groups.map(group=>{
+      if(group.normal.dot(forward)<=0.00001)return undefined;
+      const depth=group.tris.reduce((sum,i)=>sum+p.mesh.triangles[i].reduce((s,j)=>s+vertices[j].dot(forward),0)/3,0)/group.tris.length;
+      const face:Face={key:`${p.id}-${group.tris[0]}`,pieceId:p.id,points:group.ring.map(j=>`${screen[j].x},${screen[j].y}`).join(' '),fill:group.fill,depth,outline:[]};
+      faces.push(face);return face;
+    });
     for(const edge of data.edges){
-      if(!edge.feature||!edge.tris.some(i=>visible[i]))continue;
-      const a=screen[edge.a],b=screen[edge.b];
+      if(!edge.feature||!edge.tris.some(i=>faceOf[data.groupOf[i]]))continue;
+      const a=screen[edge.a],b=screen[edge.b],path=`M${a.x},${a.y} L${b.x},${b.y}`;
       edges.push({pieceId:p.id,a,b});
-      for(const face of new Set(edge.tris.map(i=>faceOf.get(i))))face?.outline.push(`M${a.x},${a.y} L${b.x},${b.y}`);
+      for(const group of new Set(edge.tris.map(i=>data.groupOf[i])))faceOf[group]?.outline.push(path);
     }
     if(!faces.length)continue;
     // A convex board never covers itself; another mesh keeps the depth order among its own faces.
@@ -289,8 +294,9 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
   let labelsFit = true;
   const groupedSheet=!!guide&&sheet&&!!f.groupIdentical;
   // A sheet labels one visible occurrence of each interchangeable type; the table retains total quantity.
-  const quantities=new Map(groupedPieces(groupedSheet?visibleFurniture:f).map(group=>[group[0].id,group.length]));
-  for (const p of (options.labels===false||f.presentation?.hideIds||compactFront?[]:compact||groupedSheet?pieceRows(visibleFurniture):visiblePieces)) {
+  const quantities=new Map(labelling?groupedPieces(groupedSheet?visibleFurniture:f).map(group=>[group[0].id,group.length]):[]);
+  const labelled=options.labels instanceof Set?options.labels:undefined;
+  for (const p of (options.labels===false||f.presentation?.hideIds||compactFront?[]:compact||groupedSheet?pieceRows(visibleFurniture):visiblePieces).filter(p=>!labelled||labelled.has(p.id))) {
     const quantity=compact||groupedSheet?quantities.get(p.id)||1:1,labelWidth=quantity>1?70:46;
     const a = anchor(p.id,bounds(p.mesh).getCenter(new Vector3()).toArray());
     let best: Rect | undefined;

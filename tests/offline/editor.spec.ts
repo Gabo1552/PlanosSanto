@@ -62,9 +62,9 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del diÃ
   await expect(page.locator('[data-label]')).toHaveCount(0);await showIds(page);await expect(page.locator('[data-label]')).toHaveCount(2);
   const originalPoints=await page.locator('[data-piece]').first().getAttribute('points');
   const dirtyBefore=calls.filter(c=>c==='dirty').length;
-  // The interior looks from the side opposite the front; switching views edits nothing.
+  // 0.8.20: the interior looks from the same front; without doors or fronts to hide it draws the same pieces. Switching views edits nothing.
   await page.getByRole('button',{name:'Ver interior',exact:true}).click();
-  expect(await page.locator('[data-piece]').first().getAttribute('points')).not.toBe(originalPoints);
+  expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(originalPoints);
   await expect(page.locator('tbody tr')).toHaveCount(2);
   expect(calls.filter(c=>c==='dirty').length).toBe(dirtyBefore);
   await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
