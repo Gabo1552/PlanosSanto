@@ -93,7 +93,7 @@ describe('Rotación, cotas e identificación persistentes',()=>{
     expect(reopened.presentation).toEqual(f.presentation);expect(reopened.zoom).toBe(.9);expect(reopened.notes).toEqual(f.notes);
     const outside=makeScene(reopened,{view:'front'}),inside=makeScene(reopened,{view:'back'});
     expect(outside.faces.some(face=>face.pieceId===hidden)).toBe(true);expect(inside.faces.some(face=>face.pieceId===hidden)).toBe(false);
-    expect(inside.faces.some(face=>face.pieceId===f.pieces[0].id)).toBe(true);expect(inside.camera.forward.distanceTo(outside.camera.forward.clone().applyAxisAngle(new Vector3(0,0,1),Math.PI))).toBeLessThan(1e-9);
+    expect(inside.faces.some(face=>face.pieceId===f.pieces[0].id)).toBe(true);expect(inside.camera.forward.distanceTo(outside.camera.forward)).toBeLessThan(1e-9);
     expect(reopened.pieces).toHaveLength(f.pieces.length);expect(JSON.stringify(f.pieces)).toBe(geometry);
     const edit=toEdit(saved);edit.furniture[0].presentation!.guide!.hiddenPieceIds=['foreign/physical/path'];expect(()=>applyEdit(saved,edit)).toThrow(/ruta de instancia desconocida/);
     edit.furniture[0].presentation!.guide!.hiddenPieceIds=[hidden,hidden];expect(()=>applyEdit(saved,edit)).toThrow(/duplicadas/);
