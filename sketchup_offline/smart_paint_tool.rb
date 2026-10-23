@@ -273,6 +273,7 @@ module PlanosSanto
         unobserve!
       end
       stop_sampling;@depth=0;@stack_key=nil;@active=false;@ui_hover=nil;@bar_hover=nil;@strip_hover=nil;clear
+      release_textures(view)
       if tray
         @tray_pick_at=nil
         emit('Material elegido en la bandeja; el pincel vuelve a activarse.')
@@ -390,21 +391,21 @@ module PlanosSanto
     end
     def ui_scale;defined?(UI) && UI.respond_to?(:scale_factor) ? UI.scale_factor.to_f : 1.0;end
     def point_class;defined?(Geom::Point3d) ? Geom::Point3d : Sketchup::Point;end
-    def draw_tooltip(view)
-      return unless immediate? && @mouse && view.respond_to?(:draw_text)
-      scale=ui_scale;klass=point_class
-      x=@mouse[0]+18*scale;y=@mouse[1]+18*scale
-      # Near the bottom strip the tooltip goes above the cursor, inside the view.
-      y=@mouse[1]-40*scale if view.respond_to?(:vpheight) && y+40*scale>view.vpheight.to_f
-      x=x.round;y=y.round;line=(16*scale).round # whole pixels: sharp text
-      color=lambda { |rgb| text_options(11).merge(color:text_color(rgb)) }
+    # 0.8.20: the tooltip is a dark box (the bar's colours) with light text, at
+    # TEXT_SIZE, beside the cursor badge (34 logical px from the hot spot) and
+    # kept inside the view. Without draw2d (doubles, very old API) only the
+    # text is drawn, in the 0.8.19 dark colours.
+    TIP_OFFSET=34
+    TIP_PAD=8
+    def tooltip_lines(boxed)
+      plain=boxed ? LIGHT_TEXT : [30,30,30];good=boxed ? [134,222,146] : [0,128,0];bad_rgb=boxed ? [255,138,128] : [200,0,0]
       if @strip_hover && (row=@strip_rows[@strip_hover])
         text="#{row['name']} · clic#{@strip_hover<@recents.length ? " o #{@strip_hover+1}" : ''}"
         text+=' · se instala al elegirlo' if row['state']=='installable'
-        return view.draw_text(klass.new(x,y,0),text,color.call([30,30,30]))
+        return [[text,plain]]
       end
-      return view.draw_text(klass.new(x,y,0),bar_hint(@bar_hover),color.call([30,30,30])) if @bar_hover
-      return unless @hover
+      return [[bar_hint(@bar_hover),plain]] if @bar_hover
+      return [] unless @hover
       info=material_info;sample=@hover['sample']
       line1=[@hover['name'].to_s.empty? ? 'Pieza sin nombre' : @hover['name'],sample ? 'Cuentagotas' : mode_short]
       line1 << scope_label(@hover['sharedCount'],@hover['sharedTruncated']) unless sample
@@ -414,22 +415,59 @@ module PlanosSanto
       line2=if sample then bad ? @sample_reason.to_s : "Tomar: #{sample['name']}"
             else blocked? ? @hover['verdict']['reason'].to_s : info ? info['name'] : (@options['mode']=='remove_edge' ? 'Restaura la placa' : 'Sin material')
             end
-      view.draw_text(klass.new(x,y,0),line1,color.call([30,30,30]))
-      view.draw_text(klass.new(x,y+line,0),line2,color.call(bad ? [200,0,0] : [0,128,0]))
+      lines=[[line1,plain],[line2,bad ? bad_rgb : good]]
       line3=missing_line(@hover['pieceId']) # F-PINT-C
-      view.draw_text(klass.new(x,y+2*line,0),line3,color.call(line3.start_with?('Falta') ? [200,0,0] : [0,128,0])) if line3
+      lines << [line3,line3.start_with?('Falta') ? bad_rgb : good] if line3
+      lines
+    end
+    def draw_tooltip(view)
+      return unless immediate? && @mouse && view.respond_to?(:draw_text)
+      scale=ui_scale;klass=point_class;boxed=view.respond_to?(:draw2d)
+      lines=tooltip_lines(boxed);return if lines.empty?
+      line=(em_px(TEXT_SIZE)*1.45).round;pad=(TIP_PAD*scale).round # whole pixels: sharp text
+      width=lines.map { |text,_| text_width(view,text) }.max.ceil
+      x=(@mouse[0]+TIP_OFFSET*scale).round;y=(@mouse[1]+TIP_OFFSET*scale).round
+      # Near the bottom strip or the right edge the tooltip goes above or left
+      # of the cursor, inside the view.
+      y=(@mouse[1]-12*scale).round-lines.length*line-pad if view.respond_to?(:vpheight) && y+lines.length*line+pad>view.vpheight.to_f
+      x=(@mouse[0]-12*scale).round-width-pad if view.respond_to?(:vpwidth) && x+width+pad>view.vpwidth.to_f && @mouse[0]-12*scale-width-pad>=0
+      if boxed
+        box=[x-pad,y-pad/2,x+width+pad,y+lines.length*line+pad/2]
+        fill(view,box,BAND,235);outline(view,box,BAND_LINE,line_px(1))
+      end
+      lines.each_with_index { |(text,rgb),index| view.draw_text(klass.new(x,y+index*line,0),text,text_options(view).merge(color:text_color(rgb))) }
     rescue StandardError
       nil
     end
     CURSORS={'piece'=>'paint-piece.png','edge'=>'paint-edge.png','remove'=>'paint-remove.png','blocked'=>'paint-blocked.png','sample'=>'paint-sample.png'}.freeze
+    # 0.8.20 (cursor «chico y pixelado»): the hot spot of every cursor, in the
+    # 32-unit grid of scripts/generate-paint-cursors.py (the crosshair centre).
+    # Windows: the SVG (UI.create_cursor takes SVG there since SketchUp 2016,
+    # hot spot in 32 units), sharp at any scaling. Without it, the 64 px PNG at
+    # UI.scale_factor >= 1.5 (hot spot ×2) or the 32 px one. macOS wants PDF for
+    # vectors and Retina handles the scale: the 32 px PNG.
+    CURSOR_HOTSPOT=[7,7].freeze
+    def self.cursor_file(name)
+      base=CURSORS.fetch(name);folder=File.join(__dir__,'cursors');x,y=CURSOR_HOTSPOT
+      windows=defined?(Sketchup) && Sketchup.respond_to?(:platform) && Sketchup.platform==:platform_win
+      if windows
+        svg=File.join(folder,base.sub(/\.png\z/,'.svg'))
+        return [svg,x,y] if File.file?(svg)
+        scale=defined?(UI) && UI.respond_to?(:scale_factor) ? UI.scale_factor.to_f : 1.0
+        large=File.join(folder,base.sub(/\.png\z/,'-64.png'))
+        return [large,2*x,2*y] if scale>=1.5 && File.file?(large)
+      end
+      [File.join(folder,base),x,y]
+    end
     # One native cursor per file and per process; nil -> native cursor.
     def self.cursor_id(name)
       @cursor_ids||={}
-      return @cursor_ids[name] if @cursor_ids.key?(name)
-      path=File.join(__dir__,'cursors',CURSORS.fetch(name))
-      @cursor_ids[name]=defined?(UI) && UI.respond_to?(:create_cursor) && File.file?(path) ? UI.create_cursor(path,3,3) : nil
+      path,x,y=cursor_file(name)
+      return @cursor_ids[path] if @cursor_ids.key?(path)
+      @cursor_ids[path]=defined?(UI) && UI.respond_to?(:create_cursor) && File.file?(path) ? UI.create_cursor(path,x,y) : nil
     rescue StandardError
-      @cursor_ids[name]=nil
+      @cursor_ids[path]=nil if path
+      nil
     end
     def cursor_name
       return 'sample' if @sampling # PINTURA-07
@@ -872,7 +910,7 @@ module PlanosSanto
     # model) or an explicit stop: never selected again by the tray grace.
     def stop(view=nil)
       @stopped=true;@tray_pick_at=nil
-      unobserve!;stop_sampling;clear;@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
+      unobserve!;stop_sampling;clear;release_textures(view);@active=false;emit('Pintado cancelado; no se aplicaron las caras pendientes.')
       invalidate(view)
     end
     # ---- Hito 7 (DISENO_AVANZADO.md §2): immediate mode only. Hover, drawing,
@@ -1026,7 +1064,7 @@ module PlanosSanto
         corner_mark(view,rect) if row['state']=='installable'
       end
       label=in_view? ? 'Materiales · clic para elegir (1–6 recientes)' : 'Recientes · clic o 1–6'
-      view.draw_text(point_class.new(STRIP_MARGIN,(rects.first[1]-18*ui_scale).round,0),label,text_options(10)) if view.respond_to?(:draw_text)
+      view.draw_text(point_class.new(STRIP_MARGIN,(rects.first[1]-em_px(TEXT_SIZE)*1.4).round,0),label,text_options(view)) if view.respond_to?(:draw_text)
     rescue StandardError
       nil
     end
@@ -1051,17 +1089,25 @@ module PlanosSanto
     # resuelven ANTES que el pick del modelo y nunca eligen una pieza de abajo.
     # Escrito de cero (sin código ni recursos de OpenCutList).
     TABS=[['sheet','Pintar piezas'],['edge','Pintar cantos'],['remove_edge','Quitar canto']].freeze
-    TOP_HEIGHT=30
-    SUB_HEIGHT=26
-    STRIP_HEIGHT=36
-    TAB_MIN=104
-    COUNT_SIZE=24
-    NONE_WIDTH=150
-    CELL_MIN=96
-    CELL_MAX=210
-    NAV_WIDTH=30
-    UI_MARGIN=12
-    TEXT_SIZE=10
+    # 0.8.20 (Gabriel: «muy pixelado y chico»): sizes in logical pixels (×
+    # UI.scale_factor, rounded to whole pixels); text in logical points.
+    # 0.8.19 had a 30 px bar, 36 px strip and 10 px text.
+    TOP_HEIGHT=40
+    SUB_HEIGHT=38
+    STRIP_HEIGHT=58 # cells 48 px high (5 px inset)
+    STRIP_INSET=5
+    TAB_MIN=150
+    TAB_PAD=20
+    COUNT_SIZE=30
+    COUNT_GAP=8
+    NONE_WIDTH=180
+    CELL_MIN=170 # a usual name («Canto Roble Santana») fits at 13 pt
+    CELL_MAX=260
+    NAV_WIDTH=40
+    UI_MARGIN=16
+    TEXT_SIZE=13 # pt: tabs, cells, hints and tooltip (17 logical px)
+    COUNT_TEXT=14 # pt: «1 2 4»
+    NAV_TEXT=18 # pt: ‹ ›
     ORANGE=[240,128,20].freeze
     BAND=[56,50,45].freeze
     BAND_HOVER=[86,78,70].freeze
@@ -1072,37 +1118,79 @@ module PlanosSanto
     def ui_on?;in_view? && immediate? && %w[sheet edge remove_edge].include?(@options['mode']);end
     def edge_modes?;%w[edge remove_edge].include?(@options['mode']);end
     def strip_on?;ui_on? && %w[sheet edge].include?(@options['mode']);end
-    # 0.8.18 (calidad visual): draw_text sizes are pixels on Windows and are not
-    # scaled by SketchUp, while the bars are (UI.scale_factor). Every label is
-    # size × UI.scale_factor, rounded to a whole pixel, in the system UI font.
-    def font_px(size);[(size*ui_scale).round,1].max;end
+    # ---- 0.8.20 (calidad: «muy pixelado y chico»). ONE adjustment point for
+    # every label drawn by the tool: font_size(view,pt). Text sizes are logical
+    # points; the wanted em in view pixels is pt × 4/3 × UI.scale_factor.
+    # 0.8.18 assumed View#draw_text's :size to be physical pixels that SketchUp
+    # does not scale; the API docs speak of points and of DPI scaling, and
+    # reports differ by version and platform. So the tool does not assume: it
+    # asks View#text_bounds (2020+) how wide ten tabular digits are at size 100
+    # with the same font (≈ 5.6 em in Segoe UI, Arial or SF), which gives view
+    # pixels per :size unit whatever SketchUp does with DPI, and divides. A
+    # :size scaled twice (too big) or not at all (too small) cannot happen.
+    # Without text_bounds it falls back to 0.8.18's pixels.
+    PT_PX=4.0/3
+    PROBE='0000000000'
+    PROBE_EM=5.6
+    def em_px(pt);pt*PT_PX*ui_scale;end
+    def size_unit(view)
+      key=[ui_scale,ui_font,view.object_id]
+      return @size_unit[1] if @size_unit && @size_unit[0]==key
+      unit=nil
+      if view.respond_to?(:text_bounds)
+        options={size:100};options[:font]=ui_font if ui_font
+        bounds=view.text_bounds(point_class.new(0,0,0),PROBE,options)
+        width=bounds.respond_to?(:width) ? bounds.width.to_f : 0.0
+        unit=width/(PROBE_EM*100) if width.finite? && width>0
+        unit=nil unless unit && unit.between?(0.25,8.0) # nonsense measures are ignored
+      end
+      @size_unit=[key,unit];unit
+    rescue StandardError
+      @size_unit=[key,nil];nil
+    end
+    def font_size(view,pt);[(em_px(pt)/(size_unit(view) || 1.0)).round,1].max;end
     def ui_font
       return @ui_font if defined?(@ui_font)
       @ui_font=defined?(Sketchup) && Sketchup.respond_to?(:platform) && Sketchup.platform==:platform_win ? 'Segoe UI' : nil
     end
-    def text_options(size,bold=false)
-      options={size:font_px(size)};options[:bold]=true if bold
+    def text_options(view,pt=TEXT_SIZE,bold=false)
+      options={size:font_size(view,pt)};options[:bold]=true if bold
       options[:font]=ui_font if ui_font
       options
     end
     def text_constant(name);Object.const_defined?(name) ? Object.const_get(name) : nil;end
     # Text width in pixels: View#text_bounds (SketchUp 2020+) measured with the
-    # same options used to draw; an estimate only without it.
-    def text_width(view,text,size=TEXT_SIZE,bold=false)
+    # same options used to draw; an estimate (0.55 em per character) without it.
+    def text_width(view,text,pt=TEXT_SIZE,bold=false)
       if view.respond_to?(:text_bounds)
-        bounds=view.text_bounds(point_class.new(0,0,0),text.to_s,text_options(size,bold))
+        bounds=view.text_bounds(point_class.new(0,0,0),text.to_s,text_options(view,pt,bold))
         return bounds.width.to_f if bounds.respond_to?(:width)
       end
-      text.to_s.length*size*0.68*ui_scale
+      text.to_s.length*em_px(pt)*0.55
     rescue StandardError
-      text.to_s.length*size*0.68*ui_scale
+      text.to_s.length*em_px(pt)*0.55
     end
-    def fit_text(view,text,width,size=TEXT_SIZE)
+    # Longest prefix + «…» that fits: measured (binary search, cached per text,
+    # width and scale; draw runs on every frame) with text_bounds, estimated without.
+    def fit_text(view,text,width,pt=TEXT_SIZE)
       text=text.to_s
-      return text if text_width(view,text,size)<=width
-      chars=[(width/(size*0.68*ui_scale)).floor-1,1].max
-      text[0,chars].rstrip+'…'
+      return text if text_width(view,text,pt)<=width
+      unless view.respond_to?(:text_bounds)
+        chars=[(width/(em_px(pt)*0.55)).floor-1,1].max
+        return text[0,chars].rstrip+'…'
+      end
+      @fit_cache=nil if @fit_cache && @fit_cache.length>256
+      key=[text,width.round,pt,ui_scale,view.object_id];@fit_cache||={}
+      return @fit_cache[key] if @fit_cache.key?(key)
+      low=1;high=text.length-1
+      while low<high
+        middle=(low+high+1)/2
+        text_width(view,text[0,middle].rstrip+'…',pt)<=width ? low=middle : high=middle-1
+      end
+      @fit_cache[key]=text[0,low].rstrip+'…'
     end
+    # Line widths in logical pixels too: a 1 px border is 1/2/2 px at 100/150/200 %.
+    def line_px(width);[(width*ui_scale).round,1].max;end
     # Bands and hit items for the current viewport, mode and strip page.
     # Item: [kind,key,rect,label]; kind :tab, :count, :none, :cell (key = row
     # index in @strip_rows), :nav (key 'prev'/'next'). Rect = [left,top,right,bottom].
@@ -1113,7 +1201,7 @@ module PlanosSanto
       return @ui_layout[1] if @ui_layout && @ui_layout[0]==key
       top_h=TOP_HEIGHT*s;items=[];bands={top:[0.0,0.0,width,top_h]}
       # Tabs, centred when there is room; the title and the hint only when they fit.
-      widths=TABS.map { |_,label| [TAB_MIN*s,text_width(view,label)+28*s].max }
+      widths=TABS.map { |_,label| [TAB_MIN*s,text_width(view,label)+2*TAB_PAD*s].max }
       title_w=text_width(view,'PINTAR',TEXT_SIZE,true)+2*margin
       hint='Tab cambia · Esc termina';hint_w=text_width(view,hint)+2*margin
       total=widths.sum
@@ -1134,7 +1222,7 @@ module PlanosSanto
       bottom=top_h
       if edge_modes?
         sub_h=SUB_HEIGHT*s;bands[:sub]=[0.0,top_h,width,top_h+sub_h];bottom=top_h+sub_h
-        label='Cantos por clic';size=COUNT_SIZE*s;gap=6*s
+        label='Cantos por clic';size=COUNT_SIZE*s;gap=COUNT_GAP*s
         group=text_width(view,label)+gap*2+EDGE_COUNTS.length*size+(EDGE_COUNTS.length-1)*gap
         left=[(width-group)/2,margin].max
         bands[:sub_label]=[label,left,top_h+sub_h/2]
@@ -1146,7 +1234,7 @@ module PlanosSanto
       end
       bands[:top_bottom]=bottom
       if strip_on?
-        strip_h=STRIP_HEIGHT*s;top=height-strip_h;inset=3*s;bands[:strip]=[0.0,top,width,height]
+        strip_h=STRIP_HEIGHT*s;top=height-strip_h;inset=STRIP_INSET*s;bands[:strip]=[0.0,top,width,height]
         none_w=[NONE_WIDTH*s,width/3].min
         items << [:none,'none',[inset,top+inset,none_w,height-inset],'Ningún material']
         rows=@strip_rows.length;room=width-none_w-inset
@@ -1155,6 +1243,7 @@ module PlanosSanto
           per_page=[(room/cell).floor,1].max
           if rows>per_page
             per_page=[((room-2*NAV_WIDTH*s)/cell).floor,1].max
+            cell=[(room-2*NAV_WIDTH*s)/per_page,CELL_MAX*s].min # the page fills the strip
             pages=(rows.to_f/per_page).ceil
             @strip_page=@strip_page.to_i.clamp(0,pages-1)
             first=@strip_page*per_page
@@ -1290,7 +1379,7 @@ module PlanosSanto
     # «Se instala al elegirlo»: a small white square in the top-right corner
     # (a quad, not a triangle with an anti-aliased diagonal).
     def corner_mark(view,rect)
-      left,top,right,bottom=rect.map(&:round);size=[(10*ui_scale).round,[right-left,bottom-top].min/2].min
+      left,top,right,bottom=rect.map(&:round);size=[(12*ui_scale).round,[right-left,bottom-top].min/2].min
       fill(view,[right-size,top,right,top+size],[255,255,255],235)
     end
     # Readable text on any swatch colour (perceived luminance).
@@ -1309,7 +1398,7 @@ module PlanosSanto
     # rounded centre; without both constants, an estimated left.
     def draw_label(view,text,cx,cy,rgb,size:TEXT_SIZE,bold:false,align: :center)
       return unless view.respond_to?(:draw_text)
-      options=text_options(size,bold).merge(color:text_color(rgb))
+      options=text_options(view,size,bold).merge(color:text_color(rgb))
       left_align=text_constant(:TextAlignLeft);center_align=text_constant(:TextAlignCenter);middle=text_constant(:TextVerticalAlignCenter)
       if middle && left_align && (align!=:center || view.respond_to?(:text_bounds))
         left=align==:center ? cx-text_width(view,text,size,bold)/2.0 : cx
@@ -1319,7 +1408,68 @@ module PlanosSanto
         return view.draw_text(point_class.new(cx.round,cy.round,0),text,options.merge(align:center_align,vertical_align:middle))
       end
       left=align==:center ? cx-text_width(view,text,size,bold)/2 : cx
-      view.draw_text(point_class.new(left.round,(cy-font_px(size)*0.7).round,0),text,options)
+      view.draw_text(point_class.new(left.round,(cy-em_px(size)*0.7).round,0),text,options)
+    end
+    # ---- 0.8.20: a swatch shows the material's own texture when SketchUp can
+    # draw it in 2D (View#load_texture + draw2d texture:/uvs:, SketchUp 2020+),
+    # the flat material colour otherwise (older API, no texture, an image too
+    # large, or any failure). One texture per material and tool session, from
+    # the material already in the model (Texture#image_rep); never scaled up
+    # from a small preview. Released when the tool is deactivated.
+    TEXTURE_MAX_PIXELS=2048*2048
+    def swatch_texture(view,row)
+      uuid=row['materialUuid'].to_s
+      return nil if uuid.empty? || !view.respond_to?(:load_texture) || !defined?(MaterialResolver) || !@model.respond_to?(:materials)
+      @textures||={}
+      return @textures[uuid] if @textures.key?(uuid)
+      @textures[uuid]=nil # a failure is not retried on every frame
+      material=@model.materials.to_a.find { |m| MaterialResolver.observe_binding(m).dig('binding','uuid')==uuid }
+      texture=material && material.respond_to?(:texture) ? material.texture : nil
+      return nil unless texture && texture.respond_to?(:image_rep)
+      if texture.respond_to?(:image_width) && texture.respond_to?(:image_height)
+        return nil if texture.image_width.to_i*texture.image_height.to_i>TEXTURE_MAX_PIXELS
+      end
+      rep=texture.image_rep(false)
+      return nil unless rep && rep.width.to_i>0 && rep.height.to_i>0
+      id=view.load_texture(rep)
+      return nil unless id
+      @texture_view=view
+      @textures[uuid]=[id,rep.width.to_f,rep.height.to_f]
+    rescue StandardError
+      nil
+    end
+    def release_textures(view=nil)
+      view||=@texture_view
+      (@textures || {}).each_value do |entry|
+        next unless entry && view && view.respond_to?(:release_texture)
+        begin
+          view.release_texture(entry[0])
+        rescue StandardError
+          nil
+        end
+      end
+      @textures={};@texture_view=nil
+    end
+    # The centre of the image covers the cell without stretching. Screen corners
+    # top-left, top-right, bottom-right, bottom-left; image v=1 is its top row.
+    def texture_uvs(rect,texture_w,texture_h)
+      left,top,right,bottom=rect;cell=(right-left).to_f/[(bottom-top).to_f,1.0].max;image=texture_w/texture_h
+      su=[1.0,cell/image].min;sv=[1.0,image/cell].min;u0=(1-su)/2;v0=(1-sv)/2
+      [[u0,v0+sv,0],[u0+su,v0+sv,0],[u0+su,v0,0],[u0,v0,0]]
+    end
+    def draw_texture(view,rect,texture)
+      id,texture_w,texture_h=texture;rect=rect.map(&:round)
+      view.drawing_color=rgba([255,255,255],255) # no tint
+      view.draw2d(gl(:GL_QUADS,7),corners(*rect),texture:id,uvs:texture_uvs(rect,texture_w,texture_h))
+      true
+    rescue StandardError
+      false
+    end
+    # Over a texture the name sits on a plate of the material's mean colour, so
+    # contrast() still picks a readable text colour.
+    def label_plate(view,text,cx,cy,rgb,bold)
+      s=ui_scale;half=(text_width(view,text,TEXT_SIZE,bold)/2.0+8*s).ceil;h=(em_px(TEXT_SIZE)*0.8).ceil
+      fill(view,[cx.round-half,cy.round-h,cx.round+half,cy.round+h],rgb,215)
     end
     def draw_ui(view)
       layout=ui_layout(view);return unless layout
@@ -1347,27 +1497,31 @@ module PlanosSanto
         active=bar_active?(key)
         fill(view,rect,active ? ORANGE : hover ? BAND_HOVER : BAND,active ? 255 : 245)
         separator(view,right,top,bottom,BAND_LINE)
-        draw_label(view,fit_text(view,label,width-12*s),cx,cy,active ? [255,255,255] : LIGHT_TEXT)
+        draw_label(view,fit_text(view,label,width-16*s),cx,cy,active ? [255,255,255] : LIGHT_TEXT,bold:active)
       when :count
         active=bar_active?(key)
         fill(view,rect,active ? [255,255,255] : hover ? [232,229,224] : [236,234,230])
-        outline(view,rect,active ? ORANGE : [200,196,190],active ? 2 : 1)
-        draw_label(view,label,cx,cy,DARK_TEXT,bold:active)
+        outline(view,rect,active ? ORANGE : [200,196,190],line_px(active ? 2 : 1))
+        draw_label(view,label,cx,cy,DARK_TEXT,size:COUNT_TEXT,bold:active)
       when :none
         active=material_missing?
         fill(view,rect,[250,250,250])
-        outline(view,rect,active ? ORANGE : hover ? [255,255,255] : [120,112,104],active ? 3 : 1)
-        draw_label(view,fit_text(view,label,width-12*s),cx,cy,DARK_TEXT)
+        outline(view,rect,active ? ORANGE : hover ? [255,255,255] : [120,112,104],line_px(active ? 3 : 1))
+        draw_label(view,fit_text(view,label,width-16*s),cx,cy,DARK_TEXT)
       when :cell
         row=@strip_rows[key];color=row['color'] || [200,200,200]
         active=!row['materialUuid'].to_s.empty? && row['materialUuid']==@options['materialUuid']
-        fill(view,rect,color) # one flat quad per swatch: the material colour, nothing tessellated
+        texture=swatch_texture(view,row)
+        textured=texture && draw_texture(view,rect,texture)
+        fill(view,rect,color) unless textured # one flat quad: the material colour, nothing tessellated
         corner_mark(view,rect) if row['state']=='installable' # not in this model yet
-        outline(view,rect,active ? ORANGE : hover ? [255,255,255] : BAND_LINE,active ? 3 : hover ? 2 : 1)
-        draw_label(view,fit_text(view,label,width-14*s),cx,cy,contrast(color),bold:active)
+        outline(view,rect,active ? ORANGE : hover ? [255,255,255] : BAND_LINE,line_px(active ? 3 : hover ? 2 : 1))
+        text=fit_text(view,label,width-24*s)
+        label_plate(view,text,cx,cy,color,active) if textured
+        draw_label(view,text,cx,cy,contrast(color),bold:active)
       when :nav
         fill(view,rect,hover ? BAND_HOVER : [70,64,58])
-        draw_label(view,label,cx,cy,LIGHT_TEXT,size:12,bold:true)
+        draw_label(view,label,cx,cy,LIGHT_TEXT,size:NAV_TEXT,bold:true)
       end
     end
     # PINTURA-11: arrows down/up walk the stack; the hover event is sent at once.
