@@ -173,7 +173,7 @@ class WorkshopTest < Minitest::Test
   assert_equal "#{row['detail']} (#{row['id']}): Elegí una placa de la biblioteca.",error.message
   row['materialId']=draft['rows'][0]['materialId'];row['axes']=[0,2]
   error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
-  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa tiene 19,05 mm\.\z/,error.message)
+  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa tiene 19,05 mm( \(espesores estándar de la ficha: [\d,· ]+ mm\))?\.\z/,error.message)
   draft['profile']['decimal']=';'
   assert_includes assert_raises(PlanosSanto::ExportError){service.validate(draft)}.message,'Perfil del archivo para la maderera'
  end

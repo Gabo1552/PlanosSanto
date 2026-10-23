@@ -6,7 +6,6 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {openDetail} from './fixtures/order-detail';
 
 // Auditoría WCAG 2.2 AA con axe-core sobre el controlador Ruby real con dobles sintéticos de SketchUp
 // (mismo puente que names.spec.ts / ux-taller.spec.ts). Cualquier violación nueva rompe el spec;
@@ -49,7 +48,14 @@ async function openWorkshop(page:Page){
  await generate(page);await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
- const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});await expect(panel).toBeVisible();return panel;
+ const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(panel).toBeVisible();return panel;
+}
+/** 0.8.20: la Maderera es la optimización de todas las placas del proyecto (sección del riel, sin diálogo). */
+async function openMaderera(page:Page){
+ await generate(page);await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
+ await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Maderera',exact:true}).click();
+ const region=page.getByRole('region',{name:'Optimización de placas'});await expect(region.getByRole('group',{name:'Corte de la seccionadora'})).toBeVisible();return region;
 }
 // axe no resuelve el fondo cuando hay capas superpuestas (modal, encabezado fijo, SVG): se mide con colores
 // computados, tomando el primer fondo opaco de los ancestros o el <rect> que enmascara el texto SVG.
@@ -130,48 +136,26 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
   await audit(page,'vista-previa-a4');
  });
 
- test(`axe ${w}px: biblioteca y pedido del taller`,async({page},info)=>{
+ test(`axe ${w}px: biblioteca del taller`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir);
   await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false}}]);
   const panel=await openWorkshop(page);
   await audit(page,'biblioteca',panel);
-  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();
-  await audit(page,'pedido-taller',panel);
  });
 
- // 0.8.19: vista principal de la maderera (optimización, diagramas, total de cantos) con el detalle por pieza plegado.
- test(`axe ${w}px: pedido a maderera optimizado`,async({page},info)=>{
+ // 0.8.20: Maderera = optimización por placa del proyecto, corte de la seccionadora, TXT por placa y total de cantos.
+ test(`axe ${w}px: maderera por placa`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
-  await boot(page,info.outputDir);const today=new Date().toISOString().slice(0,10);
-  const [board,strip]=await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:true,price:{amount:9000,currency:'ARS',unit:'placa',date:today,source:'Lista sintética'}}},{name:'Canto auditoría',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}}]);
-  const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();
-  await expect(panel.getByRole('region',{name:'Optimización de placas'})).toBeVisible();await expect(panel.getByLabel('Pieza del pedido')).toBeHidden();
-  await audit(page,'pedido-maderera-problemas',panel);
-  await openDetail(panel);const select=panel.getByLabel('Pieza del pedido');
-  for(const id of await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value))){await select.selectOption(id);await page.getByLabel('Placa del pedido').selectOption(board.id);await page.getByLabel('Canto principal (1) del pedido').selectOption(strip.id);await page.getByLabel('Arriba · canto del pedido').selectOption('1');}
-  await expect(panel.locator('#workshop-problems-summary')).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
-  await panel.locator('details.workshop-piece-detail > summary').click();await expect(select).toBeHidden();
-  await expect(panel.getByRole('region',{name:'Optimización de placas'}).getByRole('img',{name:/^Placa 1 de 1/})).toBeVisible();
-  await audit(page,'pedido-maderera-optimizado',panel);
- });
-
- test(`axe ${w}px: revisión de cantos`,async({page},info)=>{
-  await page.setViewportSize({width:w,height:h});
-  await boot(page,info.outputDir,'materials-edges');
-  const [board,first,second]=await catalog([
-   {name:'Placa observable',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false}},
-   {name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}},
-   {name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22}}]);
-  const panel=await openWorkshop(page);await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);
-  // 0.8.16: los cantos se leen solos de las caras; solo los materiales sin vínculo piden elegir el canto.
-  const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});await expect(links).toBeVisible();
-  await expect(panel.getByRole('list',{name:'Avisos de los cantos del modelo'})).toBeVisible();
-  await audit(page,'revision-cantos-sin-vinculo',panel);
-  await page.getByLabel('Placa del pedido').selectOption(board.id);
-  await links.getByLabel('Canto de biblioteca para Canto de prueba').selectOption(first.id);await links.getByLabel('Canto de biblioteca para Canto secundario de prueba').selectOption(second.id);
-  await expect(panel.getByRole('region',{name:'Cantos del pedido'})).toContainText('EDGE-2');
-  await audit(page,'revision-cantos',panel);
+  await boot(page,info.outputDir,'materials-cutlist');
+  const [board,strip]=await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:true}},{name:'Canto auditoría',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}}]);
+  await send('__bind_material',{materialName:'Jade synthetic',catalogId:board.id});await send('__bind_material',{materialName:'Canto de prueba',catalogId:strip.id});
+  const region=await openMaderera(page);
+  await expect(region.getByRole('region',{name:'Placas del proyecto'}).getByRole('img',{name:/^Placa 1 de 1/})).toBeVisible();
+  await audit(page,'maderera-placas',region);
+  // Con un valor fuera de rango, el aviso del campo también se audita.
+  await region.getByLabel('Refilado por lado mm').fill('99');await expect(region.getByText('Entre 0 y 50 mm.',{exact:false})).toBeVisible();
+  await audit(page,'maderera-placas-aviso',region);
  });
 
  test(`axe ${w}px: materiales y cantos (OCL)`,async({page},info)=>{

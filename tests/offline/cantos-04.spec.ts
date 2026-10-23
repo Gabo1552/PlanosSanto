@@ -5,10 +5,10 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {readFileSync,existsSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {openDetail} from './fixtures/order-detail';
 
 // CANTOS-04: five asymmetric pieces through the real Ruby controller (synthetic SketchUp doubles, no SKP):
-// the supplier TXT, the references printed on the A4 and the 2D view of the order mark the same sides.
+// the supplier TXT exported from «Maderera» (0.8.20: one TXT per board) and the references printed on the A4
+// mark the same sides. The 2D view of the order is gone with the per-piece order screen.
 // The A4 glyph itself is checked against the same fixture in tests/cantos-04.test.ts.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 const fixture=JSON.parse(readFileSync('tests/offline/fixtures/cantos-asimetricos.json','utf8')) as {pieces:{detail:string;edgeMap:number[]}[]};
@@ -33,7 +33,7 @@ async function boot(page:Page,folder:string){
 }
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
-test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D marcan los mismos lados',async({page},info)=>{
+test('cinco piezas asimétricas: el TXT de la placa y la referencia de la A4 marcan los mismos lados',async({page},info)=>{
   await boot(page,info.outputDir);
   const generate=page.getByRole('button',{name:'Generar guías (1)',exact:true});await expect(generate).toBeEnabled();await generate.click();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
@@ -50,10 +50,6 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   rows.forEach((row,i)=>Object.assign(row,{detail:fixture.pieces[i].detail,axes:[0,1],frontSign:1,materialId:sheet.id,principalId:first.id,secondaryId:second.id,edgeMap:fixture.pieces[i].edgeMap,
     grainPolicy:'locked',dimensionRule:'finished_accepted'}));
   await send('order_save',{plan});
-  // TXT: columns 6-9 are Arr·Aba·Izq·Der over base × height.
-  const exported=await send<{directory:string}>('order_export',{plan});
-  const lines=(await readFile(join(exported.directory,'lote-01.txt'),'utf8')).split('\r\n').map(line=>line.split('\t')).filter(cols=>/^\d+$/.test(cols[0]));
-  expect(lines).toHaveLength(5);
   // A4: the printed references (partial route used by the sheet) carry the same map and cut.
   const partial=await send<{references:Record<string,{edgeMap:number[];base:number;height:number}>;pending:string[]}>('order_references_partial');
   expect(partial.pending).toEqual([]);
@@ -66,17 +62,20 @@ test('cinco piezas asimétricas: el TXT, la referencia de la A4 y la vista 2D ma
   await page.getByTestId('labels-generate').click();await expect(page.getByTestId('labels-status')).toContainText('5 etiquetas');
   await expect(page.getByTestId('labels-download')).toHaveAttribute('href',/^blob:/);
   reviewed.axes=[0,1];await send('order_save',{plan});
-  // 2D view of the order, piece by piece.
-  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
-  await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);const select=panel.getByLabel('Pieza del pedido');await expect(select).toBeVisible();
-  const sides=['arriba','abajo','izquierda','derecha'];
+  // TXT of the board from «Maderera»: columns 6-9 are Arr·Aba·Izq·Der over base × height; canto 1 is the edge with
+  // more metres on the board (EDGE-1 here), canto 2 the other one.
+  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Maderera',exact:true}).click();
+  const board=page.getByRole('region',{name:'Placa cantos · 19,05 mm'});
+  await expect(board.getByRole('list',{name:'Cantos de Placa cantos · 19,05 mm'})).toContainText(/Canto 1 Canto principal · EDGE-1.*Canto 2 Canto secundario · EDGE-2/);
+  await board.getByRole('button',{name:'Exportar TXT de Placa cantos · 19,05 mm',exact:true}).click();
+  const file=(await board.locator('.workshop-board-export small').textContent())!.replace(/^Archivo: /,'');
+  await expect(page.getByRole('status').filter({hasText:'guardado en'})).toContainText(join(info.outputDir,file));
+  const lines=(await readFile(join(info.outputDir,file),'utf8')).split('\r\n').map(line=>line.split('\t')).filter(cols=>/^\d+$/.test(cols[0]));
+  expect(lines).toHaveLength(5);
   for(const [i,row] of rows.entries()){
     const map=fixture.pieces[i].edgeMap,line=lines.find(cols=>cols[3]===fixture.pieces[i].detail)!;
     expect(line.slice(5,9).map(Number),`TXT ${row.detail}`).toEqual(map);
     expect(partial.references[row.id].edgeMap,`A4 ${row.detail}`).toEqual(map);
     expect([line[1],line[2]].map(value=>Number(value.replace(',','.'))),`corte ${row.detail}`).toEqual([partial.references[row.id].base,partial.references[row.id].height].map(n=>Number(n.toFixed(3))));
-    await select.selectOption(row.id);
-    const described=sides.map((side,s)=>`${side}: ${map[s]?`canto ${map[s]===1?'principal EDGE-1':'secundario EDGE-2'}, [\\d.,]+ mm`:'sin canto'}`).join('; ');
-    await expect(panel.getByRole('img',{name:new RegExp(`^Vista 2D orientada para maderera: base 609,6 × altura 406,4 mm; ${described}\\.$`)}),`2D ${row.detail}`).toBeVisible();
   }
 });

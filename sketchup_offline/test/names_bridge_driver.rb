@@ -29,6 +29,8 @@ module UI
     return File.join(ARGV.fetch(0), 'materiales-cantos.json') if title.include?('materiales') && ARGV[1]=='materials'
     return File.join(ARGV.fetch(0),'biblioteca-exportada.json') if title.include?('biblioteca')
     return File.join(ARGV.fetch(0),'piezas-exportadas') if title.include?('CSV')
+    # Maderera (0.8.20): el TXT de una placa se guarda con el nombre que propone el diálogo.
+    return File.join(ARGV.fetch(0),_args[1].to_s) if title.include?('TXT')
     title.include?('PDF') ? File.join(ARGV.fetch(0), 'PlanosSanto-A4.pdf') : nil
   end
   def self.openpanel(*_args);File.join(ARGV.fetch(0),'candidatos.json');end

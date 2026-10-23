@@ -1,9 +1,9 @@
-// Optimización estimada de placas para el pedido a maderera (0.8.19). Nesting 2D guillotina escrito para Planos Santo:
-// todos los cortes van de lado a lado de un rectángulo libre, como en una seccionadora. Determinística: mismo pedido,
-// mismas placas. Corre en la UI porque filas, geometría y biblioteca ya están acá: se recalcula en vivo con cada cambio,
-// aun con piezas con problemas, sin ida y vuelta a Ruby. Es una estimación: la maderera puede optimizar distinto.
-import {orderSize,type CutProfile} from './workshopRules';
-import type {Catalog,CatalogItem,OrderPlan} from './WorkshopPanel';
+// Optimización estimada de placas para la maderera (0.8.19; por placa del proyecto desde 0.8.20). Nesting 2D guillotina
+// escrito para Planos Santo: todos los cortes van de lado a lado de un rectángulo libre, como en una seccionadora.
+// Determinística: mismas piezas, mismas placas. Corre en la UI con las filas, la geometría y la biblioteca que manda Ruby:
+// se recalcula en vivo al cambiar disco, refilado o giro. Es una estimación: la maderera puede optimizar distinto.
+import {rotationBlock,rowDimensions} from './workshopRules';
+import type {Catalog,CatalogItem,OrderPlan,OrderRow} from './WorkshopPanel';
 
 /** Pieza a ubicar: base a lo largo del largo de la placa (la veta), altura a lo ancho. */
 export type SheetPiece={id:string;detail:string;base:number;height:number;rotate:boolean};
@@ -96,49 +96,49 @@ export function packSheets(pieces:SheetPiece[],spec:SheetSpec):PackResult{
  return {sheets:best||[],oversize};
 }
 
-// --- Del pedido a la optimización por placa --------------------------------------------------------------------------
+// --- De las placas del proyecto a la optimización --------------------------------------------------------------------
+/** Corte de la seccionadora: disco (kerf), refilado por lado y si se giran las piezas que lo permiten. */
+export type CutSettings={kerfMm:number;trimMm:number;allowRotate:boolean};
+/** Una placa del proyecto (material + espesor real de la pieza), como la arma Ruby (SupplierOrder#boards). */
+export type BoardGroup={key:string;materialId:string;name:string;sku:string;thicknessMm:number;rowIds:string[]};
 export type LegendEntry={key:string;base:number;height:number;count:number;details:string[]};
 export type OversizePiece={id:string;detail:string;base:number;height:number};
 /** Placas con la misma distribución se dibujan una vez: sheetNumbers dice cuáles son (1, 2…). */
 export type LayoutGroup={sheetNumbers:number[];layout:SheetLayout};
-export type MaterialOptimization={materialId:string;name:string;sku:string;thicknessMm:number|null;grain:boolean|null;lengthMm:number|null;widthMm:number|null;trimMm:number;kerfMm:number;
- status:'ok'|'no_format'|'no_usable';pieces:number;sheets:SheetLayout[];layouts:LayoutGroup[];legend:LegendEntry[];keys:Record<string,string>;oversize:OversizePiece[];netM2:number;boughtM2:number;utilization:number|null;price:CatalogItem['price']};
-export type OrderOptimization={materials:MaterialOptimization[];skipped:{noBoard:number;noSize:number;notRectangular:number};trimMm:number;kerfMm:number};
+export type MaterialOptimization={key:string;materialId:string;name:string;sku:string;thicknessMm:number;grain:boolean|null;lengthMm:number|null;widthMm:number|null;trimMm:number;kerfMm:number;
+ status:'ok'|'no_format'|'no_usable';pieces:number;unsized:number;rotatable:number;sheets:SheetLayout[];layouts:LayoutGroup[];legend:LegendEntry[];keys:Record<string,string>;oversize:OversizePiece[];netM2:number;boughtM2:number;utilization:number|null};
+export type OrderOptimization={materials:MaterialOptimization[];trimMm:number;kerfMm:number;allowRotate:boolean};
 const measured=(value:number|null|undefined):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>0;
 /** Letras de leyenda: A…Z, AA, AB… */
 export function legendKey(index:number){let out='',n=index;do{out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26)-1;}while(n>=0);return out;}
 const size=(value:number)=>Math.round(value*10)/10;
-/** Optimiza cada placa del pedido (material y espesor de la ficha) con el refilado y el kerf del perfil en uso. */
-export function optimizeOrder(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalog,profile:CutProfile&{trimMm:number;kerfMm:number}):OrderOptimization{
- const groups=new Map<string,{board:CatalogItem;pieces:SheetPiece[]}>(),skipped={noBoard:0,noSize:0,notRectangular:0};
- for(const row of plan.rows){
-  if(!row.include)continue;const geometry=plan.geometry[row.id],board=catalog.items.find(item=>item.id===row.materialId&&item.kind==='sheet');
-  if(!board){skipped.noBoard++;continue;}
-  if(geometry&&!geometry.rectangular){skipped.notRectangular++;continue;}
-  const cut=geometry?orderSize(row,geometry,catalog,profile):null;if(!cut||!(cut[0]>0)||!(cut[1]>0)){skipped.noSize++;continue;}
-  const group=groups.get(board.id)??{board,pieces:[]};group.pieces.push({id:row.id,detail:row.detail,base:cut[0],height:cut[1],rotate:row.grainPolicy==='rotate'&&board.grain===false});groups.set(board.id,group);
- }
- const materials=[...groups.values()].map(({board,pieces}):MaterialOptimization=>{
+/** Se gira solo si se pidió, la placa no tiene veta y los cantos son simétricos: la misma regla que el TXT (rota 1). */
+export const canRotate=(row:Pick<OrderRow,'edgeMap'>,board:CatalogItem,cut:Pick<CutSettings,'allowRotate'>)=>cut.allowRotate&&rotationBlock(row,board)===null;
+/**
+ * Optimiza cada placa del proyecto con el disco y el refilado elegidos. Las medidas son las de las piezas (las mismas
+ * del TXT); el kerf y el refilado solo cuentan para ubicarlas en la placa.
+ */
+export function optimizeBoards(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalog,boards:BoardGroup[],cut:CutSettings):OrderOptimization{
+ const rows=new Map(plan.rows.map(row=>[row.id,row]));
+ const materials=boards.map((group):MaterialOptimization|null=>{
+  const board=catalog.items.find(item=>item.id===group.materialId&&item.kind==='sheet');if(!board)return null;
+  const pieces:SheetPiece[]=[];let unsized=0;
+  for(const id of group.rowIds){const row=rows.get(id),geometry=plan.geometry[id],dims=row&&geometry?rowDimensions(row,geometry):null;
+   if(!row||!dims||!(dims[0]>0)||!(dims[1]>0)){unsized++;continue;}
+   pieces.push({id,detail:row.detail,base:dims[0],height:dims[1],rotate:canRotate(row,board,cut)});}
   const netM2=pieces.reduce((sum,p)=>sum+p.base*p.height,0)/1e6;
   // Mismas medidas (al décimo de mm) comparten letra; la leyenda va de la pieza más grande a la más chica.
   const bySize=new Map<string,LegendEntry>();for(const p of [...pieces].sort((a,b)=>b.base*b.height-a.base*a.height||tie(a,b))){const id=`${size(p.base)}x${size(p.height)}`,entry=bySize.get(id)??{key:'',base:size(p.base),height:size(p.height),count:0,details:[]};entry.count++;if(!entry.details.includes(p.detail))entry.details.push(p.detail);bySize.set(id,entry);}
   const legend=[...bySize.values()].map((entry,i)=>({...entry,key:legendKey(i)})),keys=Object.fromEntries(pieces.map(p=>[p.id,legend.find(e=>e.base===size(p.base)&&e.height===size(p.height))!.key]));
-  const base={materialId:board.id,name:board.name.trim()||'Sin nombre',sku:board.sku.trim(),thicknessMm:board.thicknessMm,grain:board.grain,lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:profile.trimMm,kerfMm:profile.kerfMm,pieces:pieces.length,legend,keys,netM2,price:board.price};
+  const base={key:group.key,materialId:board.id,name:group.name,sku:group.sku,thicknessMm:group.thicknessMm,grain:board.grain,lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:cut.trimMm,kerfMm:cut.kerfMm,
+   pieces:pieces.length,unsized,rotatable:pieces.filter(p=>p.rotate).length,legend,keys,netM2};
   if(!measured(board.lengthMm)||!measured(board.widthMm))return {...base,status:'no_format',sheets:[],layouts:[],oversize:[],boughtM2:0,utilization:null};
-  const spec={lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:profile.trimMm,kerfMm:profile.kerfMm},{length,width}=usable(spec);
+  const spec={lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:cut.trimMm,kerfMm:cut.kerfMm},{length,width}=usable(spec);
   const result=packSheets(pieces,spec),boughtM2=result.sheets.length*board.lengthMm*board.widthMm/1e6;
   const layouts:LayoutGroup[]=[];result.sheets.forEach((layout,i)=>{const sign=signature(layout,keys),same=layouts.find(group=>signature(group.layout,keys)===sign);if(same)same.sheetNumbers.push(i+1);else layouts.push({sheetNumbers:[i+1],layout});});
   const placedNet=result.sheets.reduce((sum,s)=>sum+s.usedMm2,0)/1e6;
   return {...base,status:length>0&&width>0?'ok':'no_usable',sheets:result.sheets,layouts,oversize:result.oversize.map(p=>({id:p.id,detail:p.detail,base:p.base,height:p.height})),boughtM2,utilization:boughtM2>0?placedNet/boughtM2:null};
- });
- return {materials,skipped,trimMm:profile.trimMm,kerfMm:profile.kerfMm};
+ }).filter((m):m is MaterialOptimization=>m!==null);
+ return {materials,trimMm:cut.trimMm,kerfMm:cut.kerfMm,allowRotate:cut.allowRotate};
 }
 const signature=(layout:SheetLayout,keys:Record<string,string>)=>layout.placements.map(p=>`${keys[p.id]}@${Math.round(p.x)},${Math.round(p.y)}${p.rotated?'r':''}`).join(';');
-export type SheetCost={amount:number|null;currency:string|null;status:'current_price'|'stale_price'|'future_price'|'price_pending'};
-/** Costo de las placas a comprar con el precio de la ficha: por placa o por m² comprado. Vigente hasta `ageDays` días. */
-export function sheetCost(material:Pick<MaterialOptimization,'sheets'|'boughtM2'|'price'>,today:Date,ageDays=90):SheetCost{
- const price=material.price;if(!price||!(price.unit==='placa'||price.unit==='m2')||!material.sheets.length)return {amount:null,currency:price?.currency||null,status:'price_pending'};
- const age=Math.round((Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())-Date.parse(`${price.date}T00:00:00Z`))/86400000);
- const status=!Number.isFinite(age)?'price_pending':age<0?'future_price':age>ageDays?'stale_price':'current_price';
- return {amount:status==='price_pending'?null:price.unit==='placa'?material.sheets.length*price.amount:material.boughtM2*price.amount,currency:price.currency,status};
-}
