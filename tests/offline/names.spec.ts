@@ -1,12 +1,11 @@
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {readFile,mkdir,copyFile,writeFile,readdir} from 'node:fs/promises';
+import {readFile,mkdir,copyFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {toMuebles,toPlanos} from './fixtures/modules';
-import {openDetail} from './fixtures/order-detail';
 import {pickFace,showIds} from './ids';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 let saveRequests:unknown[],saveReplies:Reply[],actions:Map<string,string>;
@@ -120,9 +119,10 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  expect(await page.locator('polygon[data-piece]').first().getAttribute('points')).not.toBe(original);
  await page.getByRole('button',{name:'Rotar con el mouse',exact:true}).click();
  await page.locator('.diagram').scrollIntoViewIfNeeded();
- const svg=await page.locator('.diagram').boundingBox();
+ const svg=await page.locator('.diagram').boundingBox(),startYaw=Number(await page.getByRole('slider',{name:'Giro horizontal',exact:true}).inputValue());
  await page.mouse.move(svg!.x+svg!.width*.75,svg!.y+svg!.height*.8);await page.mouse.down();await page.mouse.move(svg!.x+svg!.width*.75+20,svg!.y+svg!.height*.8-4,{steps:3});await page.mouse.up();
- const yaw=Number(await page.getByRole('slider',{name:'Giro horizontal',exact:true}).inputValue());expect(yaw).toBeGreaterThan(1);
+ // 0.8.20: the guide starts at the soft ¾ (yaw −15 for this front); dragging right turns it further.
+ const yaw=Number(await page.getByRole('slider',{name:'Giro horizontal',exact:true}).inputValue());expect(yaw).toBeGreaterThan(startYaw+1);
  await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.getByRole('slider',{name:'Giro horizontal',exact:true})).toHaveValue(String(yaw));
  await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
  // IDs start hidden in the A4 (0.8.19): showing and hiding them again saves the explicit choice.
@@ -280,7 +280,8 @@ test('clic sobre geometría encuadrada selecciona la pieza y guarda la flecha en
   for(const node of [...nodes].reverse()){
    const polygon=node as SVGPolygonElement,svg=polygon.ownerSVGElement!;
    const coords=(polygon.getAttribute('points')||'').split(' ').map(pair=>pair.split(',').map(Number));
-   const point=svg.createSVGPoint();point.x=coords.reduce((sum,p)=>sum+p[0],0)/3;point.y=coords.reduce((sum,p)=>sum+p[1],0)/3;
+   // 0.8.20: a face is one polygon per plane (quads, not triangles): its centroid is the mean of its corners.
+   const point=svg.createSVGPoint();point.x=coords.reduce((sum,p)=>sum+p[0],0)/coords.length;point.y=coords.reduce((sum,p)=>sum+p[1],0)/coords.length;
    const screen=point.matrixTransform(svg.getScreenCTM()!);
    if(document.elementFromPoint(screen.x,screen.y)===polygon)return {x:screen.x,y:screen.y,id:polygon.getAttribute('data-piece')!};
   }
@@ -376,66 +377,44 @@ test('cancelar el informe de materiales no modifica el modelo ni la guía',async
 test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin tocar geometría',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();
  await writeFile(resolve(info.outputDir,'candidatos.json'),JSON.stringify({items:[{nombre_en_modelos:'Placa prueba E2E',tipo_opencutlist:'2'}]}));
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();
  await page.getByRole('button',{name:'Importar JSON…',exact:true}).click();
  await page.getByRole('button',{name:/Placa prueba E2E/}).click();
- await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, largo, ancho, veta');// biblioteca v4: la placa ya trae sus espesores estándarawait expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);
+ await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, largo, ancho, veta');await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);// biblioteca v4: la placa ya trae sus espesores estándar
  await page.getByLabel('SKU de biblioteca').fill('PL-E2E');await page.getByLabel('Proveedor de biblioteca').fill('Proveedor sintético');
  await page.getByLabel('Espesor de biblioteca').fill('19.05');await page.getByLabel('Ancho de biblioteca').fill('2000');await page.getByLabel('Largo de biblioteca').fill('3000');
- await page.getByLabel('Veta de biblioteca').selectOption('false');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
+ await page.getByLabel('Veta de biblioteca').selectOption('false');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
  await page.getByRole('button',{name:'Guardar biblioteca',exact:true}).click();await expect(page.getByRole('status')).toContainText('Biblioteca guardada');
  await page.setViewportSize({width:1000,height:800});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
- await expect(page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true})).toBeInViewport();
+ await expect(page.getByRole('button',{name:'Cerrar biblioteca',exact:true})).toBeInViewport();
  await page.screenshot({path:'artifacts/biblioteca-068-SINTETICA-1000px.png',fullPage:false});
  expect(await snapshot()).toEqual(before);
  await page.getByRole('button',{name:'Exportar copia…',exact:true}).click();await expect(page.getByRole('status')).toContainText('Copia de biblioteca exportada');
  const library=JSON.parse(await readFile(resolve(info.outputDir,'biblioteca-exportada.json'),'utf8'));expect(library.items[0].price).toBeNull();expect(library.items[0].approved).toBe(false);// la casilla vieja queda en el JSON por compatibilidad, sin usarse
- await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();await page.reload();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
- await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
- await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
- await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');// biblioteca v4: los espesores siguen en la lista
- page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();
+ await page.getByRole('button',{name:'Cerrar biblioteca',exact:true}).click();await page.reload();
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
+ await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
+ await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
+ await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');// biblioteca v4: los espesores siguen en la lista
+ page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Cerrar biblioteca',exact:true}).click();
  expect(await snapshot()).toEqual(before);
 });
 
-test('pedido: propuesto desde el modelo, guardado solo y lotes TXT reales sin tildes',async({page},info)=>{
- await boot(page,info.outputDir);const before=await snapshot();
+// 0.8.20 «Maderera»: sin placa pintada no hay nada que elegir a mano; las piezas se listan fuera de las placas.
+test('maderera: sin placas pintadas las piezas quedan fuera, no se exporta nada y el modelo no se toca',async({page},info)=>{
+ await boot(page,info.outputDir);
  const added=await send('catalog_add',{revision:0,item:{name:'Placa E2E',kind:'sheet'}});expect(added.error).toBeNull();
- const library=added.result as {catalog:{revision:number;items:Record<string,unknown>[]}};
- Object.assign(library.catalog.items[0],{sku:'TEST-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false});
- const saved=await send('catalog_save',{revision:library.catalog.revision,items:library.catalog.items});expect(saved.error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
- await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(page);
- const summary=page.getByRole('dialog').locator('#workshop-problems-summary');await expect(summary).toHaveText('3 piezas con 3 problemas que impiden exportar.');
- const select=page.getByLabel('Pieza del pedido'),ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));expect(ids).toHaveLength(3);
- for(const id of ids){
-  // Ejes, cara, veta y medidas vienen propuestos del modelo: solo falta la placa, que el doble no tiene pintada.
-  await select.selectOption(id);await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeVisible();
-  await page.getByLabel('Placa del pedido').selectOption(library.catalog.items[0].id as string);
- }
- await expect(summary).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
- // 0.8.19: el detalle por pieza está al final del pedido, debajo de la optimización; al llevarlo a la vista entra junto con el botón de cerrar.
- await page.getByRole('img',{name:'Vista 2D orientada para maderera'}).scrollIntoViewIfNeeded();await expect(page.getByRole('img',{name:'Vista 2D orientada para maderera'})).toBeInViewport({ratio:0.9});
- await expect(page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true})).toBeInViewport();
- await page.screenshot({path:'artifacts/pedido-068-SINTETICO-2D.png',fullPage:false});
- // Se guardó solo: al cerrar no se pregunta nada y al reabrir sigue igual.
- await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:'Pedido maderera',exact:true}).click();
- await expect(page.getByLabel('Placa del pedido')).toHaveValue(library.catalog.items[0].id as string);await expect(summary).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
- await expect(page.locator('.workshop-figures dd').nth(2)).toHaveText('3');await expect(page.locator('.workshop-estimate-table tbody tr')).toHaveCount(3);
- await page.getByRole('button',{name:'Exportar TXT…',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
- const folders=(await readdir(info.outputDir)).filter(name=>name.startsWith('PlanosSanto-pedido-'));expect(folders).toHaveLength(1);
- const manifest=JSON.parse(await readFile(resolve(info.outputDir,folders[0],'manifest.json'),'utf8'));expect(manifest.production_ready).toBe(false);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(manifest.columns).toHaveLength(9);
- const txt=await readFile(resolve(info.outputDir,folders[0],'lote-01.txt'),'utf8');for(const row of txt.trim().split('\r\n'))expect(row.split('\t')).toHaveLength(9);
- const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);
- await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Incluir materiales y cantos del pedido revisado en el PDF',exact:true}).check();
- await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
- const {execFileSync}=await import('node:child_process');const pdfText=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'});expect(pdfText).toContain('TEST-19');expect(pdfText).toMatch(/[012]·[012]·[012]·[012] TEST-19/);expect(pdfText.replace(/\s+/g,' ')).toContain('orden Arr·Aba·Izq·Der sobre base × altura del pedido');
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
- await page.getByRole('button',{name:'Optimización y presupuesto',exact:true}).click();await page.getByRole('button',{name:'Abrir listas, optimización y presupuesto OCL',exact:true}).click();await expect(page.getByRole('alert')).toContainText('OpenCutList original');
+ await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();const before=await snapshot();
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Maderera',exact:true}).click();
+ const region=page.getByRole('region',{name:'Optimización de placas'});
+ await expect(region.getByRole('list',{name:'Piezas fuera de las placas'})).toHaveText('3 piezas sin placa de Materiales: Lateral - Blanco, Base, Base ajena. Pintalas con una sola placa de Materiales.');
+ await expect(region.getByText('Todavía no hay piezas pintadas con placas de Materiales.',{exact:false})).toBeVisible();
+ await expect(region.getByRole('button',{name:'Exportar todos los TXT…',exact:true})).toBeDisabled();
+ await region.getByRole('button',{name:'Volver al inicio',exact:true}).click();await expect(page.getByRole('region',{name:'Optimización de placas'})).toHaveCount(0);
+ const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);expect(after.operations).toEqual(before.operations);
+ expect([...actions.values()].filter(action=>/^order_(save|export)$/.test(action))).toEqual([]);
 });
 
 // Punto 21: the group axes give the orientation by default; there is no «Confirmé frente y vertical».
@@ -463,7 +442,9 @@ test('interior conserva la tabla agrupada y las instancias físicas al cambiar d
  expect((await snapshot()).geometryHash).toBe(before.geometryHash);
 });
 
-test('cantos por cara: se leen solos de las caras, se vinculan los materiales sin ficha y el TXT sale auditado sin pintar el SKP',async({page},info)=>{
+// 0.8.20: los cantos se leen solos de las caras pintadas con fichas de Materiales; la placa los numera (1 el de más
+// metros) para el TXT, que se audita con el validador. La A4 con materiales sale del mismo modelo.
+test('cantos por cara: se leen solos de las caras, la placa los numera y el TXT sale auditado sin pintar el SKP',async({page},info)=>{
  await boot(page,info.outputDir,'materials-edges');const before=await snapshot();
  let response=await send('catalog_add',{revision:0,item:{name:'Placa observable',kind:'sheet'}});
  let library=(response.result as {catalog:{revision:number;items:Record<string,unknown>[]}}).catalog;
@@ -473,26 +454,23 @@ test('cantos por cara: se leen solos de las caras, se vinculan los materiales si
  Object.assign(board,{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false});
  for(const [index,edge] of [first,second].entries())Object.assign(edge,{sku:`EDGE-${index+1}`,supplier:'Prueba',thicknessMm:index?1:.8,widthMm:22});
  response=await send('catalog_save',{revision:library.revision,items:library.items});expect(response.error).toBeNull();
+ for(const [materialName,item] of [['Jade synthetic',board],['Canto de prueba',first],['Canto secundario de prueba',second]] as const)expect((await send('__bind_material',{materialName,catalogId:item.id})).error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog');await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);
- await expect(panel.getByLabel('Piezas con problemas').locator(':scope > li')).toHaveCount(3);
- const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});
- await links.getByLabel('Canto de biblioteca para Canto de prueba').selectOption(first.id as string);await links.getByLabel('Canto de biblioteca para Canto secundario de prueba').selectOption(second.id as string);
- await expect(panel.getByRole('region',{name:'Cantos del pedido'})).toContainText('EDGE-2');
- const select=page.getByLabel('Pieza del pedido'),ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));
- const values=()=>Promise.all(['Arriba','Abajo','Izquierda','Derecha'].map(side=>page.getByLabel(`${side} · canto del pedido`).inputValue()));
- for(const id of ids){
-  await select.selectOption(id);await page.getByLabel('Placa del pedido').selectOption(board.id as string);
-  expect((await values()).sort()).toEqual(['0','0','1','2']);
- }
- await expect(panel.locator('#workshop-problems-summary')).toHaveText('Sin problemas físicos: el pedido se puede exportar.');
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Maderera',exact:true}).click();
+ const placa=page.getByRole('region',{name:'Placa observable · 19,05 mm'}),edges=placa.getByRole('list',{name:'Cantos de Placa observable · 19,05 mm'});
+ await expect(edges.locator('li')).toHaveCount(2);await expect(edges.locator('li').first()).toContainText('Canto 1');await expect(edges).toContainText('EDGE-1');await expect(edges).toContainText('EDGE-2');
+ await expect(placa.getByRole('list',{name:'Problemas de Placa observable · 19,05 mm'})).toHaveCount(0);
  await page.screenshot({path:'artifacts/cantos-069-SINTETICO.png',fullPage:false});
- await panel.getByRole('button',{name:'Exportar TXT…',exact:true}).click();await expect(panel.getByRole('status')).toContainText('TXT y manifiesto (manifest.json) guardados');
- const folder=(await readdir(info.outputDir)).find(name=>name.startsWith('PlanosSanto-pedido-'))!,manifest=JSON.parse(await readFile(resolve(info.outputDir,folder,'manifest.json'),'utf8'));
- expect(manifest.lots).toHaveLength(1);expect(manifest.lots[0].physicalQuantity).toBe(3);expect(Object.values(manifest.lots[0].edgeSource)).toEqual(['model','model','model']);expect(manifest.production_ready).toBe(false);
- const {execFileSync}=await import('node:child_process');execFileSync('python3',['scripts/validar_txt_maderera.py',resolve(info.outputDir,folder,'lote-01.txt')]);
+ await placa.getByRole('button',{name:'Exportar TXT de Placa observable · 19,05 mm',exact:true}).click();
+ const file=(await placa.locator('.workshop-board-export small').textContent())!.replace(/^Archivo: /,'');
+ await expect(page.getByRole('region',{name:'Optimización de placas'}).getByRole('status')).toContainText(`guardado en ${resolve(info.outputDir,file)}: 3 piezas`);
+ const {execFileSync}=await import('node:child_process');execFileSync('python3',['scripts/validar_txt_maderera.py',resolve(info.outputDir,file)]);
+ const lines=(await readFile(resolve(info.outputDir,file),'utf8')).trim().split('\r\n').map(line=>line.split('\t'));
+ expect(lines.reduce((sum,cols)=>sum+Number(cols[0]),0)).toBe(3);for(const cols of lines)expect(cols.slice(5).sort()).toEqual(['0','0','1','2']);
  const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);
- // Reversing the shown face keeps every edge on its physical face: left and right swap, nothing is re-read or lost.
- const sidesBefore=await values(),face=page.getByLabel('Cara mostrada de la vista 2D');await face.selectOption((await face.inputValue())==='1'?'-1':'1');
- expect(await values()).toEqual([sidesBefore[0],sidesBefore[1],sidesBefore[3],sidesBefore[2]]);await expect(panel.getByText('Cantos leídos de las caras pintadas del modelo.',{exact:true})).toBeVisible();
+ // La A4 con materiales usa las mismas fichas y el mismo orden de lados.
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Inicio',exact:true}).click();
+ await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Incluir materiales y cantos del pedido revisado en el PDF',exact:true}).check();
+ await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
+ const pdfText=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'});expect(pdfText).toContain('BOARD-19');expect(pdfText).toMatch(/[012]·[012]·[012]·[012] BOARD-19/);
 });

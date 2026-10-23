@@ -15,9 +15,9 @@ test('edita piezas/notas, conserva anclas, reabre y exporta dos hojas A4 legible
   await expect(page.locator('tbody tr')).toHaveCount(6);
   await expect(page.locator('[data-label]')).toHaveCount(6);
   const frontPoints=await page.locator('[data-piece]').first().getAttribute('points');
-  // Guide views: the interior looks from the side opposite the front.
+  // Guide views (0.8.20): the interior looks from the same front; the demo module has no doors or fronts to hide.
   await page.getByRole('button',{name:'Ver interior',exact:true}).click();
-  expect(await page.locator('[data-piece]').first().getAttribute('points')).not.toBe(frontPoints);
+  expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(frontPoints);
   await expect(page.locator('[data-label]')).toHaveCount(6);
   await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
   expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(frontPoints);

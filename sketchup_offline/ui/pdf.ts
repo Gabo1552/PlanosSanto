@@ -36,7 +36,7 @@ export function encode64(bytes:Uint8Array):string{
   return btoa(binary);
 }
 export type A4FitKind='table'|'legend'|'scale'|'header'|'glyph'|'names'|'size'|'view'|'order'|'empty';
-const FIT_ACTIONS:Partial<Record<A4FitKind,string>>={table:'Agrupá piezas iguales o acortá sus nombres.',legend:'Acortá observaciones o notas.',scale:'Pasá a 1 vista.',header:'Acortá el nombre del mueble o del proyecto.',names:'Completá el nombre de cada pieza.',size:'Reducí la cantidad de muebles por PDF.',view:'Corregí lo indicado en el editor de la guía y volvé a revisar la hoja.',order:'Desactivá Agrupar componentes iguales en este mueble o igualá su asignación en Biblioteca y pedidos.',empty:'Marcá al menos un mueble y generá su guía.'};
+const FIT_ACTIONS:Partial<Record<A4FitKind,string>>={table:'Agrupá piezas iguales o acortá sus nombres.',legend:'Acortá observaciones o notas.',scale:'Pasá a 1 vista.',header:'Acortá el nombre del mueble o del proyecto.',names:'Completá el nombre de cada pieza.',size:'Reducí la cantidad de muebles por PDF.',view:'Corregí lo indicado en el editor de la guía y volvé a revisar la hoja.',order:'Desactivá Agrupar componentes iguales en este mueble o igualá su asignación en Maderera.',empty:'Marcá al menos un mueble y generá su guía.'};
 /** Layout infeasibility: `reason` is the cause, `action` the fix, `detail` the numbers. The same text reaches the preview and the export notice. */
 export class A4FitError extends Error{
   /** `furniture` is the printed name; `furnitureId` the instance path that lets the editor open the furniture that fails. */
@@ -85,7 +85,7 @@ export type A4Options={pending?:readonly string[]};
 /** `notices`: cotas that found no free position and print where they obstruct least (advice, never a block). */
 export type A4Page={furnitureId:string;name:string;label:string;fit?:{detail:string;action:string};notices?:string[]};
 export const PENDING_TEXT='pendiente de pedido';
-const PENDING_LEGEND={full:'Pendiente de pedido: la fila sigue en revisión en Biblioteca y pedidos; se imprime sin placa ni cantos.',compact:'Pendiente de pedido: sin placa ni cantos hasta revisarla.'};
+const PENDING_LEGEND={full:'Pendiente de pedido: la fila sigue en revisión en Maderera; se imprime sin placa ni cantos.',compact:'Pendiente de pedido: sin placa ni cantos hasta revisarla.'};
 /**
  * Rows of the printed list. Identical instances may share a row only with the same order assignment;
  * with `foldTable` rows with equal measures, material, order assignment and name are folded too (codes stay in the drawing).
@@ -369,7 +369,7 @@ function sheetFrame(f:Furniture,rows:TableRow[],fonts:Metrics,fail:Fail){
     const detail=`Necesita ${Math.round(legend.height/MM)} mm de ${Math.round(LEGEND_LIMIT/MM)} mm.`;
     if(order.length&&legendFor().height<=LEGEND_LIMIT){
       if(cantos&&!waiting)fail('Las notas y observaciones no dejan lugar a la leyenda de cantos del pedido debajo de las vistas.','legend','Acortá observaciones o notas para dejar una línea a la leyenda de cantos, o desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado.',detail);
-      fail(`Las notas y observaciones no dejan lugar a la leyenda ${cantos?'de cantos y de filas pendientes de pedido':'de filas pendientes de pedido'} debajo de las vistas.`,'legend','Acortá observaciones o notas para dejar lugar a la leyenda del pedido, o terminá de revisar las filas pendientes en Biblioteca y pedidos.',detail);
+      fail(`Las notas y observaciones no dejan lugar a la leyenda ${cantos?'de cantos y de filas pendientes de pedido':'de filas pendientes de pedido'} debajo de las vistas.`,'legend','Acortá observaciones o notas para dejar lugar a la leyenda del pedido, o terminá de revisar las filas pendientes en Maderera.',detail);
     }
     fail('Las notas y observaciones no caben legiblemente debajo de las vistas.','legend',undefined,detail);
   }

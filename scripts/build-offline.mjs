@@ -58,7 +58,8 @@ for(const action of ['sheet','edge','remove_edge','sample','furniture','order','
   copies[`planos_santo/icons/${action}.svg`]=`sketchup_offline/icons/${action}.svg`;
 }
 // Own paint cursors (Hito 2, PINTURA-12); the Tool degrades to the native cursor if one is missing.
-for(const key of ['piece','edge','remove','blocked','sample'])copies[`planos_santo/cursors/paint-${key}.png`]=`sketchup_offline/cursors/paint-${key}.png`;
+// 0.8.20: SVG (Windows, sharp at any scaling) and 64 px PNG (>= 150 % without the SVG) next to the 32 px PNG.
+for(const key of ['piece','edge','remove','blocked','sample'])for(const name of [`paint-${key}.png`,`paint-${key}-64.png`,`paint-${key}.svg`])copies[`planos_santo/cursors/${name}`]=`sketchup_offline/cursors/${name}`;
 await mkdir(resolve(out,'planos_santo/icons'),{recursive:true});
 await mkdir(resolve(out,'planos_santo/cursors'),{recursive:true});
 for(const [target,source] of Object.entries(copies)){

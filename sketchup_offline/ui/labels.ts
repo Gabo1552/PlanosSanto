@@ -6,6 +6,10 @@ import { compositeCode } from './names';
 import release from '../version.json';
 const {version}=release;
 
+/** 0.8.20: el taller no usa etiquetas por ahora. El panel, el generador y las preferencias guardadas quedan intactos
+ *  (y probados por unidad y en su arnés), pero ninguna pantalla los muestra. */
+export const LABELS_ENABLED=false;
+
 // DESPIECE-07 / OPT-10: piece labels for self-adhesive A4 sheets (portrait), one label per physical piece.
 // F-OPT-D: the supplier TXT may group several identical pieces in one line (quantity > 1). Each label still
 // carries its own composite code ('M03·P07', never the TXT line) plus «Lote NN» when the lot is known, so a

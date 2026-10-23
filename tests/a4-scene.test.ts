@@ -1,5 +1,4 @@
 import {describe,it,expect} from 'vitest';
-import {Vector3} from 'three';
 import {createDemo} from '../lib/demo';
 import {applyEdit,toEdit} from '../lib/model';
 import {makeScene,guideViews,sheetView,layoutWarnings} from '../lib/scene';
@@ -22,11 +21,11 @@ describe('Guías A4 configurables: representación separada de geometría',()=>{
   const interior=makeScene(f,{view:'back'});expect(interior.faces.some(face=>face.pieceId===left.id)).toBe(false);expect(interior.faces.some(face=>face.pieceId===right.id)).toBe(true);expect(interior.labels.some(label=>label.pieceId===left.id)).toBe(false);expect(interior.dimensions.some(d=>d.pieceId===left.id)).toBe(false);
   expect(f.pieces).toHaveLength(6);expect(JSON.stringify(f)).toBe(before);f.presentation!.guide!.hiddenPieceIds=[];expect(makeScene(f,{view:'back'}).faces.some(face=>face.pieceId===left.id)).toBe(true);
  });
- // Planos: with a shared orientation the interior is the exterior seen from the opposite side.
- it('comparte orientación (interior opuesto), zoom y encuadre aunque se oculte la pieza extrema',()=>{
+ // Planos (0.8.20): with a shared orientation the interior uses the exterior camera; it looks from the front too.
+ it('comparte orientación (interior desde el mismo frente), zoom y encuadre aunque se oculte la pieza extrema',()=>{
   const f=guide();f.presentation!.cameras={front:{yaw:49,pitch:27},back:{yaw:-25,pitch:64}};f.presentation!.guide!.hiddenPieceIds=[f.pieces[0].id];f.zoom=1.12;
   const exterior=makeScene(f),interior=makeScene(f,{view:'back'}),whole=makeScene({...f,presentation:{...f.presentation,guide:{...f.presentation!.guide!,hiddenPieceIds:[]}}},{view:'back'});
-  expect(interior.camera.forward.distanceTo(exterior.camera.forward.clone().applyAxisAngle(new Vector3(0,0,1),Math.PI))).toBeLessThan(1e-9);expect(interior.scale).toBe(whole.scale);expect(interior.cx).toBe(whole.cx);expect(interior.cy).toBe(whole.cy);
+  expect(interior.camera.forward.distanceTo(exterior.camera.forward)).toBeLessThan(1e-9);expect(interior.scale).toBe(whole.scale);expect(interior.cx).toBe(whole.cx);expect(interior.cy).toBe(whole.cy);
   f.presentation!.guide!.sharedCamera=false;expect(makeScene(f,{view:'back'}).camera.forward.toArray()).not.toEqual(exterior.camera.forward.toArray());
  });
  it('interior independiente parte de la misma orientación exterior sin un giro implícito de 180 grados',()=>{

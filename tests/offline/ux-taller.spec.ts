@@ -5,9 +5,10 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {openDetail} from './fixtures/order-detail';
 
-// UX del taller (biblioteca, pedido, cantos y revisión de materiales) sobre el controlador real con dobles sintéticos de SketchUp.
+// UX del taller (biblioteca y revisión de materiales) sobre el controlador real con dobles sintéticos de SketchUp.
+// 0.8.20: el pedido pieza por pieza (progreso, problemas, estimación, vista 2D y vínculo de cantos) se quitó de la
+// UI; la maderera es la optimización por placa y la cubre maderera-placas.spec.ts.
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={version:1;id:string;result:unknown;error:string|null};
 type Item=Record<string,unknown>&{id:string};type Library={catalog:{revision:number;items:Item[]}};
@@ -35,73 +36,12 @@ async function catalog(items:{name:string;kind:string;patch:Record<string,unknow
  const all=library!.catalog.items;items.forEach((item,i)=>Object.assign(all[i],item.patch));
  await send('catalog_save',{revision:library!.catalog.revision,items:all});return all;
 }
-async function openOrder(page:Page){
- await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
- await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
- await panel.getByRole('button',{name:'Pedido maderera',exact:true}).click();await openDetail(panel);await expect(panel.getByLabel('Pieza del pedido')).toBeVisible();return panel;
-}
-// Las cinco casillas de 0.8.15: ya no existen.
-const verifications=['Orientación y cara verificadas','Material y espesor verificados','Corte / terminadas verificadas con la maderera','Los cuatro cantos coinciden con esta vista','Dirección de veta verificada'];
-const board={sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:false};
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
-
-test('pedido: propuesto al abrir, progreso por pieza, atajos y confirmación solo al volver a proponer con cambios a mano',async({page},info)=>{
- await boot(page,info.outputDir);const [sheet]=await catalog([{name:'Placa UX',kind:'sheet',patch:board}]);
- const panel=await openOrder(page),select=panel.getByLabel('Pieza del pedido'),progress=panel.locator('#workshop-progress');
- const ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));expect(ids).toHaveLength(3);
- await expect(progress).toContainText('0 de 3 piezas listas');await expect(progress).toContainText('3 con problemas');
- await expect(select.locator('option').first()).toHaveText(/^Con problemas · /);
- await expect(panel.getByRole('button',{name:'Exportar TXT…',exact:true})).toHaveClass(/workshop-primary/);
- await expect(panel.getByRole('button',{name:'Pieza siguiente',exact:true})).toHaveAttribute('aria-keyshortcuts','Alt+ArrowDown');
- await expect(panel.getByRole('button',{name:'Pieza anterior',exact:true})).toHaveAttribute('aria-keyshortcuts','Alt+ArrowUp');
- for(const label of verifications)await expect(page.getByLabel(label,{exact:true})).toHaveCount(0);
- await page.getByLabel('Placa del pedido').selectOption(sheet.id);
- await expect(select.locator('option').first()).toHaveText(/^Lista · /);await expect(progress).toContainText('1 de 3 piezas listas');
- await panel.getByRole('button',{name:'Pieza siguiente',exact:true}).click();await expect(select).toHaveValue(ids[1]);
- await expect(panel.getByRole('status')).toContainText('con problemas');
- await page.getByLabel('Detalle del pedido').focus();await page.keyboard.press('Alt+ArrowDown');await expect(select).toHaveValue(ids[2]);
- await page.keyboard.press('Alt+ArrowDown');await expect(select).toHaveValue(ids[0]);// cíclico
- await page.keyboard.press('Alt+ArrowUp');await expect(select).toHaveValue(ids[2]);
- await page.getByLabel('Incluir pieza física en el pedido').uncheck();
- await expect(select.locator('option').nth(2)).toHaveText(/^Excluida · /);await expect(page.getByLabel('Nota de exclusión (opcional)')).toBeVisible();
- await expect(progress).toContainText('1 de 2 piezas listas · 1 con problemas · 1 excluida');
- let asked='';page.once('dialog',dialog=>{asked=dialog.message();void dialog.dismiss();});
- await panel.getByRole('button',{name:'Volver a proponer todo desde el modelo',exact:true}).click();expect(asked).toContain('reemplaza los cambios que hiciste a mano');
- await expect(progress).toContainText('1 de 2 piezas listas');
- await page.getByLabel('Nota de exclusión (opcional)').fill('Se corta en el taller');await page.keyboard.press('Control+s');
- await expect(panel.getByRole('status')).toContainText('Pedido guardado en el modelo');await expect(panel.getByText('Guardado en el modelo',{exact:false}).first()).toBeVisible();
- await page.screenshot({path:'artifacts/ux-taller-progreso-SINTETICO.png',fullPage:false});
-});
-
-test('pedido: problemas accionables en vivo y estimación que se calcula sola al no haber problemas',async({page},info)=>{
- await boot(page,info.outputDir);const today=new Date().toISOString().slice(0,10);
- const [sheet]=await catalog([{name:'Placa precio',kind:'sheet',patch:{...board,price:{amount:12345.5,currency:'ARS',unit:'m2',date:today,source:'Lista sintética'}}}]);
- const panel=await openOrder(page),select=panel.getByLabel('Pieza del pedido');
- const ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));
- await expect(panel.getByRole('heading',{name:'Problemas del pedido',exact:true})).toBeVisible();await expect(panel.getByLabel('Piezas con problemas').locator(':scope > li')).toHaveCount(3);
- await panel.getByLabel('Piezas con problemas').locator(':scope > li').nth(1).getByRole('button',{name:/^Ir a la pieza/}).click();
- await expect(select).toHaveValue(ids[1]);await expect(page.getByLabel('Placa del pedido')).toBeFocused();
- await page.getByLabel('Detalle del pedido').fill('Lateral revisado');
- for(const id of ids){await select.selectOption(id);await page.getByLabel('Placa del pedido').selectOption(sheet.id);}
- await expect(panel.locator('#workshop-problems-summary')).toHaveText('Sin problemas físicos: el pedido se puede exportar.');await expect(panel.getByLabel('Piezas con problemas')).toHaveCount(0);
- const figures=panel.locator('.workshop-figures');await expect(figures.locator('dt')).toHaveText(['Subtotal vigente','Precios desactualizados','Consumos sin precio']);
- await expect(figures.locator('dd').first()).toHaveText(/^ARS \d{1,3}(\.\d{3})*,\d{2}$/);await expect(figures.locator('dd').nth(2)).toHaveText('0');
- const table=panel.locator('.workshop-estimate-table');await expect(table.locator('tbody tr')).toHaveCount(3);
- await expect(table.locator('tbody tr').first().locator('td').first()).toHaveText(/^\d+,\d{3}$/);await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('Vigente');
- await expect(table.locator('thead th.workshop-num')).toHaveCount(2);await expect(panel.getByText('sin optimización, desperdicio, impuestos ni mano de obra',{exact:false})).toBeVisible();
- await table.getByRole('button',{name:'Ir a la pieza Lateral revisado'}).click();await expect(select).toHaveValue(ids[1]);
- await page.getByLabel('Detalle del pedido').fill('Lateral corregido');
- await expect(table.getByRole('button',{name:'Ir a la pieza Lateral corregido'})).toBeVisible();await expect(table.locator('tbody tr')).toHaveCount(3);
- await expect(panel.getByText('Actualizando con tus últimos cambios…',{exact:true})).toHaveCount(0);
- expect(actions.filter(a=>a==='order_check'||a==='order_audit')).toHaveLength(0);
- await panel.locator('.workshop-estimate').scrollIntoViewIfNeeded();await page.screenshot({path:'artifacts/ux-taller-estimacion-SINTETICA.png',fullPage:false});
-});
 
 test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prompt nativo',async({page},info)=>{
  await boot(page,info.outputDir);await catalog([{name:'Placa existente',kind:'sheet',patch:{}},{name:'Canto existente',kind:'edge',patch:{}}]);
  let prompted=false;page.on('dialog',dialog=>{prompted=true;void dialog.dismiss();});
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
  const list=panel.getByRole('group',{name:'Materiales de biblioteca'});await expect(list.getByRole('button')).toHaveCount(2);
  // Biblioteca v4: el canto nuevo ya trae los anchos estándar 22 y 45 mm, así que solo la placa (sin SKU ni formato) queda incompleta.
  await expect(list.locator('.workshop-badge',{hasText:'Incompleta'})).toHaveCount(1);
@@ -127,26 +67,6 @@ test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prom
  await page.screenshot({path:'artifacts/ux-taller-biblioteca-SINTETICA.png',fullPage:false});
 });
 
-test('cantos: leídos solos de las caras, vínculo de los materiales sin ficha y mapa que sigue a la cara física',async({page},info)=>{
- await boot(page,info.outputDir,'materials-edges');
- const [sheet,first,second]=await catalog([{name:'Placa observable',kind:'sheet',patch:board},{name:'Principal biblioteca',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}},{name:'Secundario biblioteca',kind:'edge',patch:{sku:'EDGE-2',supplier:'Prueba',thicknessMm:1,widthMm:22}}]);
- const panel=await openOrder(page);
- await expect(panel.getByRole('button',{name:/Leer cantos|Usar propuesta/})).toHaveCount(0);await expect(panel.getByLabel('Origen de la revisión de cantos')).toHaveCount(0);
- const notes=panel.getByRole('list',{name:'Avisos de los cantos del modelo'});await expect(notes).toContainText('vinculá «Canto de prueba»');
- const links=panel.getByRole('region',{name:'Cantos pintados sin vínculo'});
- await page.getByLabel('Placa del pedido').selectOption(sheet.id);
- await links.getByLabel('Canto de biblioteca para Canto de prueba').selectOption(first.id);await links.getByLabel('Canto de biblioteca para Canto secundario de prueba').selectOption(second.id);
- await expect(notes).toHaveCount(0);
- await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Cara mostrada de la vista 2D').selectOption('1');
- const values=()=>Promise.all(['Arriba','Abajo','Izquierda','Derecha'].map(side=>page.getByLabel(`${side} · canto del pedido`).inputValue()));
- expect((await values()).sort()).toEqual(['0','0','1','2']);
- await page.screenshot({path:'artifacts/ux-taller-cantos-SINTETICO.png',fullPage:false});
- // Al cambiar la cara, izquierda y derecha intercambian su canto: no se vuelven a leer ni se pierden.
- const before=await values();await page.getByLabel('Cara mostrada de la vista 2D').selectOption('-1');
- expect(await values()).toEqual([before[0],before[1],before[3],before[2]]);
- await page.getByLabel('Arriba · canto del pedido').selectOption('0');await expect(panel.getByText('Cantos cambiados a mano en el pedido.',{exact:true})).toBeVisible();
- await panel.getByRole('button',{name:'Volver a los cantos del modelo',exact:true}).click();await expect(panel.getByText('Cantos leídos de las caras pintadas del modelo.',{exact:true})).toBeVisible();
-});
 test('revisión de materiales: conteos por filtro, vacío con salida, «/» y ver piezas que usan un material',async({page},info)=>{
  await boot(page,info.outputDir,'materials');
  await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});

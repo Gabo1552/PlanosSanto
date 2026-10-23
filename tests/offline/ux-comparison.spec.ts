@@ -40,7 +40,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 if(process.env.PLANOS_UX_CAPTURE_BASELINE==='1')test('UX baseline 083: capturas congeladas comparables del mismo fixture sintético',async({page},info)=>{
  await boot(page,info.outputDir,true);
  await shot(page,'before-inicio');
- await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const workshop=page.getByRole('dialog',{name:'Biblioteca y pedidos'});await expect(workshop).toContainText('Placa QA sintética');await shot(page,'before-materials');await page.setViewportSize({width:1920,height:1080});await shot(page,'before-materials-1920');await page.setViewportSize({width:1280,height:720});
+ await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();const workshop=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(workshop).toContainText('Placa QA sintética');await shot(page,'before-materials');await page.setViewportSize({width:1920,height:1080});await shot(page,'before-materials-1920');await page.setViewportSize({width:1280,height:720});
  await workshop.getByRole('button',{name:'Pedido maderera',exact:true}).click();await shot(page,'before-order');
  await workshop.getByRole('button',{name:/Cerrar/}).click();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();await shot(page,'before-furniture');await shot(page,'before-guides');
@@ -60,8 +60,8 @@ if(process.env.PLANOS_UX_CAPTURE_BASELINE!=='1'){
   await expect(page.getByRole('heading',{name:'Materiales del taller',exact:true})).toBeVisible();
   await expect(page.getByText('Placa QA sintética',{exact:true}).first()).toBeVisible();await shot(page,'after-materials');
   const beforeNav=calls.length;await nav.getByRole('button',{name:'Maderera',exact:true}).click();
-  await expect(page.getByRole('region',{name:'Biblioteca y pedidos'})).toBeVisible();await expect(page.getByRole('dialog',{name:'Biblioteca y pedidos'})).toHaveCount(0);await shot(page,'after-order');
-  expect(calls.slice(beforeNav).some(action=>['pdf','order_save','order_export','names_apply'].includes(action))).toBe(false);
+  await expect(page.getByRole('region',{name:'Optimización de placas'})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);await shot(page,'after-order');
+  expect(calls.slice(beforeNav).some(action=>['pdf','order_save','order_export','maderera_txt','names_apply'].includes(action))).toBe(false);
   await nav.getByRole('button',{name:'Inicio',exact:true}).click();
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();

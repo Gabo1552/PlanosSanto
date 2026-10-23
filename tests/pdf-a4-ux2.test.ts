@@ -57,7 +57,7 @@ describe('UX2 planos A4: cantos, agrupación por medidas, diagnóstico y tabla p
   f.groupIdentical=true;f.pieces=[{...template,id:'c/1',code:'P03'},{...template,id:'c/2',code:'P05'}];
   const error=await failure(project,{'c/1':asymmetric,'c/2':{...asymmetric,edgeMap:[0,0,0,0]}});
   expect(error).toBeInstanceOf(A4FitError);
-  expect(error).toMatchObject({kind:'order',furniture:f.name,reason:'P03 y P05 comparten el ID P03 pero tienen placa o cantos distintos en el pedido.',action:'Desactivá Agrupar componentes iguales en este mueble o igualá su asignación en Biblioteca y pedidos.'});
+  expect(error).toMatchObject({kind:'order',furniture:f.name,reason:'P03 y P05 comparten el ID P03 pero tienen placa o cantos distintos en el pedido.',action:'Desactivá Agrupar componentes iguales en este mueble o igualá su asignación en Maderera.'});
   expect(error.message).toBe(`${f.name}: ${error.reason} Qué hacer: ${error.action}`);
  });
  it('cuando el listado no entra pasa a la hoja 2 y aconseja la acción según la causa',async()=>{

@@ -115,6 +115,25 @@
 .cutlist .cutlist-row-button{min-height:24px;border:0;background:transparent;padding:0;text-align:left;color:var(--cl-ink)}
 .cutlist .cutlist-row-button:hover:not(:disabled){background:transparent;text-decoration:underline}
 .cutlist-detail{font-size:11px;color:var(--cl-muted)}
+
+/* 0.8.20: resumen → sección (toda la fila lleva; el nombre es el botón) y marca breve de la sección elegida. */
+.cutlist-summary tbody tr{cursor:pointer}
+.cutlist-summary tbody tr:hover td{background:#f7f7f4}
+.cutlist .cutlist-summary-link{min-height:26px;justify-content:flex-start;border:0;background:transparent;padding:0 2px;text-align:left;color:var(--cl-ink)}
+.cutlist .cutlist-summary-link:hover:not(:disabled){background:transparent;text-decoration:underline}
+.cutlist-group{scroll-margin-top:12px}
+.cutlist-group.is-flash{animation:cutlist-flash 1.6s ease-out}
+@keyframes cutlist-flash{0%,40%{box-shadow:0 0 0 3px #1f5fbf}100%{box-shadow:0 0 0 3px #1f5fbf00}}
+@media(prefers-reduced-motion:reduce){.cutlist-group.is-flash{animation:none;box-shadow:0 0 0 3px #1f5fbf}}
+/* Pieza mostrada en SketchUp: aviso, «2 de 4» y vuelta a la vista anterior, bajo la designación. */
+.cutlist-look{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:5px 0 2px;padding:4px 8px;border-left:3px solid var(--cl-action);background:#fff;color:var(--cl-ink);font-size:12px;cursor:default}
+.cutlist-look.is-busy{color:var(--cl-muted)}
+.cutlist-look.is-error{border-left-color:var(--cl-red);background:#fff2ed;color:#6e3326}
+.cutlist-look-text{display:inline-flex;align-items:center;gap:5px}
+.cutlist-look-steps{display:inline-flex;align-items:center;gap:2px}
+.cutlist-look-count{min-width:62px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+.cutlist .cutlist-look-restore{min-height:26px;padding:2px 8px;font-size:12px}
+.cutlist-actions .cutlist-look-restore{min-height:30px;font-size:13px}
 .cutlist-flag{display:inline-block;margin-left:8px;padding:0 6px;border-radius:3px;background:var(--cl-warn-bg);color:var(--cl-warn-ink);font-size:11px}
 
 @media(max-width:760px){.cutlist{padding:12px}.cutlist-field select,.cutlist-field input{min-width:0;width:100%}.cutlist-totals{margin-left:0}.cutlist-table th.num{width:auto}}
@@ -124,7 +143,7 @@
   body.cutlist-printing .ux-rail,body.cutlist-printing .ux-topbar,body.cutlist-printing .ux-skip{display:none!important}
   body.cutlist-printing .offline-app:before{content:none!important;display:none!important}
   body.cutlist-printing .offline-app>section.cutlist{display:block!important;padding:0;background:#fff}
-  body.cutlist-printing .cutlist :is(.cutlist-actions,.cutlist-filters,.cutlist-row-tools,.cutlist-group-tools,.cutlist-group-bar>.cutlist-icon-button,.cutlist-notice){display:none!important}
+  body.cutlist-printing .cutlist :is(.cutlist-actions,.cutlist-filters,.cutlist-row-tools,.cutlist-group-tools,.cutlist-group-bar>.cutlist-icon-button,.cutlist-notice,.cutlist-look){display:none!important}
   body.cutlist-printing .cutlist-group,body.cutlist-printing .cutlist-summary tr{break-inside:avoid}
   body.cutlist-printing .cutlist :is(.cutlist-type,.cutlist-dot,.cutlist-warn,.is-hatched){print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }

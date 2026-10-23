@@ -1,8 +1,7 @@
 import {useState} from 'react';
 import {request} from './bridge';
 import type {Catalog,CatalogItem} from './WorkshopPanel';
-import {suggestedSummary,variantThickness} from './maderaRules';
-import {mm} from '../../lib/model';
+import {suggestedSummary} from './maderaRules';
 import './madera.css';
 
 type Run=(operation:()=>Promise<void>,label?:string,action?:string)=>Promise<void>;
@@ -44,12 +43,3 @@ export function ItemV2Tools({item,catalog,busy,disabled,run,onChanged}:{item:Cat
  </>;
 }
 
-/** Pedido (biblioteca v4): el espesor de la pieza no está entre los de la placa. No bloquea: un clic lo agrega a la ficha
- * (o se elige otra placa, o se excluye). Sin confirmaciones: el pedido no se pierde al cambiar la biblioteca. */
-export function ThicknessOptions({board,thickness,busy,run,onChanged,onOtherBoard,onExclude}:{board:CatalogItem;thickness:number;catalog:Catalog;busy:boolean;run:Run;onChanged:Changed;onOtherBoard:()=>void;onExclude:()=>void}){
- const value=variantThickness(thickness);
- const add=()=>void run(async()=>{const next=await request<Library>('catalog_add_thickness',{id:board.id,thicknessMm:value});onChanged(next,board.id,`${mm(value)} mm agregado a los espesores de «${board.name}»; el pedido se conserva.`);},'Agregando espesor a la ficha…','catalog_add_thickness');
- return <div className="thickness-options" role="group" aria-label="Opciones por espesor fuera de la lista"><p className="workshop-hint">La pieza mide {mm(value)} mm de espesor, que no está en la lista de «{board.name}». No bloquea el pedido.</p>
-  <button disabled={busy} onClick={add}>Agregar {mm(value)} mm a {board.name}</button><button disabled={busy} onClick={onOtherBoard}>Elegir otra placa</button><button disabled={busy} onClick={onExclude}>Excluir la pieza</button>
-  <small className="workshop-hint">El espesor se agrega a la ficha de la biblioteca; el pedido conserva tus cambios.</small></div>;
-}
