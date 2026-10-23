@@ -224,7 +224,7 @@ test('Piezas: fichas vinculadas, «Ancho no definido», lápiz a Materiales y CS
  // Lápiz: abre la ficha de la placa en Materiales.
  await summary.getByRole('button',{name:'Editar la ficha de Melamina Jade en Materiales',exact:true}).click();
  await expect(rail(page,'Materiales')).toHaveAttribute('aria-current','page');
- const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});await expect(panel).toBeVisible();
+ const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(panel).toBeVisible();
  await expect(panel.getByRole('group',{name:'Materiales de biblioteca'}).getByRole('button',{name:/Melamina Jade/})).toHaveAttribute('aria-pressed','true');
  expect(found).toEqual([]);
 });

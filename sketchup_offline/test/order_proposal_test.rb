@@ -104,8 +104,10 @@ class OrderProposalTest < Minitest::Test
   def test_thickness_comes_from_the_board_not_from_the_smallest_side
     piece('1/1',[18,600,15]) # 15 mm es más chico pero la placa es de 18
     assert_equal [1,2],row(proposed,'1/1')['axes']
-    piece('1/2',[30,600,25]);plan=proposed
-    assert reasons(plan,'1/2').any? { |r| r.include?('El espesor no coincide') },'Sin eje del espesor de la placa: bloquea (regla física)'
+    # 0.8.20: 25 mm es uno de los espesores estándar de la ficha (material con varios espesores): vale.
+    piece('1/2',[30,600,25]);piece('1/3',[30,600,22]);plan=proposed
+    assert reasons(plan,'1/2').none? { |r| r.include?('El espesor no coincide') },'Espesor estándar de la ficha: no bloquea'
+    assert reasons(plan,'1/3').any? { |r| r.include?('El espesor no coincide') },'Sin eje de un espesor de la placa: bloquea (regla física)'
   end
   def test_grained_board_puts_u_along_the_grain_and_the_grain_follows_the_board
     items=Marshal.load(Marshal.dump(@catalog['items']));items[0]['grain']=true;catalog=@store.save(items,@catalog['revision'])

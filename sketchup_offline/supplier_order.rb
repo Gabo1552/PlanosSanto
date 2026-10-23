@@ -37,6 +37,11 @@ module PlanosSanto
     end
     # Grain follows the board (0.8.16): with grain it runs along the base (U); without grain there is none.
     def self.grain_axis(board);board && board['grain']==true ? 'u' : 'none';end
+    # Espesores que ofrece una ficha de placa: el de la ficha y, si la biblioteca los trae (material con varios
+    # espesores), los de `thicknessesMm`. Una pieza vale si su eje de espesor coincide con alguno (±0,1 mm).
+    def self.thicknesses(board)
+      [board['thicknessMm'],*Array(board['thicknessesMm'])].select { |t| t.is_a?(Numeric) && t.finite? && t>0 }.uniq
+    end
 
     def initialize(document,fingerprint,catalog,material_proposal: nil, maderera: nil)
       @document=document;@fingerprint=fingerprint;@catalog=catalog;@nodes={};@material_proposal=material_proposal
@@ -67,7 +72,8 @@ module PlanosSanto
     end
     # Returns the normalized draft (or, in collect mode, every problem per included row). Only physical
     # problems and data an order cannot go without block: there is nothing left to tick.
-    def validate(draft,collect_errors: false)
+    # `only`: ids de las filas a revisar (0.8.20, TXT de una placa); el resto del pedido no se mira fila por fila.
+    def validate(draft,collect_errors: false, only: nil)
       errors=[]
       raise ExportError,'El modelo cambió desde que se preparó el pedido: volvé a abrir el pedido y se actualiza solo.' unless draft.is_a?(Hash) && draft['schema']==1 && draft['fingerprint']==@fingerprint
       raise ExportError,'La biblioteca cambió desde que se preparó el pedido: volvé a abrir el pedido y se actualiza solo.' unless draft['catalogRevision']==@catalog['revision']
@@ -81,6 +87,7 @@ module PlanosSanto
         %w[excludeReason detail].each { |key| CatalogStore.new.text(row[key]) }
         # An excluded piece needs no reason: the note is optional and only travels in the manifest.
         next unless row['include']
+        next if only && !only.include?(row['id'])
         if collect_errors
           reasons=(validate_row(row,collect:true)+OrderProposal.edge_blockers(draft,row)+OrderProposal.detail_reasons(draft,row,@detail_codes)).uniq
           errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>reasons.first,'reasons'=>reasons} unless reasons.empty?
@@ -94,7 +101,7 @@ module PlanosSanto
           end
         end
       end
-      raise ExportError,'No hay piezas incluidas en el pedido.' unless rows.any? { |row| row['include'] }
+      raise ExportError,'No hay piezas incluidas en el pedido.' unless rows.any? { |row| row['include'] && (only.nil? || only.include?(row['id'])) }
       collect_errors ? errors : draft
     end
     # Any ficha of the library serves while it is complete; nothing is «approved» by hand any more.
@@ -136,7 +143,8 @@ module PlanosSanto
       thickness=g['lengths'][(0..2).find { |i| !axes.include?(i) }]
       check.call do
         board=material(row['materialId'],'sheet')
-        raise ExportError,"El espesor no coincide: el eje de espesor mide #{mm(thickness)} mm y la placa tiene #{mm(board['thicknessMm'])} mm." if (thickness-board['thicknessMm']).abs>0.1
+        offered=self.class.thicknesses(board);others=offered-[board['thicknessMm']]
+        raise ExportError,"El espesor no coincide: el eje de espesor mide #{mm(thickness)} mm y la placa tiene #{mm(board['thicknessMm'])} mm#{others.empty? ? '' : " (espesores estándar de la ficha: #{others.map { |t| mm(t) }.join(' · ')} mm)"}." if offered.none? { |t| (thickness-t).abs<=0.1 }
       end
       sized=check.call do
         raise ExportError,"El detalle supera #{MAX_DETAIL} caracteres: acortalo." if row['detail'].length>MAX_DETAIL
@@ -241,6 +249,117 @@ module PlanosSanto
        'pending'=>charges.count { |c| c['status']=='price_pending' },'outdated'=>charges.count { |c| %w[stale_price future_price].include?(c['status']) },'priceAgeDays'=>90,
        'includesWaste'=>false,'includesEdges'=>true,'includesLabor'=>false,'optimized'=>false}
     end
+    # Filas del TXT: las piezas físicas idénticas (mismas medidas, detalle, orientación y cantos) van en una
+    # sola línea con su cantidad. El bloque da el código de canto (0, 1 o 2) de cada lado de la fila.
+    def txt_lines(draft,rows,&codes)
+      grouped=rows.group_by { |row| [*dimensions(row),detail_for(draft,row),row['axes'],row['flipX'],row['flipY'],row['frontSign'],geometry(@nodes.fetch(row['id']))['mirrored'],codes.call(row),row['grainPolicy'],row['dimensionRule']] }
+      lines=grouped.values.map do |members|
+        row=members.first;base,height=dimensions(row)
+        [members.length,txt_number(base,draft['profile']['decimal']),txt_number(height,draft['profile']['decimal']),detail_for(draft,row),row['grainPolicy']=='rotate' ? 1 : 0,*codes.call(row)].join("\t")
+      end
+      [grouped,lines]
+    end
+    def txt_number(number,decimal)
+      raise ExportError,'El proveedor admite hasta tres decimales; revisá medidas.' if number.round(3)<=0
+      str=format('%.3f',number).sub(/0+\z/,'').sub(/\.\z/,'');decimal==',' ? str.tr('.',',') : str
+    end
+    # El TXT necesita un detalle: una pieza sin nombre sale con su id para que la maderera la pueda nombrar.
+    def detail_for(draft,row)
+      text=OrderProposal.detail_text(draft,row,@detail_codes).to_s
+      text.strip.empty? ? "Pieza #{row['id']}"[0,MAX_DETAIL] : text
+    end
+
+    # --- 0.8.20 · Maderera: una placa = material + espesor real de la pieza; un TXT por placa ---------------
+    # Formato que hoy acepta la maderera (scripts/validar_txt_maderera.py): UTF-8 sin BOM, punto decimal,
+    # sin encabezado, nueve columnas TAB y saltos CRLF.
+    TXT_PROFILE={'encoding'=>'utf8','decimal'=>'.','header'=>false}.freeze
+    # Eje de espesor de la fila (el que no es base ni altura), como `thicknessMm` de la vista Piezas.
+    def thickness_of(row)
+      axes=row['axes'];return nil unless axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |n| n.is_a?(Integer) && n.between?(0,2) }
+      geometry(@nodes.fetch(row['id']))['lengths'][([0,1,2]-axes).first].round(2)
+    end
+    # Clave de placa: ficha de la biblioteca y espesor al décimo de mm.
+    def self.board_key(material_id,thickness);"#{material_id}|#{(thickness*10).round}";end
+    # Se permite girar (rota 1) solo en placas sin veta y con cantos simétricos; con veta, nunca.
+    def self.rotatable?(board,row);board['grain']==false && row['edgeMap'].is_a?(Array) && row['edgeMap'].uniq.length==1;end
+    # Placas del proyecto con sus piezas, los cantos que llevan (1 el de más metros, 2 el siguiente; desempata
+    # el id), los problemas que impiden su TXT y las piezas que no van a ninguna placa (con el motivo).
+    def boards(draft)
+      draft=self.class.normalize(draft);groups={};outside=[];items=@catalog['items'].to_h { |item| [item['id'],item] }
+      draft['rows'].each do |row|
+        board=items[row['materialId']];board=nil unless board && board['kind']=='sheet'
+        reason=if !row['include'] then 'excluded'
+               elsif !geometry(@nodes.fetch(row['id']))['rectangular'] then 'not_rectangular'
+               elsif !board then 'no_board'
+               elsif !thickness_of(row) then 'no_axes'
+               end
+        next outside << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>reason} if reason
+        thickness=thickness_of(row);key=self.class.board_key(board['id'],thickness)
+        # Se muestra el espesor medido de la primera pieza (19,05 mm, no 19,1): la clave solo agrupa al décimo.
+        (groups[key] ||= {'key'=>key,'board'=>board,'thicknessMm'=>thickness,'rows'=>[]})['rows'] << row
+      end
+      global=nil
+      reasons=begin
+        validate(draft,collect_errors:true).to_h { |error| [error['id'],error['reasons']] }
+      rescue ExportError => error
+        global=error.message;{}
+      end
+      list=groups.values.map do |group|
+        rows=group['rows'];board=group['board'];edges=board_edges(rows,items)
+        problems=rows.filter_map { |row| {'id'=>row['id'],'detail'=>row['detail'],'reasons'=>reasons[row['id']]} if reasons[row['id']] }
+        names=edges.map { |edge| edge['sku'].empty? ? edge['name'] : edge['sku'] }
+        blocker=edges.length>2 ? "Esta placa lleva #{edges.length} cantos distintos (#{names.join(', ')}) y el TXT admite dos: canto 1 y canto 2. Repintá los cantos para dejar dos por placa." : global
+        notes=rows.count { |row| Array(OrderProposal.baseline(draft,row['id'])&.fetch('notes',nil)).any? { |note| note.is_a?(Hash) && note['group']=='edges' } }
+        {'key'=>group['key'],'materialId'=>board['id'],'name'=>board['name'].to_s.strip.empty? ? 'Sin nombre' : board['name'].strip,'sku'=>board['sku'].to_s.strip,'thicknessMm'=>group['thicknessMm'],
+         'grain'=>[true,false].include?(board['grain']) ? board['grain'] : nil,'rowIds'=>rows.map { |row| row['id'] },
+         'edges'=>edges.first(2).each_with_index.map { |edge,index| edge.merge('code'=>index+1) },'problems'=>problems,'blocker'=>blocker,'edgeNotes'=>notes}
+      end
+      {'boards'=>list.sort_by { |b| [b['name'].downcase,b['thicknessMm'],b['key']] },'outside'=>outside}
+    end
+    # Metros de cada canto en una placa, de mayor a menor (los mismos lados y medidas que el TXT).
+    def board_edges(rows,items)
+      metres=Hash.new(0.0)
+      rows.each do |row|
+        next unless row['edgeMap'].is_a?(Array) && row['edgeMap'].length==4
+        base,height=begin
+          dimensions(row)
+        rescue StandardError
+          next
+        end
+        next unless base.is_a?(Numeric) && height.is_a?(Numeric)
+        row['edgeMap'].each_with_index do |role,index|
+          id=[1,2].include?(role) ? row[role==1 ? 'principalId' : 'secondaryId'] : nil
+          metres[id]+=(index<2 ? base : height)/1000.0 if id && items[id] && items[id]['kind']=='edge'
+        end
+      end
+      metres.sort_by { |id,value| [-value.round(6),id] }.map do |id,value|
+        item=items[id];{'catalogId'=>id,'name'=>item['name'],'sku'=>item['sku'].to_s.strip,'widthMm'=>item['widthMm'],'metres'=>value.round(3)}
+      end
+    end
+    # TXT de una placa con las medidas de las piezas (no las del diagrama). Ruby revisa de nuevo cada pieza
+    # de la placa y frena ante el primer problema. `rotate`: rota 1 en las piezas que se pueden girar.
+    def board_txt(draft,key,rotate: false,listed: nil)
+      draft=self.class.normalize(draft).merge('profile'=>TXT_PROFILE.dup)
+      found=(listed || boards(draft)['boards']).find { |board| board['key']==key }
+      raise ExportError,'Esa placa ya no está en el proyecto: la lista se actualizó; revisala y volvé a exportar.' unless found
+      label="#{found['name']} #{mm(found['thicknessMm'])} mm"
+      raise ExportError,"#{label}: #{found['blocker']}" if found['blocker']
+      board=material(found['materialId'],'sheet');ids=found['rowIds']
+      draft['rows']=draft['rows'].map { |row| ids.include?(row['id']) ? row.merge('grainPolicy'=>rotate && self.class.rotatable?(board,row) ? 'rotate' : 'locked') : row }
+      begin
+        validate(draft,only:ids)
+      rescue ExportError => error
+        raise ExportError,"#{label}: #{error.message}"
+      end
+      rows=draft['rows'].select { |row| ids.include?(row['id']) };codes=found['edges'].map { |edge| edge['catalogId'] }
+      _grouped,lines=txt_lines(draft,rows) { |row| row['edgeMap'].map { |role| role.zero? ? 0 : codes.index(row[role==1 ? 'principalId' : 'secondaryId'])+1 } }
+      bytes=(lines.join("\r\n")+"\r\n").encode('UTF-8').b
+      {'content'=>bytes,'key'=>key,'name'=>found['name'],'sku'=>found['sku'],'thicknessMm'=>found['thicknessMm'],'edges'=>found['edges'],
+       'pieces'=>rows.length,'textRows'=>lines.length,'rotated'=>rows.count { |row| row['grainPolicy']=='rotate' },'sha256'=>Digest::SHA256.hexdigest(bytes)}
+    rescue Encoding::UndefinedConversionError,Encoding::InvalidByteSequenceError
+      raise ExportError,'El texto no se puede representar en UTF-8.'
+    end
+
     def export(draft,directory)
       draft=validate(draft)
       batches=draft['rows'].select { |row| row['include'] }.group_by { |row| [row['materialId'],material(row['materialId'],'sheet')['thicknessMm'],row['principalId'],row['secondaryId']] }
@@ -253,15 +372,7 @@ module PlanosSanto
         'excluded'=>draft['rows'].reject { |row| row['include'] }.map { |row| {'id'=>row['id'],'reason'=>row['excludeReason']} }}
       batches.each_with_index do |(key,rows),index|
         board=material(key[0],'sheet')
-        grouped=rows.group_by { |row| [*dimensions(row),OrderProposal.detail_text(draft,row,@detail_codes),row['axes'],row['flipX'],row['flipY'],row['frontSign'],geometry(@nodes.fetch(row['id']))['mirrored'],row['edgeMap'],row['grainPolicy'],row['dimensionRule']] }
-        format_number=lambda do |number|
-          raise ExportError,'El proveedor admite hasta tres decimales; revisá medidas.' if number.round(3)<=0
-          str=format('%.3f',number).sub(/0+\z/,'').sub(/\.\z/,'');draft['profile']['decimal']==',' ? str.tr('.',',') : str
-        end
-        lines=grouped.values.map do |members|
-          row=members.first;base,height=dimensions(row)
-          [members.length,format_number.call(base),format_number.call(height),OrderProposal.detail_text(draft,row,@detail_codes),row['grainPolicy']=='rotate' ? 1 : 0,*row['edgeMap']].join("\t")
-        end
+        grouped,lines=txt_lines(draft,rows) { |row| row['edgeMap'] }
         lines.unshift(COLUMNS.join("\t")) if draft['profile']['header']
         content=lines.join("\r\n")+"\r\n";bytes=content.encode(draft['profile']['encoding']=='windows1252' ? 'Windows-1252' : 'UTF-8')
         filename=format('lote-%02d.txt',index+1);File.binwrite(File.join(staging,filename),bytes)

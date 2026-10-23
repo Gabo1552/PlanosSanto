@@ -124,7 +124,7 @@ test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un
  await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:/Incluir materiales y cantos/}).check();await page.getByText('Opciones de guardado',{exact:true}).click();
  await page.keyboard.press('Alt+5');const notice=page.locator('.ux-sheet-notice');await expect(notice).toContainText('Hoja sin materiales');await expect(notice).toContainText('Guardá primero el borrador revisado del pedido.');
  await expect(page.locator('.a4-sheet-preview')).not.toContainText('Guardá primero el borrador revisado del pedido.');await expect(page.locator('.a4-sheet-preview nav[aria-label="Acciones de vista previa"]')).toBeVisible({timeout:20000});
- await notice.getByRole('button',{name:'Abrir Biblioteca y pedidos',exact:true}).click();await expect(page.getByRole('dialog',{name:'Biblioteca y pedidos'})).toBeVisible();
+ await notice.getByRole('button',{name:'Abrir Biblioteca y pedidos',exact:true}).click();await expect(page.getByRole('dialog',{name:'Optimización de placas'})).toBeVisible();
 });
 
 test('con la guía sin guardar, Pintar y Pintura avanzada siguen habilitados (pintar no depende de la guía)',async({page},info)=>{

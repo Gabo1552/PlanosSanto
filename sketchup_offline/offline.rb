@@ -826,7 +826,7 @@ module PlanosSanto
         watch_model!
         mark_fresh!
         light_scan(result)
-      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_references_partial','order_edges','order_audit','order_propose','order_confirm_bulk','order_apply','ocl_open'
+      when 'catalog_load','catalog_save','catalog_add','catalog_import','catalog_import_model','catalog_export','order_plan','order_save','order_check','order_export','order_references','order_references_partial','order_edges','order_audit','order_propose','order_confirm_bulk','order_apply','ocl_open','maderera_boards','maderera_txt'
         active!
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -863,6 +863,20 @@ module PlanosSanto
             path= with_user_dialog { UI.select_directory(title:'Elegir carpeta para TXT y manifiesto') }
             return {'cancelled'=>true} unless path
             workshop.export_order(data.fetch('plan'),path)
+          # 0.8.20 «Maderera»: placas del proyecto y un TXT por placa (material + espesor), o todos en una carpeta.
+          when 'maderera_boards' then workshop.boards
+          when 'maderera_txt'
+            rotate=data['rotate']==true
+            if data['all']==true
+              path=with_user_dialog { UI.select_directory(title:'Elegir carpeta para los TXT de la maderera') }
+              return {'cancelled'=>true} unless path
+              workshop.export_boards(rotate,path)
+            else
+              prepared=workshop.board_export(data.fetch('key'),rotate)
+              path=with_user_dialog { UI.savepanel('Guardar TXT para la maderera',nil,prepared['fileName']) }
+              return {'cancelled'=>true} unless path
+              workshop.write_board(prepared,path)
+            end
           end
         end
       when 'cutlist'
