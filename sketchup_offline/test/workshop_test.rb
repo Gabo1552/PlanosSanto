@@ -100,7 +100,7 @@ class WorkshopTest < Minitest::Test
  def test_export_syntax_validator_and_no_side_effect_on_original_files
   service,draft=order;before=Marshal.dump(@model.all_instances.map { |e| [e.name,e.definition.name,e.transformation.to_a] })
   result=service.export(draft,@dir)
-  assert system('python3','planos-santo-ocl-066/scripts/validar_pedido_txt.py',File.join(result['directory'],'lote-01.txt'),out:File::NULL)
+  assert system('python3','scripts/validar_pedido_txt.py',File.join(result['directory'],'lote-01.txt'),out:File::NULL)
   assert_equal before,Marshal.dump(@model.all_instances.map { |e| [e.name,e.definition.name,e.transformation.to_a] })
   assert_empty @model.operations
  end

@@ -1,7 +1,0 @@
-# Archivos reales del taller: no publicar ni subir automáticamente
-/referencias/privado/
-/referencias/PlanosSanto-0.6.8.rbz
-/state/
-/manual/validacion_usuario.json
-__pycache__/
-*.pyc

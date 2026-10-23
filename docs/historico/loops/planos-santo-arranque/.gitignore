@@ -1,5 +1,0 @@
-# Keep client designs and runs out of Git. The loop also adds local .git/info/exclude rules.
-/referencias_privadas/
-/runs/
-/__pycache__/
-*.pyc

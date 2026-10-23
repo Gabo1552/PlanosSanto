@@ -1,7 +1,0 @@
-# Proyectos reales de clientes y observaciones no aprobadas
-referencias_privadas/
-baseline/
-runs/
-*.log
-__pycache__/
-.pytest_cache/

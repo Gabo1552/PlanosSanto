@@ -1,2 +1,0 @@
-1	700	450	M01 - Lateral izquierdo	0	1	0	0	2
-2	764	450	M01 - Estante	1	0	0	1	0
