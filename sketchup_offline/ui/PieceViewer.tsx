@@ -6,7 +6,7 @@ import type {CameraAngles} from '../../lib/presentation';
 import {frontCamera,makeScene} from '../../lib/scene';
 import './pieceViewer.css';
 
-const WIDTH=960,HEIGHT=600,LABEL_LIMIT=80,ZOOM=[.4,6] as const;
+const LABEL_LIMIT=80,ZOOM=[.4,6] as const;
 type Mode='orbit'|'move'|'pan';
 type Drag={pointerId:number;x:number;y:number;startX:number;startY:number;pieceId?:string;mode:Mode;moved:boolean};
 const wrapYaw=(yaw:number)=>((yaw+540)%360)-180;
@@ -26,15 +26,22 @@ export default function PieceViewer({furniture:f,selected,highlight=false,disabl
   const [camera,setCamera]=useState<CameraAngles>(),[zoom,setZoom]=useState(1),[pan,setPan]=useState<[number,number]>([0,0]);
   const [offsets,setOffsets]=useState<ReadonlyMap<string,Vector3>>(()=>new Map()),[exploded,setExploded]=useState(false);
   const [tool,setTool]=useState<'orbit'|'move'>('orbit'),[dragging,setDragging]=useState(false);
+  // The drawing is laid out in the stage's own CSS pixels: IDs keep their real size in a narrow column.
+  const [size,setSize]=useState({w:960,h:600});
   const angles=camera||home;
   const shown=useMemo(()=>({...f,presentation:{...f.presentation,hideIds:false}}),[f]);
   // Large models only label the selected piece: 300 IDs do not fit legibly on screen.
   const labels=useMemo(()=>dragging?false:f.pieces.length<=LABEL_LIMIT?true:new Set(selected?[selected]:[]),[dragging,f.pieces.length,selected]);
-  const scene=useMemo(()=>makeScene(shown,{camera:angles,zoom,pan,offsets,explosion:exploded?1:0,frame:'sphere',width:WIDTH,height:HEIGHT,labels,notes:false,dimensions:false}),[shown,angles,zoom,pan,offsets,exploded,labels]);
+  const scene=useMemo(()=>makeScene(shown,{camera:angles,zoom,pan,offsets,explosion:exploded?1:0,frame:'sphere',width:size.w,height:size.h,labels,notes:false,dimensions:false}),[shown,angles,zoom,pan,offsets,exploded,labels,size]);
   const stage=useRef<HTMLDivElement>(null),drag=useRef<Drag|undefined>(undefined),pending=useRef({dx:0,dy:0}),frame=useRef(0);
-  const latest=useRef({scene,home,zoom,pan});latest.current={scene,home,zoom,pan};
+  const latest=useRef({scene,home,zoom,pan,size});latest.current={scene,home,zoom,pan,size};
+  useEffect(()=>{
+    const node=stage.current;if(!node||typeof ResizeObserver==='undefined')return;
+    const observer=new ResizeObserver(([entry])=>{const w=Math.round(entry.contentRect.width),h=Math.round(entry.contentRect.height);if(w>50&&h>50)setSize(previous=>previous.w===w&&previous.h===h?previous:{w,h});});
+    observer.observe(node);return()=>observer.disconnect();
+  },[]);
   /** Drawing units per CSS pixel (viewBox fitted with «meet»). */
-  const units=useCallback(()=>{const svg=stage.current?.querySelector('svg'),r=svg?.getBoundingClientRect();return r&&r.width&&r.height?1/Math.min(r.width/WIDTH,r.height/HEIGHT):1;},[]);
+  const units=useCallback(()=>{const svg=stage.current?.querySelector('svg'),r=svg?.getBoundingClientRect();const {w,h}=latest.current.size;return r&&r.width&&r.height?1/Math.min(r.width/w,r.height/h):1;},[]);
   const moveBy=useCallback((id:string,dx:number,dy:number)=>{
     const {scene}=latest.current,delta=scene.camera.right.clone().multiplyScalar(dx/scene.scale).addScaledVector(scene.camera.up,-dy/scene.scale);
     setOffsets(previous=>{const next=new Map(previous);next.set(id,(next.get(id)||new Vector3()).clone().add(delta));return next;});
@@ -54,8 +61,8 @@ export default function PieceViewer({furniture:f,selected,highlight=false,disabl
     const wheel=(event:WheelEvent)=>{
       if(disabled)return;event.preventDefault();
       const svg=node.querySelector('svg'),r=svg?.getBoundingClientRect();if(!r)return;
-      const u=1/Math.min(r.width/WIDTH,r.height/HEIGHT),px=(event.clientX-r.left-(r.width-WIDTH/u)/2)*u,py=(event.clientY-r.top-(r.height-HEIGHT/u)/2)*u;
-      const {zoom:previous,pan:[x,y]}=latest.current,next=clampZoom(previous*Math.exp(-event.deltaY*.0015)),k=next/previous,ox=WIDTH/2+x,oy=HEIGHT/2+y;
+      const {w,h}=latest.current.size,u=1/Math.min(r.width/w,r.height/h),px=(event.clientX-r.left-(r.width-w/u)/2)*u,py=(event.clientY-r.top-(r.height-h/u)/2)*u;
+      const {zoom:previous,pan:[x,y]}=latest.current,next=clampZoom(previous*Math.exp(-event.deltaY*.0015)),k=next/previous,ox=w/2+x,oy=h/2+y;
       const panned:[number,number]=[x+(px-ox)*(1-k),y+(py-oy)*(1-k)];
       latest.current={...latest.current,zoom:next,pan:panned};setZoom(next);setPan(panned);
     };

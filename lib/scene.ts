@@ -126,7 +126,8 @@ export function sheetView(f:Furniture){if(!f.presentation?.guide)return {width:4
 
 export type Point = { x: number; y: number };
 type Rect = Point & { w: number; h: number };
-export type Face = { key: string; pieceId: string; points: string; fill: string; depth: number; outline:string[] };
+/** `convex`: the face belongs to a convex board, whose faces never cover each other (one outline per piece suffices). */
+export type Face = { key: string; pieceId: string; points: string; fill: string; depth: number; outline:string[]; convex?:boolean };
 export type Label = Rect & { quantity?:number; pieceId: string; code: string; anchor: Point };
 export const noteLines = (text: string): string[] => text.split('\n').flatMap(line => {
   const lines: string[] = []; let current = '';
@@ -257,7 +258,7 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
     const faces:Face[]=[],faceOf:(Face|undefined)[]=data.groups.map(group=>{
       if(group.normal.dot(forward)<=0.00001)return undefined;
       const depth=group.tris.reduce((sum,i)=>sum+p.mesh.triangles[i].reduce((s,j)=>s+vertices[j].dot(forward),0)/3,0)/group.tris.length;
-      const face:Face={key:`${p.id}-${group.tris[0]}`,pieceId:p.id,points:group.ring.map(j=>`${screen[j].x},${screen[j].y}`).join(' '),fill:group.fill,depth,outline:[]};
+      const face:Face={key:`${p.id}-${group.tris[0]}`,pieceId:p.id,points:group.ring.map(j=>`${screen[j].x},${screen[j].y}`).join(' '),fill:group.fill,depth,outline:[],...(data.convex?{convex:true}:{})};
       faces.push(face);return face;
     });
     for(const edge of data.edges){

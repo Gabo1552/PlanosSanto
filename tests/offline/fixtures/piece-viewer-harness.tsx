@@ -10,7 +10,7 @@ function Harness(){
   return <main>
     <h1>Visor de muebles · {furniture.name}</h1>
     <button type="button" aria-pressed={highlight} onClick={()=>setHighlight(value=>!value)}>Resaltar pieza</button>
-    <output data-testid="selected">{selected||'ninguna'}</output>
+    <p data-testid="selected">{selected||'ninguna'}</p>
     <PieceViewer furniture={furniture} selected={selected} highlight={highlight} onSelect={setSelected}/>
   </main>;
 }

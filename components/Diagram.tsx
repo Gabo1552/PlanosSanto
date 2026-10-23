@@ -1,7 +1,7 @@
 'use client';
-import { useMemo, type PointerEvent } from 'react';
+import { Fragment, useMemo, type PointerEvent } from 'react';
 import { Ray, Vector3 } from 'three';
-import { makeScene, pickAnchor, type Point, type View } from '@/lib/scene';
+import { makeScene, pickAnchor, type Face, type Point, type View } from '@/lib/scene';
 import { bounds, type Furniture, type Piece, type Vec3 } from '@/lib/model';
 import { sheetCaption } from '@/lib/sheet';
 import DimensionLayer from './DimensionLayer';
@@ -22,6 +22,12 @@ function anchorIn(scene:ReturnType<typeof makeScene>,p:Piece,screen:Point):Vec3{
   return (nearest||bounds(p.mesh).getCenter(new Vector3())).toArray();
 }
 /** `pickFaces` false leaves face clicks to a parent (the Muebles viewer tells a click from a drag); ID labels still pick. `caption` false drops the footer line. */
+/** Consecutive faces of the same piece (makeScene emits each piece's faces together). */
+function pieceRuns(faces:Face[]):Face[][]{
+  const runs:Face[][]=[];
+  for(const face of faces){const last=runs[runs.length-1];if(last&&last[0].pieceId===face.pieceId)last.push(face);else runs.push([face]);}
+  return runs;
+}
 type Props={ fit?:boolean; highlight?:boolean; pickFaces?:boolean; caption?:boolean; furniture:Furniture; view?:View; layout?:'editor'|'sheet'; selected?:string; print?:boolean; paper?:boolean; scene?:ReturnType<typeof makeScene>; onOrbit?:(delta:[number,number])=>void; onMoveDimension?:(pieceId:string,role:Dimension['role'],delta:[number,number])=>void; onHideDimension?:(pieceId:string,role:Dimension['role'])=>void; onPick?:(pieceId:string,anchor:Vec3)=>void; onMove?:(noteId:string,position:[number,number])=>void; onNote?:(id:string)=>void };
 export default function Diagram({furniture:f,view='front',layout='editor',selected,print=false,paper=false,scene:suppliedScene,onPick,onMove,onNote,onHideDimension,onMoveDimension,onOrbit,fit=false,highlight=false,pickFaces=true,caption=true}:Props) {
   const scene=useMemo(()=>suppliedScene||makeScene(f,{view,layout}),[f,suppliedScene,view,layout]);
@@ -55,7 +61,12 @@ export default function Diagram({furniture:f,view='front',layout='editor',select
     <defs><marker id={`arrow-${f.id}-${view}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4d78"/></marker></defs>
     <rect x={fitted?-10000:0} y={fitted?-10000:0} width={fitted?20000:scene.width} height={fitted?20000:scene.height} fill={print||paper?'#ffffff':'#f8f8f4'}/>
     {!print&&!paper && <g stroke="#e8e9e2" strokeWidth="1">{Array.from({length:24},(_,i)=><path key={i} d={`M ${i*40} 0 V ${scene.height} M 0 ${i*40} H ${scene.width}`}/>)}</g>}
-    {scene.faces.map(face=><g key={face.key} opacity={!print&&highlight&&selected&&!selectedIds.has(face.pieceId)?0.22:1}><polygon data-piece={face.pieceId} points={face.points} fill={selectedIds.has(face.pieceId) && !print?'#c7daee':face.fill} stroke={selectedIds.has(face.pieceId) && !print?'#c7daee':face.fill} strokeWidth="0.4" onPointerDown={e=>pick(e,face.pieceId)} style={{cursor:onPick&&pickFaces?'pointer':undefined}}/><path d={face.outline.join(' ')} stroke={!print&&selectedIds.has(face.pieceId)?'#1f609d':'#756e5c'} strokeWidth={!print&&selectedIds.has(face.pieceId)?'1.8':'0.8'} fill="none" pointerEvents="none"/></g>)}
+    {/* One group per piece, in painter's order; a convex board draws its edges once, after its faces. */}
+    {pieceRuns(scene.faces).map(run=>{const id=run[0].pieceId,chosen=!print&&selectedIds.has(id),edge=(d:string,key?:string)=><path key={key} d={d} stroke={chosen?'#1f609d':'#756e5c'} strokeWidth={chosen?'1.8':'0.8'} fill="none" pointerEvents="none"/>,solid=run.every(face=>face.convex);
+      return <g key={run[0].key} opacity={!print&&highlight&&selected&&!selectedIds.has(id)?0.22:1}>
+        {run.map(face=><Fragment key={face.key}><polygon data-piece={id} points={face.points} fill={chosen?'#c7daee':face.fill} stroke={chosen?'#c7daee':face.fill} strokeWidth="0.4" onPointerDown={e=>pick(e,id)} style={{cursor:onPick&&pickFaces?'pointer':undefined}}/>{!solid&&edge(face.outline.join(' '))}</Fragment>)}
+        {solid&&edge([...new Set(run.flatMap(face=>face.outline))].join(' '))}
+      </g>;})}
     <DimensionLayer dimensions={visibleScene.dimensions} phase="lines"/>
     {scene.notes.filter(n=>n.marker).map(note=><g key={note.id} data-note-marker={note.number}>
       <path d={`M${note.rect.x+12},${note.rect.y+12} L${note.target.x},${note.target.y}`} fill="none" stroke="#1f4d78" strokeWidth="1.8" markerEnd={`url(#arrow-${f.id}-${view})`}/>
