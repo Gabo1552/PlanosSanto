@@ -148,6 +148,9 @@
 .material-thickness-list{display:grid;gap:6px}
 .material-thickness-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
 .material-thickness-row .material-field-error{grid-column:2/4}
+/* 0.8.20: espesores de una placa y anchos de un canto, sin elegir uno: todos valen. */
+.material-thickness-list.is-plain .material-thickness-row{grid-template-columns:minmax(0,1fr) auto}
+.material-thickness-list.is-plain .material-thickness-row .material-field-error{grid-column:1/3}
 .material-mm-input{position:relative;display:block;min-width:0}
 .visual-material-library .material-mm-input input{padding-right:36px;text-align:center}
 .material-mm-input>span{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--material-muted);font-size:12px;pointer-events:none}

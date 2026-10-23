@@ -101,11 +101,15 @@ class OrderProposalTest < Minitest::Test
       assert_equal 'manual',lot['edgeSource']['1/2'],'Un mapa cambiado a mano se exporta sin justificar nada'
     end
   end
-  def test_thickness_comes_from_the_board_not_from_the_smallest_side
-    piece('1/1',[18,600,15]) # 15 mm es más chico pero la placa es de 18
-    assert_equal [1,2],row(proposed,'1/1')['axes']
-    piece('1/2',[30,600,25]);plan=proposed
-    assert reasons(plan,'1/2').any? { |r| r.include?('El espesor no coincide') },'Sin eje del espesor de la placa: bloquea (regla física)'
+  # Biblioteca v4 (0.8.20): la placa vale para todos sus espesores; el espesor es el eje menor de la pieza
+  # y nunca bloquea el pedido (uno fuera de la lista solo se marca en Piezas).
+  def test_thickness_is_the_smallest_side_and_never_blocks
+    piece('1/1',[18,600,15]) # la placa tiene 15 y 18: manda el eje menor
+    assert_equal [1,0],row(proposed,'1/1')['axes']
+    assert_equal 15,@service.row_thickness(row(proposed,'1/1'))
+    piece('1/2',[30,600,27]);plan=proposed # 27 mm no está en la lista de la placa
+    assert_equal [1,0],row(plan,'1/2')['axes']
+    refute reasons(plan,'1/2').any? { |r| r.include?('espesor no coincide') },'Un espesor fuera de la lista no bloquea'
   end
   def test_grained_board_puts_u_along_the_grain_and_the_grain_follows_the_board
     items=Marshal.load(Marshal.dump(@catalog['items']));items[0]['grain']=true;catalog=@store.save(items,@catalog['revision'])

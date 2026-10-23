@@ -51,15 +51,16 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 
 test('cantos del pedido: metros por SKU en vivo, canto angosto marcado y ficha incompleta con salida a la biblioteca sin perder el pedido',async({page},info)=>{
  await boot(page,info.outputDir);let asked='';page.on('dialog',dialog=>{asked=dialog.message();void dialog.dismiss();});
- const [sheet,good,narrow,blank]=await catalog([{name:'Placa cantos',kind:'sheet',patch:board},{name:'Canto ancho',kind:'edge',patch:{...edge,sku:'CB-22',widthMm:22}},{name:'Canto angosto',kind:'edge',patch:{...edge,sku:'CA-15',widthMm:15}},{name:'Canto sin ancho',kind:'edge',patch:{...edge,sku:'CS-00'}}]);
+ // Biblioteca v4: un canto nuevo trae los anchos 22 y 45 mm; el angosto y el vacío se arman con su lista a propósito.
+ const [sheet,good,narrow,blank]=await catalog([{name:'Placa cantos',kind:'sheet',patch:board},{name:'Canto ancho',kind:'edge',patch:{...edge,sku:'CB-22',widthMm:22}},{name:'Canto angosto',kind:'edge',patch:{...edge,sku:'CA-15',widthsMm:[15]}},{name:'Canto sin ancho',kind:'edge',patch:{...edge,sku:'CS-00',widthsMm:[]}}]);
  const panel=await openOrder(page),edges=panel.getByRole('region',{name:'Cantos del pedido'});
  await expect(edges).toContainText('Todavía no hay lados con canto');
  await page.getByLabel('Placa del pedido').selectOption(sheet.id);
  const principal=page.getByLabel('Canto principal (1) del pedido');
- await expect(principal.locator('optgroup[label="Más angostos que el espesor de la pieza"] option')).toHaveText(['Canto angosto · CA-15 · ancho 15 mm · más angosto que el espesor de 19,05 mm']);
+ await expect(principal.locator('optgroup[label="Más angostos que el espesor de la pieza"] option')).toHaveText(['Canto angosto · CA-15 · ancho 15 mm · más angosto que el espesor de 19,05 mm con todos sus anchos']);
  await expect(principal.locator('optgroup[label="Fichas incompletas"] option')).toHaveText(['Canto sin ancho · CS-00 · ancho sin cargar · falta ancho']);
- await expect(principal.locator(':scope > option').nth(1)).toHaveText('Canto ancho · CB-22 · ancho 22 mm');
- await expect(page.getByLabel('Placa del pedido').locator('option').nth(1)).toHaveText('Placa cantos · BOARD-19 · 19,05 mm');
+ await expect(principal.locator(':scope > option').nth(1)).toHaveText('Canto ancho · CB-22 · ancho 22 y 45 mm');
+ await expect(page.getByLabel('Placa del pedido').locator('option').nth(1)).toHaveText('Placa cantos · BOARD-19 · 3 a 25 mm');
  // Lado 1 sin producto: la opción queda desactivada y el rótulo lo dice.
  // Nombre accesible que empieza con el rótulo visible (WCAG 2.5.3): «clic Arriba» por voz activa el control.
  const sides=panel.getByRole('group',{name:'Cantos respecto de esta vista 2D'});
@@ -74,7 +75,7 @@ test('cantos del pedido: metros por SKU en vivo, canto angosto marcado y ficha i
  await expect(page.getByRole('img',{name:/Vista 2D orientada para maderera: base [\d.,]+ × altura [\d.,]+ mm; arriba: canto principal CB-22, [\d.,]+ mm; abajo: sin canto; izquierda: canto principal CB-22/})).toBeVisible();
  await principal.selectOption(narrow.id);await expect(principal).toHaveAttribute('aria-invalid','true');
  const describedBy=await principal.getAttribute('aria-describedby');expect(describedBy).toBeTruthy();
- await expect(page.locator(`#${describedBy}`)).toContainText(/El canto es más angosto que el espesor de [\d,]+ mm\./);
+ await expect(page.locator(`#${describedBy}`)).toContainText(/El canto es más angosto que el espesor de [\d,]+ mm con todos sus anchos\./);
  await expect(panel.getByRole('list',{name:'Piezas con problemas'})).toContainText('El canto principal (1) es más angosto que el espesor de la pieza');
  // Ficha incompleta: el enlace lleva a completarla y el pedido se guarda solo antes de salir, sin preguntar.
  await principal.selectOption(blank.id);await expect(page.locator(`#${await principal.getAttribute('aria-describedby')}`)).toContainText('La ficha de «Canto sin ancho» está incompleta: falta ancho.');
@@ -104,11 +105,13 @@ test('cantos del pedido: un precio de canto viejo se marca desactualizado y fuer
  expect(actions.filter(a=>a==='order_check'||a==='order_audit')).toHaveLength(0);
 });
 
-test('avisos en vivo: espesor y giro deshabilitado con motivo; la veta la decide la placa',async({page},info)=>{
- await boot(page,info.outputDir);const [sheet]=await catalog([{name:'Placa veta',kind:'sheet',patch:{...board,thicknessMm:25,grain:true}}]);
+// Biblioteca v4 (0.8.20): un espesor fuera de la lista de la placa no es un aviso rojo; se ofrece agregarlo a la ficha.
+test('avisos en vivo: espesor fuera de la lista sin aviso rojo y giro deshabilitado con motivo; la veta la decide la placa',async({page},info)=>{
+ await boot(page,info.outputDir);const [sheet]=await catalog([{name:'Placa veta',kind:'sheet',patch:{...board,thicknessMm:null,thicknessesMm:[25],grain:true}}]);
  const panel=await openOrder(page),plate=page.getByLabel('Placa del pedido');
  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await plate.selectOption(sheet.id);
- await expect(plate).toHaveAttribute('aria-invalid','true');await expect(panel.locator('#workshop-warn-material')).toContainText(/El eje de espesor mide [\d,]+ mm y la placa tiene 25 mm/);
+ await expect(panel.getByRole('group',{name:'Opciones por espesor fuera de la lista'})).toContainText('No bloquea el pedido.');
+ await expect(plate).not.toHaveAttribute('aria-invalid','true');await expect(panel.locator('#workshop-warn-material')).toHaveCount(0);
  await expect(panel.getByRole('combobox',{name:'Dirección de veta en esta vista'})).toHaveCount(0);
  await expect(panel.locator('[data-field="grain"]')).toHaveText('Veta: Con veta: corre a lo largo de la base (eje X). Para cambiarla, intercambiá los ejes.');
  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('1,0');await expect(panel.locator('[data-field="grain"]')).toContainText('(eje Y)');
@@ -135,16 +138,17 @@ test('aplicar a piezas equivalentes: Ruby copia los grupos elegidos y el pedido 
 });
 
 test('problemas en vivo: todos los motivos, foco al campo, siguiente con problemas, marca en el selector y ver en el modelo',async({page},info)=>{
- await boot(page,info.outputDir);const [sheet]=await catalog([{name:'Placa audit',kind:'sheet',patch:board}]);
+ await boot(page,info.outputDir);const [sheet,unfinished]=await catalog([{name:'Placa audit',kind:'sheet',patch:board},{name:'Placa sin SKU',kind:'sheet',patch:{...board,sku:''}}]);
  const panel=await openOrder(page),select=panel.getByLabel('Pieza del pedido');
  const ids=await select.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value));
  // Sin pedir una revisión: la lista está desde que se abre el pedido.
  const list=panel.getByRole('list',{name:'Piezas con problemas'});await expect(list.locator(':scope > li')).toHaveCount(3);
  await expect(panel.locator('#workshop-problems-summary')).toHaveText('3 piezas con 3 problemas que impiden exportar.');
- // Lo que se edita se revalida solo: rota 1 con cantos simétricos sigue valiendo, el espesor distinto del eje no.
+ // Lo que se edita se revalida solo: rota 1 con cantos simétricos sigue valiendo, una placa con la ficha incompleta no
+ // (biblioteca v4: el espesor de la pieza ya no bloquea).
  await page.getByLabel('Detalle del pedido').fill('x'.repeat(80));await page.getByLabel('Veta / rotación del pedido').selectOption('rotate');await page.getByLabel('Arriba · canto del pedido').selectOption('0');
- await page.getByLabel('Placa del pedido').selectOption(sheet.id);await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,2');
- const first=list.locator(':scope > li').first();await expect(first.getByRole('list').locator('li')).toHaveCount(1);await expect(first.getByRole('list').locator('li').first()).toContainText('El espesor no coincide');
+ await page.getByLabel('Placa del pedido').selectOption(unfinished.id);
+ const first=list.locator(':scope > li').first();await expect(first.getByRole('list').locator('li')).toHaveCount(1);await expect(first.getByRole('list').locator('li').first()).toContainText('está incompleta: falta SKU');
  await expect(select.locator('option').first()).toHaveText(/^Con problemas · /);
  await first.getByRole('button',{name:/^Ir a la pieza/}).click();await expect(page.getByLabel('Placa del pedido')).toBeFocused();
  await expect(panel.getByRole('button',{name:'Siguiente con problemas'})).toHaveAttribute('aria-keyshortcuts','Alt+Shift+ArrowDown');
@@ -156,7 +160,7 @@ test('problemas en vivo: todos los motivos, foco al campo, siguiente con problem
  await expect(panel.locator('#workshop-progress')).not.toHaveAttribute('aria-live');
  expect(actions).toContain('piece_highlight');
  await panel.getByRole('button',{name:new RegExp(`^Ver en el modelo .* · ${ids[2]}$`)}).last().click();await expect(panel.getByRole('status')).toContainText('Pieza resaltada en SketchUp');
- await select.selectOption(ids[0]);await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await expect(select.locator('option').first()).toHaveText(/^Lista · /);
+ await select.selectOption(ids[0]);await page.getByLabel('Placa del pedido').selectOption(sheet.id);await expect(select.locator('option').first()).toHaveText(/^Lista · /);
  expect(actions.filter(a=>a==='order_audit'||a==='order_check')).toHaveLength(0);
 });
 

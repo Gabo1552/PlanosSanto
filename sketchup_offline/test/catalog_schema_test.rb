@@ -28,37 +28,56 @@ class CatalogSchemaTest < Minitest::Test
   def write(data);File.write(@path,data.is_a?(String) ? data : JSON.pretty_generate(data));File.binread(@path);end
   def backups;Dir[File.join(@dir,'backups','*.json')];end
 
-  def test_new_library_is_schema_3_with_new_fields
+  def test_new_library_is_schema_4_with_new_fields
     item=@store.new_item('Melamina','sheet')
-    assert_equal 3,@store.empty['schema']
+    assert_equal 4,@store.empty['schema']
     assert_equal PlanosSanto::CatalogStore::FIELDS.sort,item.keys.sort
     assert_nil item['variantOf'];assert_equal '',item['notes'];assert_nil item['suggested'];assert_equal [3,5,12,15,18,25],item['thicknessesMm']
-    saved=@store.save([item],0);assert_equal 3,saved['schema'];assert_equal 3,JSON.parse(File.read(@path))['schema']
+    assert_equal [],item['widthsMm'];assert_equal [22,45],@store.new_item('Canto','edge')['widthsMm']
+    saved=@store.save([item],0);assert_equal 4,saved['schema'];assert_equal 4,JSON.parse(File.read(@path))['schema']
+  end
+
+  # Biblioteca v4: el espesor de una placa pasa a su lista y el ancho de un canto, a sus anchos estándar.
+  MOVED={'sheet'=>%w[thicknessMm thicknessesMm],'edge'=>%w[widthMm widthsMm]}.freeze
+  def assert_kept(old,migrated,keys)
+    keys.each do |key|
+      moved=MOVED[old['kind']]
+      if moved && moved[0]==key && !old[key].nil?
+        assert_nil migrated[key],key;assert_includes migrated[moved[1]],old[key],key
+      else
+        old[key].nil? ? assert_nil(migrated[key],key) : assert_equal(old[key],migrated[key],key)
+      end
+    end
   end
 
   def test_v1_reads_migrated_in_memory_without_touching_the_file
     original=write(v1_library)
     data=@store.read
-    assert_equal 3,data['schema'];assert_equal 7,data['revision'];assert_equal 3,data['items'].length
+    assert_equal 4,data['schema'];assert_equal 7,data['revision'];assert_equal 3,data['items'].length
     data['items'].each { |row| assert_equal PlanosSanto::CatalogStore::FIELDS.sort,row.keys.sort;assert_nil row['variantOf'];assert_equal '',row['notes'];assert_nil row['suggested'] }
     v1_library_rows=JSON.parse(original)['items']
-    data['items'].zip(v1_library_rows).each { |migrated,old| V1_FIELDS.each { |key| old[key].nil? ? assert_nil(migrated[key],key) : assert_equal(old[key],migrated[key],key) } }
+    data['items'].zip(v1_library_rows).each { |migrated,old| assert_kept(old,migrated,V1_FIELDS) }
     assert_equal original,File.binread(@path),'Leer no reescribe la biblioteca v1.'
     assert_empty backups
-    assert_equal({'from'=>1,'to'=>3,'pending'=>true},@store.migration)
+    assert_equal({'from'=>1,'to'=>4,'pending'=>true},@store.migration)
   end
 
-  def test_migration_preserves_native_binding_fingerprints
+  # Biblioteca v4: la huella cambia (la placa ya no tiene «su» espesor), pero el vínculo escrito antes sigue
+  # vigente mientras ese espesor/ancho esté en la lista: la migración no obliga a volver a vincular.
+  def test_migration_keeps_native_binding_fingerprints_current
     write(v1_library);before=JSON.parse(File.read(@path))['items'].map { |row| PlanosSanto::MaterialResolver.item_fingerprint(row) }
-    assert_equal before,@store.read['items'].map { |row| PlanosSanto::MaterialResolver.item_fingerprint(row) }
+    @store.read['items'].zip(before).each { |row,fingerprint| assert PlanosSanto::MaterialResolver.fingerprint_current?(row,fingerprint),row['name'] }
+    sheet=@store.read['items'][0]
+    refute PlanosSanto::MaterialResolver.fingerprint_current?(sheet.merge('thicknessesMm'=>[15]),before[0]),'Sin el 18 en la lista, el vínculo de la placa de 18 ya no describe la ficha'
+    refute PlanosSanto::MaterialResolver.fingerprint_current?(sheet.merge('sku'=>'OTRO'),before[0])
   end
 
-  def test_first_save_writes_verified_premigration_backup_then_schema_3
+  def test_first_save_writes_verified_premigration_backup_then_schema_4
     original=write(v1_library)
     items=@store.read['items'];items[2]['notes']='Revisar con el proveedor'
     saved=@store.save(items,7)
-    assert_equal 3,saved['schema'];assert_equal 8,saved['revision']
-    stored=JSON.parse(File.read(@path));assert_equal 3,stored['schema'];assert_equal 3,stored['items'].length
+    assert_equal 4,saved['schema'];assert_equal 8,saved['revision']
+    stored=JSON.parse(File.read(@path));assert_equal 4,stored['schema'];assert_equal 3,stored['items'].length
     premigration=backups.select { |path| File.basename(path).start_with?('catalog-v1-premigracion-7-') }
     assert_equal 1,premigration.length,'Respaldo explícito de la versión 1.'
     assert_equal Digest::SHA256.hexdigest(original),Digest::SHA256.file(premigration.first).hexdigest
@@ -72,7 +91,7 @@ class CatalogSchemaTest < Minitest::Test
   def test_damaged_files_are_rejected_untouched_and_without_backup
     cases={
       'json roto'=>'{"schema":1,',
-      'esquema futuro'=>JSON.generate('schema'=>4,'revision'=>0,'items'=>[]),
+      'esquema futuro'=>JSON.generate('schema'=>5,'revision'=>0,'items'=>[]),
       'esquema texto'=>JSON.generate('schema'=>'2','revision'=>0,'items'=>[]),
       'no es objeto'=>JSON.generate([1,2]),
       'clave extra arriba'=>JSON.generate(v1_library.merge('extra'=>true)),
@@ -82,8 +101,12 @@ class CatalogSchemaTest < Minitest::Test
       'v2 sin campos nuevos'=>JSON.generate(v1_library.merge('schema'=>2)),
       'v3 sin espesores estándar'=>JSON.generate(v1_library.merge('schema'=>3).tap { |d| d['items'].each { |row| row.merge!('variantOf'=>nil,'notes'=>'','suggested'=>nil) } }),
       'v3 espesores no numéricos'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('thicknessesMm'=>['18mm'])])),
-      'v3 espesores repetidos'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('thicknessesMm'=>[18,18])])),
+      # Un archivo v3 se valida tal cual antes de migrar; uno v4 se lee normalizado (sin repetidos), así que los repetidos se prueban en v3.
+      'v3 espesores repetidos'=>JSON.generate('schema'=>3,'revision'=>0,'items'=>[@store.new_item('A','sheet').tap { |row| row.delete('widthsMm') }.merge('thicknessesMm'=>[18,18])]),
       'v3 espesor negativo'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('thicknessesMm'=>[-3])])),
+      'v4 anchos no numéricos'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('C','edge').merge('widthsMm'=>['22mm'])])),
+      'v4 ancho negativo'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('C','edge').merge('widthsMm'=>[-22])])),
+      'v4 sin anchos estándar'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('C','edge').tap { |row| row.delete('widthsMm') }])),
       'v2 variante inexistente'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('variantOf'=>SecureRandom.uuid)])),
       'v2 sugerencia mal formada'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('suggested'=>{'source'=>'preset'})])),
       'v2 notas con control'=>JSON.generate(@store.empty.merge('items'=>[@store.new_item('A','sheet').merge('notes'=>"a\u0000b")])),
@@ -129,7 +152,7 @@ class CatalogSchemaTest < Minitest::Test
   end
 
   def test_future_schema_message_does_not_suggest_restoring
-    write(JSON.generate('schema'=>4,'revision'=>0,'items'=>[]))
+    write(JSON.generate('schema'=>5,'revision'=>0,'items'=>[]))
     assert_match(/más nuevo/,assert_raises(PlanosSanto::ExportError) { @store.read }.message)
   end
 
@@ -162,7 +185,7 @@ class CatalogSchemaTest < Minitest::Test
   def test_import_accepts_v1_and_v2_exports_unapproved_without_foreign_links
     v1=v1_library
     imported=@store.import(v1,0)
-    assert_equal 3,imported['schema'];assert_equal 3,imported['items'].length
+    assert_equal 4,imported['schema'];assert_equal 3,imported['items'].length
     assert imported['items'].none? { |row| row['approved'] }
     assert imported['items'].all? { |row| row['compatibleIds'].empty? && row['variantOf'].nil? }
     export=File.join(@dir,'copia.json');@store.export(export)
@@ -180,24 +203,33 @@ class CatalogSchemaTest < Minitest::Test
       {'name'=>'Herraje','category'=>'hardware','attributes_observed'=>{}}]}
     items=@store.import(review,0)['items']
     sheet=items.find { |row| row['name']=='Melamina OCL' };edge=items.find { |row| row['name']=='Canto OCL' };ambiguous=items.find { |row| row['name']=='Ambigua OCL' }
-    assert_equal [18.0,2750.0,1830.0,false],sheet.values_at('thicknessMm','lengthMm','widthMm','grain')
+    # Biblioteca v4: el espesor de OCL entra en la lista de la placa; el ancho del canto, en sus anchos estándar.
+    assert_equal [nil,2750.0,1830.0,false],sheet.values_at('thicknessMm','lengthMm','widthMm','grain')
+    assert_equal [3,5,12,15,18,25],sheet['thicknessesMm']
     assert_equal({'source'=>'ocl','fields'=>%w[grain lengthMm thicknessMm widthMm],'presetId'=>nil},sheet['suggested'])
-    assert_equal [0.45,22.0],edge.values_at('thicknessMm','widthMm')
+    assert_equal [0.45,nil,[22,45]],edge.values_at('thicknessMm','widthMm','widthsMm')
     assert_equal({'source'=>'ocl','fields'=>%w[thicknessMm widthMm],'presetId'=>nil},edge['suggested'])
-    assert_equal [nil,nil,nil],ambiguous.values_at('thicknessMm','lengthMm','widthMm'),'Valores múltiples o en pulgadas no se adivinan.'
-    assert_nil ambiguous['suggested']
+    # La lista «15mm;18mm» de OCL ya no es ambigua: son los espesores de la placa. Las pulgadas no se adivinan.
+    assert_equal [nil,nil,nil],ambiguous.values_at('thicknessMm','lengthMm','widthMm'),'Formato en pulgadas: no se adivina.'
+    assert_equal [3,5,12,15,18,25],ambiguous['thicknessesMm']
+    assert_equal({'source'=>'ocl','fields'=>%w[thicknessMm],'presetId'=>nil},ambiguous['suggested'])
     assert items.none? { |row| row['approved'] };assert_equal 3,items.length
   end
   def test_ficha_is_complete_or_names_what_it_lacks
+    # Biblioteca v4: la placa nueva ya trae sus espesores estándar; «espesor» falta solo con la lista vacía.
     sheet=@store.new_item('Melamina','sheet')
-    assert_equal %w[SKU espesor largo ancho veta],PlanosSanto::CatalogStore.missing(sheet)
-    sheet.merge!('sku'=>'MB18','thicknessMm'=>18,'lengthMm'=>2750,'widthMm'=>1830,'grain'=>false)
+    assert_equal %w[SKU largo ancho veta],PlanosSanto::CatalogStore.missing(sheet)
+    assert_equal %w[SKU espesor largo ancho veta],PlanosSanto::CatalogStore.missing(sheet.merge('thicknessesMm'=>[]))
+    sheet.merge!('sku'=>'MB18','lengthMm'=>2750,'widthMm'=>1830,'grain'=>false)
     assert PlanosSanto::CatalogStore.complete?(sheet),'Sin proveedor ni aprobación la placa ya está completa'
     assert_equal ['veta'],PlanosSanto::CatalogStore.missing(sheet.merge('grain'=>nil))
     assert_equal ['SKU'],PlanosSanto::CatalogStore.missing(sheet.merge('sku'=>'   '))
-    assert_equal ['espesor'],PlanosSanto::CatalogStore.missing(sheet.merge('thicknessMm'=>'18'))
+    assert_equal ['espesor'],PlanosSanto::CatalogStore.missing(sheet.merge('thicknessesMm'=>[],'thicknessMm'=>'18'))
+    assert_empty PlanosSanto::CatalogStore.missing(sheet.merge('thicknessesMm'=>[],'thicknessMm'=>18)),'Un registro viejo con su espesor suelto sigue completo'
+    # Canto: alcanza con un ancho estándar (22 y 45 de fábrica).
     edge=@store.new_item('Canto','edge')
-    assert_equal ['ancho'],PlanosSanto::CatalogStore.missing(edge);assert PlanosSanto::CatalogStore.complete?(edge.merge('widthMm'=>22)),'Canto: alcanza con el ancho'
+    assert PlanosSanto::CatalogStore.complete?(edge),'Canto nuevo: anchos estándar 22 y 45'
+    assert_equal ['ancho'],PlanosSanto::CatalogStore.missing(edge.merge('widthsMm'=>[]));assert PlanosSanto::CatalogStore.complete?(edge.merge('widthsMm'=>[],'widthMm'=>22)),'Canto: alcanza con un ancho'
     assert_equal ['tipo'],PlanosSanto::CatalogStore.missing(@store.new_item('Herraje','unknown'))
     refute PlanosSanto::CatalogStore.complete?(@store.new_item('Pino','solid_wood'))
   end
@@ -208,19 +240,22 @@ class CatalogSchemaTest < Minitest::Test
     variant=v1_item('Melamina blanca 15','sheet','supplier'=>'Maderera QA','thicknessMm'=>15,'widthMm'=>1830,'lengthMm'=>2750,'grain'=>false,'compatibleIds'=>[edge['id']]).merge('variantOf'=>sheet['id'],'notes'=>'','suggested'=>{'source'=>'variant','fields'=>%w[compatibleIds grain lengthMm supplier widthMm],'presetId'=>nil})
     original=write({'schema'=>2,'revision'=>12,'items'=>[sheet,edge,variant]})
     data=@store.read
-    # 0.8.17: se lee migrado en memoria (sólo se agregan los espesores estándar); el archivo no se reescribe.
-    assert_equal JSON.parse(original)['items'],data['items'].map { |row| row.reject { |key,_| key=='thicknessesMm' } },'Ningún dato v2 cambia'
+    # 0.8.17/0.8.20: se lee migrado en memoria (se agregan los espesores y anchos estándar, y el espesor de la placa
+    # y el ancho del canto pasan a sus listas); el archivo no se reescribe.
+    JSON.parse(original)['items'].zip(data['items']).each { |old,migrated| assert_kept(old,migrated,old.keys) }
     assert_equal original,File.binread(@path)
     assert_equal [[3,5,12,15,18,25],[0.45,2],[3,5,12,15,18,25]],data['items'].map { |row| row['thicknessesMm'] }
+    assert_equal [[],[22,45],[]],data['items'].map { |row| row['widthsMm'] }
     assert_equal [true,true,false],data['items'].map { |row| PlanosSanto::CatalogStore.complete?(row) },'La variante sin SKU queda incompleta'
     assert_equal [sheet['compatibleIds'],variant['suggested']],[data['items'][0]['compatibleIds'],data['items'][2]['suggested']],'Compatibilidades y procedencia se conservan aunque ya no se usen'
     # Al vaciar el proveedor de una ficha aprobada, 0.8.15 la rechazaba: ahora se guarda y la marca cae para que el archivo siga siendo legible por 0.8.15.
     items=data['items'];items[0]['supplier']='';items[2]['sku']='MB15'
     saved=@store.save(items,12)
-    assert_equal [false,true,false],saved['items'].map { |row| row['approved'] }
+    # La marca de 0.8.15 ya no puede sobrevivir: un archivo v4 no lo lee 0.8.15 (y la marca no se usa desde 0.8.16).
+    assert_equal [false,false,false],saved['items'].map { |row| row['approved'] }
     assert saved['items'].select { |row| row['approved'] }.all? { |row| PlanosSanto::CatalogStore.legacy_approved?(row) }
     assert_equal [true,true,true],saved['items'].map { |row| PlanosSanto::CatalogStore.complete?(row) }
     assert_equal saved,@store.read;assert_equal 1,backups.length
-    assert File.basename(backups.first).start_with?('catalog-v2-premigracion-12-'),'Respaldo explícito antes de la primera escritura v3'
+    assert File.basename(backups.first).start_with?('catalog-v2-premigracion-12-'),'Respaldo explícito antes de la primera escritura v4'
   end
 end

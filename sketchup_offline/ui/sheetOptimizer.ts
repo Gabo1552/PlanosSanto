@@ -2,7 +2,7 @@
 // todos los cortes van de lado a lado de un rectángulo libre, como en una seccionadora. Determinística: mismo pedido,
 // mismas placas. Corre en la UI porque filas, geometría y biblioteca ya están acá: se recalcula en vivo con cada cambio,
 // aun con piezas con problemas, sin ida y vuelta a Ruby. Es una estimación: la maderera puede optimizar distinto.
-import {orderSize,type CutProfile} from './workshopRules';
+import {orderSize,rowThickness,type CutProfile} from './workshopRules';
 import type {Catalog,CatalogItem,OrderPlan} from './WorkshopPanel';
 
 /** Pieza a ubicar: base a lo largo del largo de la placa (la veta), altura a lo ancho. */
@@ -110,20 +110,22 @@ export function legendKey(index:number){let out='',n=index;do{out=String.fromCha
 const size=(value:number)=>Math.round(value*10)/10;
 /** Optimiza cada placa del pedido (material y espesor de la ficha) con el refilado y el kerf del perfil en uso. */
 export function optimizeOrder(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalog,profile:CutProfile&{trimMm:number;kerfMm:number}):OrderOptimization{
- const groups=new Map<string,{board:CatalogItem;pieces:SheetPiece[]}>(),skipped={noBoard:0,noSize:0,notRectangular:0};
+ const groups=new Map<string,{board:CatalogItem;pieces:SheetPiece[];thicknesses:Set<number>}>(),skipped={noBoard:0,noSize:0,notRectangular:0};
  for(const row of plan.rows){
   if(!row.include)continue;const geometry=plan.geometry[row.id],board=catalog.items.find(item=>item.id===row.materialId&&item.kind==='sheet');
   if(!board){skipped.noBoard++;continue;}
   if(geometry&&!geometry.rectangular){skipped.notRectangular++;continue;}
   const cut=geometry?orderSize(row,geometry,catalog,profile):null;if(!cut||!(cut[0]>0)||!(cut[1]>0)){skipped.noSize++;continue;}
-  const group=groups.get(board.id)??{board,pieces:[]};group.pieces.push({id:row.id,detail:row.detail,base:cut[0],height:cut[1],rotate:row.grainPolicy==='rotate'&&board.grain===false});groups.set(board.id,group);
+  const group=groups.get(board.id)??{board,pieces:[],thicknesses:new Set<number>()};group.pieces.push({id:row.id,detail:row.detail,base:cut[0],height:cut[1],rotate:row.grainPolicy==='rotate'&&board.grain===false});groups.set(board.id,group);
+  // 0.8.20 (biblioteca v4, toque mínimo): la placa no tiene «el» espesor; se informa el real de las piezas.
+  const thickness=geometry?rowThickness(row,geometry):null;if(thickness!==null)group.thicknesses.add(Math.round(thickness*100)/100);
  }
- const materials=[...groups.values()].map(({board,pieces}):MaterialOptimization=>{
+ const materials=[...groups.values()].map(({board,pieces,thicknesses}):MaterialOptimization=>{
   const netM2=pieces.reduce((sum,p)=>sum+p.base*p.height,0)/1e6;
   // Mismas medidas (al décimo de mm) comparten letra; la leyenda va de la pieza más grande a la más chica.
   const bySize=new Map<string,LegendEntry>();for(const p of [...pieces].sort((a,b)=>b.base*b.height-a.base*a.height||tie(a,b))){const id=`${size(p.base)}x${size(p.height)}`,entry=bySize.get(id)??{key:'',base:size(p.base),height:size(p.height),count:0,details:[]};entry.count++;if(!entry.details.includes(p.detail))entry.details.push(p.detail);bySize.set(id,entry);}
   const legend=[...bySize.values()].map((entry,i)=>({...entry,key:legendKey(i)})),keys=Object.fromEntries(pieces.map(p=>[p.id,legend.find(e=>e.base===size(p.base)&&e.height===size(p.height))!.key]));
-  const base={materialId:board.id,name:board.name.trim()||'Sin nombre',sku:board.sku.trim(),thicknessMm:board.thicknessMm,grain:board.grain,lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:profile.trimMm,kerfMm:profile.kerfMm,pieces:pieces.length,legend,keys,netM2,price:board.price};
+  const base={materialId:board.id,name:board.name.trim()||'Sin nombre',sku:board.sku.trim(),thicknessMm:thicknesses.size===1?[...thicknesses][0]:board.thicknessMm,grain:board.grain,lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:profile.trimMm,kerfMm:profile.kerfMm,pieces:pieces.length,legend,keys,netM2,price:board.price};
   if(!measured(board.lengthMm)||!measured(board.widthMm))return {...base,status:'no_format',sheets:[],layouts:[],oversize:[],boughtM2:0,utilization:null};
   const spec={lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:profile.trimMm,kerfMm:profile.kerfMm},{length,width}=usable(spec);
   const result=packSheets(pieces,spec),boughtM2=result.sheets.length*board.lengthMm*board.widthMm/1e6;

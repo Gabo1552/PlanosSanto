@@ -177,13 +177,14 @@ test('Piezas: resumen, secciones de placa y canto, plegar, ocultar, filtrar, res
  expect(found).toEqual([]);
 });
 
-test('Piezas: fichas vinculadas, «Ancho no definido», lápiz a Materiales y CSV exportado',async({page},info)=>{
+test('Piezas: fichas vinculadas, «Ancho no definido», espesor fuera de la lista, lápiz a Materiales y CSV exportado',async({page},info)=>{
  await boot(page,info.outputDir);const found:string[]=[];
  // Biblioteca: placa completa y un canto sin ancho; se vinculan a los materiales pintados del doble.
+ // Biblioteca v4: la placa solo trae 18 mm (las piezas miden 19,05) y el canto se quedó sin anchos estándar.
  let library=await send('catalog_add',{revision:0,item:{name:'Melamina Jade',kind:'sheet'}}) as {catalog:{revision:number;items:Record<string,unknown>[]}};
  library=await send('catalog_add',{revision:library.catalog.revision,item:{name:'Canto ABS sin ancho',kind:'edge'}}) as typeof library;
  const [sheet,edge]=library.catalog.items as {id:string}[];
- Object.assign(sheet,{sku:'MJ-18',supplier:'Prueba',thicknessMm:19.05,widthMm:1830,lengthMm:2750,grain:true,compatibleIds:[edge.id]});Object.assign(edge,{sku:'ABS-SA',supplier:'Prueba',thicknessMm:.8});
+ Object.assign(sheet,{sku:'MJ-18',supplier:'Prueba',thicknessesMm:[18],widthMm:1830,lengthMm:2750,grain:true,compatibleIds:[edge.id]});Object.assign(edge,{sku:'ABS-SA',supplier:'Prueba',thicknessMm:.8,widthsMm:[]});
  await send('catalog_save',{revision:library.catalog.revision,items:[sheet,edge]});
  await send('__bind_material',{materialName:'Jade synthetic',catalogId:sheet.id});await send('__bind_material',{materialName:'Canto de prueba',catalogId:edge.id});
  const {view,summary,groups,result}=await openPieces(page);
@@ -199,6 +200,10 @@ test('Piezas: fichas vinculadas, «Ancho no definido», lápiz a Materiales y CS
  const tapeGroup=groups.filter({has:page.getByRole('heading',{level:3,name:'Canto ABS sin ancho / 0,8 mm x 19,05 mm'})});
  await expect(tapeGroup.locator('.cutlist-group-bar .cutlist-warn')).toHaveText('Ancho no definido');
  await expect(groups.nth(0).locator('.cutlist-grain')).toHaveText('La fibra sigue la longitud');
+ // 19,05 mm no está en la lista de la ficha: se lista igual, marcado suave (no es un aviso rojo), con un clic para agregarlo.
+ await expect(groups.nth(0).locator('.cutlist-group-bar .cutlist-flag')).toHaveText('Espesor fuera de la lista de la ficha');
+ await expect(groups.nth(0).locator('.cutlist-group-bar .cutlist-warn')).toHaveCount(0);
+ const addThickness=groups.nth(0).getByRole('button',{name:'Agregar 19,05 mm a la ficha',exact:true});await expect(addThickness).toBeVisible();
  found.push(...await axe(page,'Piezas con fichas'));
  await page.screenshot({path:info.outputPath('piezas-fichas-SINTETICO.png'),fullPage:true});
 
@@ -220,6 +225,12 @@ test('Piezas: fichas vinculadas, «Ancho no definido», lápiz a Materiales y CS
   'Canto;Canto ABS sin ancho;0,8;B;Lateral - Blanco – Longitud del borde 1;Bajo Mesada;;1;609,6;19,05;0,8;Sí;Ancho no definido',
   'Canto;Canto ABS sin ancho;0,8;C;Base ajena – Longitud del borde 1;Otro mueble;;1;609,6;19,05;0,8;Sí;Ancho no definido']);
  expect(lines.at(-1)).toBe('');
+
+ // Un clic agrega 19,05 mm a los espesores de la ficha y el listado se vuelve a leer, sin la marca.
+ await addThickness.click();
+ await expect(view.locator('.cutlist-notice')).toHaveText('19,05 mm agregado a los espesores de «Melamina Jade».');
+ expect(calls.filter(call=>call.action==='catalog_add_thickness').map(call=>call.data)).toEqual([{id:sheet.id,thicknessMm:19.05}]);
+ await expect(view.locator('.cutlist-group-bar .cutlist-flag')).toHaveCount(0);
 
  // Lápiz: abre la ficha de la placa en Materiales.
  await summary.getByRole('button',{name:'Editar la ficha de Melamina Jade en Materiales',exact:true}).click();

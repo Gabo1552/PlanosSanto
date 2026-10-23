@@ -26,15 +26,22 @@ module PlanosSanto
       "#{text}mm"
     end
 
+    # Library v4 (0.8.20): every standard thickness of a sheet and every standard width of an
+    # edge, as OpenCutList lists them («15mm;18mm»). A record without a list keeps its single value.
+    def self.lengths(list, single)
+      values = Array(list).map { |value| length(value) }.compact
+      values.empty? ? length(single) : values.join(';')
+    end
+
     def self.values(item)
       case item['kind']
       when 'sheet'
         sizes = item['lengthMm'] && item['widthMm'] && [length(item['lengthMm']), length(item['widthMm'])].compact
-        { 'std_thicknesses' => length(item['thicknessMm']),
+        { 'std_thicknesses' => lengths(item['thicknessesMm'], item['thicknessMm']),
           'std_sizes' => sizes && sizes.length == 2 ? sizes.join(' x ') : nil,
           'grained' => [true, false].include?(item['grain']) ? item['grain'] : nil }
       when 'edge'
-        { 'thickness' => length(item['thicknessMm']), 'std_widths' => length(item['widthMm']) }
+        { 'thickness' => length(item['thicknessMm']), 'std_widths' => lengths(item['widthsMm'], item['widthMm']) }
       else
         {}
       end.compact

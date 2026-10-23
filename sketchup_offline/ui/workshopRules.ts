@@ -11,16 +11,24 @@ export const plural=(n:number,one:string,many:string)=>`${n} ${n===1?one:many}`;
 const metres=new Intl.NumberFormat('es-AR',{minimumFractionDigits:3,maximumFractionDigits:3});
 /** Metros lineales con tres decimales y coma decimal (1.234,567). */
 export const formatMetres=(value:number)=>metres.format(value);
-/** «Nombre · SKU · 18 mm» sin huecos cuando falta un dato. Los cantos muestran su ancho. */
-export function materialLabel(item:Pick<CatalogItem,'name'|'sku'|'kind'|'thicknessMm'|'widthMm'>){
- const size=item.kind==='edge'?(item.widthMm===null?'ancho sin cargar':`ancho ${mm(item.widthMm)} mm`):(item.thicknessMm===null?'espesor sin cargar':`${mm(item.thicknessMm)} mm`);
+const measured=(value:number|null|undefined)=>typeof value==='number'&&Number.isFinite(value)&&value>0;
+/** Biblioteca v4 (0.8.20): espesores de una placa y anchos estándar de un canto, más su valor suelto si un registro viejo lo trae. */
+type Lists={thicknessesMm?:number[];widthsMm?:number[]};
+const listOf=(list:number[]|undefined,single:number|null|undefined)=>[...new Set([...(Array.isArray(list)?list.filter(value=>measured(value)):[]),...(measured(single)?[single as number]:[])])].sort((a,b)=>a-b);
+export const thicknessesOf=(item:Pick<CatalogItem,'thicknessMm'>&Lists)=>listOf(item.thicknessesMm,item.thicknessMm);
+export const widthsOf=(item:Pick<CatalogItem,'widthMm'>&Lists)=>listOf(item.widthsMm,item.widthMm);
+/** «18 mm», «15 y 18 mm» o, con más de dos, «3 a 25 mm» (el rótulo entra en las tablas angostas). */
+const measures=(list:number[])=>list.length>2?`${mm(list[0])} a ${mm(list[list.length-1])} mm`:list.length===2?`${mm(list[0])} y ${mm(list[1])} mm`:`${mm(list[0])} mm`;
+/** «Nombre · SKU · 15 y 18 mm» sin huecos cuando falta un dato. Los cantos muestran sus anchos. */
+export function materialLabel(item:Pick<CatalogItem,'name'|'sku'|'kind'|'thicknessMm'|'widthMm'>&Lists){
+ const widths=widthsOf(item),thicknesses=thicknessesOf(item);
+ const size=item.kind==='edge'?(widths.length?`ancho ${measures(widths)}`:'ancho sin cargar'):(thicknesses.length?measures(thicknesses):'espesor sin cargar');
  return `${item.name.trim()||'Sin nombre'} · ${item.sku.trim()||'Sin SKU'} · ${size}`;
 }
-const measured=(value:number|null|undefined)=>typeof value==='number'&&Number.isFinite(value)&&value>0;
-/** Datos que le faltan a una ficha para usarla en un pedido (mismo criterio que CatalogStore.missing). Placa: SKU, espesor, largo, ancho y veta. Canto: ancho. */
-export function catalogMissing(item:Pick<CatalogItem,'kind'|'sku'|'thicknessMm'|'widthMm'|'lengthMm'|'grain'>):string[]{
- if(item.kind==='sheet')return [...(item.sku.trim()?[]:['SKU']),...(measured(item.thicknessMm)?[]:['espesor']),...(measured(item.lengthMm)?[]:['largo']),...(measured(item.widthMm)?[]:['ancho']),...(item.grain===true||item.grain===false?[]:['veta'])];
- if(item.kind==='edge')return measured(item.widthMm)?[]:['ancho'];
+/** Datos que le faltan a una ficha para usarla en un pedido (mismo criterio que CatalogStore.missing). Placa: SKU, algún espesor, largo, ancho y veta. Canto: algún ancho. */
+export function catalogMissing(item:Pick<CatalogItem,'kind'|'sku'|'thicknessMm'|'widthMm'|'lengthMm'|'grain'>&Lists):string[]{
+ if(item.kind==='sheet')return [...(item.sku.trim()?[]:['SKU']),...(thicknessesOf(item).length?[]:['espesor']),...(measured(item.lengthMm)?[]:['largo']),...(measured(item.widthMm)?[]:['ancho']),...(item.grain===true||item.grain===false?[]:['veta'])];
+ if(item.kind==='edge')return widthsOf(item).length?[]:['ancho'];
  return ['tipo'];
 }
 export const catalogComplete=(item:Parameters<typeof catalogMissing>[0])=>catalogMissing(item).length===0;
@@ -44,12 +52,13 @@ export function orderSize(row:Pick<OrderRow,'axes'|'dimensionRule'|'cutBase'|'cu
  const round=(value:number)=>Math.round(value*1000)/1000;
  return [round(size[0]-t[2]-t[3]),round(size[1]-t[0]-t[1])];
 }
-/** Motivo físico por el que un canto no sirve para la pieza (más angosto que el espesor), o null. Cualquier canto vale: no hay canto fijo por placa. */
-export function edgeIncompatibility(edge:CatalogItem,board:CatalogItem|undefined,thickness:number|null){
- const t=thickness??board?.thicknessMm??null;
- if(t===null)return null;
- if(edge.widthMm===null)return 'ancho sin cargar';
- return edge.widthMm+0.1<t?`más angosto que el espesor de ${mm(t)} mm`:null;
+/** Motivo físico por el que un canto no sirve para la pieza, o null. Biblioteca v4: el canto se refila, así que solo
+ * cuenta cuando todos sus anchos estándar son más angostos que la pieza (si 45 cubre, no hay problema). */
+export function edgeIncompatibility(edge:CatalogItem&Lists,_board:CatalogItem|undefined,thickness:number|null){
+ if(thickness===null)return null;
+ const widths=widthsOf(edge);
+ if(!widths.length)return 'ancho sin cargar';
+ return widths.every(width=>width+0.1<thickness)?`más angosto que el espesor de ${mm(thickness)} mm con todos sus anchos`:null;
 }
 export type RowField='material'|'principalId'|'secondaryId'|'edgeMap'|'grainPolicy'|'dimensions'|'detail';
 export type RowWarnings=Partial<Record<RowField,string[]>>;
@@ -61,7 +70,7 @@ export function rowWarnings(row:OrderRow,geometry:Pick<Geometry,'lengths'>,catal
  const board=boardOf(row,catalog),thickness=rowThickness(row,geometry),boardMissing=board?catalogMissing(board):[];
  if(!board)add('material',row.materialId?'La placa elegida ya no está en la biblioteca: elegí otra.':'Elegí una placa de la biblioteca.');
  else if(boardMissing.length)add('material',`La ficha de «${board.name}» está incompleta: falta ${boardMissing.join(', ')}. Completala en la biblioteca.`);
- if(board&&thickness!==null&&board.thicknessMm!==null&&Math.abs(thickness-board.thicknessMm)>0.1)add('material',`El eje de espesor mide ${mm(thickness)} mm y la placa tiene ${mm(board.thicknessMm)} mm. Revisá los ejes o la placa.`);
+ // Biblioteca v4: el espesor de la pieza no se compara con la placa (vale para todos los de su lista; uno fuera de la lista se ofrece agregar).
  (['principalId','secondaryId'] as const).forEach((key,index)=>{
   const role=index+1,id=row[key],used=row.edgeMap.some(v=>v===role),edge=find(catalog,id,'edge');
   if(id&&!edge)add(key,'El canto ya no está en la biblioteca.');

@@ -687,7 +687,8 @@ module PlanosSanto
         row['designReady']=MaterialPolicy.paintable?(item,directory:directory)
       end
       status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'],
-        'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all)
+        'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all,
+        'standardWidthsMm'=>CatalogStore.default_widths_all)
     end
 
     # 0.8.17: loading the library resolves the ficha ↔ model material links by
@@ -877,9 +878,9 @@ module PlanosSanto
         target=with_user_dialog { UI.savepanel('Exportar piezas CSV',nil,Cutlist.csv_file_name(data['modelName'])) }
         target ? Cutlist.write_csv(text,target) : {'cancelled'=>true}
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
-      when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','skm_commit_typed'
+      when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','catalog_add_thickness','skm_commit_typed'
         active!
-        mutating=%w[maderera_profile_save maderera_profile_approve maderera_profile_activate catalog_add_preset catalog_variant skm_commit_typed].include?(action)
+        mutating=%w[maderera_profile_save maderera_profile_approve maderera_profile_activate catalog_add_preset catalog_variant catalog_add_thickness skm_commit_typed].include?(action)
         stop_brush_for!(action) if mutating
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         workshop=Workshop.new(@model,@session,directory:directory)
@@ -891,13 +892,15 @@ module PlanosSanto
         when 'catalog_presets' then workshop.presets
         when 'catalog_add_preset' then workshop.add_preset(data.fetch('presetId'),data['name'],data.fetch('revision'))
         when 'catalog_variant' then workshop.add_variant(data.fetch('id'),data.fetch('thicknessMm'),data.fetch('revision'),name:data['name'])
+        # 0.8.20: «Agregar 16 mm a la ficha» (Piezas y pedido): el espesor real de la pieza se suma a la lista.
+        when 'catalog_add_thickness' then workshop.add_thickness(data.fetch('id'),data.fetch('thicknessMm'))
         when 'skm_commit_typed'
           committed=skm_importer.commit(data.fetch('token'),data.fetch('selectedIds'),data.fetch('revision'),confirmed:data['confirmed']==true,renames:data.fetch('renames',{}),
             kinds:data.fetch('kinds',{}),apply_suggestions:data['applySuggestions']==true)
           @skm_preview_active=false
           committed.merge(skm_library)
         end
-        notify_material_library_changed(action) if %w[catalog_add_preset catalog_variant skm_commit_typed].include?(action)
+        notify_material_library_changed(action) if %w[catalog_add_preset catalog_variant catalog_add_thickness skm_commit_typed].include?(action)
         result
       # --- fin Hito 4 ---
       when 'material_photo_pick'

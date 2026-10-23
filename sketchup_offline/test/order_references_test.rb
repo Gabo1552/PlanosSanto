@@ -38,9 +38,9 @@ class OrderReferencesTest < Minitest::Test
   assert_equal [ids[1]],result['pending']
   assert_empty result['excluded']
   reference=result['references'][ids[0]]
-  assert_equal [1,0,0,1],reference['edgeMap'];assert_equal 'TEST-18 / 19.05 mm',reference['board']
+  assert_equal [1,0,0,1],reference['edgeMap'];assert_equal 'TEST-18 / 19,05 mm',reference['board']
   refute reference.key?('lot'),'con filas pendientes el lote todavía puede cambiar';assert_equal false,reference['grain']
-  assert_equal 'TEST-18 / 19.05 mm · Arr:EDGE-1 Aba:sin Izq:sin Der:EDGE-1',reference['text']
+  assert_equal 'TEST-18 / 19,05 mm · Arr:EDGE-1 Aba:sin Izq:sin Der:EDGE-1',reference['text']
  end
  def test_complete_draft_matches_the_full_references_and_reports_excluded_rows
   plan=draft;ids=plan['rows'].map { |row| row['id'] }
@@ -87,6 +87,6 @@ class OrderReferencesTest < Minitest::Test
   catalog=@store.read;catalog['items'][0]['sku']='TEST-18B';@store.save(catalog['items'],catalog['revision'])
   result=PlanosSanto::OrderReferences.partial(@model,@workshop)
   assert_equal 2,result['references'].length,'El borrador no se descarta por cambiar la biblioteca'
-  assert result['references'].values.all? { |reference| reference['board']=='TEST-18B / 19.05 mm' },'Se imprimen los datos vigentes de la ficha'
+  assert result['references'].values.all? { |reference| reference['board']=='TEST-18B / 19,05 mm' },'Se imprimen los datos vigentes de la ficha'
  end
 end

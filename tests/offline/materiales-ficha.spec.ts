@@ -4,10 +4,10 @@ import {build} from 'esbuild';
 import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import type {CatalogItem} from '../../sketchup_offline/ui/WorkshopPanel';
 import type {FichaItem} from '../../sketchup_offline/ui/materialLibraryModel';
 // 0.8.17 · Materiales: grilla agrupada por tipo, «Propiedades del material», espesores
 // estándar con + y − y el aviso de un clic para la única ambigüedad que queda.
+// 0.8.20 · Biblioteca v4: la placa no tiene «el» espesor (todos los de la lista valen) y el canto tiene anchos estándar.
 // Contrato UI/puente con dobles en memoria: sin SketchUp, sin texturas reales.
 type Call={action:string;data:Record<string,unknown>};
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -15,11 +15,11 @@ const pixel='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 const base=(id:string,patch:Partial<FichaItem>):FichaItem=>({id,name:'',kind:'sheet',sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'2026-10-22T00:00:00Z',sourceHash:'0'.repeat(64),observed:{},notes:'',variantOf:null,suggested:null,thicknessesMm:[],...patch});
 let calls:Call[],items:FichaItem[],revision:number,ambiguous:unknown[];
 const requests=(action:string)=>calls.filter(call=>call.action===action);
-const sheetList=[3,5,12,15,18,25],edgeList=[0.45,2];
+const sheetList=[3,5,12,15,18,25],edgeList=[0.45,2],edgeWidths=[22,45];
 async function harness(page:Page,folder:string){
  calls=[];revision=5;
- items=[base(uuid(1),{name:'Caju 18mm',thicknessMm:18,thicknessesMm:sheetList,sku:'CJ18',supplier:'Maderera QA',lengthMm:2750,widthMm:1830,grain:true}),
-  base(uuid(2),{name:'Camellia',thicknessMm:18,thicknessesMm:sheetList}),
+ items=[base(uuid(1),{name:'Caju 18mm',thicknessesMm:sheetList,sku:'CJ18',supplier:'Maderera QA',lengthMm:2750,widthMm:1830,grain:true}),
+  base(uuid(2),{name:'Camellia',thicknessesMm:sheetList}),
   base(uuid(3),{name:'Camellia (variante)',kind:'edge',thicknessMm:0.45,thicknessesMm:edgeList,widthMm:22}),
   base(uuid(4),{name:'Pino macizo',kind:'solid_wood',thicknessesMm:[]}),
   base(uuid(5),{name:'Melamina petiribí 18mm',kind:'unknown',thicknessesMm:[]})];
@@ -35,7 +35,7 @@ createRoot(document.getElementById('root')).render(React.createElement(Library,{
   const catalog=()=>({schema:3,revision,items});
   if(action==='skm_library')result={catalog:catalog(),rows:[{catalogId:uuid(2),name:'Camellia',sourceName:'Foto propia',thumbnail:pixel}],
    materials:[{id:'901',name:'Caju 18mm',hasTexture:false,color:[143,98,64],binding:{catalogId:uuid(1),kind:'sheet',uuid:'u-1'},issues:[]},{id:'902',name:'Roble QA',hasTexture:false,color:[120,90,60],binding:null,issues:[]}],
-   visuals:[],assetRevision:1,ambiguous,autoLink:{changed:0},standardThicknessesMm:{sheet:sheetList,edge:edgeList}};
+   visuals:[],assetRevision:1,ambiguous,autoLink:{changed:0},standardThicknessesMm:{sheet:sheetList,edge:edgeList},standardWidthsMm:{edge:edgeWidths}};
   else if(action==='material_extras')result={archivedIds:[],statesRevision:0};
   else if(action==='catalog_save'){if(data.revision!==revision)return {version:1,id:message.id,result:null,error:'La biblioteca cambió en otra ventana.'};items=data.items as FichaItem[];revision++;result={catalog:catalog(),conflicts:[]};}
   else if(action==='catalog_add'){const item=data.item as {name:string;kind:string};items=[...items,base(uuid(20+items.length),{name:item.name,kind:item.kind,thicknessesMm:item.kind==='edge'?edgeList:item.kind==='sheet'?sheetList:[]})];revision++;result={catalog:catalog(),conflicts:[]};}
@@ -67,10 +67,10 @@ test('grilla agrupada por tipo con tarjetas, ícono de tipo y acciones; axe sin 
  await expect(page.getByRole('region',{name:/^Placas/}).getByRole('article')).toHaveCount(2);
  await expect(page.getByRole('region',{name:/^Cantos/}).getByRole('article',{name:'Material Camellia (variante)',exact:true})).toBeVisible();
  await expect(card(page,'Camellia').getByRole('img',{name:'Miniatura real de Camellia'})).toBeVisible();
- await expect(card(page,'Caju 18mm')).toContainText('Placa · 18 mm');await expect(card(page,'Caju 18mm')).toContainText('En el modelo');
+ await expect(card(page,'Caju 18mm')).toContainText('Placa · 3 a 25 mm');await expect(card(page,'Caju 18mm')).toContainText('En el modelo');
  await expect(card(page,'Camellia')).toContainText('Incompleta');await expect(card(page,'Melamina petiribí 18mm')).toContainText('Sin tipo');
  await expect(card(page,'Caju 18mm').getByRole('button',{name:'Editar ficha Caju 18mm',exact:true})).toBeVisible();
- await expect(card(page,'Caju 18mm').getByRole('button',{name:/^Caju 18mm: Placa · 18 mm, ficha completa, en este modelo/})).toBeVisible();
+ await expect(card(page,'Caju 18mm').getByRole('button',{name:/^Caju 18mm: Placa · 3 a 25 mm, ficha completa, en este modelo/})).toBeVisible();
  // Lo único manual que queda: el nombre del modelo coincide con dos fichas.
  const choices=page.getByRole('region',{name:'Elegí la ficha de este material del modelo'});
  await expect(choices).toContainText('coincide con 2 fichas');
@@ -83,7 +83,7 @@ test('grilla agrupada por tipo con tarjetas, ícono de tipo y acciones; axe sin 
  expect(errors).toEqual([]);
 });
 
-test('la ficha se abre desde la tarjeta: espesores con + y −, elegir otro y Aplicar guarda la lista',async({page},info)=>{
+test('la ficha se abre desde la tarjeta: espesores disponibles con + y −, sin elegir uno, y Aplicar guarda la lista',async({page},info)=>{
  const errors=await harness(page,info.outputDir);
  await card(page,'Caju 18mm').locator('.material-card-select').click();
  const dialog=page.getByRole('dialog',{name:'Propiedades del material «Caju 18mm»',exact:true});await expect(dialog).toBeVisible();
@@ -91,9 +91,11 @@ test('la ficha se abre desde la tarjeta: espesores con + y −, elegir otro y Ap
  await expect(dialog.getByRole('tab',{name:'General',exact:true})).toHaveAttribute('aria-selected','true');
  await expect(dialog).toContainText('Ficha completa: se puede usar en pedidos.');
  await expect(dialog.getByText('#8f6240',{exact:true})).toBeVisible();
- const rows=dialog.getByRole('textbox',{name:/^Espesor estándar \d+ \(mm\)$/});
+ const rows=dialog.getByRole('textbox',{name:/^Espesor disponible \d+ \(mm\)$/});
  await expect(rows).toHaveCount(6);await expect(rows.nth(4)).toHaveValue('18');
- await expect(dialog.getByRole('radio',{name:'Usar 18 mm como espesor de la ficha',exact:true})).toBeChecked();
+ // Biblioteca v4: todos los espesores valen; no hay uno para elegir.
+ await expect(dialog.getByRole('group',{name:'Espesores disponibles',exact:true})).toBeVisible();await expect(dialog.getByRole('radio')).toHaveCount(0);
+ await expect(dialog).toContainText('el listado de piezas lo separa por el espesor real de cada pieza');
  await expect(dialog.getByRole('combobox',{name:'Dirección de fibra',exact:true})).toHaveValue('true');
  await expect(dialog.getByRole('textbox',{name:'Largo del panel (mm)',exact:true})).toHaveValue('2750');
  await page.screenshot({path:info.outputPath('ficha-placa.png')});
@@ -101,15 +103,15 @@ test('la ficha se abre desde la tarjeta: espesores con + y −, elegir otro y Ap
  const apply=dialog.getByRole('button',{name:'Aplicar',exact:true});await expect(apply).toBeDisabled();
  await dialog.getByRole('button',{name:'Quitar espesor 3 mm',exact:true}).click();await expect(rows).toHaveCount(5);
  await dialog.getByRole('button',{name:'Agregar espesor',exact:true}).click();await expect(rows).toHaveCount(6);await expect(rows.nth(5)).toBeFocused();
- await rows.nth(5).fill('16');await dialog.getByRole('radio',{name:'Usar 16 mm como espesor de la ficha',exact:true}).check();
+ await rows.nth(5).fill('16');
  await expect(dialog).toContainText('Ficha completa');
  await apply.click();await expect(dialog).toHaveCount(0);
  const saved=(requests('catalog_save')[0].data.items as FichaItem[]).find(row=>row.id===uuid(1))!;
- expect(saved).toMatchObject({thicknessMm:16,thicknessesMm:[5,12,15,16,18,25],sku:'CJ18',grain:true,lengthMm:2750,widthMm:1830});
+ expect(saved).toMatchObject({thicknessMm:null,thicknessesMm:[5,12,15,16,18,25],sku:'CJ18',grain:true,lengthMm:2750,widthMm:1830});
  expect(requests('catalog_save')[0].data.revision).toBe(5);
  await expect(page.getByText('Ficha «Caju 18mm» guardada. Ficha completa.',{exact:true})).toBeVisible();
  await expect(card(page,'Caju 18mm').locator('.material-card-select')).toBeFocused();
- await expect(card(page,'Caju 18mm')).toContainText('Placa · 16 mm');
+ await expect(card(page,'Caju 18mm')).toContainText('Placa · 5 a 25 mm');
  expect(errors).toEqual([]);
 });
 
@@ -130,22 +132,27 @@ test('Cancelar y Escape descartan sin guardar; el foco queda atrapado en la fich
  expect(errors).toEqual([]);
 });
 
-test('canto: espesores 0,45 y 2 mm, ancho del canto; errores accesibles sin bloquear la ficha incompleta',async({page},info)=>{
+test('canto: espesores 0,45 y 2 mm, anchos estándar 22 y 45 mm; errores accesibles sin bloquear la ficha incompleta',async({page},info)=>{
  const errors=await harness(page,info.outputDir);
  await card(page,'Camellia (variante)').locator('.material-card-select').click();
  const dialog=ficha(page);
  await expect(dialog.getByRole('textbox',{name:/^Espesor estándar/})).toHaveCount(2);
  await expect(dialog.getByRole('radio',{name:'Usar 0,45 mm como espesor de la ficha',exact:true})).toBeChecked();
- await expect(dialog.getByRole('textbox',{name:'Ancho del canto',exact:true})).toHaveValue('22');
+ // El ancho viejo (22) queda entre los anchos estándar, con 45; el canto se refila.
+ const widths=dialog.getByRole('group',{name:'Anchos estándar',exact:true}).getByRole('textbox');
+ await expect(widths).toHaveCount(2);await expect(widths.nth(0)).toHaveValue('22');await expect(widths.nth(1)).toHaveValue('45');
+ await expect(dialog).toContainText('El canto se refila');
  await expect(dialog.getByRole('combobox',{name:'Dirección de fibra'})).toHaveCount(0);
  await page.screenshot({path:info.outputPath('ficha-canto.png')});
  const name=dialog.getByRole('textbox',{name:'Nombre',exact:true});await name.fill('');
  await dialog.getByRole('button',{name:'Aplicar',exact:true}).click();
  await expect(name).toHaveAttribute('aria-invalid','true');await expect(name).toBeFocused();await expect(dialog.getByText('Escribí un nombre para el material.',{exact:true})).toBeVisible();
- await name.fill('Camellia (variante)');await dialog.getByRole('textbox',{name:'Ancho del canto',exact:true}).fill('');
+ await name.fill('Camellia (variante)');
+ await dialog.getByRole('button',{name:'Quitar ancho 22 mm',exact:true}).click();await dialog.getByRole('button',{name:'Quitar ancho 45 mm',exact:true}).click();
+ await expect(dialog).toContainText('Sin anchos: agregá al menos uno para pedir el canto.');
  await expect(dialog).toContainText('Ficha incompleta · para pedidos falta: ancho');
  await dialog.getByRole('button',{name:'Aplicar',exact:true}).click();await expect(dialog).toHaveCount(0);
- expect((requests('catalog_save')[0].data.items as CatalogItem[]).find(row=>row.id===uuid(3))!.widthMm).toBeNull();
+ expect((requests('catalog_save')[0].data.items as FichaItem[]).find(row=>row.id===uuid(3))).toMatchObject({widthMm:null,widthsMm:[]});
  await expect(page.getByText('Para pedidos falta: ancho.',{exact:false})).toBeVisible();
  expect(errors).toEqual([]);
 });
@@ -154,15 +161,15 @@ test('+ Crear → Ficha nueva: el tipo trae sus espesores predeterminados y se g
  const errors=await harness(page,info.outputDir);
  await page.getByRole('button',{name:'Crear',exact:true}).click();await page.getByRole('button',{name:'Ficha nueva…',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Nueva ficha de material',exact:true});await expect(dialog).toBeVisible();
- await expect(dialog.getByRole('textbox',{name:/^Espesor estándar/})).toHaveCount(6);
+ await expect(dialog.getByRole('textbox',{name:/^Espesor disponible/})).toHaveCount(6);
  await dialog.getByRole('combobox',{name:'Tipo',exact:true}).selectOption('edge');
+ await expect(dialog.getByRole('group',{name:'Anchos estándar',exact:true}).getByRole('textbox')).toHaveCount(2);
  const rows=dialog.getByRole('textbox',{name:/^Espesor estándar/});await expect(rows).toHaveCount(2);await expect(rows.nth(0)).toHaveValue('0,45');await expect(rows.nth(1)).toHaveValue('2');
  await dialog.getByRole('textbox',{name:'Nombre',exact:true}).fill('Canto nogal');await dialog.getByRole('radio',{name:'Usar 2 mm como espesor de la ficha',exact:true}).check();
- await dialog.getByRole('textbox',{name:'Ancho del canto',exact:true}).fill('22');
  await dialog.getByRole('button',{name:'Crear ficha',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(requests('catalog_add')[0].data).toEqual({revision:5,item:{name:'Canto nogal',kind:'edge'}});
  const saved=(requests('catalog_save')[0].data.items as FichaItem[]).find(row=>row.name==='Canto nogal')!;
- expect(saved).toMatchObject({kind:'edge',thicknessMm:2,thicknessesMm:[0.45,2],widthMm:22});
+ expect(saved).toMatchObject({kind:'edge',thicknessMm:2,thicknessesMm:[0.45,2],widthMm:null,widthsMm:[22,45]});
  await expect(page.getByRole('region',{name:/^Cantos/}).getByRole('article',{name:'Material Canto nogal',exact:true})).toBeVisible();
  expect(errors).toEqual([]);
 });

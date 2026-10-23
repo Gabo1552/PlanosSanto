@@ -38,6 +38,9 @@ describe('Catálogo v2',()=>{
  it('espesor distinto con la misma tolerancia que el aviso en vivo y redondeo de la variante',()=>{
   expect(thicknessMismatch({thicknessMm:18},18.05)).toBe(false);expect(thicknessMismatch({thicknessMm:18},15)).toBe(true);
   expect(thicknessMismatch({thicknessMm:null},15)).toBe(false);expect(thicknessMismatch(undefined,15)).toBe(false);
+  // Biblioteca v4: «fuera de la lista» de la placa, que no bloquea; con 15 y 18 en la lista, ninguno lo está.
+  expect(thicknessMismatch({thicknessMm:null,thicknessesMm:[15,18]},15)).toBe(false);expect(thicknessMismatch({thicknessMm:null,thicknessesMm:[15,18]},17.95)).toBe(false);
+  expect(thicknessMismatch({thicknessMm:null,thicknessesMm:[15,18]},16)).toBe(true);expect(thicknessMismatch({thicknessMm:null,thicknessesMm:[]},16)).toBe(false);
   expect(variantThickness(14.999999)).toBe(15);expect(variantThickness(5.555)).toBe(5.56);
  });
  it('tipos del lote SKM: sugerencia prellenada y solo filas seleccionadas',()=>{

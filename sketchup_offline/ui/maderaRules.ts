@@ -52,8 +52,13 @@ export function suggestedSummary(suggested:NonNullable<CatalogItem['suggested']>
  const list=names.length>1?`${names.slice(0,-1).join(', ')} y ${names[names.length-1]}`:names[0]||'';
  return {fields:list,source:sourceNames[suggested.source]||suggested.source};
 }
-/** Igual criterio que el aviso en vivo: más de 0,1 mm entre el eje de espesor y la placa. */
-export function thicknessMismatch(board:Pick<CatalogItem,'thicknessMm'>|undefined,thickness:number|null){return !!board&&thickness!==null&&board.thicknessMm!==null&&Math.abs(thickness-board.thicknessMm)>0.1;}
+/** Biblioteca v4 (0.8.20): el espesor de la pieza no está entre los de la placa (±0,1 mm). No bloquea: el pedido ofrece
+ * agregarlo a la ficha con un clic. Una placa sin espesores ya avisa «falta espesor». */
+export function thicknessMismatch(board:Pick<CatalogItem,'thicknessMm'>&{thicknessesMm?:number[]}|undefined,thickness:number|null){
+ if(!board||thickness===null)return false;
+ const list=[...(Array.isArray(board.thicknessesMm)?board.thicknessesMm:[]),...(board.thicknessMm!==null?[board.thicknessMm]:[])];
+ return list.length>0&&!list.some(value=>Math.abs(thickness-value)<=0.1);
+}
 /** Espesor medido redondeado a centésimas para la variante (evita 17,999999 de la geometría). */
 export const variantThickness=(value:number)=>Math.round(value*100)/100;
 

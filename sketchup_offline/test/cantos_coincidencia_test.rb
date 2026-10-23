@@ -40,7 +40,7 @@ class CantosCoincidenciaTest < Minitest::Test
    assert_equal piece['edgeMap'],partial['references'].fetch(row['id'])['edgeMap'],"A4 parcial #{piece['detail']}"
    assert_equal [base,height],references.fetch(row['id']).values_at('base','height')
    sides=%w[Arr Aba Izq Der].zip(piece['edgeMap']).map { |side,role| "#{side}:#{role==0 ? 'sin' : %w[EDGE-1 EDGE-2][role-1]}" }.join(' ')
-   assert_equal "TEST-18 / 19.05 mm · #{sides}",references.fetch(row['id'])['text']
+   assert_equal "TEST-18 / 19,05 mm · #{sides}",references.fetch(row['id'])['text']
   end
  end
 end

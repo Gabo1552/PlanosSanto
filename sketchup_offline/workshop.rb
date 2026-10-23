@@ -56,6 +56,9 @@ module PlanosSanto
       raise ExportError,'Ya existe un material con ese nombre en la biblioteca.' if current['items'].any? { |row| row['name'].unicode_normalize(:nfc).downcase==item['name'].downcase }
       save_catalog(current['items']+[item],revision)
     end
+    # 0.8.20: «Agregar 16 mm a la ficha» from the cutlist or the order. Adding to a list commutes with any
+    # other edit, so it needs no revision from the window: the store reads the current one.
+    def add_thickness(id,thickness);data=@catalog.add_thickness(id,thickness);{'catalog'=>data,'conflicts'=>@catalog.conflicts(data)};end
     def maderera_profiles
       {'profiles'=>@profiles.read,'template'=>MaderaProfile.template}
     end
@@ -233,7 +236,7 @@ module PlanosSanto
         board=service.material(row['materialId'],'sheet')
         roles=OrderReferences.roles(service,row)
         edge_text=row['edgeMap'].each_with_index.map { |role,i| "#{%w[Arr Aba Izq Der][i]}:#{role==0 ? 'sin' : roles[role-1]}" }.join(' ')
-        board_text="#{board['sku']} / #{board['thicknessMm']} mm";base,height=service.dimensions(row)
+        board_text="#{board['sku']} / #{service.mm(service.row_thickness(row))} mm";base,height=service.dimensions(row)
         # 'text' keeps the previous printed contract; the rest is the same edge map and cut as the supplier TXT (Arr·Aba·Izq·Der over base × height).
         [row['id'],{'text'=>"#{board_text} · #{edge_text}",'board'=>board_text,'edgeMap'=>row['edgeMap'].dup,'principal'=>roles[0],'secondary'=>roles[1],'base'=>base,'height'=>height}]
       end

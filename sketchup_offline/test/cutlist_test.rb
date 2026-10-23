@@ -74,7 +74,9 @@ class CutlistTest < Minitest::Test
     keys=result['sections'].map { |s| [s['name'],s['thicknessMm']] }
     assert_equal [['Melamina Blanca 18',15.0],['Melamina Blanca 18',18.0],['Roble 18',18.0]],keys,'Una sección por ficha y espesor medido'
     white=result['sections'].find { |s| s['thicknessMm']==18.0 && s['name']=='Melamina Blanca 18' }
-    assert_equal({'source'=>'catalog','sku'=>'MEL-18','format'=>[2750,1830],'grain'=>false,'catalogThicknessMm'=>18},white.slice('source','sku','format','grain','catalogThicknessMm'))
+    # Biblioteca v4: la ficha no tiene «su» espesor; la sección lleva la lista y si el espesor real está en ella.
+    assert_equal({'source'=>'catalog','sku'=>'MEL-18','format'=>[2750,1830],'grain'=>false,'standardThicknessesMm'=>[3,5,12,15,18,25],'thicknessInList'=>true},
+                 white.slice('source','sku','format','grain','standardThicknessesMm','thicknessInList'))
     laterals=result['pieces'].select { |p| p['name']=='Lateral' }
     assert_equal 2,laterals.size,'Las idénticas se agrupan dentro de cada mueble'
     first=laterals.find { |p| p['furnitureId']=='1' }
@@ -168,7 +170,8 @@ class CutlistTest < Minitest::Test
   end
 
   def test_missing_catalog_data_reaches_sections_and_edges
-    narrow=@store.new_item('Canto sin ancho','edge');narrow.merge!('sku'=>'SIN-ANCHO','thicknessMm'=>1)
+    # Biblioteca v4: «Ancho no definido» solo cuando la ficha se quedó sin anchos estándar.
+    narrow=@store.new_item('Canto sin ancho','edge');narrow.merge!('sku'=>'SIN-ANCHO','thicknessMm'=>1,'widthsMm'=>[])
     sheet=@catalog['items'][0].merge('grain'=>nil)
     @catalog=@store.save([sheet,*@catalog['items'][1..],narrow],@catalog['revision']);@sheet=@catalog['items'][0];narrow=@catalog['items'].last
     extra=native('edge-n',narrow)
@@ -183,6 +186,43 @@ class CutlistTest < Minitest::Test
     assert_equal [18.0,true],lateral['strips'][0].values_at('widthMm','widthApprox')
     # 0,7 m × 18 mm (espesor de la pieza) × 1 mm
     assert_equal({'strips'=>1,'lengthM'=>0.7,'areaM2'=>0.013,'volumeM3'=>0.00001},edge['totals'])
+  end
+
+  # 0.8.20 (biblioteca v4): el mismo material pintado en piezas de 18, 15 y 16 mm sale en tres secciones; 16 no está
+  # en la lista de la ficha: se lista igual, con su espesor, marcado suave; un clic lo agrega a la ficha.
+  def test_same_material_splits_by_real_thickness_and_out_of_list_is_only_marked
+    piece('1/1',[700,450,18],name:'Lateral',definition:'lateral')
+    piece('1/2',[700,450,18],name:'Lateral',definition:'lateral')
+    piece('1/3',[600,300,15],name:'Estante')
+    piece('1/4',[500,400,16],name:'Fondo raro')
+    result=build
+    white=result['sections'].select { |s| s['catalogId']==@sheet['id'] }
+    assert_equal [15.0,16.0,18.0],white.map { |s| s['thicknessMm'] },'Una sección por espesor real del mismo material'
+    assert_equal ['Melamina Blanca 18']*3,white.map { |s| s['name'] }
+    assert_equal [true,false,true],white.map { |s| s['thicknessInList'] }
+    assert_equal [[],[],[]],white.map { |s| s['missing'] },'Fuera de la lista no es un aviso rojo'
+    assert_equal [1,1,2],white.map { |s| s['totals']['pieces'] }
+    assert_equal({'pieces'=>2,'lengthM'=>1.4,'areaM2'=>0.63,'volumeM3'=>0.0113},white.last['totals'],'Totales por material y espesor')
+    odd=find(result,'Fondo raro')
+    assert_equal [16.0,false,"catalog:#{@sheet['id']}|16.0"],odd.values_at('thicknessMm','thicknessInList','sectionKey'),'Cada pieza lleva su espesor para la maderera'
+    assert_equal [true,true],[find(result,'Lateral'),find(result,'Estante')].map { |p| p['thicknessInList'] }
+    @catalog=@store.add_thickness(@sheet['id'],odd['thicknessMm'])
+    assert_includes @catalog['items'].find { |item| item['id']==@sheet['id'] }['thicknessesMm'],16
+    assert_equal [true,true,true],build['sections'].select { |s| s['catalogId']==@sheet['id'] }.map { |s| s['thicknessInList'] }
+  end
+
+  # 0.8.20: anchos estándar 22 y 45 mm. Cada tira toma el más angosto que cubre la pieza; sin avisos de ancho.
+  def test_edge_with_standard_widths_shows_no_width_warning
+    piece('1/1',[700,450,18],{'+y'=>'edge-a'},name:'Lateral')
+    piece('1/2',[700,450,25],{'+y'=>'edge-a'},name:'Tapa gruesa')
+    piece('1/3',[700,450,50],{'+y'=>'edge-a'},name:'Mesada')
+    result=build
+    assert_equal [[22,false],[45,false],[45,false]],%w[Lateral Tapa\ gruesa Mesada].map { |name| find(result,name)['strips'][0].values_at('widthMm','widthApprox') },
+                 'Ninguno cubre 50 mm: se usa el más ancho y no es un aviso (se refila)'
+    abs=result['edgeSections'].find { |e| e['catalogId']==@a['id'] }
+    assert_equal [[],[22,45],nil,false],abs.values_at('missing','widthsMm','widthMm','widthApprox'),'Sin «Ancho no definido»; con 22 y 45 en uso no hay un solo ancho'
+    @pieces.clear;piece('1/1',[700,450,18],{'+y'=>'edge-a'},name:'Lateral')
+    assert_equal 22,build['edgeSections'].first['widthMm'],'Con un solo ancho en uso, la sección lo muestra'
   end
 
   def test_write_csv_with_bom_and_safe_name

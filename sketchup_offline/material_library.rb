@@ -87,7 +87,7 @@ module PlanosSanto
       return [] unless binding
       item = catalog['items'].find { |row| row['id'] == binding['catalogId'] }
       return [] unless item && item['kind'] == binding['kind']
-      return [] if MaterialResolver.item_fingerprint(item) == binding['catalogFingerprint']
+      return [] if MaterialResolver.fingerprint_current?(item, binding['catalogFingerprint'])
       ['Datos comerciales modificados desde la vinculación: revisá la ficha antes de pedir a la maderera.']
     end
 
@@ -579,7 +579,7 @@ module PlanosSanto
           uuid = binding['uuid']
           copied = claimed.key?(uuid)
           claimed[uuid] = true
-          stale = MaterialResolver.item_fingerprint(item) != binding['catalogFingerprint']
+          stale = !MaterialResolver.fingerprint_current?(item, binding['catalogFingerprint'])
           add.call('rebind', material, item, 'uuid' => copied ? nil : uuid, 'oclType' => rekind) if copied || stale || rekind
         end
       end

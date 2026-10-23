@@ -138,7 +138,8 @@ class MaterialPolicyTest < Minitest::Test
     assert status['visuals'].first['available']
     order=PlanosSanto::SupplierOrder.new({'furniture'=>[]},'test',@data)
     error=assert_raises(PlanosSanto::ExportError) { order.material(@item['id'],'sheet') }
-    assert_match(/incompleta: falta SKU, espesor, largo, ancho, veta/,error.message,'Lista para diseño no alcanza para pedir: la ficha dice qué le falta')
+    # Biblioteca v4: la placa trae sus espesores estándar, así que el espesor ya no falta.
+    assert_match(/incompleta: falta SKU, largo, ancho, veta/,error.message,'Lista para diseño no alcanza para pedir: la ficha dice qué le falta')
     assert_empty @model.operations
   end
   def test_stale_photo_native_binding_blocks_paint_even_when_same_catalog_id_is_used
@@ -152,7 +153,9 @@ class MaterialPolicyTest < Minitest::Test
   # the design binding paintable; re-binding only refreshes the supplier data.
   def test_commercial_review_keeps_painting_and_rebinding_refreshes_supplier_fingerprint
     reviewed=@catalog.read['items'].first.merge('approved'=>true,'sku'=>'QA-P18','supplier'=>'Taller QA','thicknessMm'=>18,'widthMm'=>1800,'lengthMm'=>2600,'grain'=>false)
-    @catalog.save([reviewed],1)
+    # Biblioteca v4: el espesor de la placa queda en su lista (thicknessMm nil); se compara con lo guardado.
+    reviewed=@catalog.save([reviewed],1)['items'].first
+    assert_nil reviewed['thicknessMm'];assert_includes reviewed['thicknessesMm'],18
     assert PlanosSanto::MaterialPolicy.design_ready?(reviewed,directory:@directory)
     paint=PlanosSanto::NativePaint.new(@model,catalog:@catalog)
     request={'catalogId'=>reviewed['id'],'materialUuid'=>@binding['uuid'],'mode'=>'sheet'}

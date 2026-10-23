@@ -22,9 +22,12 @@ export type CutlistViewProps={
   /** Lápiz: abre la ficha de la biblioteca en Materiales. */
   onEditMaterial?:(catalogId:string)=>void;
   onDataLoaded?:(data:CutlistData)=>void;
+  /** 0.8.20: «Agregar 16 mm a la ficha» (espesor fuera de la lista); por defecto la acción Ruby `catalog_add_thickness`. */
+  addThickness?:(catalogId:string,thicknessMm:number)=>Promise<unknown>;
 };
 
 const defaultLoad=()=>request<CutlistData>('cutlist');
+const defaultAddThickness=(id:string,thicknessMm:number)=>request('catalog_add_thickness',{id,thicknessMm});
 const defaultSave=(csv:string,modelName:string)=>request<{path?:string;cancelled?:boolean}>('cutlist_csv',{csv,modelName});
 const valid=(value:unknown):value is CutlistData=>!!value&&typeof value==='object'&&Array.isArray((value as CutlistData).pieces)&&Array.isArray((value as CutlistData).sections)
   &&Array.isArray((value as CutlistData).furniture)&&Array.isArray((value as CutlistData).edgeSections);
@@ -88,7 +91,7 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,onHighlight,onGoToFurniture,onEditMaterial,onDataLoaded}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,onHighlight,onGoToFurniture,onEditMaterial,onDataLoaded,addThickness=defaultAddThickness}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set()),[selected,setSelected]=useState('');
   const [options,setOptions]=useState<CutlistOptions>(readOptions),[showOptions,setShowOptions]=useState(false),[exporting,setExporting]=useState(false);
@@ -145,6 +148,13 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     const done=()=>document.body.classList.remove('cutlist-printing');
     window.addEventListener('afterprint',done,{once:true});
     try{window.print();}finally{setTimeout(done,0);}
+  }
+  // 0.8.20: un espesor fuera de la lista de la ficha no bloquea; un clic lo agrega y el listado se vuelve a leer.
+  async function addToFicha(info:CutlistSection['info']){
+    if(!info.catalogId)return;
+    setNotice('');setError('');
+    try{await addThickness(info.catalogId,info.thicknessMm);setNotice(`${formatMm(info.thicknessMm)} mm agregado a los espesores de «${info.name}».`);await refresh();}
+    catch(value){setError(value instanceof Error?value.message:String(value));}
   }
   async function exportCsv(only?:{sheets:CutlistSection[];edges:CutlistEdgeSection[]}){
     if(!data)return;
@@ -230,6 +240,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <TypeIcon kind={row.kind}/>
             <h3 id={titleId} tabIndex={-1} className="cutlist-group-title"><Dot color={row.color}/><MaterialName row={row}/></h3>
             <Warnings items={row.warnings}/>
+            {sheet?.info.thicknessInList===false&&<span className="cutlist-flag" role="note">Espesor fuera de la lista de la ficha</span>}
+            {sheet?.info.thicknessInList===false&&sheet.info.catalogId&&<button type="button" disabled={loading} onClick={()=>void addToFicha(sheet.info)}>Agregar {formatMm(sheet.info.thicknessMm)} mm a la ficha</button>}
             {note&&<span className="cutlist-grain"><Icon name="grain"/>{note}</span>}
             <span className="cutlist-group-count">{sheet?plural(sheet.totals.pieces,'pieza','piezas'):plural(edge!.totals.strips,'tira','tiras')}</span>
             <span className="cutlist-group-tools">

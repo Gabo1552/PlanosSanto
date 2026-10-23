@@ -75,6 +75,11 @@ describe('Reglas del pedido a maderera (0.8.16: sin tildes)',()=>{
   expect(catalogMissing(item({}))).toEqual(['SKU','espesor','largo','ancho','veta']);expect(completeness(item({sku:'X',thicknessMm:18,lengthMm:2600,widthMm:1830}))).toBe('Falta: veta');
   expect(catalogMissing({...board,grain:true})).toEqual([]);expect(catalogMissing({...board,sku:'  '})).toEqual(['SKU']);
   expect(catalogComplete(e2)).toBe(true);expect(catalogMissing(item({kind:'edge'}))).toEqual(['ancho']);expect(catalogMissing(item({kind:'unknown'}))).toEqual(['tipo']);
+  // Biblioteca v4 (0.8.20): la placa trae sus espesores en una lista y el canto sus anchos estándar.
+  const v4Board={...board,thicknessMm:null,thicknessesMm:[15,18]},v4Edge={...e1,widthMm:null,widthsMm:[22,45]};
+  expect(catalogMissing(v4Board)).toEqual([]);expect(catalogMissing({...v4Board,thicknessesMm:[]})).toEqual(['espesor']);
+  expect(catalogMissing(v4Edge)).toEqual([]);expect(catalogMissing({...v4Edge,widthsMm:[]})).toEqual(['ancho']);
+  expect(materialLabel(v4Board)).toBe('Blanco 18 · BL18 · 15 y 18 mm');expect(materialLabel(v4Edge)).toBe('Canto blanco · CB22 · ancho 22 y 45 mm');
   const unapproved:CatalogItem={...board,approved:false},stale:CatalogItem={...item({}),approved:true};
   expect(catalogComplete(unapproved)).toBe(true);expect(catalogComplete(stale)).toBe(false);
  });
@@ -86,12 +91,13 @@ describe('Reglas del pedido a maderera (0.8.16: sin tildes)',()=>{
   expect(second.metres).toBeCloseTo(0.3,6);expect(second.sku).toBe('Sin SKU');expect(totals.missing).toBe(1);expect(totals.unassigned).toBe(1);
  });
  it('avisa en vivo por campo sólo las reglas físicas que Ruby bloquea',()=>{
-  // Sin canto fijo por placa: sólo cuenta que el canto no sea más angosto que el espesor.
-  expect(edgeIncompatibility(e1,board,18)).toBeNull();expect(edgeIncompatibility(e2,board,18)).toBe('más angosto que el espesor de 18 mm');
-  expect(edgeIncompatibility(e2,board,22)).toBe('más angosto que el espesor de 22 mm');expect(edgeIncompatibility(e2,board,15)).toBeNull();expect(edgeIncompatibility(e2,undefined,22)).toBe('más angosto que el espesor de 22 mm');
+  // Sin canto fijo por placa. Biblioteca v4: el canto se refila; solo cuenta si todos sus anchos son más angostos que la pieza.
+  expect(edgeIncompatibility(e1,board,18)).toBeNull();expect(edgeIncompatibility(e2,board,18)).toBe('más angosto que el espesor de 18 mm con todos sus anchos');
+  expect(edgeIncompatibility(e2,board,22)).toBe('más angosto que el espesor de 22 mm con todos sus anchos');expect(edgeIncompatibility(e2,board,15)).toBeNull();expect(edgeIncompatibility(e2,undefined,22)).toBe('más angosto que el espesor de 22 mm con todos sus anchos');
+  expect(edgeIncompatibility({...e2,widthMm:null,widthsMm:[22,45]} as CatalogItem,board,25)).toBeNull();expect(edgeIncompatibility({...e2,widthMm:null,widthsMm:[]} as CatalogItem,board,18)).toBe('ancho sin cargar');
   expect(rowWarnings(row('a'),geo([600,720,18]),catalog)).toEqual({});
   const w=rowWarnings(row('a',{secondaryId:'e2',edgeMap:[1,2,0,0],principalId:null,grainPolicy:'rotate',detail:'x'.repeat(81)}),geo([2700,720,19.5]),catalog);
-  expect(w.material?.[0]).toContain('mide 19,5 mm');expect(w.secondaryId?.[0]).toContain('más angosto que el espesor');expect(w.edgeMap?.[0]).toContain('Arriba');
+  expect(w.material).toBeUndefined();expect(w.secondaryId?.[0]).toContain('más angosto que el espesor');expect(w.edgeMap?.[0]).toContain('Arriba');
   expect(w.grainPolicy?.[0]).toContain('asimétricos');expect(w.detail?.[0]).toContain('80 caracteres');expect(w.dimensions?.[0]).toBe('La pieza no entra en la placa: mide 2.700 × 720 mm y la placa es 2.600 × 1.830 mm.');
   const grained={...catalog,items:[{...board,grain:true},e1]};
   expect(rowWarnings(row('a',{grainPolicy:'rotate',edgeMap:[1,1,1,1]}),geo([600,720,18]),grained).grainPolicy?.[0]).toBe('La placa tiene veta: mantené la orientación (rota 0).');

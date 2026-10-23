@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import type {CatalogItem} from '../sketchup_offline/ui/WorkshopPanel';
-import {addThickness,applyDraft,changeKind,chooseThickness,DEFAULT_THICKNESSES,draftChanged,draftFromItem,groupItems,groupOf,hexColor,linkName,nameCollision,newDraft,parseMeasure,removeThickness,rgbFromHex,setThickness,standardThicknesses,type FichaItem} from '../sketchup_offline/ui/materialLibraryModel';
+import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,groupItems,groupOf,hexColor,inList,linkName,nameCollision,newDraft,parseMeasure,removeThickness,removeWidth,rgbFromHex,setThickness,setWidth,standardThicknesses,standardWidths,thicknessSummary,type FichaItem} from '../sketchup_offline/ui/materialLibraryModel';
 
 // 0.8.17: lógica pura de la grilla agrupada y de «Propiedades del material».
 const item=(patch:Partial<FichaItem>={}):FichaItem=>({id:'a',name:'Roble 18',kind:'sheet',sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'2026-10-22T00:00:00Z',sourceHash:'0'.repeat(64),observed:{},...patch});
@@ -35,26 +35,65 @@ describe('Espesores estándar',()=>{
   expect(['18','0,45','0.45 mm','2mm',' 12 ','',' '].map(parseMeasure)).toEqual([18,0.45,0.45,2,12,null,null]);
   for(const bad of ['0','-3','abc','1e3','18,5,2','200000'])expect(Number.isNaN(parseMeasure(bad) as number),bad).toBe(true);
  });
- it('+ agrega una fila vacía, − la quita y corre la elección',()=>{
-  let draft=draftFromItem(item({thicknessMm:18}));
-  expect(draft.thicknesses[draft.chosen!]).toBe('18');
-  draft=removeThickness(draft,0);expect(draft.thicknesses[draft.chosen!]).toBe('18');
+ // Biblioteca v4 (0.8.20): el canto conserva su espesor elegido (se descuenta del corte); la placa no tiene uno.
+ it('+ agrega una fila vacía, − la quita y corre la elección del canto',()=>{
+  const edge=item({kind:'edge',thicknessMm:2,thicknessesMm:[0.45,1,2]});
+  let draft=draftFromItem(edge);
+  expect(draft.thicknesses[draft.chosen!]).toBe('2');
+  draft=removeThickness(draft,0);expect(draft.thicknesses[draft.chosen!]).toBe('2');
   draft=removeThickness(draft,draft.chosen!);expect(draft.chosen).toBeNull();
   draft=addThickness(draft);expect(draft.thicknesses.at(-1)).toBe('');
-  draft=chooseThickness(setThickness(draft,draft.thicknesses.length-1,'16'),draft.thicknesses.length-1);
-  const saved=applyDraft(item({thicknessMm:18}),draft).item!;
-  expect(saved.thicknessMm).toBe(16);expect(saved.thicknessesMm).toEqual([5,12,15,16,25]);
+  draft=chooseThickness(setThickness(draft,draft.thicknesses.length-1,'1,5'),draft.thicknesses.length-1);
+  const saved=applyDraft(edge,draft).item!;
+  expect(saved.thicknessMm).toBe(1.5);expect(saved.thicknessesMm).toEqual([1,1.5]);
   let full=newDraft('sheet');for(let index=0;index<40;index++)full=addThickness(full);
   expect(full.thicknesses).toHaveLength(32);
+ });
+ it('una placa no tiene espesor elegido: todos los de la lista valen',()=>{
+  const old=item({thicknessMm:16});// registro viejo (v2/v3) con «su» espesor
+  const draft=draftFromItem(old);
+  expect(draft.chosen).toBeNull();expect(draft.thicknesses).toEqual(['3','5','12','15','16','18','25']);
+  expect(chooseThickness(draft,2).chosen).toBeNull();
+  const saved=applyDraft(old,removeThickness(draft,0)).item!;
+  expect(saved.thicknessMm).toBeNull();expect(saved.thicknessesMm).toEqual([5,12,15,16,18,25]);
+  expect(saved.widthsMm).toEqual([]);
+  expect(applyDraft(old,{...draft,thicknesses:[]}).item!.thicknessesMm).toEqual([]);
+  expect(inList([15,18],17.95)).toBe(true);expect(inList([15,18],16)).toBe(false);
+  expect([[18],[15,18],[12,15,18],[3,5,12,15,18,25],[]].map(thicknessSummary)).toEqual(['18 mm','15 y 18 mm','12, 15 y 18 mm','3 a 25 mm','']);
  });
  it('cambiar el tipo trae la lista del nuevo tipo solo si la anterior no se tocó',()=>{
   const draft=newDraft('unknown');
   expect(changeKind(draft,'edge').thicknesses).toEqual(['0,45','2']);
+  expect(changeKind(draft,'edge').widths).toEqual(['22','45']);
   expect(changeKind(newDraft('sheet'),'edge').thicknesses).toEqual(['0,45','2']);
   const edited=setThickness(newDraft('sheet'),0,'4');
   expect(changeKind(edited,'edge').thicknesses[0]).toBe('4');
-  expect(changeKind(chooseThickness(newDraft('sheet'),4),'edge').thicknesses).toHaveLength(6);
+  expect(changeKind(chooseThickness(newDraft('edge'),1),'sheet').thicknesses).toEqual(['0,45','2']);
+  expect(changeKind(chooseThickness(newDraft('edge'),1),'sheet').chosen).toBeNull();
+  expect(changeKind(newDraft('edge'),'sheet').widths).toEqual([]);
   expect(changeKind(newDraft('sheet'),'edge').price.unit).toBe('metro');
+ });
+});
+
+describe('Anchos estándar del canto',()=>{
+ it('22 y 45 mm de fábrica; un registro viejo suma su ancho; otros tipos no tienen',()=>{
+  expect(DEFAULT_WIDTHS).toEqual([22,45]);
+  expect(newDraft('edge').widths).toEqual(['22','45']);expect(newDraft('sheet').widths).toEqual([]);
+  expect(standardWidths(item({kind:'edge',widthMm:19}))).toEqual([19,22,45]);
+  expect(standardWidths(item({kind:'edge',widthsMm:[45]}))).toEqual([45]);
+  expect(standardWidths(item({kind:'edge'}),{...DEFAULT_THICKNESSES,edgeWidths:[33]})).toEqual([33]);
+  expect(standardWidths(item({widthMm:1830}))).toEqual([]);// el ancho de una placa es su formato, no un ancho estándar
+ });
+ it('+ y − editan la lista; el ancho suelto del canto queda vacío',()=>{
+  const edge=item({kind:'edge',thicknessMm:0.45,widthMm:22});
+  let draft=draftFromItem(edge);
+  expect(draft.widths).toEqual(['22','45']);expect(draft.widthMm).toBe('');
+  draft=setWidth(addWidth(draft),2,'33');
+  const saved=applyDraft(edge,removeWidth(draft,0)).item!;
+  expect(saved).toMatchObject({widthMm:null,widthsMm:[33,45],thicknessMm:0.45});
+  expect(applyDraft(edge,setWidth(draft,1,'22')).errors.widthRows?.[1]).toBe('Ese ancho ya está en la lista.');
+  expect(applyDraft(edge,setWidth(draft,1,'ancho')).errors.widths).toBe('Revisá los anchos marcados.');
+  expect(draftChanged(edge,draftFromItem(edge))).toBe(false);expect(draftChanged(edge,draft)).toBe(true);
  });
 });
 
@@ -70,15 +109,16 @@ describe('Aplicar la ficha',()=>{
   expect(applyDraft(base,{...draftFromItem(base),price:{...draftFromItem(base).price,amount:'100',source:' '}}).errors.price).toMatch(/fuente/);
   const empty=applyDraft(item(),draftFromItem(item()));
   expect(empty.item).toBeDefined();expect(empty.errors).toEqual({});
-  const chosenEmpty=applyDraft(base,setThickness(draftFromItem(base),draftFromItem(base).chosen!,''));
+  const edge=item({kind:'edge',thicknessMm:2});
+  const chosenEmpty=applyDraft(edge,setThickness(draftFromItem(edge),draftFromItem(edge).chosen!,''));
   expect(Object.values(chosenEmpty.errors.rows!)).toContain('Escribí el espesor elegido.');
  });
  it('arma la ficha completa de una placa y de un canto',()=>{
-  const sheet=applyDraft(item(),{...chooseThickness(draftFromItem(item()),4),sku:' MB18 ',supplier:'Maderera',notes:'Lista oct.',lengthMm:'2750',widthMm:'1830',grain:'false',price:{amount:'95000',currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}}).item!;
-  expect(sheet).toMatchObject({sku:'MB18',supplier:'Maderera',notes:'Lista oct.',thicknessMm:18,thicknessesMm:[3,5,12,15,18,25],lengthMm:2750,widthMm:1830,grain:false,price:{amount:95000,currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}});
+  const sheet=applyDraft(item(),{...draftFromItem(item()),sku:' MB18 ',supplier:'Maderera',notes:'Lista oct.',lengthMm:'2750',widthMm:'1830',grain:'false',price:{amount:'95000',currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}}).item!;
+  expect(sheet).toMatchObject({sku:'MB18',supplier:'Maderera',notes:'Lista oct.',thicknessMm:null,thicknessesMm:[3,5,12,15,18,25],widthsMm:[],lengthMm:2750,widthMm:1830,grain:false,price:{amount:95000,currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}});
   const edgeBase=item({kind:'edge',lengthMm:999,grain:true});
-  const edge=applyDraft(edgeBase,{...chooseThickness(draftFromItem(edgeBase),0),widthMm:'22'}).item!;
-  expect(edge).toMatchObject({kind:'edge',thicknessMm:0.45,thicknessesMm:[0.45,2],widthMm:22,lengthMm:999,grain:true,price:null});
+  const edge=applyDraft(edgeBase,chooseThickness(draftFromItem(edgeBase),0)).item!;
+  expect(edge).toMatchObject({kind:'edge',thicknessMm:0.45,thicknessesMm:[0.45,2],widthMm:null,widthsMm:[22,45],lengthMm:999,grain:true,price:null});
  });
  it('detecta cambios sin contar la fecha del precio vacío',()=>{
   const base=item({thicknessMm:18});

@@ -1,11 +1,12 @@
 {
   "schema": 1,
   "standardThicknessesMm": {"sheet": [3, 5, 12, 15, 18, 25], "edge": [0.45, 2]},
-  "note": "Valores sugeridos para altas rápidas: cargá el SKU y la veta, y confirmá el formato con la ficha técnica de la maderera.",
+  "standardWidthsMm": {"edge": [22, 45]},
+  "note": "Valores sugeridos para altas rápidas: cargá el SKU y la veta, y confirmá el formato con la ficha técnica de la maderera. Las placas valen para todos sus espesores y los cantos para todos sus anchos (se refilan).",
   "presets": [
-    {"id": "melamina-18-2750", "label": "Melamina 18 mm · 2750 × 1830 (formato a confirmar)", "kind": "sheet", "values": {"thicknessMm": 18, "lengthMm": 2750, "widthMm": 1830}},
-    {"id": "melamina-18-2600", "label": "Melamina 18 mm · 2600 × 1830 (formato a confirmar)", "kind": "sheet", "values": {"thicknessMm": 18, "lengthMm": 2600, "widthMm": 1830}},
-    {"id": "canto-22x045", "label": "Canto 22 × 0,45 mm", "kind": "edge", "values": {"widthMm": 22, "thicknessMm": 0.45}},
-    {"id": "canto-22x2", "label": "Canto 22 × 2 mm", "kind": "edge", "values": {"widthMm": 22, "thicknessMm": 2}}
+    {"id": "melamina-2750", "label": "Melamina 2750 × 1830 (formato a confirmar)", "kind": "sheet", "values": {"lengthMm": 2750, "widthMm": 1830}},
+    {"id": "melamina-2600", "label": "Melamina 2600 × 1830 (formato a confirmar)", "kind": "sheet", "values": {"lengthMm": 2600, "widthMm": 1830}},
+    {"id": "canto-045", "label": "Canto 0,45 mm", "kind": "edge", "values": {"thicknessMm": 0.45}},
+    {"id": "canto-2", "label": "Canto 2 mm", "kind": "edge", "values": {"thicknessMm": 2}}
   ]
 }

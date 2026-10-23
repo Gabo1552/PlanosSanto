@@ -9,7 +9,9 @@ require_relative 'guide_store'
 require_relative 'workshop'
 
 module PlanosSanto
-  # Vista «Piezas»: lista de corte de los muebles generados, agrupada por material y espesor.
+  # Vista «Piezas»: lista de corte de los muebles generados, agrupada por material y espesor real de la pieza
+  # (0.8.20: una ficha de placa vale para todos sus espesores; «Melamina 18» y «Melamina 15» son dos secciones
+  # del mismo material). Cada pieza lleva `thicknessMm` (eje menor) y `thicknessInList` para el despiece.
   # Solo lectura: no escribe el SKP, la guía ni el borrador del pedido. Reutiliza lo que ya calcula
   # el pedido (SupplierOrder#proposal para la geometría, OrderProposal#stage para ejes, placa y
   # cantos por lado, OclReader para lo pintado en cada cara) en vez de volver a interpretarlo.
@@ -131,9 +133,16 @@ module PlanosSanto
       end
       {'id'=>id,'strips'=>strips(edges,thickness,g['rectangular']==true,context),'ids'=>[id],'definitionId'=>observed && observed['definition_id'],'quantity'=>1,
        'lengthMm'=>lengths[u].round(2),'widthMm'=>lengths[v].round(2),'thicknessMm'=>thickness,
-       'rectangular'=>g['rectangular']==true,'mirrored'=>g['mirrored']==true,'material'=>material,
+       'rectangular'=>g['rectangular']==true,'mirrored'=>g['mirrored']==true,'material'=>material,'thicknessInList'=>thickness_in_list(board,thickness),
        'sectionKey'=>"#{section_source_key(material)}|#{format('%.1f',thickness)}",'edges'=>edges,
        'grain'=>grain(board,kept,u,v),'notes'=>stage ? (stage['notes'].map { |note| note['text'] }+stage['blockers']).uniq : ['Geometría no rectangular: medidas aproximadas por la caja de la pieza; cantos sin leer.']}
+    end
+
+    # ¿El espesor real de la pieza está entre los de la ficha? nil sin ficha de placa o sin lista. Fuera de la lista
+    # no bloquea: la pieza se lista con su espesor y la sección lo marca, con un clic para agregarlo a la ficha.
+    def self.thickness_in_list(board,thickness)
+      list=board && board['kind']=='sheet' ? CatalogStore.thicknesses_of(board) : []
+      list.empty? ? nil : CatalogStore.in_list?(list,thickness)
     end
 
     # Sin ejes del pedido (pieza no rectangular): solo una placa nativa única y vigente.
@@ -145,7 +154,7 @@ module PlanosSanto
     def self.material_for(board,ids,context)
       if board
         format=board['lengthMm'].is_a?(Numeric) && board['widthMm'].is_a?(Numeric) ? [board['lengthMm'],board['widthMm']] : nil
-        return {'source'=>'catalog','catalogId'=>board['id'],'name'=>board['name'],'sku'=>board['sku'],'thicknessMm'=>board['thicknessMm'],
+        return {'source'=>'catalog','catalogId'=>board['id'],'name'=>board['name'],'sku'=>board['sku'],'thicknessesMm'=>CatalogStore.thicknesses_of(board),
                 'format'=>format,'grain'=>[true,false].include?(board['grain']) ? board['grain'] : nil}
       end
       found=ids.filter_map { |id| context['materials'][id] }
@@ -185,16 +194,22 @@ module PlanosSanto
       nil
     end
 
-    # Una tira por lado con canto. El ancho de la tira es el de la ficha del canto; sin ese dato se toma el
-    # espesor de la pieza (lo que el canto cubre) y la tira queda marcada como aproximada.
+    # Una tira por lado con canto. El ancho de la tira sale de los anchos estándar de la ficha: el más angosto que
+    # cubre el espesor de la pieza (o el más ancho si ninguno cubre: el canto se refila, no es un aviso). Sin anchos
+    # en la ficha se toma el espesor de la pieza (lo que el canto cubre) y la tira queda marcada como aproximada.
     def self.strips(edges,thickness,rectangular,context)
       edges.filter_map do |edge|
         next unless edge['edgeKey']
         item=edge['status']=='catalog' ? context['items'][edge['catalogId']] : nil
-        width=item && measure?(item['widthMm']) ? item['widthMm'] : nil
+        width=item ? strip_width(CatalogStore.widths_of(item),thickness) : nil
         {'side'=>edge['side'],'label'=>STRIP_LABELS.fetch(edge['side']),'edgeKey'=>edge['edgeKey'],'lengthMm'=>edge['lengthMm'],
          'widthMm'=>width || thickness,'widthApprox'=>width.nil?,'approximate'=>!rectangular}
       end
+    end
+
+    def self.strip_width(widths,thickness)
+      return nil if widths.empty?
+      widths.find { |width| width+TOLERANCE>=thickness } || widths.max
     end
 
     def self.measure?(value)
@@ -240,7 +255,7 @@ module PlanosSanto
           base={'key'=>piece['sectionKey'],'thicknessMm'=>piece['thicknessMm']}
           if material.nil? then base.merge('source'=>'none','name'=>'Sin material','kind'=>'unknown','colorRgb'=>nil,'missing'=>[])
           else base.merge('source'=>material['source'],'name'=>material['name'],'sku'=>material['sku'],'catalogId'=>material['catalogId'],
-                          'catalogThicknessMm'=>material['thicknessMm'],'format'=>material['format'],'grain'=>material['grain'],
+                          'standardThicknessesMm'=>material['thicknessesMm'],'thicknessInList'=>piece['thicknessInList'],'format'=>material['format'],'grain'=>material['grain'],
                           'kind'=>section_kind(material),'colorRgb'=>material_color(material,context),'missing'=>material_missing(material,context))
           end
         end
@@ -311,6 +326,9 @@ module PlanosSanto
       found.values.map do |entry|
         list=entry.delete('list')
         thickness=entry['thicknessMm']
+        # Con anchos estándar, el ancho de la sección es el de sus tiras si es uno solo (22 o 45); con los dos, ninguno.
+        widths=list.map { |_piece,strip| strip['widthMm'] }.uniq
+        entry['widthMm']=widths.length==1 ? widths.first : nil unless Array(entry['widthsMm']).empty?
         length=list.sum { |piece,strip| strip['lengthMm']*piece['quantity'] }
         area=list.sum { |piece,strip| strip['lengthMm']*strip['widthMm']*piece['quantity'] }
         entry.merge('widthApprox'=>list.any? { |_piece,strip| strip['widthApprox'] },
@@ -323,7 +341,7 @@ module PlanosSanto
       if edge['status']=='catalog'
         item=context.fetch('items',{})[edge['catalogId']] || {}
         {'key'=>key,'source'=>'catalog','kind'=>'edge','name'=>edge['name'],'sku'=>edge['sku'],'catalogId'=>edge['catalogId'],
-         'thicknessMm'=>measure?(item['thicknessMm']) ? item['thicknessMm'] : nil,'widthMm'=>measure?(item['widthMm']) ? item['widthMm'] : nil,
+         'thicknessMm'=>measure?(item['thicknessMm']) ? item['thicknessMm'] : nil,'widthMm'=>nil,'widthsMm'=>item.empty? ? [] : CatalogStore.widths_of(item),
          'colorRgb'=>color_of(bound_material(edge['catalogId'],context)),'missing'=>item.empty? ? ['ficha'] : CatalogStore.missing(item)}
       else
         {'key'=>key,'source'=>'model','kind'=>'edge','name'=>edge['name'],'sku'=>nil,'catalogId'=>nil,'observedIds'=>edge['observedIds'],'thicknessMm'=>nil,'widthMm'=>nil,

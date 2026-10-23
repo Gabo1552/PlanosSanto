@@ -34,7 +34,8 @@ class MaterialManagementTest < Minitest::Test
     @catalog=PlanosSanto::CatalogStore.new(directory:@directory)
     @edge=@catalog.new_item('Canto blanco','edge').merge('sku'=>'C1','supplier'=>'QA','thicknessMm'=>0.45,'widthMm'=>22,'approved'=>true)
     @sheet=@catalog.new_item('Blanco 18','sheet').merge('sku'=>'B18','supplier'=>'QA','thicknessMm'=>18,'widthMm'=>1830,'lengthMm'=>2600,'grain'=>false,'approved'=>true,'favorite'=>true,'compatibleIds'=>[@edge['id']])
-    @catalog.save([@sheet,@edge],0)
+    # Biblioteca v4: se compara con lo guardado (el espesor de la placa queda en su lista).
+    @sheet,@edge=@catalog.save([@sheet,@edge],0)['items']
     @material=ManagementFixture::Material.new(7,'Blanco 18')
     @model=ManagementFixture::Model.new(@material)
     @library=PlanosSanto::MaterialLibrary.new(@model,catalog:@catalog,directory:@directory)

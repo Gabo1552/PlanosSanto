@@ -113,9 +113,11 @@ module PlanosSanto
       fraction.empty? ? whole : "#{whole},#{fraction}"
     end
     # Independent groups of checks. Normal mode raises the first problem; collect mode keeps going so the
-    # live list shows every problem of the piece. Kept on purpose (0.8.16, «Se mantienen»): canto más
-    # angosto que el espesor, espesor distinto del eje, la pieza no entra en la placa, girar con veta o con
-    # cantos asimétricos, pieza no rectangular y detalle de más de 80 caracteres.
+    # live list shows every problem of the piece. Kept on purpose (0.8.16, «Se mantienen»): la pieza no
+    # entra en la placa, girar con veta o con cantos asimétricos, pieza no rectangular y detalle de más de
+    # 80 caracteres. 0.8.20 (biblioteca v4): the thickness of the piece never blocks (a sheet comes in every
+    # thickness of its list; one outside the list is only flagged), and an edge blocks only when every one
+    # of its standard widths is narrower than the piece (the band is trimmed: 45 mm covers a 25 mm piece).
     def validate_row(row,collect: false)
       reasons=[]
       check=lambda do |&block|
@@ -134,10 +136,7 @@ module PlanosSanto
       end
       return reasons unless structure
       thickness=g['lengths'][(0..2).find { |i| !axes.include?(i) }]
-      check.call do
-        board=material(row['materialId'],'sheet')
-        raise ExportError,"El espesor no coincide: el eje de espesor mide #{mm(thickness)} mm y la placa tiene #{mm(board['thicknessMm'])} mm." if (thickness-board['thicknessMm']).abs>0.1
-      end
+      check.call { board=material(row['materialId'],'sheet') }
       sized=check.call do
         raise ExportError,"El detalle supera #{MAX_DETAIL} caracteres: acortalo." if row['detail'].length>MAX_DETAIL
         raise ExportError,'Regla de medidas inválida.' unless %w[finished_accepted explicit_cut].include?(row['dimensionRule'])
@@ -160,8 +159,9 @@ module PlanosSanto
           role=index.zero? ? 'principal (1)' : 'secundario (2)'
           check.call do
             edge=material(row[key],'edge',role:role)
-            # Any edge that covers the thickness is valid: boards do not have a fixed matching edge.
-            raise ExportError,"El canto #{role} es más angosto que el espesor de la pieza: ancho #{mm(edge['widthMm'])} mm y espesor #{mm(thickness)} mm." unless edge['widthMm']+0.1>=thickness
+            # Any edge with a standard width that covers the thickness is valid: boards do not have a fixed matching edge.
+            widths=CatalogStore.widths_of(edge)
+            raise ExportError,"El canto #{role} es más angosto que el espesor de la pieza con todos sus anchos (#{widths.map { |width| mm(width) }.join(', ')} mm) y la pieza mide #{mm(thickness)} mm." unless widths.any? { |width| width+0.1>=thickness }
           end
         end
       end
@@ -188,6 +188,15 @@ module PlanosSanto
       return [row['cutBase'],row['cutHeight']] if row['dimensionRule']=='explicit_cut'
       g=geometry(@nodes.fetch(row['id']));MaderaProfile.cut_size(@maderera,*row['axes'].map { |axis| g['lengths'][axis] },edge_thicknesses(row))
     end
+    # Real thickness of the piece (0.8.20): the axis that is neither base nor height, or the smallest one
+    # (eje menor) while the axes are not chosen, in hundredths like the cutlist pieces. An order lot is one
+    # board in one thickness (#thickness_key, tenths, the same key as a cutlist section).
+    def row_thickness(row)
+      lengths=geometry(@nodes.fetch(row['id']))['lengths'];axes=row['axes']
+      chosen=axes.is_a?(Array) && axes.length==2 && axes.uniq.length==2 && axes.all? { |n| [0,1,2].include?(n) }
+      lengths[chosen ? ([0,1,2]-axes).first : (0..2).min_by { |i| [lengths[i],i] }].round(2)
+    end
+    def thickness_key(row);row_thickness(row).round(1);end
     def edge_thicknesses(row)
       return [0,0,0,0] unless @maderera && row['edgeMap'].is_a?(Array) && row['edgeMap'].length==4
       @items ||= @catalog['items'].to_h { |item| [item['id'],item] }
@@ -228,13 +237,13 @@ module PlanosSanto
           next unless metres>0
           edge=material(row[role==1 ? 'principalId' : 'secondaryId'],'edge');add.call(edge,metres,'metro',role==1 ? 'principal_edge' : 'secondary_edge')
         end
-        {'id'=>row['id'],'detail'=>row['detail'],'netAreaM2'=>area,'boardAmount'=>charges[0]['amount'],'charges'=>charges,'status'=>charges.all? { |c| c['status']=='current_price' } ? 'net_material_estimate' : 'review_prices'}
+        {'id'=>row['id'],'detail'=>row['detail'],'thicknessMm'=>row_thickness(row),'netAreaM2'=>area,'boardAmount'=>charges[0]['amount'],'charges'=>charges,'status'=>charges.all? { |c| c['status']=='current_price' } ? 'net_material_estimate' : 'review_prices'}
       end
       charges=lines.flat_map { |line| line['charges'] }
       totals=lambda { |statuses| charges.select { |c| statuses.include?(c['status']) }.group_by { |c| c['price']['currency'] }.transform_values { |group| group.sum { |c| c['amount'] } } }
       pieces=draft['rows'].select { |row| row['include'] }.zip(lines).map do |row,line|
         edges=line['charges'].reject { |c| c['role']=='board' }.each_with_object(Hash.new(0.0)) { |c,sum| sum[c['materialId']]+=c['quantity'] }
-        base,height=dimensions(row);{'materialId'=>row['materialId'],'base'=>base,'height'=>height,'edges'=>edges}
+        base,height=dimensions(row);{'materialId'=>row['materialId'],'thicknessMm'=>row_thickness(row),'base'=>base,'height'=>height,'edges'=>edges}
       end
       budget=@maderera && MaderaProfile.budget(@maderera,pieces,@catalog['items'].to_h { |item| [item['id'],item] },today:today)
       {'lines'=>lines,'totalsByCurrency'=>totals.call(['current_price']),'budget'=>budget,'warnings'=>warnings(draft),'outdatedTotalsByCurrency'=>totals.call(%w[stale_price future_price]),
@@ -243,7 +252,7 @@ module PlanosSanto
     end
     def export(draft,directory)
       draft=validate(draft)
-      batches=draft['rows'].select { |row| row['include'] }.group_by { |row| [row['materialId'],material(row['materialId'],'sheet')['thicknessMm'],row['principalId'],row['secondaryId']] }
+      batches=draft['rows'].select { |row| row['include'] }.group_by { |row| [row['materialId'],thickness_key(row),row['principalId'],row['secondaryId']] }
       # A new directory is the atomic publication unit; no pre-existing export can be overwritten.
       FileUtils.mkdir_p(directory)
       token="PlanosSanto-pedido-#{Time.now.strftime('%Y%m%d-%H%M%S')}-#{SecureRandom.hex(4)}"

@@ -98,20 +98,23 @@ test('perfil de maderera: se guarda, se usa en pedidos sin aprobar y el presupue
  await page.screenshot({path:info.outputPath('presupuesto-SINTETICO.png'),fullPage:true});
 });
 
-test('espesor distinto ofrece variante, otra placa o excluir; sin perfil en uso el presupuesto invita a usar uno',async({page},info)=>{
- await boot(page,info.outputDir);const [sheet,strip,thick]=await catalog([{name:'Placa buena',kind:'sheet',patch:board},{name:'Canto bueno',kind:'edge',patch:{...edge,sku:'CB-22',widthMm:22}},{name:'Placa gruesa',kind:'sheet',patch:{...board,sku:'BOARD-25',thicknessMm:25}}],all=>{all[0].compatibleIds=[all[1].id];});
+// Biblioteca v4 (0.8.20): la placa vale para todos sus espesores; uno fuera de la lista no bloquea y se agrega con un clic.
+test('espesor fuera de la lista ofrece agregarlo, otra placa o excluir; sin perfil en uso el presupuesto invita a usar uno',async({page},info)=>{
+ await boot(page,info.outputDir);const [sheet,strip,thick]=await catalog([{name:'Placa buena',kind:'sheet',patch:board},{name:'Canto bueno',kind:'edge',patch:{...edge,sku:'CB-22',widthMm:22}},{name:'Placa gruesa',kind:'sheet',patch:{...board,sku:'BOARD-25',thicknessMm:null,thicknessesMm:[25]}}],all=>{all[0].compatibleIds=[all[1].id];});
  const panel=await openOrder(page);
  let asked='';page.on('dialog',dialog=>{asked=dialog.message();void dialog.dismiss();});
  await page.getByLabel('Ejes de base / altura de la vista 2D').selectOption('0,1');await page.getByLabel('Detalle del pedido').fill('Lateral a conservar');await page.getByLabel('Placa del pedido').selectOption(thick.id);
- const options=panel.getByRole('group',{name:'Opciones por espesor distinto'});await expect(options).toBeVisible();await expect(options).toContainText('el pedido conserva tus cambios');
+ const options=panel.getByRole('group',{name:'Opciones por espesor fuera de la lista'});await expect(options).toBeVisible();await expect(options).toContainText('el pedido conserva tus cambios');
+ await expect(options).toContainText('No bloquea el pedido.');
  await options.getByRole('button',{name:'Elegir otra placa',exact:true}).click();await expect(page.getByLabel('Placa del pedido')).toBeFocused();
  await options.getByRole('button',{name:'Excluir la pieza',exact:true}).click();
  await expect(page.getByLabel('Incluir pieza física en el pedido')).not.toBeChecked();await expect(page.getByLabel('Incluir pieza física en el pedido')).toBeFocused();
  await page.getByLabel('Incluir pieza física en el pedido').check();await expect(options).toBeVisible();
- // Sin confirmación: crear la variante cambia la biblioteca y el pedido se cruza solo, sin perder lo editado.
- await options.getByRole('button',{name:/^Crear variante de Placa gruesa de [\d,]+ mm$/}).click();
+ // Sin confirmación: agregar el espesor cambia la biblioteca y el pedido se cruza solo, sin perder lo editado.
+ await options.getByRole('button',{name:'Agregar 19,05 mm a Placa gruesa',exact:true}).click();
  await expect(panel.getByRole('status')).toContainText(/el pedido se conserva|se conservaron tus cambios/);expect(asked).toBe('');
- const variant=actions.find(a=>a.action==='catalog_variant')!.data;expect(variant).toMatchObject({id:thick.id});expect(Math.abs((variant.thicknessMm as number)-25)).toBeGreaterThan(.1);
+ const added=actions.find(a=>a.action==='catalog_add_thickness')!.data;expect(added).toEqual({id:thick.id,thicknessMm:19.05});
+ await expect(options).toHaveCount(0);
  await expect(page.getByLabel('Detalle del pedido')).toHaveValue('Lateral a conservar');
  await fillOrder(page,panel,sheet.id,strip.id);
  const empty=panel.getByRole('region',{name:'Presupuesto con desperdicio',exact:true});await expect(empty).toContainText('Sin perfil de maderera en uso. Elegí «Usar en pedidos»');
@@ -119,21 +122,22 @@ test('espesor distinto ofrece variante, otra placa o excluir; sin perfil en uso 
  expect(asked).toBe('');
 });
 
-test('biblioteca v2: alta desde valor sugerido y variante de espesor; la ficha dice qué le falta, sin aprobar nada',async({page},info)=>{
+test('biblioteca v4: alta desde valor sugerido y variante de espesor; la ficha dice qué le falta, sin aprobar nada',async({page},info)=>{
  await boot(page,info.outputDir);
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
  await panel.getByRole('button',{name:'Alta rápida desde valores sugeridos',exact:true}).click();
  const quick=panel.getByRole('group',{name:'Alta rápida desde valores sugeridos'});await expect(quick).toContainText('Con medidas sugeridas; completá el SKU.');
- await quick.getByLabel('Valor sugerido').selectOption('melamina-18-2750');await quick.getByLabel('Nombre (opcional)').fill('Melamina blanca');
+ await quick.getByLabel('Valor sugerido').selectOption('melamina-2750');await quick.getByLabel('Nombre (opcional)').fill('Melamina blanca');
  await quick.getByRole('button',{name:'Crear sugerido',exact:true}).click();
  await expect(panel.getByRole('status')).toContainText('Material «Melamina blanca» creado con valores sugeridos. Completá su SKU');
- await expect(page.getByLabel('Nombre de material de biblioteca')).toHaveValue('Melamina blanca');await expect(page.getByLabel('Espesor de biblioteca')).toHaveValue('18');
+ // La placa sugerida vale para todos sus espesores: no trae «el» espesor.
+ await expect(page.getByLabel('Nombre de material de biblioteca')).toHaveValue('Melamina blanca');await expect(page.getByLabel('Espesor de biblioteca')).toHaveValue('');
  await expect(panel.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);await expect(panel.locator('#workshop-item-complete')).toContainText('Falta: SKU, veta');
- await expect(panel.getByRole('note')).toHaveText('Valores precargados desde valores sugeridos del taller: largo, espesor y ancho. Corregilos si no coinciden con el producto.');
+ await expect(panel.getByRole('note')).toHaveText('Valores precargados desde valores sugeridos del taller: largo y ancho. Corregilos si no coinciden con el producto.');
  const details=panel.locator('details.catalog-v2-variant');await details.locator('summary').click();
  await details.getByLabel('Espesor de la variante (mm)').fill('15');await details.getByRole('button',{name:'Crear variante',exact:true}).click();
  await expect(panel.getByRole('status')).toContainText(/Variante «.+15 mm» creada sin SKU ni precio/);
- await expect(page.getByLabel('Espesor de biblioteca')).toHaveValue('15');await expect(panel).toContainText('Variante de espesor de «Melamina blanca».');
+ await expect(panel).toContainText('Variante de espesor de «Melamina blanca».');
  await expect(panel.getByRole('note')).toContainText('ficha de origen de la variante');
  await page.getByLabel('SKU de biblioteca').fill('MB-15');await page.getByLabel('Veta de biblioteca').selectOption('false');
  await expect(panel.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');await expect(panel.getByRole('note')).toContainText('ficha de origen de la variante');

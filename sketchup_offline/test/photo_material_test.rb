@@ -55,7 +55,8 @@ class PhotoMaterialTest < Minitest::Test
     assert_equal PhotoFixture.png,File.binread(material.texture.filename)
     assert_equal 'sheet',item['kind'];refute item['approved'];assert_empty item['sku'];assert_empty item['supplier']
     assert_equal item['id'],result['catalogId'];assert_equal result['binding']['uuid'],result['materialUuid']
-    assert_equal 18,item['thicknessMm'];assert_nil item['grain'];assert_nil item['widthMm'];assert_nil item['lengthMm']
+    # Biblioteca v4: el espesor de la foto se suma a los espesores de la placa; ninguno es «el» espesor.
+    assert_nil item['thicknessMm'];assert_includes item['thicknessesMm'],18;assert_nil item['grain'];assert_nil item['widthMm'];assert_nil item['lengthMm']
     assert item.dig('observed','photo','designReady');assert_equal 64,item.dig('observed','photo','skmHash').length
     assert_equal result['thumbnail'],@service.thumbnails[item['id']]
     assert PlanosSanto::MaterialPolicy.design_ready?(item,directory:@directory)

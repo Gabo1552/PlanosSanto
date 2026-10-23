@@ -379,7 +379,7 @@ test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin toca
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();
  await page.getByRole('button',{name:'Importar JSON…',exact:true}).click();
  await page.getByRole('button',{name:/Placa prueba E2E/}).click();
- await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, espesor, largo, ancho, veta');await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);
+ await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, largo, ancho, veta');// biblioteca v4: la placa ya trae sus espesores estándarawait expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);
  await page.getByLabel('SKU de biblioteca').fill('PL-E2E');await page.getByLabel('Proveedor de biblioteca').fill('Proveedor sintético');
  await page.getByLabel('Espesor de biblioteca').fill('19.05');await page.getByLabel('Ancho de biblioteca').fill('2000');await page.getByLabel('Largo de biblioteca').fill('3000');
  await page.getByLabel('Veta de biblioteca').selectOption('false');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
@@ -395,7 +395,7 @@ test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin toca
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
  await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
  await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');
- await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toContainText('Falta: espesor');
+ await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar en pedidos.');// biblioteca v4: los espesores siguen en la lista
  page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Cerrar biblioteca y pedidos',exact:true}).click();
  expect(await snapshot()).toEqual(before);
 });

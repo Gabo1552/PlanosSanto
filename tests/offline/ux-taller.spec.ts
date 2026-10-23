@@ -103,7 +103,8 @@ test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prom
  let prompted=false;page.on('dialog',dialog=>{prompted=true;void dialog.dismiss();});
  await page.getByRole('button',{name:'Biblioteca y pedidos',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca y pedidos'});
  const list=panel.getByRole('group',{name:'Materiales de biblioteca'});await expect(list.getByRole('button')).toHaveCount(2);
- await expect(list.locator('.workshop-badge',{hasText:'Incompleta'})).toHaveCount(2);
+ // Biblioteca v4: el canto nuevo ya trae los anchos estándar 22 y 45 mm, así que solo la placa (sin SKU ni formato) queda incompleta.
+ await expect(list.locator('.workshop-badge',{hasText:'Incompleta'})).toHaveCount(1);
  await list.getByRole('button').first().focus();await page.keyboard.press('ArrowDown');
  await expect(list.getByRole('button').nth(1)).toBeFocused();await expect(list.getByRole('button').nth(1)).toHaveAttribute('aria-pressed','true');await expect(list.getByRole('button').first()).toHaveAttribute('tabindex','-1');
  await page.keyboard.press('Home');await expect(list.getByRole('button').first()).toBeFocused();

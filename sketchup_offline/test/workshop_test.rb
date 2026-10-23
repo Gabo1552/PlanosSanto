@@ -126,8 +126,9 @@ class WorkshopTest < Minitest::Test
   draft['rows'][1].merge!('include'=>false,'excludeReason'=>'Exclusión sintética revisada')
   workshop.save_plan(draft);reference=workshop.references.fetch('1/11')
   base,height=service.dimensions(draft['rows'][0])
-  assert_equal({'board'=>'TEST-18 / 19.05 mm','edgeMap'=>[1,1,0,2],'principal'=>'EDGE-1','secondary'=>'EDGE-2','base'=>base,'height'=>height},reference.reject { |key,_| key=='text' })
-  assert_equal 'TEST-18 / 19.05 mm · Arr:EDGE-1 Aba:EDGE-1 Izq:sin Der:EDGE-2',reference['text']
+  # Biblioteca v4: el espesor impreso es el real de la pieza (la placa vale para todos sus espesores), con coma decimal.
+  assert_equal({'board'=>'TEST-18 / 19,05 mm','edgeMap'=>[1,1,0,2],'principal'=>'EDGE-1','secondary'=>'EDGE-2','base'=>base,'height'=>height},reference.reject { |key,_| key=='text' })
+  assert_equal 'TEST-18 / 19,05 mm · Arr:EDGE-1 Aba:EDGE-1 Izq:sin Der:EDGE-2',reference['text']
   result=service.export(draft,@dir);line=File.read(File.join(result['directory'],'lote-01.txt')).lines.map { |l| l.chomp.split("\t") }.find { |cols| cols[0]=~/\A\d+\z/ }
   assert_equal reference['edgeMap'],line[5,4].map(&:to_i)
  end
@@ -159,10 +160,11 @@ class WorkshopTest < Minitest::Test
   assert_equal ['La pieza no entra en la placa: mide 3.500 × 600 mm y la placa es 3.000 × 2.000 mm.'],blocked['reasons']
  end
  def test_ux2_audit_reports_principal_and_secondary_edge_problems_together
-  _service,draft=order;catalog=@store.read;catalog['items'][1]['widthMm']=10
+  # Biblioteca v4: solo bloquea un canto cuyos anchos estándar son todos más angostos que la pieza.
+  _service,draft=order;catalog=@store.read;catalog['items'][1]['widthsMm']=[10]
   service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog);row=draft['rows'][0];row['edgeMap']=[1,2,0,0];row['secondaryId']=nil
   blocked=service.validate(draft,collect_errors:true).find { |e| e['id']==row['id'] }
-  assert_includes blocked['reasons'],'El canto principal (1) es más angosto que el espesor de la pieza: ancho 10 mm y espesor 19,05 mm.',blocked['reasons'].inspect
+  assert_includes blocked['reasons'],'El canto principal (1) es más angosto que el espesor de la pieza con todos sus anchos (10 mm) y la pieza mide 19,05 mm.',blocked['reasons'].inspect
   assert_includes blocked['reasons'],'Elegí un canto secundario (2) de la biblioteca.'
   normal=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
   assert normal.message.end_with?(blocked['reasons'].first),normal.message
@@ -173,7 +175,8 @@ class WorkshopTest < Minitest::Test
   assert_equal "#{row['detail']} (#{row['id']}): Elegí una placa de la biblioteca.",error.message
   row['materialId']=draft['rows'][0]['materialId'];row['axes']=[0,2]
   error=assert_raises(PlanosSanto::ExportError){service.validate(draft)}
-  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El espesor no coincide: el eje de espesor mide [\d,]+ mm y la placa tiene 19,05 mm\.\z/,error.message)
+  # Biblioteca v4: el espesor ya no bloquea; con ejes cruzados lo que bloquea es que ningún ancho del canto cubre la pieza.
+  assert_match(/\A.+ \(#{Regexp.escape(row['id'])}\): El canto principal \(1\) es más angosto que el espesor de la pieza con todos sus anchos \(22, 45 mm\) y la pieza mide [\d.,]+ mm\.\z/,error.message)
   draft['profile']['decimal']=';'
   assert_includes assert_raises(PlanosSanto::ExportError){service.validate(draft)}.message,'Perfil del archivo para la maderera'
  end
@@ -244,7 +247,7 @@ class WorkshopTest < Minitest::Test
   workshop.save_plan(workshop.plan['plan']);assert_equal operations,@model.operations.length,'Sin cambios no se agrega otra operación al deshacer'
   draft['rows'][0]['axes']=[1,2]
   live=workshop.save_plan(draft)['audit'];assert_equal ['1/11'],live['blocked'].map { |e| e['id'] };assert_nil live['estimate']
-  assert_match(/El espesor no coincide/,live['blocked'][0]['reason'])
+  assert_match(/más angosto que el espesor de la pieza con todos sus anchos/,live['blocked'][0]['reason'])
  end
  def test_hand_made_edges_export_without_any_justification
   service,draft=order;draft['rows'][0]['edgeMap']=[1,1,1,1]
@@ -257,7 +260,7 @@ class WorkshopTest < Minitest::Test
   assert_raises(PlanosSanto::ExportError){service.validate(draft)}
  end
  def test_incomplete_ficha_blocks_with_what_is_missing_instead_of_an_approval
-  _service,draft=order;catalog=@store.read;catalog['items'][0].merge!('sku'=>'','grain'=>nil);catalog['items'][1]['widthMm']=nil
+  _service,draft=order;catalog=@store.read;catalog['items'][0].merge!('sku'=>'','grain'=>nil);catalog['items'][1].merge!('widthMm'=>nil,'widthsMm'=>[])
   service=PlanosSanto::SupplierOrder.new(@session.document,@session.fingerprint,catalog)
   reasons=service.validate(draft,collect_errors:true)[0]['reasons']
   assert_includes reasons,'La ficha de la placa «Placa de prueba» está incompleta: falta SKU, veta. Completala en la biblioteca.'

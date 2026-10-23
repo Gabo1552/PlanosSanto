@@ -7,16 +7,19 @@ export type CutlistEdgeStatus='catalog'|'observed'|'none'|'unknown';
 export type CutlistEdge={side:CutlistSide;status:CutlistEdgeStatus;lengthMm:number;catalogId?:string;sku?:string|null;name?:string;observedIds?:string[];edgeKey?:string};
 /** Tira de canto de un lado: largo del lado, ancho de la ficha (o el espesor de la pieza, aproximado). */
 export type CutlistStrip={side:CutlistSide;label:string;edgeKey:string;lengthMm:number;widthMm:number;widthApprox:boolean;approximate:boolean};
-export type CutlistMaterial={source:'catalog'|'model'|'mixed';name:string;catalogId?:string;sku?:string|null;thicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null;observedId?:string;observedIds?:string[];category?:string;linked?:boolean};
+/** Biblioteca v4 (0.8.20): una ficha de placa trae sus espesores (`thicknessesMm`), no uno solo. */
+export type CutlistMaterial={source:'catalog'|'model'|'mixed';name:string;catalogId?:string;sku?:string|null;thicknessMm?:number|null;thicknessesMm?:number[];format?:[number,number]|null;grain?:boolean|null;observedId?:string;observedIds?:string[];category?:string;linked?:boolean};
 export type CutlistGrain='length'|'width'|'none'|null;
+/** `thicknessMm`: espesor real de la pieza (eje menor), el que separa las secciones y usa la maderera; `thicknessInList`: si está
+ * entre los de la ficha (null sin ficha de placa). */
 export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];name:string;furnitureId:string;furnitureName:string;quantity:number;
-  lengthMm:number;widthMm:number;thicknessMm:number;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
+  lengthMm:number;widthMm:number;thicknessMm:number;thicknessInList?:boolean|null;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
 export type SheetTotals={pieces:number;lengthM:number;areaM2:number;volumeM3:number};
 export type EdgeTotals={strips:number;lengthM:number;areaM2:number;volumeM3:number|null};
 export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';kind:'sheet'|'unknown';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;
-  catalogThicknessMm?:number|null;format?:[number,number]|null;grain?:boolean|null;colorRgb?:number[]|null;missing:string[];totals?:SheetTotals};
+  catalogThicknessMm?:number|null;standardThicknessesMm?:number[]|null;thicknessInList?:boolean|null;format?:[number,number]|null;grain?:boolean|null;colorRgb?:number[]|null;missing:string[];totals?:SheetTotals};
 export type CutlistEdgeSectionInfo={key:string;source:'catalog'|'model';kind:'edge';name:string;sku?:string|null;catalogId?:string|null;observedIds?:string[];
-  thicknessMm:number|null;widthMm:number|null;colorRgb?:number[]|null;missing:string[];widthApprox?:boolean;totals?:EdgeTotals};
+  thicknessMm:number|null;widthMm:number|null;widthsMm?:number[];colorRgb?:number[]|null;missing:string[];widthApprox?:boolean;totals?:EdgeTotals};
 export type CutlistData={schema:1;complete:boolean;readOnly:boolean;modelName:string;unit:'mm';furniture:{id:string;name:string}[];
   sections:CutlistSectionInfo[];edgeSections:CutlistEdgeSectionInfo[];pieces:CutlistPiece[]};
 export type CutlistFilter={furnitureId?:string;query?:string};

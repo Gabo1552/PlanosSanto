@@ -5,7 +5,7 @@ import './material-library.css';
 import {SkmBatchKind,SkmRowKind} from './SkmTypedImport';
 import {initialKinds,typedKinds} from './maderaRules';
 import PhotoMaterialPanel,{TextureAdjustPanel,type PhotoMaterialResult,type PhotoMaterialTarget,type TextureApplyResult} from './PhotoMaterialPanel';
-import {addThickness,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,draftChanged,draftFromItem,filterCounts,filterItems,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,removeThickness,rgbFromHex,searchText,setThickness,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
+import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
 import {catalogComplete,catalogMissing} from './workshopRules';
 
 type Suggestions={kind?:string;thicknessMm?:number|null;verified?:boolean};
@@ -13,7 +13,7 @@ export type SkmLibraryRow={catalogId:string;sha256?:string;assetHash?:string;nam
 type NativeMaterial={id:string;name:string;color?:number[]|null;hasTexture?:boolean;binding?:{catalogId:string;kind:string;uuid:string}|null;issues?:string[]};
 /** 0.8.17: a model material whose ficha cannot be chosen automatically (same name twice, or another OpenCutList type). */
 export type LinkAmbiguity={materialId:string;name:string;reason:'name'|'ocl_type';message:string;candidates:{catalogId:string;name:string;kind:string;thicknessMm:number|null}[]};
-export type VisualLibrary={catalog:Catalog;rows:SkmLibraryRow[];materials?:NativeMaterial[];visuals?:{catalogId:string;available:boolean;designReady:boolean}[];assetRevision?:number;ambiguous?:LinkAmbiguity[];autoLink?:{changed?:number};standardThicknessesMm?:StandardThicknesses};
+export type VisualLibrary={catalog:Catalog;rows:SkmLibraryRow[];materials?:NativeMaterial[];visuals?:{catalogId:string;available:boolean;designReady:boolean}[];assetRevision?:number;ambiguous?:LinkAmbiguity[];autoLink?:{changed?:number};standardThicknessesMm?:StandardThicknesses;standardWidthsMm?:{edge:number[]}};
 export type SkmPreviewRow={id:string;sha256:string;hash?:string;name:string;sourceName:string;bytes:number;thumbnail?:string|null;suggestions?:Suggestions;warnings:string[];status:'new'|'duplicate'|'conflict'};
 export type SkmPreview={token:string;revision:number;rows:SkmPreviewRow[]};
 type PreviewResult=SkmPreview|{cancelled:true};
@@ -34,7 +34,8 @@ const filterLabels:[Filter,string][]=[['all','Todos'],['sheet','Placas'],['edge'
 const emptyCopy:Record<Filter,[string,string]>={all:['No hay materiales con estos filtros','Probá otro nombre o quitá los filtros.'],sheet:['No hay placas con estos filtros','Probá otra búsqueda o creá una placa desde una foto.'],edge:['No hay cantos con estos filtros','Probá otra búsqueda o importá los cantos del proveedor.'],other:['No hay otros materiales','Maciza, perfiles y láminas aparecen acá cuando los clasificás.'],review:['No hay fichas por completar','Todas las fichas visibles tienen los datos que necesita un pedido.'],archived:['No hay fichas archivadas','Archivar oculta una ficha sin borrarla ni borrar sus archivos. Podés restaurarla cuando quieras.']};
 export function readyForDesign(item:CatalogItem){const observed=item.observed as Record<string,unknown>|undefined;const photo=observed?.photo as Record<string,unknown>|undefined;return ['sheet','edge'].includes(item.kind)&&photo?.schema===1&&photo?.designReady===true;}
 const kindName=(kind:string)=>kindLabels[kind as keyof typeof kindLabels]||kind;
-const summary=(item:CatalogItem)=>[kindName(item.kind),item.thicknessMm===null?'':formatMm(item.thicknessMm)].filter(Boolean).join(' · ');
+// Biblioteca v4: una placa muestra sus espesores («3 a 25 mm»); el resto, su espesor.
+const summary=(item:CatalogItem)=>[kindName(item.kind),item.kind==='sheet'?thicknessSummary(standardThicknesses(item)):item.thicknessMm===null?'':formatMm(item.thicknessMm)].filter(Boolean).join(' · ');
 const safeImage=(uri?:string|null):uri is string=>!!uri&&uri.length<=4*1024*1024&&/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(uri);
 
 /** Own simple icons (inline SVG). */
@@ -112,7 +113,9 @@ function MaterialProperties(props:PropertiesProps){
  useEffect(()=>{if(props.oclResult)oclPanel.current?.focus();},[props.oclResult]);
  // «+» leaves the cursor in the new row, ready to type the thickness.
  const focusNewRow=useRef(false);
- useEffect(()=>{if(!focusNewRow.current)return;focusNewRow.current=false;const inputs=dialog.current?.querySelectorAll<HTMLInputElement>('.material-thickness-row .material-mm-input input');inputs?.[inputs.length-1]?.focus();},[draft.thicknesses.length]);
+ useEffect(()=>{if(!focusNewRow.current)return;focusNewRow.current=false;const inputs=dialog.current?.querySelectorAll<HTMLInputElement>('.material-thickness-list:not(.is-widths) .material-thickness-row .material-mm-input input');inputs?.[inputs.length-1]?.focus();},[draft.thicknesses.length]);
+ const focusNewWidth=useRef(false);
+ useEffect(()=>{if(!focusNewWidth.current)return;focusNewWidth.current=false;const inputs=dialog.current?.querySelectorAll<HTMLInputElement>('.material-thickness-list.is-widths .material-mm-input input');inputs?.[inputs.length-1]?.focus();},[draft.widths.length]);
  useModal(dialog,true,()=>{if(busy)return;if(copy!==undefined){setCopy(undefined);return;}props.onCancel();});
  const missing=useMemo(()=>{const preview=applyDraft(base||({id:'',name:'',kind:draft.kind,sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'',sourceHash:'',observed:{}} as FichaItem),draft).item;return preview?catalogMissing(preview):null;},[base,draft]);
  const collision=nameCollision(items,base?.id,draft.name);
@@ -125,7 +128,7 @@ function MaterialProperties(props:PropertiesProps){
   const target=base||({id:'',name:'',kind:draft.kind,sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'',sourceHash:'',observed:{}} as FichaItem);
   const result=applyDraft(target,draft);setErrors(result.errors);
   if(!result.item){
-   const field=result.errors.name?'name':result.errors.thicknesses||result.errors.widthMm||result.errors.lengthMm?'formats':'price';
+   const field=result.errors.name?'name':result.errors.thicknesses||result.errors.widths||result.errors.widthMm||result.errors.lengthMm?'formats':'price';
    setTab('general');if(field!=='name')setSub(field);
    requestAnimationFrame(()=>dialog.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());return;
   }
@@ -135,7 +138,7 @@ function MaterialProperties(props:PropertiesProps){
  const disabled=!!busy;
  const tabKey=(event:React.KeyboardEvent,current:'general'|'texture')=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const next=current==='general'?'texture':'general';setTab(next);requestAnimationFrame(()=>document.getElementById(`material-tab-${next}`)?.focus());};
  const subKey=(event:React.KeyboardEvent,current:'formats'|'price')=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const next=current==='formats'?'price':'formats';setSub(next);requestAnimationFrame(()=>document.getElementById(`material-subtab-${next}`)?.focus());};
- const thicknessRows=draft.thicknesses.map((value,index)=>({value,index}));
+ const thicknessRows=draft.thicknesses.map((value,index)=>({value,index})),sheetKind=draft.kind==='sheet';
  return <div className="material-import-backdrop material-properties-backdrop">
   <section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="material-properties-title" aria-describedby="material-properties-status" className="material-properties" aria-busy={!!busy}>
    <header className="material-properties-header">
@@ -175,26 +178,38 @@ function MaterialProperties(props:PropertiesProps){
      <div role="tabpanel" id="material-subpanel-formats" aria-labelledby="material-subtab-formats" hidden={sub!=='formats'} className="material-form">
       {draft.kind==='sheet'&&<><label htmlFor="material-field-grain">Dirección de fibra</label>
        <select id="material-field-grain" value={draft.grain} disabled={disabled} onChange={event=>update({...draft,grain:event.target.value as FichaDraft['grain']})}><option value="">Sin definir</option><option value="true">La fibra sigue el largo (con veta)</option><option value="false">Sin veta (se puede girar)</option></select></>}
-      <span className="material-form-label" id="material-thicknesses-label">Espesores estándar</span>
+      {/* 0.8.20: una placa vale para todos sus espesores (sin elegir uno); el canto marca el suyo, que se descuenta del corte. */}
+      <span className="material-form-label" id="material-thicknesses-label">{sheetKind?'Espesores disponibles':'Espesores estándar'}</span>
       <div>
-       <div role="radiogroup" aria-labelledby="material-thicknesses-label" aria-describedby="material-thicknesses-help" className="material-thickness-list">
+       <div role={sheetKind?'group':'radiogroup'} aria-labelledby="material-thicknesses-label" aria-describedby="material-thicknesses-help" className={`material-thickness-list${sheetKind?' is-plain':''}`}>
         {thicknessRows.map(({value,index})=><div className="material-thickness-row" key={index}>
-         <input type="radio" name="material-thickness-chosen" checked={draft.chosen===index} disabled={disabled} aria-label={`Usar ${value?`${value} mm`:'este espesor'} como espesor de la ficha`} onChange={()=>update(chooseThickness(draft,index))}/>
-         <span className="material-mm-input"><input inputMode="decimal" value={value} disabled={disabled} aria-label={`Espesor estándar ${index+1} (mm)`} aria-invalid={!!errors.rows?.[index]} onChange={event=>update(setThickness(draft,index,event.target.value))}/><span aria-hidden="true">mm</span></span>
+         {!sheetKind&&<input type="radio" name="material-thickness-chosen" checked={draft.chosen===index} disabled={disabled} aria-label={`Usar ${value?`${value} mm`:'este espesor'} como espesor de la ficha`} onChange={()=>update(chooseThickness(draft,index))}/>}
+         <span className="material-mm-input"><input inputMode="decimal" value={value} disabled={disabled} aria-label={`${sheetKind?'Espesor disponible':'Espesor estándar'} ${index+1} (mm)`} aria-invalid={!!errors.rows?.[index]} onChange={event=>update(setThickness(draft,index,event.target.value))}/><span aria-hidden="true">mm</span></span>
          <button type="button" className="material-icon-button" disabled={disabled} aria-label={`Quitar espesor ${value?`${value} mm`:index+1}`} onClick={()=>update(removeThickness(draft,index))}><Icon name="minus"/></button>
          {errors.rows?.[index]&&<p className="material-field-error">{errors.rows[index]}</p>}
         </div>)}
-        {!draft.thicknesses.length&&<p className="material-field-hint">Sin espesores estándar.</p>}
+        {!draft.thicknesses.length&&<p className="material-field-hint">{sheetKind?'Sin espesores: agregá al menos uno para pedir la placa.':'Sin espesores estándar.'}</p>}
        </div>
        <div className="material-thickness-tools"><button type="button" className="material-icon-button" disabled={disabled||draft.thicknesses.length>=32} aria-label="Agregar espesor" onClick={()=>{focusNewRow.current=true;update(addThickness(draft));}}><Icon name="plus"/></button>
-        {draft.chosen!==null&&<button type="button" className="material-link-button" disabled={disabled} onClick={()=>update(chooseThickness(draft,null))}>Dejar sin espesor elegido</button>}</div>
-       <p id="material-thicknesses-help" className="material-field-hint">Marcá el espesor de esta ficha; el resto queda como opciones del material. {errors.thicknesses&&<span className="material-field-error">{errors.thicknesses}</span>}</p>
+        {!sheetKind&&draft.chosen!==null&&<button type="button" className="material-link-button" disabled={disabled} onClick={()=>update(chooseThickness(draft,null))}>Dejar sin espesor elegido</button>}</div>
+       <p id="material-thicknesses-help" className="material-field-hint">{sheetKind?'Todos valen: al pintar es el mismo material y el listado de piezas lo separa por el espesor real de cada pieza. Un espesor que no está acá se lista igual y se marca para agregarlo.':draft.kind==='edge'?'Marcá el espesor del canto (se descuenta del corte); el resto queda como opciones del material.':'Marcá el espesor de esta ficha; el resto queda como opciones del material.'} {errors.thicknesses&&<span className="material-field-error">{errors.thicknesses}</span>}</p>
       </div>
       {draft.kind==='sheet'&&<><span className="material-form-label" id="material-size-label">Tamaño de panel</span>
        <div><div className="material-size-field" role="group" aria-labelledby="material-size-label"><span className="material-mm-input"><input inputMode="decimal" aria-label="Largo del panel (mm)" placeholder="Largo" value={draft.lengthMm} disabled={disabled} aria-invalid={!!errors.lengthMm} onChange={event=>update({...draft,lengthMm:event.target.value})}/><span aria-hidden="true">mm</span></span><span aria-hidden="true">×</span><span className="material-mm-input"><input inputMode="decimal" aria-label="Ancho del panel (mm)" placeholder="Ancho" value={draft.widthMm} disabled={disabled} aria-invalid={!!errors.widthMm} onChange={event=>update({...draft,widthMm:event.target.value})}/><span aria-hidden="true">mm</span></span></div>
         {(errors.lengthMm||errors.widthMm)&&<p className="material-field-error">{errors.lengthMm||errors.widthMm}</p>}</div></>}
-      {draft.kind==='edge'&&<><label htmlFor="material-field-edge-width">Ancho del canto</label>
-       <div><span className="material-mm-input"><input id="material-field-edge-width" inputMode="decimal" value={draft.widthMm} disabled={disabled} aria-invalid={!!errors.widthMm} onChange={event=>update({...draft,widthMm:event.target.value})}/><span aria-hidden="true">mm</span></span>{errors.widthMm&&<p className="material-field-error">{errors.widthMm}</p>}</div></>}
+      {draft.kind==='edge'&&<><span className="material-form-label" id="material-widths-label">Anchos estándar</span>
+       <div>
+        <div role="group" aria-labelledby="material-widths-label" aria-describedby="material-widths-help" className="material-thickness-list is-plain is-widths">
+         {draft.widths.map((value,index)=><div className="material-thickness-row" key={index}>
+          <span className="material-mm-input"><input inputMode="decimal" value={value} disabled={disabled} aria-label={`Ancho estándar ${index+1} (mm)`} aria-invalid={!!errors.widthRows?.[index]} onChange={event=>update(setWidth(draft,index,event.target.value))}/><span aria-hidden="true">mm</span></span>
+          <button type="button" className="material-icon-button" disabled={disabled} aria-label={`Quitar ancho ${value?`${value} mm`:index+1}`} onClick={()=>update(removeWidth(draft,index))}><Icon name="minus"/></button>
+          {errors.widthRows?.[index]&&<p className="material-field-error">{errors.widthRows[index]}</p>}
+         </div>)}
+         {!draft.widths.length&&<p className="material-field-hint">Sin anchos: agregá al menos uno para pedir el canto.</p>}
+        </div>
+        <div className="material-thickness-tools"><button type="button" className="material-icon-button" disabled={disabled||draft.widths.length>=32} aria-label="Agregar ancho" onClick={()=>{focusNewWidth.current=true;update(addWidth(draft));}}><Icon name="plus"/></button></div>
+        <p id="material-widths-help" className="material-field-hint">El canto se refila: el ancho no se compara con el espesor de la pieza mientras alguno la cubra. {errors.widths&&<span className="material-field-error">{errors.widths}</span>}</p>
+       </div></>}
       {!creating&&base&&['sheet','edge'].includes(draft.kind)&&<><span/><p className="material-field-hint">Cantos compatibles y variantes de espesor con SKU propio: <button type="button" className="material-link-button" disabled={disabled||dirty} onClick={props.onWorkshop}>abrir en Taller</button></p></>}
      </div>
      <div role="tabpanel" id="material-subpanel-price" aria-labelledby="material-subtab-price" hidden={sub!=='price'} className="material-form">
@@ -309,7 +324,8 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
   }
   document.addEventListener('keydown',key,true);return()=>document.removeEventListener('keydown',key,true);
  },[preview,packagePreview,busy,run]);
- const defaults=library?.standardThicknessesMm||DEFAULT_THICKNESSES;
+ // 0.8.20: los anchos estándar del canto llegan aparte (standardWidthsMm); un backend viejo no los manda.
+ const defaults=useMemo<StandardThicknesses>(()=>({...(library?.standardThicknessesMm||DEFAULT_THICKNESSES),edgeWidths:library?.standardWidthsMm?.edge||DEFAULT_WIDTHS}),[library?.standardThicknessesMm,library?.standardWidthsMm]);
  const nativeMaterials=useMemo(()=>library?.materials||[],[library?.materials]);
  const catalogIds=useMemo(()=>new Set(library?.catalog.items.map(item=>item.id)||[]),[library]);
  const modelCatalogIds=useMemo(()=>new Set(nativeMaterials.flatMap(material=>material.binding?.catalogId?[material.binding.catalogId]:[])),[nativeMaterials]);
