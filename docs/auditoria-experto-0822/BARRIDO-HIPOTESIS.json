@@ -1,0 +1,7014 @@
+{
+  "scope": "Experimental, no product change or commercial approval",
+  "cases": 4,
+  "variants": 280,
+  "expectedBoards": [
+    27,
+    11,
+    12,
+    56
+  ],
+  "matchingAllCounts": 0,
+  "results": [
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        28,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        788.2328,
+        324.2018,
+        374.8968,
+        2010.9612
+      ],
+      "steps": [
+        759,
+        297,
+        360,
+        2424
+      ],
+      "distance": 3
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        28,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        788.2328,
+        324.2018,
+        374.8968,
+        2011.4018
+      ],
+      "steps": [
+        759,
+        297,
+        360,
+        2425
+      ],
+      "distance": 3
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        803.3984,
+        320.142,
+        376.0326,
+        1962.769
+      ],
+      "steps": [
+        764,
+        295,
+        379,
+        2404
+      ],
+      "distance": 4
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        797.0268,
+        322.882,
+        371.9444,
+        1962.769
+      ],
+      "steps": [
+        759,
+        297,
+        376,
+        2404
+      ],
+      "distance": 4
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        810.7676,
+        318.39,
+        372.8348,
+        2005.5144
+      ],
+      "steps": [
+        777,
+        293,
+        367,
+        2377
+      ],
+      "distance": 4
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        810.7676,
+        318.39,
+        372.8348,
+        2005.4196
+      ],
+      "steps": [
+        777,
+        293,
+        367,
+        2379
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        793.318,
+        312.6618,
+        377.2804,
+        1961.8106
+      ],
+      "steps": [
+        747,
+        283,
+        386,
+        2395
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        794.4058,
+        321.8326,
+        372.795,
+        1961.8106
+      ],
+      "steps": [
+        752,
+        292,
+        382,
+        2395
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        793.0824,
+        312.5508,
+        377.0788,
+        1961.597
+      ],
+      "steps": [
+        746,
+        281,
+        385,
+        2410
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        794.3214,
+        319.7864,
+        371.66,
+        1961.597
+      ],
+      "steps": [
+        752,
+        289,
+        380,
+        2410
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        819.2016,
+        323.433,
+        385.7268,
+        2010.9612
+      ],
+      "steps": [
+        783,
+        286,
+        390,
+        2424
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        807.2662,
+        324.5644,
+        380.5058,
+        2010.9612
+      ],
+      "steps": [
+        779,
+        295,
+        385,
+        2424
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        819.2016,
+        323.433,
+        385.7268,
+        2011.4018
+      ],
+      "steps": [
+        783,
+        286,
+        390,
+        2425
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        807.2662,
+        324.5644,
+        380.5058,
+        2011.4018
+      ],
+      "steps": [
+        779,
+        295,
+        385,
+        2425
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        795.1278,
+        317.1936,
+        368.8922,
+        1987.6862
+      ],
+      "steps": [
+        720,
+        275,
+        354,
+        2339
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        806.5654,
+        317.8296,
+        367.6176,
+        1987.6862
+      ],
+      "steps": [
+        744,
+        278,
+        352,
+        2339
+      ],
+      "distance": 4
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        798.7716,
+        322.786,
+        366.212,
+        1987.6862
+      ],
+      "steps": [
+        721,
+        283,
+        350,
+        2339
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        799.5916,
+        317.5956,
+        375.6066,
+        1955.197
+      ],
+      "steps": [
+        763,
+        285,
+        377,
+        2444
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        802.1876,
+        316.936,
+        371.5414,
+        1955.197
+      ],
+      "steps": [
+        776,
+        290,
+        373,
+        2444
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        791.4506,
+        317.548,
+        370.268,
+        1955.197
+      ],
+      "steps": [
+        748,
+        289,
+        369,
+        2444
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        799.5916,
+        315.896,
+        375.0794,
+        1960.0422
+      ],
+      "steps": [
+        763,
+        283,
+        376,
+        2460
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        802.0808,
+        315.1174,
+        371.5742,
+        1960.0422
+      ],
+      "steps": [
+        775,
+        287,
+        372,
+        2460
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        791.1394,
+        316.5412,
+        370.268,
+        1960.0422
+      ],
+      "steps": [
+        747,
+        285,
+        369,
+        2460
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        813.4974,
+        334.3204,
+        382.9724,
+        2102.0166
+      ],
+      "steps": [
+        672,
+        275,
+        328,
+        2101
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        805.125,
+        323.5116,
+        375.5572,
+        1982.6138
+      ],
+      "steps": [
+        769,
+        293,
+        369,
+        2457
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        805.125,
+        323.5116,
+        375.5572,
+        1981.508
+      ],
+      "steps": [
+        769,
+        293,
+        369,
+        2457
+      ],
+      "distance": 4
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        832.9924,
+        335.9316,
+        386.2582,
+        2145.3008
+      ],
+      "steps": [
+        633,
+        253,
+        310,
+        2031
+      ],
+      "distance": 4
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        799.5782,
+        312.4014,
+        373.8374,
+        1954.7872
+      ],
+      "steps": [
+        761,
+        293,
+        366,
+        2362
+      ],
+      "distance": 4
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        799.5782,
+        312.4014,
+        373.8374,
+        1954.7782
+      ],
+      "steps": [
+        761,
+        293,
+        366,
+        2362
+      ],
+      "distance": 4
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        799.5916,
+        323.6176,
+        375.6066,
+        1935.3424
+      ],
+      "steps": [
+        763,
+        291,
+        377,
+        2410
+      ],
+      "distance": 4
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        791.4506,
+        320.7044,
+        370.268,
+        1935.3424
+      ],
+      "steps": [
+        748,
+        290,
+        369,
+        2410
+      ],
+      "distance": 4
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        795.1366,
+        322.1154,
+        365.436,
+        1941.6988
+      ],
+      "steps": [
+        711,
+        278,
+        344,
+        2269
+      ],
+      "distance": 4
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        803.3984,
+        320.142,
+        376.2342,
+        1981.5376
+      ],
+      "steps": [
+        764,
+        295,
+        380,
+        2420
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        797.338,
+        323.7992,
+        371.7454,
+        1981.5376
+      ],
+      "steps": [
+        760,
+        300,
+        377,
+        2420
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        793.8716,
+        331.4724,
+        369.2012,
+        1962.769
+      ],
+      "steps": [
+        729,
+        292,
+        366,
+        2404
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        830.6218,
+        335.4518,
+        392.7352,
+        2220.0248
+      ],
+      "steps": [
+        630,
+        264,
+        313,
+        2142
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        842.6658,
+        343.6024,
+        387.7216,
+        2220.0248
+      ],
+      "steps": [
+        640,
+        265,
+        317,
+        2142
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        829.3614,
+        322.8406,
+        383.748,
+        2005.5144
+      ],
+      "steps": [
+        788,
+        293,
+        388,
+        2377
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        803.9992,
+        328.3292,
+        379.3962,
+        2005.5144
+      ],
+      "steps": [
+        772,
+        303,
+        387,
+        2377
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        829.3614,
+        322.8406,
+        383.748,
+        2005.4196
+      ],
+      "steps": [
+        788,
+        293,
+        388,
+        2379
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        803.9992,
+        328.3292,
+        379.3962,
+        2005.4196
+      ],
+      "steps": [
+        772,
+        303,
+        387,
+        2379
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        839.7466,
+        339.3036,
+        381.2682,
+        2209.4548
+      ],
+      "steps": [
+        641,
+        263,
+        302,
+        2192
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        797.8386,
+        329.7066,
+        370.0698,
+        1982.4214
+      ],
+      "steps": [
+        729,
+        277,
+        351,
+        2350
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        800.1564,
+        332.5208,
+        367.5808,
+        1982.4214
+      ],
+      "steps": [
+        738,
+        288,
+        347,
+        2350
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        831.2904,
+        338.6032,
+        392.4888,
+        2236.099
+      ],
+      "steps": [
+        633,
+        259,
+        308,
+        2163
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        843.6598,
+        344.4162,
+        381.281,
+        2236.099
+      ],
+      "steps": [
+        644,
+        265,
+        307,
+        2163
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        806.806,
+        315.822,
+        370.1964,
+        1961.8106
+      ],
+      "steps": [
+        729,
+        279,
+        369,
+        2395
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        802.066,
+        320.826,
+        387.633,
+        1961.8106
+      ],
+      "steps": [
+        766,
+        290,
+        388,
+        2395
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        806.9514,
+        315.822,
+        369.7946,
+        1961.597
+      ],
+      "steps": [
+        730,
+        279,
+        367,
+        2410
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        801.7536,
+        319.6744,
+        385.5172,
+        1961.597
+      ],
+      "steps": [
+        765,
+        287,
+        386,
+        2410
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        835.0674,
+        334.348,
+        392.7352,
+        2178.9132
+      ],
+      "steps": [
+        615,
+        262,
+        313,
+        2089
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        835.0674,
+        327.1672,
+        392.7352,
+        2178.9132
+      ],
+      "steps": [
+        615,
+        253,
+        313,
+        2089
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        848.6632,
+        338.724,
+        387.7216,
+        2178.9132
+      ],
+      "steps": [
+        637,
+        265,
+        317,
+        2089
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        808.5984,
+        332.8116,
+        383.7286,
+        2165.9928
+      ],
+      "steps": [
+        681,
+        270,
+        342,
+        2148
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        815.6916,
+        337.9754,
+        380.4604,
+        2165.9928
+      ],
+      "steps": [
+        676,
+        277,
+        328,
+        2148
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        828.0724,
+        326.1998,
+        380.7068,
+        2010.9612
+      ],
+      "steps": [
+        760,
+        285,
+        384,
+        2424
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        828.0724,
+        326.1998,
+        380.7068,
+        2011.4018
+      ],
+      "steps": [
+        760,
+        285,
+        384,
+        2425
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        835.3906,
+        329.9672,
+        382.4186,
+        2209.2752
+      ],
+      "steps": [
+        630,
+        260,
+        306,
+        2115
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        822.4034,
+        320.1008,
+        367.0478,
+        1987.6862
+      ],
+      "steps": [
+        721,
+        276,
+        344,
+        2339
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        839.7706,
+        338.0016,
+        392.4888,
+        2185.0426
+      ],
+      "steps": [
+        630,
+        267,
+        308,
+        2100
+      ],
+      "distance": 5
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        850.195,
+        339.3516,
+        381.281,
+        2185.0426
+      ],
+      "steps": [
+        652,
+        265,
+        307,
+        2100
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        810.881,
+        317.1408,
+        368.317,
+        1955.197
+      ],
+      "steps": [
+        745,
+        290,
+        361,
+        2444
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        809.4698,
+        321.7378,
+        368.317,
+        1960.0422
+      ],
+      "steps": [
+        740,
+        287,
+        361,
+        2460
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        831.5174,
+        333.6184,
+        383.3014,
+        2102.0166
+      ],
+      "steps": [
+        694,
+        263,
+        340,
+        2101
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        824.5648,
+        329.5924,
+        380.7102,
+        1982.6138
+      ],
+      "steps": [
+        786,
+        294,
+        380,
+        2457
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        826.9876,
+        318.3204,
+        376.911,
+        1982.6138
+      ],
+      "steps": [
+        793,
+        291,
+        376,
+        2457
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        824.5648,
+        329.5924,
+        380.7102,
+        1981.508
+      ],
+      "steps": [
+        786,
+        294,
+        380,
+        2457
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        826.9876,
+        318.3204,
+        376.911,
+        1981.508
+      ],
+      "steps": [
+        793,
+        291,
+        376,
+        2457
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        832.3642,
+        322.597,
+        399.4164,
+        2145.3008
+      ],
+      "steps": [
+        610,
+        248,
+        306,
+        2031
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        798.2494,
+        315.9932,
+        367.9884,
+        1940.8358
+      ],
+      "steps": [
+        704,
+        273,
+        351,
+        2233
+      ],
+      "distance": 5
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        795.1366,
+        319.9626,
+        365.436,
+        1940.8358
+      ],
+      "steps": [
+        711,
+        276,
+        344,
+        2233
+      ],
+      "distance": 5
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        827.102,
+        337.5894,
+        386.1136,
+        2055.6194
+      ],
+      "steps": [
+        624,
+        256,
+        305,
+        2015
+      ],
+      "distance": 5
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        838.1154,
+        332.2346,
+        388.4696,
+        2055.6194
+      ],
+      "steps": [
+        636,
+        252,
+        316,
+        2015
+      ],
+      "distance": 5
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        818.4976,
+        319.9594,
+        389.76,
+        1954.7872
+      ],
+      "steps": [
+        784,
+        298,
+        377,
+        2362
+      ],
+      "distance": 5
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        818.4976,
+        319.9594,
+        389.76,
+        1954.7782
+      ],
+      "steps": [
+        784,
+        298,
+        377,
+        2362
+      ],
+      "distance": 5
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        827.2968,
+        338.5228,
+        385.8602,
+        2056.7408
+      ],
+      "steps": [
+        634,
+        259,
+        303,
+        2026
+      ],
+      "distance": 5
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        841.0968,
+        333.2314,
+        390.6362,
+        2056.7408
+      ],
+      "steps": [
+        647,
+        251,
+        313,
+        2026
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        56
+      ],
+      "metres": [
+        810.881,
+        320.8104,
+        368.317,
+        1935.3424
+      ],
+      "steps": [
+        745,
+        288,
+        361,
+        2410
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        802.1876,
+        345.3704,
+        371.5414,
+        1935.3424
+      ],
+      "steps": [
+        776,
+        308,
+        373,
+        2410
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        799.5916,
+        322.1974,
+        375.0794,
+        1926.0972
+      ],
+      "steps": [
+        763,
+        288,
+        376,
+        2422
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        791.1394,
+        320.7158,
+        370.268,
+        1926.0972
+      ],
+      "steps": [
+        747,
+        289,
+        369,
+        2422
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        813.4974,
+        335.1966,
+        382.9724,
+        2040.863
+      ],
+      "steps": [
+        672,
+        270,
+        328,
+        2059
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        805.125,
+        341.9258,
+        375.5572,
+        1963.3562
+      ],
+      "steps": [
+        769,
+        302,
+        369,
+        2416
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        805.125,
+        341.9258,
+        375.5572,
+        1963.2208
+      ],
+      "steps": [
+        769,
+        302,
+        369,
+        2418
+      ],
+      "distance": 5
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        798.2494,
+        327.8374,
+        367.9884,
+        1941.6988
+      ],
+      "steps": [
+        704,
+        279,
+        351,
+        2269
+      ],
+      "distance": 5
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        29,
+        13,
+        13,
+        57
+      ],
+      "metres": [
+        794.0838,
+        331.4724,
+        370.6178,
+        1981.5376
+      ],
+      "steps": [
+        729,
+        292,
+        368,
+        2420
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        56
+      ],
+      "metres": [
+        797.0754,
+        326.8524,
+        387.001,
+        1962.769
+      ],
+      "steps": [
+        760,
+        298,
+        384,
+        2404
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        856.8548,
+        344.0366,
+        399.2994,
+        2220.0248
+      ],
+      "steps": [
+        662,
+        265,
+        348,
+        2142
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        836.4218,
+        338.2906,
+        392.7352,
+        2220.0248
+      ],
+      "steps": [
+        631,
+        258,
+        313,
+        2142
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        57
+      ],
+      "metres": [
+        813.284,
+        347.6896,
+        384.301,
+        2141.617
+      ],
+      "steps": [
+        683,
+        279,
+        344,
+        2155
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        13,
+        13,
+        57
+      ],
+      "metres": [
+        814.2212,
+        347.9398,
+        379.577,
+        2141.617
+      ],
+      "steps": [
+        679,
+        283,
+        331,
+        2155
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        825.8584,
+        337.0974,
+        380.7068,
+        2005.5144
+      ],
+      "steps": [
+        766,
+        302,
+        384,
+        2377
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        825.8584,
+        337.0974,
+        380.7068,
+        2005.4196
+      ],
+      "steps": [
+        766,
+        302,
+        384,
+        2379
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        817.4384,
+        334.5412,
+        367.3148,
+        1982.4214
+      ],
+      "steps": [
+        718,
+        284,
+        344,
+        2350
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        813.3824,
+        333.614,
+        365.7064,
+        1982.4214
+      ],
+      "steps": [
+        728,
+        285,
+        345,
+        2350
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        857.5392,
+        344.759,
+        399.6544,
+        2236.099
+      ],
+      "steps": [
+        665,
+        265,
+        349,
+        2163
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        837.0522,
+        338.6698,
+        392.4888,
+        2236.099
+      ],
+      "steps": [
+        640,
+        269,
+        308,
+        2163
+      ],
+      "distance": 6
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        830.7898,
+        333.8622,
+        380.3916,
+        2165.9928
+      ],
+      "steps": [
+        679,
+        270,
+        329,
+        2148
+      ],
+      "distance": 6
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        14,
+        57
+      ],
+      "metres": [
+        828.7762,
+        334.84,
+        396.9762,
+        2165.9928
+      ],
+      "steps": [
+        719,
+        270,
+        355,
+        2148
+      ],
+      "distance": 6
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        14,
+        57
+      ],
+      "metres": [
+        838.6726,
+        323.2408,
+        392.9992,
+        2209.2752
+      ],
+      "steps": [
+        621,
+        250,
+        300,
+        2115
+      ],
+      "distance": 6
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        57
+      ],
+      "metres": [
+        839.7706,
+        342.9286,
+        392.4888,
+        2185.0426
+      ],
+      "steps": [
+        630,
+        261,
+        308,
+        2100
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        58
+      ],
+      "metres": [
+        833.4658,
+        333.8616,
+        390.7176,
+        2159.6024
+      ],
+      "steps": [
+        618,
+        252,
+        314,
+        2134
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        824.9746,
+        346.4026,
+        379.9704,
+        2102.0166
+      ],
+      "steps": [
+        669,
+        272,
+        327,
+        2101
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        845.148,
+        331.4474,
+        396.0824,
+        2102.0166
+      ],
+      "steps": [
+        746,
+        263,
+        353,
+        2101
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        819.8452,
+        331.037,
+        378.7524,
+        1982.6138
+      ],
+      "steps": [
+        751,
+        294,
+        377,
+        2457
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        819.8452,
+        331.037,
+        378.7524,
+        1981.508
+      ],
+      "steps": [
+        751,
+        294,
+        377,
+        2457
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        56
+      ],
+      "metres": [
+        832.2246,
+        335.7714,
+        399.4164,
+        2145.3008
+      ],
+      "steps": [
+        610,
+        257,
+        306,
+        2031
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        820.3722,
+        317.779,
+        366.9768,
+        1940.8358
+      ],
+      "steps": [
+        717,
+        271,
+        343,
+        2233
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        817.446,
+        317.7114,
+        367.295,
+        1940.8358
+      ],
+      "steps": [
+        740,
+        279,
+        352,
+        2233
+      ],
+      "distance": 6
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        58
+      ],
+      "metres": [
+        837.3202,
+        334.3044,
+        394.0566,
+        2161.2382
+      ],
+      "steps": [
+        627,
+        254,
+        310,
+        2172
+      ],
+      "distance": 6
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        55
+      ],
+      "metres": [
+        827.102,
+        349.5452,
+        384.1604,
+        2055.6194
+      ],
+      "steps": [
+        624,
+        268,
+        303,
+        2015
+      ],
+      "distance": 6
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        56
+      ],
+      "metres": [
+        802.4872,
+        331.6312,
+        389.3808,
+        1954.7872
+      ],
+      "steps": [
+        769,
+        306,
+        389,
+        2362
+      ],
+      "distance": 6
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        56
+      ],
+      "metres": [
+        802.4872,
+        331.6312,
+        389.3808,
+        1954.7782
+      ],
+      "steps": [
+        769,
+        306,
+        389,
+        2362
+      ],
+      "distance": 6
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        55
+      ],
+      "metres": [
+        828.53,
+        351.4522,
+        386.308,
+        2056.7408
+      ],
+      "steps": [
+        638,
+        270,
+        305,
+        2026
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        55
+      ],
+      "metres": [
+        809.4698,
+        320.6922,
+        368.317,
+        1926.0972
+      ],
+      "steps": [
+        740,
+        286,
+        361,
+        2422
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        55
+      ],
+      "metres": [
+        802.0808,
+        341.6584,
+        371.5742,
+        1926.0972
+      ],
+      "steps": [
+        775,
+        301,
+        372,
+        2422
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        819.8452,
+        338.4998,
+        378.7524,
+        1963.3562
+      ],
+      "steps": [
+        751,
+        298,
+        377,
+        2416
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        824.5648,
+        348.5008,
+        380.7102,
+        1963.3562
+      ],
+      "steps": [
+        786,
+        308,
+        380,
+        2416
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        826.9876,
+        346.7744,
+        376.911,
+        1963.3562
+      ],
+      "steps": [
+        793,
+        308,
+        376,
+        2416
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        819.8452,
+        338.4998,
+        378.7524,
+        1963.2208
+      ],
+      "steps": [
+        751,
+        298,
+        377,
+        2418
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        824.5648,
+        348.5008,
+        380.7102,
+        1963.2208
+      ],
+      "steps": [
+        786,
+        308,
+        380,
+        2418
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        826.9876,
+        346.7744,
+        376.911,
+        1963.2208
+      ],
+      "steps": [
+        793,
+        308,
+        376,
+        2418
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        820.3722,
+        330.8578,
+        366.9768,
+        1941.6988
+      ],
+      "steps": [
+        717,
+        278,
+        343,
+        2269
+      ],
+      "distance": 6
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        13,
+        13,
+        56
+      ],
+      "metres": [
+        817.446,
+        332.0496,
+        367.295,
+        1941.6988
+      ],
+      "steps": [
+        740,
+        287,
+        352,
+        2269
+      ],
+      "distance": 6
+    },
+    {
+      "order": "area",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        57
+      ],
+      "metres": [
+        797.8352,
+        327.0324,
+        387.2924,
+        1981.5376
+      ],
+      "steps": [
+        763,
+        300,
+        385,
+        2420
+      ],
+      "distance": 7
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        57
+      ],
+      "metres": [
+        824.2412,
+        348.4416,
+        377.599,
+        2141.617
+      ],
+      "steps": [
+        673,
+        288,
+        330,
+        2155
+      ],
+      "distance": 7
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        57
+      ],
+      "metres": [
+        832.0002,
+        345.3546,
+        398.1914,
+        2141.617
+      ],
+      "steps": [
+        724,
+        279,
+        357,
+        2155
+      ],
+      "distance": 7
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        12,
+        14,
+        57
+      ],
+      "metres": [
+        846.912,
+        332.38,
+        391.4698,
+        2209.4548
+      ],
+      "steps": [
+        632,
+        254,
+        296,
+        2192
+      ],
+      "distance": 7
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        12,
+        14,
+        57
+      ],
+      "metres": [
+        846.912,
+        327.5134,
+        391.4698,
+        2209.4548
+      ],
+      "steps": [
+        632,
+        244,
+        296,
+        2192
+      ],
+      "distance": 7
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        853.9744,
+        340.774,
+        399.2994,
+        2178.9132
+      ],
+      "steps": [
+        648,
+        267,
+        348,
+        2089
+      ],
+      "distance": 7
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        57
+      ],
+      "metres": [
+        838.6726,
+        335.3656,
+        392.9992,
+        2209.2752
+      ],
+      "steps": [
+        621,
+        259,
+        300,
+        2115
+      ],
+      "distance": 7
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        12,
+        13,
+        57
+      ],
+      "metres": [
+        854.0168,
+        341.4016,
+        399.6544,
+        2185.0426
+      ],
+      "steps": [
+        656,
+        267,
+        349,
+        2100
+      ],
+      "distance": 7
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        58
+      ],
+      "metres": [
+        833.6828,
+        345.5734,
+        390.7176,
+        2159.6024
+      ],
+      "steps": [
+        614,
+        263,
+        314,
+        2134
+      ],
+      "distance": 7
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        58
+      ],
+      "metres": [
+        835.919,
+        350.2734,
+        394.0566,
+        2161.2382
+      ],
+      "steps": [
+        630,
+        270,
+        310,
+        2172
+      ],
+      "distance": 7
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        12,
+        13,
+        58
+      ],
+      "metres": [
+        796.9446,
+        317.0598,
+        367.3526,
+        1974.419
+      ],
+      "steps": [
+        743,
+        288,
+        352,
+        2457
+      ],
+      "distance": 7
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        12,
+        13,
+        58
+      ],
+      "metres": [
+        796.3222,
+        317.0598,
+        367.3526,
+        1971.7634
+      ],
+      "steps": [
+        741,
+        288,
+        352,
+        2463
+      ],
+      "distance": 7
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        14,
+        55
+      ],
+      "metres": [
+        841.4918,
+        326.2462,
+        400.7156,
+        2055.6194
+      ],
+      "steps": [
+        645,
+        252,
+        325,
+        2015
+      ],
+      "distance": 7
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        14,
+        56
+      ],
+      "metres": [
+        814.3162,
+        335.5074,
+        392.6756,
+        1954.7872
+      ],
+      "steps": [
+        748,
+        304,
+        363,
+        2362
+      ],
+      "distance": 7
+    },
+    {
+      "order": "height",
+      "rule": "minarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        14,
+        56
+      ],
+      "metres": [
+        814.3162,
+        335.5074,
+        392.6756,
+        1954.7782
+      ],
+      "steps": [
+        748,
+        304,
+        363,
+        2362
+      ],
+      "distance": 7
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        14,
+        55
+      ],
+      "metres": [
+        841.5152,
+        326.9184,
+        401.1794,
+        2056.7408
+      ],
+      "steps": [
+        650,
+        251,
+        325,
+        2026
+      ],
+      "distance": 7
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        13,
+        55
+      ],
+      "metres": [
+        824.9746,
+        340.1534,
+        379.9704,
+        2040.863
+      ],
+      "steps": [
+        669,
+        266,
+        327,
+        2059
+      ],
+      "distance": 7
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        30,
+        13,
+        13,
+        55
+      ],
+      "metres": [
+        831.5174,
+        348.9736,
+        383.3014,
+        2040.863
+      ],
+      "steps": [
+        694,
+        275,
+        340,
+        2059
+      ],
+      "distance": 7
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        59
+      ],
+      "metres": [
+        832.9924,
+        330.7624,
+        386.2582,
+        2215.5996
+      ],
+      "steps": [
+        633,
+        255,
+        310,
+        2023
+      ],
+      "distance": 7
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        12,
+        14,
+        57
+      ],
+      "metres": [
+        833.108,
+        327.9234,
+        387.2828,
+        2209.4548
+      ],
+      "steps": [
+        648,
+        258,
+        314,
+        2192
+      ],
+      "distance": 8
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        12,
+        14,
+        57
+      ],
+      "metres": [
+        840.4716,
+        325.4862,
+        381.8174,
+        2209.2752
+      ],
+      "steps": [
+        653,
+        255,
+        314,
+        2115
+      ],
+      "distance": 8
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        13,
+        58
+      ],
+      "metres": [
+        865.6156,
+        350.0714,
+        389.361,
+        2159.6024
+      ],
+      "steps": [
+        646,
+        260,
+        317,
+        2134
+      ],
+      "distance": 8
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        32,
+        12,
+        14,
+        56
+      ],
+      "metres": [
+        872.659,
+        331.9724,
+        384.7034,
+        2145.3008
+      ],
+      "steps": [
+        671,
+        253,
+        316,
+        2031
+      ],
+      "distance": 8
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        13,
+        58
+      ],
+      "metres": [
+        870.4264,
+        350.559,
+        391.5486,
+        2161.2382
+      ],
+      "steps": [
+        657,
+        260,
+        313,
+        2172
+      ],
+      "distance": 8
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        58
+      ],
+      "metres": [
+        800.232,
+        334.7764,
+        385.536,
+        1974.419
+      ],
+      "steps": [
+        760,
+        300,
+        371,
+        2457
+      ],
+      "distance": 8
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        58
+      ],
+      "metres": [
+        798.9976,
+        330.0144,
+        387.6756,
+        1974.419
+      ],
+      "steps": [
+        762,
+        301,
+        385,
+        2457
+      ],
+      "distance": 8
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        58
+      ],
+      "metres": [
+        800.232,
+        334.7764,
+        385.536,
+        1971.7634
+      ],
+      "steps": [
+        760,
+        300,
+        371,
+        2463
+      ],
+      "distance": 8
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        58
+      ],
+      "metres": [
+        798.4428,
+        330.0144,
+        387.6756,
+        1971.7634
+      ],
+      "steps": [
+        760,
+        301,
+        385,
+        2463
+      ],
+      "distance": 8
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        13,
+        14,
+        55
+      ],
+      "metres": [
+        845.148,
+        361.5776,
+        396.0824,
+        2040.863
+      ],
+      "steps": [
+        746,
+        290,
+        353,
+        2059
+      ],
+      "distance": 8
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        12,
+        14,
+        58
+      ],
+      "metres": [
+        867.7178,
+        334.8488,
+        404.3402,
+        2159.6024
+      ],
+      "steps": [
+        657,
+        255,
+        353,
+        2134
+      ],
+      "distance": 9
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        12,
+        14,
+        58
+      ],
+      "metres": [
+        867.7444,
+        335.511,
+        404.5066,
+        2161.2382
+      ],
+      "steps": [
+        665,
+        255,
+        353,
+        2172
+      ],
+      "distance": 9
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        14,
+        58
+      ],
+      "metres": [
+        811.8112,
+        332.0338,
+        383.61,
+        1974.419
+      ],
+      "steps": [
+        754,
+        294,
+        350,
+        2457
+      ],
+      "distance": 9
+    },
+    {
+      "order": "height",
+      "rule": "reference",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        13,
+        14,
+        58
+      ],
+      "metres": [
+        810.8518,
+        332.0418,
+        384.121,
+        1971.7634
+      ],
+      "steps": [
+        749,
+        294,
+        350,
+        2463
+      ],
+      "distance": 9
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        13,
+        61
+      ],
+      "metres": [
+        824.336,
+        333.8804,
+        384.0998,
+        2185.0364
+      ],
+      "steps": [
+        626,
+        257,
+        305,
+        2047
+      ],
+      "distance": 9
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        12,
+        13,
+        61
+      ],
+      "metres": [
+        824.336,
+        330.813,
+        384.4022,
+        2185.0364
+      ],
+      "steps": [
+        626,
+        248,
+        305,
+        2047
+      ],
+      "distance": 9
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        61
+      ],
+      "metres": [
+        829.8848,
+        329.6106,
+        381.0478,
+        2185.0364
+      ],
+      "steps": [
+        630,
+        253,
+        307,
+        2047
+      ],
+      "distance": 9
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        59
+      ],
+      "metres": [
+        832.2246,
+        335.2712,
+        399.4164,
+        2215.5996
+      ],
+      "steps": [
+        610,
+        257,
+        306,
+        2023
+      ],
+      "distance": 9
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        59
+      ],
+      "metres": [
+        832.3642,
+        335.3368,
+        399.4164,
+        2215.5996
+      ],
+      "steps": [
+        610,
+        249,
+        306,
+        2023
+      ],
+      "distance": 9
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        30,
+        12,
+        13,
+        61
+      ],
+      "metres": [
+        817.4014,
+        329.7876,
+        371.7864,
+        2185.0364
+      ],
+      "steps": [
+        650,
+        253,
+        310,
+        2047
+      ],
+      "distance": 10
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        12,
+        14,
+        61
+      ],
+      "metres": [
+        800.2702,
+        321.4028,
+        378.8708,
+        2025.6242
+      ],
+      "steps": [
+        724,
+        285,
+        351,
+        2328
+      ],
+      "distance": 10
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        12,
+        13,
+        61
+      ],
+      "metres": [
+        801.0938,
+        320.0966,
+        363.659,
+        2025.6242
+      ],
+      "steps": [
+        713,
+        285,
+        337,
+        2328
+      ],
+      "distance": 10
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        833.6828,
+        336.2934,
+        390.7176,
+        2269.5132
+      ],
+      "steps": [
+        614,
+        259,
+        314,
+        2202
+      ],
+      "distance": 10
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        833.4658,
+        342.4138,
+        390.7176,
+        2269.5132
+      ],
+      "steps": [
+        618,
+        256,
+        314,
+        2202
+      ],
+      "distance": 10
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        835.919,
+        342.6314,
+        394.0566,
+        2273.1766
+      ],
+      "steps": [
+        630,
+        266,
+        310,
+        2182
+      ],
+      "distance": 10
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        837.3202,
+        346.1788,
+        394.0566,
+        2273.1766
+      ],
+      "steps": [
+        627,
+        262,
+        310,
+        2182
+      ],
+      "distance": 10
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        12,
+        13,
+        63
+      ],
+      "metres": [
+        808.275,
+        338.2946,
+        378.8132,
+        2139.8174
+      ],
+      "steps": [
+        675,
+        280,
+        322,
+        2137
+      ],
+      "distance": 11
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        61
+      ],
+      "metres": [
+        801.9888,
+        330.5108,
+        378.283,
+        2025.6242
+      ],
+      "steps": [
+        735,
+        284,
+        353,
+        2328
+      ],
+      "distance": 11
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        865.6156,
+        360.6142,
+        389.361,
+        2269.5132
+      ],
+      "steps": [
+        646,
+        276,
+        317,
+        2202
+      ],
+      "distance": 11
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        32,
+        12,
+        14,
+        59
+      ],
+      "metres": [
+        872.659,
+        319.7132,
+        384.7034,
+        2215.5996
+      ],
+      "steps": [
+        671,
+        244,
+        316,
+        2023
+      ],
+      "distance": 11
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        870.4264,
+        360.5354,
+        391.5486,
+        2273.1766
+      ],
+      "steps": [
+        657,
+        276,
+        313,
+        2182
+      ],
+      "distance": 11
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        13,
+        63
+      ],
+      "metres": [
+        812.006,
+        344.049,
+        381.7844,
+        2139.8174
+      ],
+      "steps": [
+        683,
+        272,
+        341,
+        2137
+      ],
+      "distance": 12
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        13,
+        13,
+        61
+      ],
+      "metres": [
+        830.6466,
+        329.4944,
+        362.9168,
+        2025.6242
+      ],
+      "steps": [
+        723,
+        277,
+        336,
+        2328
+      ],
+      "distance": 12
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        63
+      ],
+      "metres": [
+        831.8398,
+        344.4728,
+        393.5108,
+        2139.8174
+      ],
+      "steps": [
+        722,
+        276,
+        352,
+        2137
+      ],
+      "distance": 13
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        13,
+        14,
+        61
+      ],
+      "metres": [
+        867.7178,
+        350.5548,
+        404.3402,
+        2269.5132
+      ],
+      "steps": [
+        657,
+        272,
+        353,
+        2202
+      ],
+      "distance": 13
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        13,
+        14,
+        61
+      ],
+      "metres": [
+        867.7444,
+        350.4996,
+        404.5066,
+        2273.1766
+      ],
+      "steps": [
+        665,
+        272,
+        353,
+        2182
+      ],
+      "distance": 13
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 10000,
+      "orientation": "normal",
+      "boards": [
+        31,
+        13,
+        13,
+        63
+      ],
+      "metres": [
+        842.662,
+        348.5802,
+        378.8132,
+        2139.8174
+      ],
+      "steps": [
+        686,
+        281,
+        322,
+        2137
+      ],
+      "distance": 14
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        13,
+        14,
+        70
+      ],
+      "metres": [
+        801.0624,
+        330.2228,
+        380.613,
+        2162.3302
+      ],
+      "steps": [
+        730,
+        273,
+        354,
+        2374
+      ],
+      "distance": 20
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        70
+      ],
+      "metres": [
+        805.0402,
+        335.6676,
+        381.7378,
+        2162.3302
+      ],
+      "steps": [
+        746,
+        286,
+        355,
+        2374
+      ],
+      "distance": 20
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        29,
+        13,
+        14,
+        70
+      ],
+      "metres": [
+        796.5926,
+        334.6892,
+        380.8568,
+        2162.3302
+      ],
+      "steps": [
+        723,
+        279,
+        359,
+        2374
+      ],
+      "distance": 20
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        14,
+        14,
+        69
+      ],
+      "metres": [
+        819.1194,
+        343.9152,
+        380.4398,
+        2130.1882
+      ],
+      "steps": [
+        733,
+        285,
+        351,
+        2383
+      ],
+      "distance": 21
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        30,
+        14,
+        14,
+        69
+      ],
+      "metres": [
+        820.3836,
+        350.3712,
+        379.4938,
+        2130.1882
+      ],
+      "steps": [
+        742,
+        301,
+        349,
+        2383
+      ],
+      "distance": 21
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        15,
+        69
+      ],
+      "metres": [
+        811.7222,
+        335.6888,
+        394.232,
+        2130.1882
+      ],
+      "steps": [
+        727,
+        282,
+        354,
+        2383
+      ],
+      "distance": 21
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        13,
+        14,
+        71
+      ],
+      "metres": [
+        819.1194,
+        330.728,
+        380.4398,
+        2168.6624
+      ],
+      "steps": [
+        733,
+        278,
+        351,
+        2307
+      ],
+      "distance": 22
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        30,
+        13,
+        14,
+        71
+      ],
+      "metres": [
+        820.3836,
+        337.7612,
+        379.4938,
+        2168.6624
+      ],
+      "steps": [
+        742,
+        287,
+        349,
+        2307
+      ],
+      "distance": 22
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        29,
+        13,
+        14,
+        73
+      ],
+      "metres": [
+        803.808,
+        336.3736,
+        381.4016,
+        2197.8042
+      ],
+      "steps": [
+        749,
+        293,
+        354,
+        2409
+      ],
+      "distance": 23
+    },
+    {
+      "order": "perimeter",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        31,
+        13,
+        15,
+        70
+      ],
+      "metres": [
+        840.3262,
+        331.493,
+        394.5424,
+        2162.3302
+      ],
+      "steps": [
+        735,
+        278,
+        359,
+        2374
+      ],
+      "distance": 23
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        15,
+        71
+      ],
+      "metres": [
+        811.7222,
+        337.0966,
+        394.232,
+        2168.6624
+      ],
+      "steps": [
+        727,
+        287,
+        354,
+        2307
+      ],
+      "distance": 23
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        14,
+        14,
+        73
+      ],
+      "metres": [
+        803.4716,
+        348.2898,
+        380.5668,
+        2197.8042
+      ],
+      "steps": [
+        739,
+        289,
+        348,
+        2409
+      ],
+      "distance": 24
+    },
+    {
+      "order": "width",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        32,
+        14,
+        15,
+        69
+      ],
+      "metres": [
+        850.2238,
+        344.4216,
+        395.714,
+        2130.1882
+      ],
+      "steps": [
+        731,
+        282,
+        356,
+        2383
+      ],
+      "distance": 24
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        30,
+        13,
+        15,
+        73
+      ],
+      "metres": [
+        813.0494,
+        338.4462,
+        394.044,
+        2197.8042
+      ],
+      "steps": [
+        739,
+        294,
+        354,
+        2409
+      ],
+      "distance": 25
+    },
+    {
+      "order": "long",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        32,
+        13,
+        15,
+        71
+      ],
+      "metres": [
+        850.2238,
+        332.4354,
+        395.714,
+        2168.6624
+      ],
+      "steps": [
+        731,
+        276,
+        356,
+        2307
+      ],
+      "distance": 25
+    },
+    {
+      "order": "area",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        31,
+        13,
+        15,
+        73
+      ],
+      "metres": [
+        836.0462,
+        339.1496,
+        394.8686,
+        2197.8042
+      ],
+      "steps": [
+        729,
+        292,
+        356,
+        2409
+      ],
+      "distance": 26
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        30,
+        13,
+        15,
+        79
+      ],
+      "metres": [
+        816.0448,
+        334.864,
+        391.3874,
+        2251.4144
+      ],
+      "steps": [
+        744,
+        296,
+        354,
+        2420
+      ],
+      "distance": 31
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        14,
+        15,
+        79
+      ],
+      "metres": [
+        813.3206,
+        346.9016,
+        390.407,
+        2251.4144
+      ],
+      "steps": [
+        736,
+        293,
+        348,
+        2420
+      ],
+      "distance": 32
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        31,
+        13,
+        15,
+        79
+      ],
+      "metres": [
+        821.6312,
+        335.6818,
+        390.4836,
+        2251.4144
+      ],
+      "steps": [
+        735,
+        289,
+        348,
+        2420
+      ],
+      "distance": 32
+    },
+    {
+      "order": "height",
+      "rule": "shorter",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        33,
+        14,
+        15,
+        79
+      ],
+      "metres": [
+        859.5194,
+        342.9306,
+        389.0478,
+        2251.4144
+      ],
+      "steps": [
+        736,
+        281,
+        345,
+        2420
+      ],
+      "distance": 35
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        32,
+        15,
+        15,
+        90
+      ],
+      "metres": [
+        907.4716,
+        381.9298,
+        435.2656,
+        2773.9552
+      ],
+      "steps": [
+        666,
+        266,
+        330,
+        2077
+      ],
+      "distance": 46
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        32,
+        15,
+        15,
+        90
+      ],
+      "metres": [
+        906.9748,
+        383.0586,
+        436.02,
+        2759.9376
+      ],
+      "steps": [
+        666,
+        266,
+        330,
+        2080
+      ],
+      "distance": 46
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        33,
+        14,
+        15,
+        95
+      ],
+      "metres": [
+        929.3676,
+        376.1646,
+        443.2048,
+        3071.0372
+      ],
+      "steps": [
+        675,
+        271,
+        363,
+        2235
+      ],
+      "distance": 51
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        33,
+        14,
+        15,
+        95
+      ],
+      "metres": [
+        929.2108,
+        376.887,
+        443.3812,
+        3086.744
+      ],
+      "steps": [
+        675,
+        271,
+        363,
+        2239
+      ],
+      "distance": 51
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        31,
+        14,
+        14,
+        99
+      ],
+      "metres": [
+        857.258,
+        360.2828,
+        401.2486,
+        2871.083
+      ],
+      "steps": [
+        749,
+        270,
+        354,
+        2173
+      ],
+      "distance": 52
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        31,
+        15,
+        14,
+        98
+      ],
+      "metres": [
+        857.258,
+        390.5512,
+        401.2486,
+        2840.9958
+      ],
+      "steps": [
+        749,
+        297,
+        354,
+        2147
+      ],
+      "distance": 52
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        34,
+        15,
+        15,
+        95
+      ],
+      "metres": [
+        936.49,
+        388.6122,
+        443.2048,
+        3030.4998
+      ],
+      "steps": [
+        673,
+        273,
+        363,
+        2213
+      ],
+      "distance": 53
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        30,
+        14,
+        14,
+        101
+      ],
+      "metres": [
+        840.2796,
+        365.8284,
+        400.801,
+        2943.133
+      ],
+      "steps": [
+        723,
+        278,
+        355,
+        2215
+      ],
+      "distance": 53
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        34,
+        15,
+        15,
+        95
+      ],
+      "metres": [
+        936.0552,
+        389.2398,
+        443.3812,
+        3043.4144
+      ],
+      "steps": [
+        673,
+        273,
+        363,
+        2222
+      ],
+      "distance": 53
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        32,
+        14,
+        15,
+        98
+      ],
+      "metres": [
+        865.7662,
+        367.9752,
+        411.5382,
+        2840.9958
+      ],
+      "steps": [
+        708,
+        279,
+        348,
+        2147
+      ],
+      "distance": 53
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        15,
+        14,
+        102
+      ],
+      "metres": [
+        832.164,
+        381.1714,
+        401.7282,
+        2935.3436
+      ],
+      "steps": [
+        726,
+        291,
+        359,
+        2210
+      ],
+      "distance": 54
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        32,
+        14,
+        15,
+        99
+      ],
+      "metres": [
+        865.7662,
+        363.2548,
+        411.5382,
+        2871.083
+      ],
+      "steps": [
+        708,
+        271,
+        348,
+        2173
+      ],
+      "distance": 54
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        31,
+        14,
+        15,
+        101
+      ],
+      "metres": [
+        850.9446,
+        363.0194,
+        413.061,
+        2943.133
+      ],
+      "steps": [
+        701,
+        278,
+        351,
+        2215
+      ],
+      "distance": 55
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        35,
+        16,
+        15,
+        95
+      ],
+      "metres": [
+        945.397,
+        402.5562,
+        443.0152,
+        2995.8558
+      ],
+      "steps": [
+        680,
+        273,
+        361,
+        2259
+      ],
+      "distance": 55
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        32,
+        15,
+        16,
+        98
+      ],
+      "metres": [
+        870.3606,
+        378.1878,
+        433.023,
+        2840.9958
+      ],
+      "steps": [
+        694,
+        276,
+        341,
+        2147
+      ],
+      "distance": 55
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        31,
+        14,
+        15,
+        102
+      ],
+      "metres": [
+        852.7462,
+        366.6228,
+        416.0176,
+        2935.3436
+      ],
+      "steps": [
+        704,
+        287,
+        355,
+        2210
+      ],
+      "distance": 56
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        35,
+        16,
+        15,
+        96
+      ],
+      "metres": [
+        946.1558,
+        402.0686,
+        442.689,
+        3022.946
+      ],
+      "steps": [
+        680,
+        273,
+        361,
+        2260
+      ],
+      "distance": 56
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        32,
+        15,
+        16,
+        99
+      ],
+      "metres": [
+        870.3606,
+        374.7806,
+        433.023,
+        2871.083
+      ],
+      "steps": [
+        694,
+        276,
+        341,
+        2173
+      ],
+      "distance": 56
+    },
+    {
+      "order": "width",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        34,
+        14,
+        16,
+        98
+      ],
+      "metres": [
+        901.1352,
+        363.9854,
+        433.023,
+        2840.9958
+      ],
+      "steps": [
+        695,
+        274,
+        341,
+        2147
+      ],
+      "distance": 56
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        36,
+        16,
+        17,
+        94
+      ],
+      "metres": [
+        936.9198,
+        395.3088,
+        445.9348,
+        2863.678
+      ],
+      "steps": [
+        678,
+        276,
+        330,
+        2241
+      ],
+      "distance": 57
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        32,
+        14,
+        16,
+        101
+      ],
+      "metres": [
+        866.707,
+        363.7968,
+        430.7898,
+        2943.133
+      ],
+      "steps": [
+        698,
+        278,
+        341,
+        2215
+      ],
+      "distance": 57
+    },
+    {
+      "order": "long",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        34,
+        14,
+        16,
+        99
+      ],
+      "metres": [
+        901.1352,
+        365.402,
+        433.023,
+        2871.083
+      ],
+      "steps": [
+        695,
+        279,
+        341,
+        2173
+      ],
+      "distance": 57
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        41,
+        14,
+        18,
+        90
+      ],
+      "metres": [
+        1050.6166,
+        373.073,
+        473.1882,
+        2773.9552
+      ],
+      "steps": [
+        677,
+        263,
+        329,
+        2077
+      ],
+      "distance": 57
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        41,
+        14,
+        18,
+        90
+      ],
+      "metres": [
+        1050.6166,
+        373.6594,
+        473.1882,
+        2759.9376
+      ],
+      "steps": [
+        677,
+        263,
+        329,
+        2080
+      ],
+      "distance": 57
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        32,
+        14,
+        16,
+        102
+      ],
+      "metres": [
+        867.851,
+        367.2976,
+        430.4726,
+        2935.3436
+      ],
+      "steps": [
+        706,
+        287,
+        343,
+        2210
+      ],
+      "distance": 58
+    },
+    {
+      "order": "area",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        33,
+        14,
+        16,
+        102
+      ],
+      "metres": [
+        881.0588,
+        363.8284,
+        430.4726,
+        2935.3436
+      ],
+      "steps": [
+        687,
+        289,
+        343,
+        2210
+      ],
+      "distance": 59
+    },
+    {
+      "order": "perimeter",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        34,
+        14,
+        16,
+        101
+      ],
+      "metres": [
+        889.4496,
+        359.1256,
+        430.7898,
+        2943.133
+      ],
+      "steps": [
+        686,
+        277,
+        341,
+        2215
+      ],
+      "distance": 59
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        29,
+        14,
+        15,
+        107
+      ],
+      "metres": [
+        835.1762,
+        362.9992,
+        406.3544,
+        2983.1108
+      ],
+      "steps": [
+        729,
+        280,
+        353,
+        2251
+      ],
+      "distance": 59
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        36,
+        17,
+        18,
+        95
+      ],
+      "metres": [
+        942.6518,
+        405.6552,
+        457.069,
+        2898.0362
+      ],
+      "steps": [
+        677,
+        271,
+        338,
+        2236
+      ],
+      "distance": 60
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        35,
+        16,
+        15,
+        100
+      ],
+      "metres": [
+        946.1558,
+        397.9838,
+        442.689,
+        3110.6608
+      ],
+      "steps": [
+        680,
+        284,
+        361,
+        2315
+      ],
+      "distance": 60
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        35,
+        16,
+        15,
+        100
+      ],
+      "metres": [
+        945.397,
+        397.905,
+        443.0152,
+        3124.608
+      ],
+      "steps": [
+        680,
+        284,
+        361,
+        2304
+      ],
+      "distance": 60
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        31,
+        14,
+        15,
+        107
+      ],
+      "metres": [
+        846.9122,
+        364.685,
+        404.5012,
+        2983.1108
+      ],
+      "steps": [
+        701,
+        283,
+        349,
+        2251
+      ],
+      "distance": 61
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        31,
+        14,
+        16,
+        107
+      ],
+      "metres": [
+        858.6652,
+        366.4928,
+        427.3682,
+        2983.1108
+      ],
+      "steps": [
+        703,
+        282,
+        345,
+        2251
+      ],
+      "distance": 62
+    },
+    {
+      "order": "height",
+      "rule": "vertical",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        33,
+        14,
+        16,
+        107
+      ],
+      "metres": [
+        875.0996,
+        367.0734,
+        427.3682,
+        2983.1108
+      ],
+      "steps": [
+        689,
+        284,
+        345,
+        2251
+      ],
+      "distance": 64
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        43,
+        14,
+        19,
+        95
+      ],
+      "metres": [
+        1084.551,
+        380.3464,
+        482.5188,
+        3071.0372
+      ],
+      "steps": [
+        685,
+        273,
+        329,
+        2235
+      ],
+      "distance": 65
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        43,
+        14,
+        19,
+        95
+      ],
+      "metres": [
+        1084.551,
+        381.074,
+        482.6952,
+        3086.744
+      ],
+      "steps": [
+        685,
+        273,
+        329,
+        2239
+      ],
+      "distance": 65
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        37,
+        18,
+        18,
+        98
+      ],
+      "metres": [
+        946.285,
+        422.8376,
+        461.369,
+        2929.5366
+      ],
+      "steps": [
+        673,
+        281,
+        338,
+        2166
+      ],
+      "distance": 65
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        46,
+        14,
+        21,
+        90
+      ],
+      "metres": [
+        1110.5542,
+        375.8624,
+        530.0008,
+        2773.9552
+      ],
+      "steps": [
+        678,
+        270,
+        339,
+        2077
+      ],
+      "distance": 65
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        46,
+        14,
+        21,
+        90
+      ],
+      "metres": [
+        1110.5542,
+        376.3672,
+        530.0008,
+        2759.9376
+      ],
+      "steps": [
+        678,
+        270,
+        339,
+        2080
+      ],
+      "distance": 65
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        43,
+        16,
+        20,
+        94
+      ],
+      "metres": [
+        1085.8864,
+        397.9086,
+        500.845,
+        2863.678
+      ],
+      "steps": [
+        700,
+        274,
+        335,
+        2241
+      ],
+      "distance": 67
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        44,
+        15,
+        19,
+        95
+      ],
+      "metres": [
+        1082.4204,
+        384.4638,
+        482.5188,
+        3030.4998
+      ],
+      "steps": [
+        685,
+        272,
+        329,
+        2213
+      ],
+      "distance": 67
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        44,
+        15,
+        19,
+        95
+      ],
+      "metres": [
+        1082.1472,
+        385.0914,
+        482.6952,
+        3043.4144
+      ],
+      "steps": [
+        685,
+        272,
+        329,
+        2222
+      ],
+      "distance": 67
+    },
+    {
+      "order": "height",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        46,
+        16,
+        21,
+        90
+      ],
+      "metres": [
+        1110.5542,
+        400.1846,
+        530.0008,
+        2773.9552
+      ],
+      "steps": [
+        678,
+        267,
+        339,
+        2077
+      ],
+      "distance": 67
+    },
+    {
+      "order": "height",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        46,
+        16,
+        21,
+        90
+      ],
+      "metres": [
+        1110.5542,
+        401.4486,
+        530.0008,
+        2759.9376
+      ],
+      "steps": [
+        678,
+        267,
+        339,
+        2080
+      ],
+      "distance": 67
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        42,
+        17,
+        20,
+        95
+      ],
+      "metres": [
+        1039.6626,
+        400.2254,
+        499.0952,
+        2898.0362
+      ],
+      "steps": [
+        685,
+        269,
+        339,
+        2236
+      ],
+      "distance": 68
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        45,
+        15,
+        20,
+        95
+      ],
+      "metres": [
+        1103.7934,
+        394.2536,
+        499.3864,
+        2995.8558
+      ],
+      "steps": [
+        689,
+        274,
+        337,
+        2259
+      ],
+      "distance": 69
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        45,
+        15,
+        20,
+        96
+      ],
+      "metres": [
+        1103.7934,
+        393.766,
+        499.22,
+        3022.946
+      ],
+      "steps": [
+        689,
+        274,
+        337,
+        2260
+      ],
+      "distance": 70
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        48,
+        14,
+        21,
+        95
+      ],
+      "metres": [
+        1147.3782,
+        378.3962,
+        513.4202,
+        3071.0372
+      ],
+      "steps": [
+        688,
+        276,
+        334,
+        2235
+      ],
+      "distance": 72
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        48,
+        14,
+        21,
+        95
+      ],
+      "metres": [
+        1147.3782,
+        378.4552,
+        513.5966,
+        3086.744
+      ],
+      "steps": [
+        688,
+        276,
+        334,
+        2239
+      ],
+      "distance": 72
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        48,
+        15,
+        22,
+        94
+      ],
+      "metres": [
+        1149.4956,
+        377.2468,
+        522.0182,
+        2863.678
+      ],
+      "steps": [
+        691,
+        267,
+        327,
+        2241
+      ],
+      "distance": 73
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        48,
+        15,
+        21,
+        95
+      ],
+      "metres": [
+        1133.7388,
+        390.0876,
+        513.4202,
+        3030.4998
+      ],
+      "steps": [
+        685,
+        277,
+        334,
+        2213
+      ],
+      "distance": 73
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        48,
+        15,
+        21,
+        95
+      ],
+      "metres": [
+        1133.7388,
+        389.7344,
+        513.5966,
+        3043.4144
+      ],
+      "steps": [
+        685,
+        277,
+        334,
+        2222
+      ],
+      "distance": 73
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        44,
+        17,
+        20,
+        98
+      ],
+      "metres": [
+        1083.5724,
+        411.3706,
+        497.8698,
+        2929.5366
+      ],
+      "steps": [
+        684,
+        274,
+        337,
+        2166
+      ],
+      "distance": 73
+    },
+    {
+      "order": "area",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        48,
+        16,
+        21,
+        95
+      ],
+      "metres": [
+        1147.3782,
+        406.828,
+        513.4202,
+        3071.0372
+      ],
+      "steps": [
+        688,
+        277,
+        334,
+        2235
+      ],
+      "distance": 74
+    },
+    {
+      "order": "area",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        48,
+        16,
+        22,
+        94
+      ],
+      "metres": [
+        1149.4956,
+        395.2204,
+        522.0182,
+        2863.678
+      ],
+      "steps": [
+        691,
+        266,
+        327,
+        2241
+      ],
+      "distance": 74
+    },
+    {
+      "order": "area",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        48,
+        16,
+        21,
+        95
+      ],
+      "metres": [
+        1147.3782,
+        408.0906,
+        513.5966,
+        3086.744
+      ],
+      "steps": [
+        688,
+        277,
+        334,
+        2239
+      ],
+      "distance": 74
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        45,
+        15,
+        20,
+        100
+      ],
+      "metres": [
+        1103.7934,
+        396.7384,
+        499.22,
+        3110.6608
+      ],
+      "steps": [
+        689,
+        284,
+        337,
+        2315
+      ],
+      "distance": 74
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        45,
+        15,
+        20,
+        100
+      ],
+      "metres": [
+        1103.7934,
+        396.6596,
+        499.3864,
+        3124.608
+      ],
+      "steps": [
+        689,
+        284,
+        337,
+        2304
+      ],
+      "distance": 74
+    },
+    {
+      "order": "perimeter",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        48,
+        17,
+        21,
+        95
+      ],
+      "metres": [
+        1133.7388,
+        416.8748,
+        513.4202,
+        3030.4998
+      ],
+      "steps": [
+        685,
+        277,
+        334,
+        2213
+      ],
+      "distance": 75
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        48,
+        16,
+        22,
+        95
+      ],
+      "metres": [
+        1138.8506,
+        383.4552,
+        522.7968,
+        2898.0362
+      ],
+      "steps": [
+        687,
+        272,
+        334,
+        2236
+      ],
+      "distance": 75
+    },
+    {
+      "order": "perimeter",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        48,
+        17,
+        21,
+        95
+      ],
+      "metres": [
+        1133.7388,
+        417.088,
+        513.5966,
+        3043.4144
+      ],
+      "steps": [
+        685,
+        277,
+        334,
+        2222
+      ],
+      "distance": 75
+    },
+    {
+      "order": "perimeter",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        48,
+        17,
+        22,
+        95
+      ],
+      "metres": [
+        1138.8506,
+        398.6016,
+        522.7968,
+        2898.0362
+      ],
+      "steps": [
+        687,
+        269,
+        334,
+        2236
+      ],
+      "distance": 76
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        50,
+        16,
+        21,
+        95
+      ],
+      "metres": [
+        1148.8598,
+        400.9506,
+        518.609,
+        2995.8558
+      ],
+      "steps": [
+        680,
+        279,
+        338,
+        2259
+      ],
+      "distance": 76
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        50,
+        16,
+        21,
+        96
+      ],
+      "metres": [
+        1148.8598,
+        401.5106,
+        518.4426,
+        3022.946
+      ],
+      "steps": [
+        680,
+        279,
+        338,
+        2260
+      ],
+      "distance": 77
+    },
+    {
+      "order": "long",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        50,
+        17,
+        21,
+        95
+      ],
+      "metres": [
+        1148.8598,
+        418.1858,
+        518.609,
+        2995.8558
+      ],
+      "steps": [
+        680,
+        276,
+        338,
+        2259
+      ],
+      "distance": 77
+    },
+    {
+      "order": "long",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        50,
+        17,
+        21,
+        96
+      ],
+      "metres": [
+        1148.8598,
+        418.1794,
+        518.4426,
+        3022.946
+      ],
+      "steps": [
+        680,
+        276,
+        338,
+        2260
+      ],
+      "distance": 78
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        50,
+        16,
+        22,
+        98
+      ],
+      "metres": [
+        1148.0528,
+        389.5886,
+        526.1404,
+        2929.5366
+      ],
+      "steps": [
+        681,
+        272,
+        334,
+        2166
+      ],
+      "distance": 80
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        50,
+        15,
+        21,
+        100
+      ],
+      "metres": [
+        1148.8598,
+        387.3924,
+        518.4426,
+        3110.6608
+      ],
+      "steps": [
+        680,
+        275,
+        338,
+        2315
+      ],
+      "distance": 80
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        50,
+        15,
+        21,
+        100
+      ],
+      "metres": [
+        1148.8598,
+        386.8324,
+        518.609,
+        3124.608
+      ],
+      "steps": [
+        680,
+        275,
+        338,
+        2304
+      ],
+      "distance": 80
+    },
+    {
+      "order": "long",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        50,
+        18,
+        22,
+        98
+      ],
+      "metres": [
+        1148.0528,
+        418.7504,
+        526.1404,
+        2929.5366
+      ],
+      "steps": [
+        681,
+        273,
+        334,
+        2166
+      ],
+      "distance": 82
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        34,
+        15,
+        17,
+        122
+      ],
+      "metres": [
+        901.7096,
+        380.985,
+        448.5388,
+        3286.7298
+      ],
+      "steps": [
+        672,
+        270,
+        333,
+        2249
+      ],
+      "distance": 82
+    },
+    {
+      "order": "width",
+      "rule": "horizontal",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        50,
+        17,
+        21,
+        100
+      ],
+      "metres": [
+        1148.8598,
+        414.0876,
+        518.4426,
+        3110.6608
+      ],
+      "steps": [
+        680,
+        278,
+        338,
+        2315
+      ],
+      "distance": 82
+    },
+    {
+      "order": "width",
+      "rule": "longer",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        50,
+        17,
+        21,
+        100
+      ],
+      "metres": [
+        1148.8598,
+        413.5276,
+        518.609,
+        3124.608
+      ],
+      "steps": [
+        680,
+        278,
+        338,
+        2304
+      ],
+      "distance": 82
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        40,
+        16,
+        19,
+        122
+      ],
+      "metres": [
+        1012.5688,
+        398.9576,
+        477.5436,
+        3286.7298
+      ],
+      "steps": [
+        674,
+        267,
+        333,
+        2249
+      ],
+      "distance": 91
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "normal",
+      "boards": [
+        37,
+        18,
+        18,
+        124
+      ],
+      "metres": [
+        946.285,
+        412.3046,
+        461.369,
+        3506.9872
+      ],
+      "steps": [
+        673,
+        275,
+        338,
+        2246
+      ],
+      "distance": 91
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        46,
+        15,
+        21,
+        122
+      ],
+      "metres": [
+        1111.8338,
+        379.981,
+        518.2532,
+        3286.7298
+      ],
+      "steps": [
+        682,
+        263,
+        340,
+        2249
+      ],
+      "distance": 98
+    },
+    {
+      "order": "height",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        46,
+        16,
+        21,
+        122
+      ],
+      "metres": [
+        1111.8338,
+        389.5354,
+        524.3422,
+        3286.7298
+      ],
+      "steps": [
+        682,
+        258,
+        341,
+        2249
+      ],
+      "distance": 99
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "repeat",
+      "boards": [
+        44,
+        17,
+        20,
+        124
+      ],
+      "metres": [
+        1083.5724,
+        403.9896,
+        497.8698,
+        3506.9872
+      ],
+      "steps": [
+        684,
+        273,
+        337,
+        2246
+      ],
+      "distance": 99
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "rotated",
+      "boards": [
+        50,
+        17,
+        22,
+        124
+      ],
+      "metres": [
+        1148.0528,
+        397.273,
+        526.1404,
+        3506.9872
+      ],
+      "steps": [
+        681,
+        272,
+        334,
+        2246
+      ],
+      "distance": 107
+    },
+    {
+      "order": "width",
+      "rule": "maxarea",
+      "depth": 2,
+      "orientation": "short",
+      "boards": [
+        50,
+        18,
+        22,
+        124
+      ],
+      "metres": [
+        1148.0528,
+        418.5404,
+        526.1404,
+        3506.9872
+      ],
+      "steps": [
+        681,
+        275,
+        334,
+        2246
+      ],
+      "distance": 108
+    }
+  ]
+}

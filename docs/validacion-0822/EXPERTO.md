@@ -1,6 +1,6 @@
 # Motor Experto: implementación y alcance
 
-**Auditoría real posterior:** se detectó falta de paridad (57 placas locales frente a56 del proveedor). Ver [revisión del caso real](../auditoria-experto-0822/REVISION.md). Las pruebas contra el Python no constituyen aceptación comercial.
+**Auditoría real posterior:** se detectó falta de paridad (57 placas locales frente a56 del proveedor). Ver [revisión del caso real](../auditoria-experto-0822/REVISION.md). Las pruebas contra el Python no constituyen aceptación comercial. [Ampliación a cuatro pedidos y ensayos discriminantes](../auditoria-experto-0822/MULTICASO.md): ninguno coincide con el proveedor.
 
 Implementación del 24/10/2026. `sketchup_offline/ui/expertoOptimizer.ts` reproduce la colocación y el cálculo de metros de sierra del Python entregado por el usuario. No consulta el servidor del proveedor y no acredita equivalencia comercial fuera de los casos que el documento original identifica como verificados.
 

@@ -1,0 +1,199 @@
+{
+  "scope": "Four private supplier cases, aggregates only",
+  "productVersion": "0.8.22",
+  "productionParityApproved": false,
+  "cases": [
+    {
+      "caseId": "caso-1",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 72,
+      "pdfRows": 72,
+      "pieces": 400,
+      "identicalCuts": true,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": false,
+      "rotatable": 400,
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 27,
+        "utilizationPercent": 89.51,
+        "netM2": 121.6,
+        "sawMetres": 739.4,
+        "edgeMetres": 601,
+        "sawSteps": 625,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 29,
+        "netM2": 121.621731,
+        "utilizationPercent": 83.33537591859807,
+        "sawMetres": 794.0838,
+        "sawSteps": 675,
+        "edgeNetMetres": 522.623,
+        "edgeWithWasteMetres": 601.01645,
+        "edgeDisplayMetres": 601,
+        "edgeBuyMetres": 602,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": true,
+      "boardCountMatches": false,
+      "sourceHashes": {
+        "json": "49507a7b045b830109b36a57dd6b88e21e517129cbed59c7c3f0a678f7e979a2",
+        "pdf": "0a23ef329a7889882981d8a1b07e235fe96b17a8e20f8241fd2179dfe7c7cd00"
+      }
+    },
+    {
+      "caseId": "caso-2",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 23,
+      "pdfRows": 23,
+      "pieces": 155,
+      "identicalCuts": true,
+      "boardMm": [
+        2600,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": false,
+      "rotatable": 155,
+      "supplier": {
+        "boardFormats": [
+          "2600x1830"
+        ],
+        "boards": 11,
+        "utilizationPercent": 90.96,
+        "netM2": 47.6,
+        "sawMetres": 283.3,
+        "edgeMetres": 218.7,
+        "sawSteps": 241,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 13,
+        "netM2": 47.60417,
+        "utilizationPercent": 76.96215281145925,
+        "sawMetres": 331.4724,
+        "sawSteps": 292,
+        "edgeNetMetres": 190.215,
+        "edgeWithWasteMetres": 218.74725,
+        "edgeDisplayMetres": 218.7,
+        "edgeBuyMetres": 219,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": true,
+      "boardCountMatches": false,
+      "sourceHashes": {
+        "json": "3b6da3bc8d853861c444747b1334f11ae66987151a224b3c149552cc0f124bb6",
+        "pdf": "83c75bb6a6d5978b4d9f2ac114a5feef54d5739d05caccb69f8fb7eb63e78c39"
+      }
+    },
+    {
+      "caseId": "caso-3",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 25,
+      "pdfRows": 25,
+      "pieces": 198,
+      "identicalCuts": true,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": false,
+      "rotatable": 198,
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 12,
+        "utilizationPercent": 92.71,
+        "netM2": 56,
+        "sawMetres": 326.4,
+        "edgeMetres": 192.1,
+        "sawSteps": 294,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 13,
+        "netM2": 55.986482,
+        "utilizationPercent": 85.57680003057052,
+        "sawMetres": 370.6178,
+        "sawSteps": 368,
+        "edgeNetMetres": 167.077,
+        "edgeWithWasteMetres": 192.13855,
+        "edgeDisplayMetres": 192.1,
+        "edgeBuyMetres": 193,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": true,
+      "boardCountMatches": false,
+      "sourceHashes": {
+        "json": "e8ddf2a58bffffacbc127974c4660e79c9c7dc10fe6b70199461b148369c7aea",
+        "pdf": "2ebd9865ce1ca515496f20bf66c70a78fa7d627b01308a0c4a768da8d2be6622"
+      }
+    },
+    {
+      "caseId": "caso-4",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 368,
+      "pdfRows": 368,
+      "pieces": 1244,
+      "identicalCuts": true,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": true,
+      "rotatable": 0,
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 56,
+        "utilizationPercent": 91.02,
+        "netM2": 256.5,
+        "sawMetres": 1953,
+        "edgeMetres": 1032,
+        "sawSteps": 2100,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 57,
+        "netM2": 256.507817,
+        "utilizationPercent": 89.42150303727524,
+        "sawMetres": 1981.5376,
+        "sawSteps": 2420,
+        "edgeNetMetres": 897.362,
+        "edgeWithWasteMetres": 1031.9663,
+        "edgeDisplayMetres": 1032,
+        "edgeBuyMetres": 1032,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": true,
+      "boardCountMatches": false,
+      "sourceHashes": {
+        "json": "24effb9de88d422c44105c7a69d730e80c1e5d60eaf7783398a468ee90ba62c6",
+        "pdf": "a8cb3495065fa24aa8b0f8287ceba87fdb9238d9f4aa6fa022dd1defe90457c7"
+      }
+    }
+  ]
+}

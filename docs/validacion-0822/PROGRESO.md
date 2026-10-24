@@ -38,3 +38,9 @@ No se ejecutó SketchUp en la nube ni se aprueba producción.
 ## Auditoría posterior con pedido real
 - 368 filas/1244 piezas iguales entre JSON y PDF. Experto proveedor56 placas; 0.8.22/Python57. Cantos1032m coinciden; recorrido/pasos no. Paridad comercial NO aprobada.
 - Comparador reproducible y6tests sintéticos nuevos;43focales PASS. Informe en `docs/auditoria-experto-0822/REVISION.md`. Sin cambios al motor ni nueva RBZ hasta demostrar la corrección.
+
+## Calibración multicase con tres pedidos adicionales
+- Coincidencia de filas JSON/PDF en los cuatro pedidos; conteos proveedor/local 27/29, 11/13, 12/13 y 56/57. Ninguna equivalencia aprobada.
+- 280 variantes de investigación ejecutadas sobre los cuatro pedidos; ninguna iguala todas las cantidades. Decisiones de giro y partición necesitan búsqueda de alternativas.
+- Comparador separa metros con un decimal del proveedor y compra entera local. Margen 15% confirmado por los cuatro PDF.
+- Tres TXT sintéticos discriminantes preparados y validados; falta ejecución en el portal. 44 tests TS focales y 6 Python PASS. Informe: `docs/auditoria-experto-0822/MULTICASO.md`. Sin modificar motor productivo ni RBZ.

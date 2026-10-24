@@ -10,3 +10,10 @@ describe('Auditoría local Experto, datos sintéticos',()=>{
  it('respeta veta aunque un permiso individual esté encendido',()=>{const d=fixture();d.cortes[0].rota=true;expect(auditExpertoCase(d,pdf).rotatable).toBe(0);d.placa.veta=false;expect(auditExpertoCase(d,pdf).rotatable).toBe(3);});
  it('rechaza cantidades no enteras y códigos de canto no conocidos',()=>{const d=fixture();d.cortes[0].cantidad=1.2;expect(()=>auditExpertoCase(d,pdf)).toThrow();d.cortes[0].cantidad=3;d.cortes[0].tapacantos=16;expect(()=>auditExpertoCase(d,pdf)).toThrow();});
 });
+
+// El proveedor muestra un decimal, mientras la compra entera es una decisión separada.
+it('separa estimación de canto del proveedor y redondeo de compra',()=>{
+ const d=fixture();d.cortes=[{id:0,cantidad:1,base:1902.15,altura:500,descripcion:'Panel QA',rota:false,tapacantos:4}];
+ const result=auditExpertoCase(d,'Tapacanto 1\nCANTO QA = 2.2 m\n');
+ expect(result.local).toMatchObject({edgeDisplayMetres:2.2,edgeBuyMetres:3});expect(result.edgeDisplayMatches).toBe(true);
+});
