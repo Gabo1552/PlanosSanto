@@ -2,7 +2,7 @@
 
 Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.21:** [RBZ](dist/PlanosSanto-0.8.21-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.21-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.21-Validacion-Local.zip) · [qué cambió](docs/validacion-0821/CAMBIOS.md) · [validación local](docs/validacion-0821/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.22:** [RBZ](dist/PlanosSanto-0.8.22-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.22-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.22-Validacion-Local.zip) · [qué cambió](docs/validacion-0822/CAMBIOS.md) · [validación local](docs/validacion-0822/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
 
 ## Módulos de la extensión
 
@@ -13,7 +13,7 @@ Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, bibliote
 | Muebles | Elegir muebles, marcar el frente, proponer y guardar nombres, codificar el despiece |
 | Planos | Vistas exterior/interior, cotas, notas y hoja A4 (el visor es la hoja) |
 | Piezas | Listado de piezas por material, CSV e impresión |
-| Maderera | Optimización estimada por placa (material + espesor) y un TXT por placa |
+| Maderera | Experto / General, resumen por material + espesor, detalle de placas y TXT |
 
 ## Estructura
 
@@ -58,5 +58,5 @@ En Claude Code también funciona `/graphify`. El código se analiza localmente c
 ## Reglas del taller
 
 - No se publican modelos, SKM, fotos, texturas comerciales, catálogos reales ni datos de clientes. Las reglas de privacidad de `.gitignore` se mantienen aunque la carpeta ya no exista.
-- OpenCutList queda instalado; Planos Santo replica comportamiento sin copiar su código ni sus recursos.
+- OpenCutList es opcional; General aplica criterios de guillotina con código propio, sin copiar su motor ni sus recursos.
 - Una candidata no se aprueba para producción sin validación en SketchUp real.

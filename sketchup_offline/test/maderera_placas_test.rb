@@ -162,6 +162,89 @@ class MadereraPlacasTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,white['key']) }
     assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,'otra|180') }
   end
+  def test_experto_rotates_smooth_asymmetric_edges_without_changing_dimensions_or_draft
+    piece('1/1',[700,450,18],{'+y'=>'edge-a','-x'=>'edge-b'},name:'Lateral')
+    draft=plan;before=Marshal.dump(draft);key=S.board_key(@sheet['id'],18)
+    general=lines(@service.board_txt(draft,key,rotate:true)).first
+    prepared=@service.board_txt(draft,key,method:'experto');experto=lines(prepared).first
+    assert_equal '0',general[4];assert_equal '1',experto[4]
+    assert_equal general.values_at(0,1,2,3,5,6,7,8),experto.values_at(0,1,2,3,5,6,7,8)
+    assert_equal 9,experto.length;assert_equal %w[700 450],experto[1,2]
+    assert_equal before,Marshal.dump(draft);validate_txt(prepared['content'])
+  end
+
+  def test_experto_uses_custom_catalog_format_and_exact_single_axis_trim
+    @sheet['lengthMm']=1010;@sheet['widthMm']=610
+    piece('1/1',[1000,600,18],name:'Ajustada')
+    draft=plan;board=@service.boards(draft,method:'experto')['boards'].first
+    assert_empty board['problems'];assert_equal %w[1000 600],lines(@service.board_txt(draft,board['key'],method:'experto')).first[1,2]
+    @sheet['lengthMm']=1009.999
+    draft=plan;board=@service.boards(draft,method:'experto')['boards'].first
+    assert_match(/medida útil/,board['problems'].first['reasons'].join)
+    assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,board['key'],method:'experto') }
+    # Existing General has its own layout checks and keeps the previous TXT behavior.
+    assert_empty @service.boards(draft)['boards'].first['problems']
+  end
+
+  def test_experto_small_parts_block_whole_material_and_exact_50_is_accepted
+    piece('1/1',[700,50,18],name:'Válida');piece('1/2',[700,49.99,18],name:'Demasiado angosta')
+    draft=plan;board=@service.boards(draft,method:'experto')['boards'].first
+    assert_equal ['1/2'],board['problems'].map { |problem| problem['id'] }
+    error=assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,board['key'],method:'experto') }
+    assert_match(/al menos 50/,error.message)
+    draft['rows'][1]['include']=false
+    prepared=@service.board_txt(draft,board['key'],method:'experto')
+    assert_equal 1,prepared['pieces'];assert_equal %w[700 50],lines(prepared).first[1,2]
+  end
+
+  def test_experto_does_not_rotate_grained_or_unknown_grain_material
+    piece('1/1',[700,450,18],name:'Con veta',base:'oak')
+    draft=plan;key=S.board_key(@oak['id'],18)
+    assert_equal '0',lines(@service.board_txt(draft,key,rotate:true,method:'experto')).first[4]
+    @oak['lengthMm']=600;@oak['widthMm']=800
+    draft=plan
+    assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,key,rotate:true,method:'experto') }
+    @oak['grain']=nil;draft=plan
+    assert_equal 'locked',@service.board_draft(draft,method:'experto')['rows'][0]['grainPolicy']
+    assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,key,method:'experto') }
+  end
+
+  def test_experto_still_checks_edge_width_and_invalid_edge_maps
+    piece('1/1',[700,450,18],{'+y'=>'edge-a'},name:'Lateral')
+    @a['widthMm']=10;@a['widthsMm']=[10];draft=plan;key=S.board_key(@sheet['id'],18)
+    assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,key,method:'experto') }
+    @a['widthMm']=22;@a['widthsMm']=[22];draft=plan;draft['rows'][0]['edgeMap']=[3,0,0,0]
+    error=assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,key,method:'experto') }
+    assert_match(/Mapa de cantos inválido/,error.message)
+  end
+
+  def test_workshop_separates_cached_methods_and_exports_with_selected_method
+    piece('1/1',[700,450,18],{'+y'=>'edge-a'},name:'Lateral')
+    draft=plan;@workshop.instance_variable_set(:@board_plan,[@service,draft]);@workshop.instance_variable_set(:@order_catalog,@catalog)
+    @workshop.define_singleton_method(:project_name) { 'Ensayo' }
+    general=@workshop.boards(rotate:true);experto=@workshop.boards(rotate:true,method:'experto')
+    key=general['boards'][0]['key']
+    assert_equal 'locked',general['plan']['rows'][0]['grainPolicy']
+    assert_equal 'rotate',experto['plan']['rows'][0]['grainPolicy']
+    assert_equal 'locked',@workshop.boards(rotate:true)['plan']['rows'][0]['grainPolicy']
+    assert_equal 2,@workshop.instance_variable_get(:@board_lists).length
+    prepared=@workshop.board_export(key,false,method:'experto')
+    assert_equal '1',lines(prepared).first[4]
+    assert_match(/Ensayo-Melamina Blanca-18mm.txt/,prepared['fileName'])
+    exported=@workshop.export_boards(false,@dir,method:'experto')
+    assert_equal prepared['content'],File.binread(File.join(exported['directory'],prepared['fileName']))
+  end
+
+  def test_optimization_method_is_allowlisted_and_cannot_be_set_in_saved_row
+    piece('1/1',[700,450,18]);draft=plan
+    [nil,true,'opencut','EXPERTO',''].each do |method|
+      assert_raises(PlanosSanto::ExportError) { @service.boards(draft,method:method) }
+      assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,S.board_key(@sheet['id'],18),method:method) }
+    end
+    draft['rows'][0]['method']='experto'
+    assert_raises(PlanosSanto::ExportError) { @service.board_txt(draft,S.board_key(@sheet['id'],18),method:'experto') }
+  end
+
 end
 
 # Flujo completo de Workshop con el modelo sintético de nombres: nombres de archivo, guardado de un TXT,

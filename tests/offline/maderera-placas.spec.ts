@@ -50,7 +50,7 @@ async function openMaderera(page:Page){
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await rail(page,'Maderera').click();
- const region=page.getByRole('region',{name:'Optimización de placas'});await expect(region.getByRole('table',{name:'Resumen por placa: material y espesor'})).toBeVisible();return region;
+ const region=page.getByRole('region',{name:'Optimización de placas'});await expect(region.getByRole('list',{name:'Materiales y espesores del proyecto'})).toBeVisible();return region;
 }
 const validate=(path:string)=>['scripts/validar_txt_maderera.py','scripts/validar_pedido_txt.py'].map(script=>{const run=spawnSync('python3',[script,path],{encoding:'utf8'});return `${basename(script)}:${run.status}:${run.stderr.trim()}`;});
 const ok=['validar_txt_maderera.py:0:','validar_pedido_txt.py:0:'];
@@ -71,11 +71,9 @@ test('maderera: solo la optimización por placa, corte simple recordado y un TXT
  await expect(cut.getByLabel('Disco (kerf) mm')).toHaveValue('4');await expect(cut.getByLabel('Refilado por lado mm')).toHaveValue('10');
  await expect(cut.getByRole('checkbox',{name:'Girar piezas en placas sin veta (rota 1)'})).not.toBeChecked();
  const optim=region.getByRole('region',{name:'Placas del proyecto'});
- await expect(optim.locator('.workshop-optim-note')).toContainText('con disco de 4 mm y refilado de 10 mm por lado');
- const summary=optim.getByRole('table',{name:'Resumen por placa: material y espesor'});
- await expect(summary.locator('thead th')).toHaveText(['Placa','Formato','Piezas','Placas','Aprovechamiento','m² netos','m² comprados','TXT']);
- const row=summary.locator('tbody tr');await expect(row).toHaveCount(1);await expect(row.locator('th')).toContainText('Melamina Jade · 19,05 mm');await expect(row.locator('th')).toContainText('JADE-SINT · con veta');
- await expect(row.locator('td')).toHaveText(['2.750 × 1.830 mm','3','1',/^\d+,\d\s?%$/,'0,743',/^5,03\d$/,'Listo']);
+ const card=optim.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'});
+ await expect(card).toContainText('JADE-SINT · con veta');await expect(card).toContainText('2.750 × 1.830 mm');await expect(card).toContainText('TXT listo');
+ await expect(optim.getByRole('img')).toHaveCount(0);await card.click();
  // Una sección por placa: cifras, cantos para el portal, diagrama y su botón de TXT.
  const board=optim.getByRole('region',{name:'Melamina Jade · 19,05 mm'});
  await expect(board.getByRole('img',{name:/^Placa 1 de 1: 3 piezas, aprovechamiento \d+,\d\s?%\. Placa 2\.750 × 1\.830 mm, veta a lo largo\.$/})).toBeVisible();
@@ -101,7 +99,7 @@ test('maderera: solo la optimización por placa, corte simple recordado y un TXT
  await cut.getByLabel('Disco (kerf) mm').fill('3.2');await cut.getByLabel('Refilado por lado mm').fill('15');
  await cut.getByLabel('Refilado por lado mm').fill('99');await expect(cut.getByText('Entre 0 y 50 mm. Se sigue usando 15 mm.')).toBeVisible();await cut.getByLabel('Refilado por lado mm').fill('15');
  await cut.getByRole('checkbox',{name:'Girar piezas en placas sin veta (rota 1)'}).check();
- await expect(optim.locator('.workshop-optim-note')).toContainText('con disco de 3,2 mm y refilado de 15 mm por lado');
+ await expect(cut.getByLabel('Disco (kerf) mm')).toHaveValue('3.2');
  expect(JSON.parse(await page.evaluate(()=>localStorage.getItem('planos-santo.maderera.corte.v1'))||'{}')).toEqual({kerfMm:3.2,trimMm:15,allowRotate:true});
  await rail(page,'Inicio').click();await rail(page,'Maderera').click();
  await expect(page.getByRole('region',{name:'Optimización de placas'}).getByLabel('Disco (kerf) mm')).toHaveValue('3.2');
@@ -122,6 +120,7 @@ test('maderera: solo la optimización por placa, corte simple recordado y un TXT
 test('maderera: una pieza que no entra en la medida útil avisa, una que no entra en la placa frena su TXT y las piezas sin placa se listan',async({page},info)=>{
  await boot(page,info.outputDir);const {board:sheet}=await library({lengthMm:620,widthMm:420,grain:false},true);
  const region=await openMaderera(page),optim=region.getByRole('region',{name:'Placas del proyecto'});
+ await optim.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'}).click();
  // La pieza que lleva dos placas pintadas no va a ninguna placa: se lista con el motivo.
  await expect(region.getByRole('list',{name:'Piezas fuera de las placas'})).toContainText(/1 pieza sin placa de Materiales: .+\. Pintalas con una sola placa de Materiales\./);
  const board=optim.getByRole('region',{name:'Melamina Jade · 19,05 mm'});
@@ -136,7 +135,7 @@ test('maderera: una pieza que no entra en la medida útil avisa, una que no entr
  await expect(problems).toContainText('La pieza no entra en la placa: mide 609,6 × 406,4 mm y la placa es 600 × 400 mm.');
  await expect(board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm',exact:true})).toBeDisabled();
  await expect(region.getByRole('button',{name:'Exportar todos los TXT…',exact:true})).toBeDisabled();
- await expect(optim.getByRole('table',{name:'Resumen por placa: material y espesor'}).locator('tbody td').last()).toHaveText('Con problemas');
+ await expect(board.getByText('No se puede exportar: resolvé los problemas de abajo.')).toBeVisible();
  await problems.getByRole('button',{name:/^Ver en el modelo/}).first().click();await expect(region.getByRole('status').first()).toHaveText('Pieza resaltada en SketchUp. Volvé a esta ventana para seguir.');
  expect(await axe(page)).toEqual([]);
  expect(actions.filter(a=>a==='maderera_txt')).toEqual([]);
@@ -152,6 +151,7 @@ test('girar una placa sin veta revalida los botones y el TXT; volver a bloquear 
  plan.rows.forEach(row=>Object.assign(row,{principalId:null,secondaryId:null,edgeMap:[0,0,0,0]}));
  await send('order_save',{plan});
  await region.getByRole('button',{name:'Actualizar desde el modelo',exact:true}).click();
+ await region.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'}).click();
  const board=region.getByRole('region',{name:'Melamina Jade · 19,05 mm'});
  const button=board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm',exact:true});
  const all=region.getByRole('button',{name:'Exportar todos los TXT…',exact:true});
@@ -171,4 +171,25 @@ test('girar una placa sin veta revalida los botones y el TXT; volver a bloquear 
  await expect(button).toBeDisabled();await expect(all).toBeDisabled();
  await expect(board.getByRole('list',{name:'Problemas de Melamina Jade · 19,05 mm'})).toContainText('no entra en la placa');
  expect(boardRotations.at(-1)).toBe(false);
+});
+
+test('Experto: ficha real, giro con canto asimétrico, compra +15 %, método persistido y regreso a General',async({page},info)=>{
+ await boot(page,info.outputDir);const {edge}=await library({grain:false});
+ const region=await openMaderera(page),method=region.getByLabel('Método de optimización');await expect(method).toHaveValue('general');
+ const cut=region.getByRole('group',{name:'Corte de la seccionadora'});await cut.getByLabel('Disco (kerf) mm').fill('3.2');await cut.getByLabel('Refilado por lado mm').fill('15');
+ const data=await send('maderera_boards',{method:'general',rotate:false}) as {boards:{rowIds:string[]}[]};
+ const {plan}=await send('order_plan') as {plan:{rows:Record<string,unknown>[]}};const included=new Set(data.boards[0].rowIds);
+ plan.rows.forEach(row=>Object.assign(row,{include:included.has(String(row.id)),excludeReason:included.has(String(row.id))?'':'Fuera del ensayo',principalId:edge.id,secondaryId:null,edgeMap:[1,0,0,0]}));await send('order_save',{plan});await region.getByRole('button',{name:'Actualizar desde el modelo',exact:true}).click();
+ const edges=region.getByRole('region',{name:'Total de cantos del proyecto'});await expect(edges.locator('tbody tr td').nth(1)).toHaveText('2 metros');
+ await method.selectOption('experto');await expect(cut).toHaveCount(0);await expect(region.getByText(/Experto: disco 4,4 mm/)).toBeVisible();
+ const open=region.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'});await expect(open).toContainText('2.750 × 1.830 mm');await open.click();
+ const board=region.getByRole('region',{name:'Melamina Jade · 19,05 mm',exact:true});await expect(board.getByRole('img')).toHaveCount(1);await expect(board).toContainText('Recorrido de sierra estimado');await expect(board.getByRole('img')).toHaveAttribute('aria-label',/2\.750 × 1\.830 mm/);
+ await expect(edges.locator('tbody tr td').nth(1)).toHaveText('3 metros');await expect(edges).toContainText('Incluye 15 % de margen');
+ await board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm'}).click();await expect(region.getByRole('status').first()).toContainText('TXT de Melamina Jade · 19,05 mm guardado');
+ const file=(await board.locator('.workshop-board-export small').textContent())!.replace(/^Archivo: /,'');const rows=(await readFile(join(info.outputDir,file),'utf8')).trim().split('\r\n').map(row=>row.split('\t'));expect(rows.every(row=>row.length===9&&row[4]==='1')).toBe(true);expect(validate(join(info.outputDir,file))).toEqual(ok);
+ expect(rows.every(row=>row.slice(5).filter(value=>value==='1').length===1)).toBe(true);
+ expect(await axe(page)).toEqual([]);await page.screenshot({path:info.outputPath('experto-detalle-SINTETICO.png'),fullPage:true});
+ await rail(page,'Inicio').click();await rail(page,'Maderera').click();await expect(method).toHaveValue('experto');await expect(cut).toHaveCount(0);
+ await method.selectOption('general');await expect(cut.getByLabel('Disco (kerf) mm')).toHaveValue('3.2');await expect(cut.getByLabel('Refilado por lado mm')).toHaveValue('15');await expect(cut.getByRole('checkbox',{name:'Girar piezas en placas sin veta (rota 1)'})).not.toBeChecked();await expect(edges.locator('tbody tr td').nth(1)).toHaveText('2 metros');
+ await region.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'}).click();await board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm'}).click();await expect(region.getByRole('status').first()).toContainText('TXT de Melamina Jade · 19,05 mm guardado');const general=(await readFile(join(info.outputDir,file),'utf8')).trim().split('\r\n').map(row=>row.split('\t'));expect(general.every(row=>row[4]==='0')).toBe(true);
 });

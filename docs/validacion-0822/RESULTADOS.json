@@ -1,0 +1,56 @@
+{
+  "version": "0.8.22",
+  "baseCommit": "10674f848527bf572e6ff1a18277bba5b2558e27",
+  "date": "2026-10-24",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "productionApproved": false,
+  "rbzSha256": "8bef5d6e642d728e5ca6d071e507be81c1d410a95e015c6fe7dd6d24a19c5c6a",
+  "checks": {
+    "offlineBuild": "PASS",
+    "ruby": {
+      "tests": 1067,
+      "assertions": 10276,
+      "suites": 72,
+      "failed": 0
+    },
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "vitest": {
+      "tests": 487,
+      "files": 52,
+      "failed": 0
+    },
+    "offlineUi": {
+      "uniqueTests": 241,
+      "firstRunPassed": 236,
+      "firstRunFailed": 5,
+      "correctedTestsPassed": 5,
+      "finalUnresolved": 0,
+      "note": "Cuatro tests adaptados al acceso por tarjeta y uno al color corporativo. Reejecución dirigida PASS, conservando sus aserciones funcionales y de accesibilidad."
+    },
+    "finalPaletteCss": {
+      "tests": 26,
+      "failed": 0,
+      "note": "Subset de los 241, repetidos tras aplicar colores a la paleta independiente."
+    },
+    "nextBuild": "PASS con aviso Autoprefixer preexistente sobre start",
+    "webE2e": {
+      "tests": 35,
+      "failed": 0
+    }
+  },
+  "uniqueAutomatedTests": 1830,
+  "referenceComparisons": {
+    "expertoPythonCases": 9,
+    "generalOclCases": 6,
+    "nativeOrCommercialParityClaimed": false
+  },
+  "pending": [
+    "Validación nativa SketchUp 2026",
+    "Importación comercial Experto y giro con cantos asimétricos",
+    "Calibración con otros pedidos completos del proveedor",
+    "No implementada excepción de veta forzada individual en material liso"
+  ],
+  "privacy": "Solo fixtures y capturas sintéticas; logo proporcionado por el usuario. No modelos, SKM, fotos ni texturas privadas."
+}

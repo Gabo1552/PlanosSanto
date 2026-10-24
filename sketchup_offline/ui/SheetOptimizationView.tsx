@@ -1,3 +1,4 @@
+import {useRef,useState,type ReactNode} from 'react';
 import {mm} from '../../lib/model';
 import {edgeToBuy,edgeTotals,formatMetres,plural} from './workshopRules';
 import {usable,type BoardGroup,type LayoutGroup,type MaterialOptimization,type OrderOptimization} from './sheetOptimizer';
@@ -14,7 +15,7 @@ export type OutsidePiece={id:string;detail:string;reason:'excluded'|'not_rectang
 const percent=new Intl.NumberFormat('es-AR',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1}),area=new Intl.NumberFormat('es-AR',{minimumFractionDigits:3,maximumFractionDigits:3});
 /** «Melamina Blanca · 18 mm»: así se nombra una placa en pantalla, en los avisos y en el botón de su TXT. */
 export const boardLabel=(board:{name:string;thicknessMm:number})=>`${board.name} · ${mm(board.thicknessMm)} mm`;
-const usableOf=(m:MaterialOptimization)=>usable({lengthMm:m.lengthMm??0,widthMm:m.widthMm??0,trimMm:m.trimMm,kerfMm:m.kerfMm});
+const usableOf=(m:MaterialOptimization)=>m.trimMode==='total'?{length:(m.lengthMm??0)-m.trimMm,width:(m.widthMm??0)-m.trimMm}:usable({lengthMm:m.lengthMm??0,widthMm:m.widthMm??0,trimMm:m.trimMm,kerfMm:m.kerfMm});
 /** Cuántas piezas de cada letra quedaron ubicadas en placas. */
 const placedCount=(m:MaterialOptimization)=>{const out=new Map<string,number>();for(const sheet of m.sheets)for(const p of sheet.placements){const key=m.keys[p.id];out.set(key,(out.get(key)||0)+1);}return out;};
 const sheetNames=(numbers:number[])=>numbers.length===1?`Placa ${numbers[0]}`:`Placas ${numbers.join(', ')} (iguales, ×${numbers.length})`;
@@ -34,7 +35,7 @@ function SheetDiagram({material,group,total}:{material:MaterialOptimization;grou
    <rect x={material.trimMm} y={material.trimMm} width={Math.max(0,length)} height={Math.max(0,width)} fill="#fbf9f3" stroke="#a89f88" strokeWidth={stroke} strokeDasharray={`${stroke*6} ${stroke*4}`}/>
    {group.layout.placements.map(p=>{const key=material.keys[p.id]||'?',size=Math.min(font,p.w/(key.length+1),p.h/2.2),dims=`${mm(p.rotated?p.h:p.w)} × ${mm(p.rotated?p.w:p.h)}`,small=Math.min(font*.7,p.w/(dims.length*.62)),showDims=small>=font*.35&&p.h>=size+small*2.4;
     return <g key={p.id}><rect x={p.x} y={p.y} width={p.w} height={p.h} fill={p.rotated?'#d5e3ea':'#d9e8dc'} stroke="#19483d" strokeWidth={stroke}/>
-     {size>=font*.25&&<text x={p.x+p.w/2} y={p.y+p.h/2-(showDims?small*.6:0)} textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="700" fill="#14382f">{key}</text>}
+     {size>=font*.25&&<text x={p.x+p.w/2} y={p.y+p.h/2-(showDims?small*.6:0)} textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="700" fill="#14382f">{key}{p.rotated?' ↻':''}</text>}
      {showDims&&<text x={p.x+p.w/2} y={p.y+p.h/2+size*.55} textAnchor="middle" dominantBaseline="middle" fontSize={small} fill="#33463f">{dims}</text>}</g>;})}
   </svg>
   <figcaption><strong>{name}</strong> · {plural(count,'pieza','piezas')} · aprovechamiento {percent.format(used)}</figcaption>
@@ -44,10 +45,11 @@ function SheetDiagram({material,group,total}:{material:MaterialOptimization;grou
 type BoardProps={material:MaterialOptimization;board:ProjectBoard;busy:boolean;exporting:boolean;onExport:(board:ProjectBoard)=>void;onHighlight:(id:string)=>void};
 /** Una placa del proyecto: cifras, cantos para el portal, avisos, su TXT y sus diagramas. */
 function BoardSection({material:m,board,busy,exporting,onExport,onHighlight}:BoardProps){
- const id=domId(board.key),label=boardLabel(board),ready=boardReady(board),{length,width}=usableOf(m);
+ const id=domId(board.key),label=boardLabel(board),ready=boardReady(board)&&!(m.method==='experto'&&m.status!=='ok'),{length,width}=usableOf(m);
  const notes=[
+  ...(m.errors||[]),...(m.warnings||[]),
   ...(m.status==='no_format'?['Falta el formato de la placa (largo y ancho) en Materiales: no se optimiza.']:[]),
-  ...(m.status==='no_usable'?[`El refilado de ${mm(m.trimMm)} mm por lado no deja medida útil en esta placa.`]:[]),
+  ...(m.status==='no_usable'?[`El refilado de ${mm(m.trimMm)} mm ${m.trimMode==='total'?'total por eje':'por lado'} no deja medida útil en esta placa.`]:[]),
   ...(m.oversize.length?[`${plural(m.oversize.length,'pieza no entra','piezas no entran')} en la medida útil de ${mm(length)} × ${mm(width)} mm (después del refilado): ${m.oversize.slice(0,4).map(p=>`${p.detail.trim()||'Sin detalle'} ${mm(p.base)} × ${mm(p.height)} mm`).join('; ')}${m.oversize.length>4?` y ${m.oversize.length-4} más`:''}. Confirmalo con la maderera.`]:[]),
   ...(m.unsized?[`${plural(m.unsized,'pieza no tiene','piezas no tienen')} base y altura: no se optimiza${m.unsized===1?'':'n'}.`]:[]),
   ...(board.edgeNotes?[`${plural(board.edgeNotes,'pieza tiene','piezas tienen')} algún canto pintado que no se pudo leer o que no está vinculado a un canto de Materiales: ese lado va sin canto en el TXT. Revisalo en Piezas.`]:[]),
@@ -59,6 +61,7 @@ function BoardSection({material:m,board,busy,exporting,onExport,onHighlight}:Boa
    <div><dt>Placas</dt><dd>{m.status==='ok'?m.sheets.length:'—'}<small>{m.lengthMm&&m.widthMm?`de ${mm(m.lengthMm)} × ${mm(m.widthMm)} mm`:'Sin formato'}</small></dd></div>
    <div><dt>Aprovechamiento</dt><dd>{m.utilization===null?'—':percent.format(m.utilization)}<small>{area.format(m.netM2)} m² netos de {area.format(m.boughtM2)} m²</small></dd></div>
    <div><dt>Piezas</dt><dd>{m.pieces+m.unsized}<small>{m.rotatable?`${plural(m.rotatable,'se puede girar','se pueden girar')} (rota 1)`:'Todas con rota 0'}</small></dd></div>
+   {m.status==='ok'&&m.method==='experto'&&m.sawMetres!==undefined&&<div><dt>Recorrido de sierra estimado</dt><dd>{formatMetres(m.sawMetres)} m<small>{m.estimatedSawSteps!==undefined?`${m.estimatedSawSteps} pasos estimados`:''} · confirmar con la maderera</small></dd></div>}
   </dl>
   <div className="workshop-board-edges"><strong>Cantos de esta placa</strong>{board.edges.length?<ul aria-label={`Cantos de ${label}`}>{board.edges.map(edge=><li key={edge.catalogId}><span className="workshop-badge is-ok">Canto {edge.code}</span> {edge.name} · {edge.sku||'Sin SKU'}{edge.widthMm?` · ancho ${mm(edge.widthMm)} mm`:''} · {formatMetres(edge.metres)} m</li>)}</ul>:<p className="workshop-hint">Sin cantos: en el TXT todos los lados van con 0.</p>}
    {!!board.edges.length&&<small className="workshop-hint">En el TXT, 1 y 2 son estos cantos de la placa: elegilos así en el portal de la maderera.</small>}</div>
@@ -71,37 +74,46 @@ function BoardSection({material:m,board,busy,exporting,onExport,onHighlight}:Boa
    <div className="workshop-sheets">{m.layouts.map(group=><SheetDiagram key={group.sheetNumbers[0]} material={m} group={group} total={m.sheets.length}/>)}</div>
    <div className="material-review-table"><table className="workshop-optim-table workshop-optim-legend"><caption>Leyenda de {label}: piezas iguales comparten letra</caption><thead><tr><th scope="col">Letra</th><th scope="col" className="workshop-num">Base × altura</th><th scope="col" className="workshop-num">Cantidad</th><th scope="col">Piezas</th></tr></thead>
     <tbody>{(placed=>m.legend.filter(entry=>placed.has(entry.key)).map(entry=><tr key={entry.key}><th scope="row">{entry.key}</th><td className="workshop-num">{mm(entry.base)} × {mm(entry.height)} mm</td><td className="workshop-num">{placed.get(entry.key)}</td><td>{names(entry.details)}</td></tr>))(placedCount(m))}</tbody></table></div>
-   <p className="workshop-hint">{m.grain?`Veta a lo largo de la placa (${mm(m.lengthMm!)} mm): las piezas mantienen su base en ese sentido.`:'En celeste, las piezas giradas.'}</p>
+   <p className="workshop-hint">{m.grain?`Veta a lo largo de la placa (${mm(m.lengthMm!)} mm): las piezas mantienen su base en ese sentido.`:'Las piezas giradas se indican en celeste y con ↻ en el diagrama.'}</p>
   </>}
  </section>;
 }
 
-type Props={result:OrderOptimization;boards:ProjectBoard[];busy:boolean;exporting:string;onExport:(board:ProjectBoard)=>void;onHighlight:(id:string)=>void};
-/** Resumen de todas las placas del proyecto y una sección por placa. */
-export default function SheetOptimizationView({result,boards,busy,exporting,onExport,onHighlight}:Props){
+type Props={result:OrderOptimization;boards:ProjectBoard[];busy:boolean;exporting:string;onExport:(board:ProjectBoard)=>void;onHighlight:(id:string)=>void;renderSettings?:(materialKey:string)=>ReactNode;methodLabel?:string;outsideCount?:number};
+/** Resumen por material y espesor; solo se abre el despiece elegido. */
+export default function SheetOptimizationView({result,boards,busy,exporting,onExport,onHighlight,renderSettings,methodLabel='General',outsideCount=0}:Props){
+ const [selected,setSelected]=useState<string|null>(null),back=useRef<HTMLButtonElement>(null),cards=useRef(new Map<string,HTMLButtonElement>());
  const byKey=new Map(boards.map(board=>[board.key,board])),materials=result.materials.filter(m=>byKey.has(m.key)),ok=materials.filter(m=>m.status==='ok');
- const sheets=ok.reduce((sum,m)=>sum+m.sheets.length,0),net=ok.reduce((sum,m)=>sum+m.sheets.reduce((s,sheet)=>s+sheet.usedMm2,0)/1e6,0),bought=ok.reduce((sum,m)=>sum+m.boughtM2,0);
- return <section className="workshop-optim" aria-labelledby="workshop-optim-title"><h3 id="workshop-optim-title">Placas del proyecto</h3>
-  <p className="workshop-optim-note"><strong>Optimización estimada.</strong> Cortes de lado a lado (guillotina), con disco de {mm(result.kerfMm)} mm y refilado de {mm(result.trimMm)} mm por lado. Las piezas de placas con veta no se giran{result.allowRotate?'; en las placas sin veta se giran las piezas con cantos simétricos':''}. La maderera puede optimizar distinto: confirmá con ella la cantidad de placas. El TXT lleva las medidas de las piezas, no las del diagrama.</p>
-  {materials.length?<div className="material-review-table"><table className="workshop-optim-table"><caption className="workshop-sr-only">Resumen por placa: material y espesor</caption><thead><tr><th scope="col">Placa</th><th scope="col" className="workshop-num">Formato</th><th scope="col" className="workshop-num">Piezas</th><th scope="col" className="workshop-num">Placas</th><th scope="col" className="workshop-num">Aprovechamiento</th><th scope="col" className="workshop-num">m² netos</th><th scope="col" className="workshop-num">m² comprados</th><th scope="col">TXT</th></tr></thead>
-   <tbody>{materials.map(m=>{const board=byKey.get(m.key)!,ready=boardReady(board);return <tr key={m.key} className={m.status!=='ok'||m.oversize.length||!ready?'is-pending':undefined}><th scope="row">{boardLabel(m)}<small>{m.sku||'Sin SKU'} · {m.grain?'con veta':m.grain===false?'sin veta':'veta sin cargar'}</small></th>
-    <td className="workshop-num">{m.lengthMm&&m.widthMm?`${mm(m.lengthMm)} × ${mm(m.widthMm)} mm`:'Sin formato'}</td><td className="workshop-num">{m.pieces+m.unsized}</td>
-    {m.status==='ok'?<><td className="workshop-num">{m.sheets.length}</td><td className="workshop-num">{m.utilization===null?'—':percent.format(m.utilization)}</td><td className="workshop-num">{area.format(m.sheets.reduce((s,sheet)=>s+sheet.usedMm2,0)/1e6)}</td><td className="workshop-num">{area.format(m.boughtM2)}</td></>:<td colSpan={4} className="is-pending">{m.status==='no_format'?'Sin optimizar: falta el formato de la placa':'Sin optimizar: el refilado no deja medida útil'}</td>}
-    <td>{ready?'Listo':'Con problemas'}</td></tr>;})}</tbody>
-   {ok.length>1&&<tfoot><tr><th scope="row">Total</th><td/><td className="workshop-num">{materials.reduce((sum,m)=>sum+m.pieces+m.unsized,0)}</td><td className="workshop-num">{sheets}</td><td className="workshop-num">{bought?percent.format(net/bought):'—'}</td><td className="workshop-num">{area.format(net)}</td><td className="workshop-num">{area.format(bought)}</td><td/></tr></tfoot>}</table></div>
-   :<p className="workshop-hint">Todavía no hay piezas pintadas con placas de Materiales. Pintalas y tocá «Actualizar desde el modelo».</p>}
-  {materials.map(m=><BoardSection key={m.key} material={m} board={byKey.get(m.key)!} busy={busy} exporting={exporting===m.key} onExport={onExport} onHighlight={onHighlight}/>)}
+ const current=materials.find(m=>m.key===selected),sheets=ok.reduce((sum,m)=>sum+m.sheets.length,0),net=ok.reduce((sum,m)=>sum+m.sheets.reduce((s,sheet)=>s+sheet.usedMm2,0)/1e6,0),bought=ok.reduce((sum,m)=>sum+m.boughtM2,0);
+ function open(key:string){setSelected(key);requestAnimationFrame(()=>back.current?.focus());}
+ function close(){const key=selected;setSelected(null);requestAnimationFrame(()=>key&&cards.current.get(key)?.focus());}
+ return <section className="workshop-optim" aria-labelledby="workshop-optim-title" aria-busy={busy}>
+  <div className="workshop-optim-heading"><div><h3 id="workshop-optim-title">Placas del proyecto</h3><p className="workshop-hint">{current?'Revisá las placas, piezas y cantos de este material.':'Elegí un material para ver su optimización y preparar su TXT.'}</p></div><span className="workshop-badge">{methodLabel}</span></div>
+  {busy&&<p className="workshop-loading" role="status">Actualizando medidas y validaciones…</p>}
+  {current?<><button ref={back} className="workshop-back" onClick={close}>← Volver a materiales</button>{renderSettings?.(current.key)}<BoardSection material={current} board={byKey.get(current.key)!} busy={busy} exporting={exporting===current.key} onExport={onExport} onHighlight={onHighlight}/></>:<>
+   {!!materials.length&&<dl className="workshop-figures workshop-project-totals" aria-label="Totales del proyecto"><div><dt>Materiales y espesores</dt><dd>{materials.length}</dd></div><div><dt>Placas calculadas</dt><dd>{sheets}<small>{(outsideCount>0||materials.some(m=>m.status!=='ok'||m.unsized||m.oversize.length))?'Total parcial · hay piezas sin ubicar':'Según la configuración actual'}</small></dd></div><div><dt>Aprovechamiento total</dt><dd>{bought?percent.format(net/bought):'—'}<small>{area.format(net)} m² ubicados / {area.format(bought)} m² de placas</small></dd></div></dl>}
+   {outsideCount>0&&<p className="workshop-hint">{plural(outsideCount,'pieza fuera del cálculo','piezas fuera del cálculo')}. Revisá los motivos en «Piezas fuera de las placas».</p>}
+   {materials.length?<ul className="workshop-material-grid" aria-label="Materiales y espesores del proyecto">{materials.map(m=>{const board=byKey.get(m.key)!,ready=boardReady(board)&&!(m.method==='experto'&&m.status!=='ok'),pending=m.status!=='ok'||m.oversize.length>0||m.unsized>0||!!m.errors?.length;return <li key={m.key}><button ref={node=>{if(node)cards.current.set(m.key,node);else cards.current.delete(m.key);}} className={`workshop-material-card${m.status==='blocked'?' is-blocked':''}`} onClick={()=>open(m.key)} aria-label={`Ver optimización de ${boardLabel(m)}`}>
+    <span className="workshop-material-card-top"><strong>{boardLabel(m)}</strong><span className={`workshop-badge ${!ready||pending?'is-warning':'is-ok'}`}>{!ready?'TXT bloqueado':pending?'Revisar optimización':'TXT listo'}</span></span>
+    <span className="workshop-hint">{m.sku||'Sin SKU'} · {m.grain?'con veta':m.grain===false?'sin veta':'veta sin cargar'}</span>
+    <span className="workshop-material-format">{m.lengthMm&&m.widthMm?`${mm(m.lengthMm)} × ${mm(m.widthMm)} mm`:'Falta el formato de placa'}</span>
+    <span className="workshop-material-metrics"><span><strong>{m.pieces+m.unsized}</strong> piezas</span><span><strong>{m.status==='ok'?m.sheets.length:'—'}</strong> placas</span><span><strong>{m.utilization===null?'—':percent.format(m.utilization)}</strong> aprovechamiento</span></span>
+    {(!ready||pending)&&<span className="workshop-material-reason">{board.blocker||m.errors?.[0]||(m.status==='no_format'?'Completá largo y ancho en Materiales':m.status==='no_usable'?'Revisá el refilado':m.unsized?`${plural(m.unsized,'pieza sin medidas','piezas sin medidas')}`:board.problems.length?`${plural(board.problems.length,'pieza requiere','piezas requieren')} corrección`:m.oversize.length?`${plural(m.oversize.length,'pieza sin ubicar','piezas sin ubicar')}`:'Revisá los avisos de la optimización')}</span>}
+    <span className="workshop-material-open">Ver optimización y TXT <span aria-hidden="true">→</span></span>
+   </button></li>;})}</ul>:<p className="workshop-hint">Todavía no hay piezas pintadas con placas de Materiales. Pintalas y tocá «Actualizar desde el modelo».</p>}
+  </>}
+  <details className="workshop-optim-help"><summary>Cómo leer esta estimación</summary><p className="workshop-optim-note"><strong>Optimización estimada · {methodLabel}.</strong> El cálculo respeta la veta y la configuración del material. La maderera puede optimizar distinto: confirmá con ella la cantidad de placas. El TXT lleva las medidas de las piezas, no las del diagrama.</p></details>
  </section>;
 }
 
 /** Total de cantos de todo el proyecto por material de canto: metros netos de las piezas y metros enteros a comprar. */
-export function EdgeTotalsView({plan,catalog}:{plan:Pick<OrderPlan,'rows'|'geometry'>;catalog:Catalog}){
+export function EdgeTotalsView({plan,catalog,wasteFactor=1}:{plan:Pick<OrderPlan,'rows'|'geometry'>;catalog:Catalog;wasteFactor?:number}){
  const {lines,missing,unassigned}=edgeTotals(plan,catalog);
  return <section className="workshop-edges" aria-labelledby="workshop-edges-title"><h3 id="workshop-edges-title">Total de cantos del proyecto</h3>
   {lines.length?<div className="material-review-table"><table className="workshop-estimate-table"><caption className="workshop-sr-only">Cantos del proyecto: metros por material de canto</caption><thead><tr><th scope="col">Canto</th><th scope="col" className="workshop-num">Metros netos</th><th scope="col" className="workshop-num">A comprar</th><th scope="col" className="workshop-num">Lados</th><th scope="col" className="workshop-num">Piezas</th></tr></thead>
-   <tbody>{lines.map(line=><tr key={line.id}><th scope="row">{line.label}<small>{line.sku}</small></th><td className="workshop-num">{formatMetres(line.metres)} m</td><td className="workshop-num">{plural(edgeToBuy(line.metres),'metro','metros')}</td><td className="workshop-num">{line.sides}</td><td className="workshop-num">{line.pieces}</td></tr>)}</tbody></table></div>:<p className="workshop-hint">Todavía no hay lados con un canto de Materiales.</p>}
+   <tbody>{lines.map(line=><tr key={line.id}><th scope="row">{line.label}<small>{line.sku}</small></th><td className="workshop-num">{formatMetres(line.metres)} m</td><td className="workshop-num">{plural(edgeToBuy(line.metres*wasteFactor),'metro','metros')}</td><td className="workshop-num">{line.sides}</td><td className="workshop-num">{line.pieces}</td></tr>)}</tbody></table></div>:<p className="workshop-hint">Todavía no hay lados con un canto de Materiales.</p>}
   {(!!missing||!!unassigned)&&<ul className="workshop-edges-notes">{!!missing&&<li>{plural(missing,'pieza con cantos no se cuenta','piezas con cantos no se cuentan')}: faltan sus medidas.</li>}{!!unassigned&&<li>{plural(unassigned,'pieza tiene','piezas tienen')} lados con canto sin producto de Materiales.</li>}</ul>}
-  <p className="workshop-footnote">Metros netos con las medidas de las piezas: arriba y abajo suman la base, izquierda y derecha la altura. Sin margen de desperdicio; a comprar, redondeado al metro entero.</p>
+  <p className="workshop-footnote">Metros netos con las medidas de las piezas: arriba y abajo suman la base, izquierda y derecha la altura. {wasteFactor>1?`Incluye ${Math.round((wasteFactor-1)*100)} % de margen; a comprar, redondeado al metro entero.`:'Sin margen de desperdicio; a comprar, redondeado al metro entero.'}</p>
  </section>;
 }
 

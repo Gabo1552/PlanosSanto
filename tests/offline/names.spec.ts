@@ -457,6 +457,7 @@ test('cantos por cara: se leen solos de las caras, la placa los numera y el TXT 
  for(const [materialName,item] of [['Jade synthetic',board],['Canto de prueba',first],['Canto secundario de prueba',second]] as const)expect((await send('__bind_material',{materialName,catalogId:item.id})).error).toBeNull();
  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Maderera',exact:true}).click();
+ await page.getByRole('button',{name:'Ver optimización de Placa observable · 19,05 mm'}).click();
  const placa=page.getByRole('region',{name:'Placa observable · 19,05 mm'}),edges=placa.getByRole('list',{name:'Cantos de Placa observable · 19,05 mm'});
  await expect(edges.locator('li')).toHaveCount(2);await expect(edges.locator('li').first()).toContainText('Canto 1');await expect(edges).toContainText('EDGE-1');await expect(edges).toContainText('EDGE-2');
  await expect(placa.getByRole('list',{name:'Problemas de Placa observable · 19,05 mm'})).toHaveCount(0);

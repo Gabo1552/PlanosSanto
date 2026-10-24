@@ -151,6 +151,7 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
   const [board,strip]=await catalog([{name:'Placa auditoría',kind:'sheet',patch:{sku:'BOARD-19',supplier:'Prueba',thicknessMm:19.05,widthMm:2000,lengthMm:3000,grain:true}},{name:'Canto auditoría',kind:'edge',patch:{sku:'EDGE-1',supplier:'Prueba',thicknessMm:.8,widthMm:22}}]);
   await send('__bind_material',{materialName:'Jade synthetic',catalogId:board.id});await send('__bind_material',{materialName:'Canto de prueba',catalogId:strip.id});
   const region=await openMaderera(page);
+  await region.getByRole('button',{name:'Ver optimización de Placa auditoría · 19,05 mm'}).click();
   await expect(region.getByRole('region',{name:'Placas del proyecto'}).getByRole('img',{name:/^Placa 1 de 1/})).toBeVisible();
   await audit(page,'maderera-placas',region);
   // Con un valor fuera de rango, el aviso del campo también se audita.

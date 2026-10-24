@@ -865,15 +865,15 @@ module PlanosSanto
             return {'cancelled'=>true} unless path
             workshop.export_order(data.fetch('plan'),path)
           # 0.8.20 «Maderera»: placas del proyecto y un TXT por placa (material + espesor), o todos en una carpeta.
-          when 'maderera_boards' then workshop.boards(rotate:data['rotate']==true)
+          when 'maderera_boards' then workshop.boards(rotate:data['rotate']==true,method:data.fetch('method','general'))
           when 'maderera_txt'
-            rotate=data['rotate']==true
+            rotate=data['rotate']==true;method=SupplierOrder.optimization_method(data.fetch('method','general'))
             if data['all']==true
               path=with_user_dialog { UI.select_directory(title:'Elegir carpeta para los TXT de la maderera') }
               return {'cancelled'=>true} unless path
-              workshop.export_boards(rotate,path)
+              workshop.export_boards(rotate,path,method:method)
             else
-              prepared=workshop.board_export(data.fetch('key'),rotate)
+              prepared=workshop.board_export(data.fetch('key'),rotate,method:method)
               path=with_user_dialog { UI.savepanel('Guardar TXT para la maderera',nil,prepared['fileName']) }
               return {'cancelled'=>true} unless path
               workshop.write_board(prepared,path)

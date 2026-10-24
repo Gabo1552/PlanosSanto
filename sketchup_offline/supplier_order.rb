@@ -73,7 +73,8 @@ module PlanosSanto
     # Returns the normalized draft (or, in collect mode, every problem per included row). Only physical
     # problems and data an order cannot go without block: there is nothing left to tick.
     # `only`: ids de las filas a revisar (0.8.20, TXT de una placa); el resto del pedido no se mira fila por fila.
-    def validate(draft,collect_errors: false, only: nil)
+    def validate(draft,collect_errors: false, only: nil, method: 'general')
+      method=self.class.optimization_method(method)
       errors=[]
       raise ExportError,'El modelo cambió desde que se preparó el pedido: volvé a abrir el pedido y se actualiza solo.' unless draft.is_a?(Hash) && draft['schema']==1 && draft['fingerprint']==@fingerprint
       raise ExportError,'La biblioteca cambió desde que se preparó el pedido: volvé a abrir el pedido y se actualiza solo.' unless draft['catalogRevision']==@catalog['revision']
@@ -89,11 +90,11 @@ module PlanosSanto
         next unless row['include']
         next if only && !only.include?(row['id'])
         if collect_errors
-          reasons=(validate_row(row,collect:true)+OrderProposal.edge_blockers(draft,row)+OrderProposal.detail_reasons(draft,row,@detail_codes)).uniq
+          reasons=(validate_row(row,collect:true,method:method)+OrderProposal.edge_blockers(draft,row)+OrderProposal.detail_reasons(draft,row,@detail_codes)).uniq
           errors << {'id'=>row['id'],'detail'=>row['detail'],'reason'=>reasons.first,'reasons'=>reasons} unless reasons.empty?
         else
           begin
-            validate_row(row)
+            validate_row(row,method:method)
             (OrderProposal.edge_blockers(draft,row)+OrderProposal.detail_reasons(draft,row,@detail_codes)).each { |reason| raise ExportError,reason }
           rescue ExportError => error
             # Check/export stop at the first problem: name the piece so the message is actionable.
@@ -125,7 +126,8 @@ module PlanosSanto
     # 80 caracteres. 0.8.20 (biblioteca v4): the thickness of the piece never blocks (a sheet comes in every
     # thickness of its list; one outside the list is only flagged), and an edge blocks only when every one
     # of its standard widths is narrower than the piece (the band is trimmed: 45 mm covers a 25 mm piece).
-    def validate_row(row,collect: false)
+    def validate_row(row,collect: false, method: 'general')
+      method=self.class.optimization_method(method)
       reasons=[]
       check=lambda do |&block|
         block.call
@@ -177,7 +179,7 @@ module PlanosSanto
           raise ExportError,'Giro inválido: elegí mantener la orientación (rota 0) o permitir el giro (rota 1).' unless %w[locked rotate].include?(row['grainPolicy'])
           if row['grainPolicy']=='rotate'
             raise ExportError,'No se puede girar una placa con veta: mantené la orientación (rota 0).' unless board['grain']==false
-            raise ExportError,'Cantos asimétricos: no se puede girar la pieza; mantené la orientación (rota 0).' if mapped && mapping.uniq.length!=1
+            raise ExportError,'Cantos asimétricos: no se puede girar la pieza; mantené la orientación (rota 0).' if method!='experto' && mapped && mapping.uniq.length!=1
           end
         end
       end
@@ -187,6 +189,12 @@ module PlanosSanto
           raise ExportError,"Las medidas de corte quedan en cero o negativas al descontar el canto (#{mm(base)} × #{mm(height)} mm)." unless base>0 && height>0
           fits=(base<=board['lengthMm']+0.1 && height<=board['widthMm']+0.1) || (row['grainPolicy']=='rotate' && height<=board['lengthMm']+0.1 && base<=board['widthMm']+0.1)
           raise ExportError,"La pieza no entra en la placa: mide #{mm(base)} × #{mm(height)} mm y la placa es #{mm(board['lengthMm'])} × #{mm(board['widthMm'])} mm." unless fits
+          if method=='experto'
+            raise ExportError,'Experto admite lados de al menos 50 mm; corregí o excluí esta pieza del pedido.' unless base>=50 && height>=50
+            length=board['lengthMm']-10; width=board['widthMm']-10
+            usable_fit=(base<=length+1e-9 && height<=width+1e-9) || (row['grainPolicy']=='rotate' && height<=length+1e-9 && base<=width+1e-9)
+            raise ExportError,"Experto: la pieza de #{mm(base)} × #{mm(height)} mm no entra en la medida útil de #{mm(length)} × #{mm(width)} mm (refilado total de 10 mm por eje)." unless usable_fit
+          end
         end
       end
       reasons
@@ -290,19 +298,30 @@ module PlanosSanto
     def self.board_key(material_id,thickness);"#{material_id}|#{(thickness*10).round}";end
     # Se permite girar (rota 1) solo en placas sin veta y con cantos simétricos; con veta, nunca.
     def self.rotatable?(board,row);board['grain']==false && row['edgeMap'].is_a?(Array) && row['edgeMap'].uniq.length==1;end
+    # The caller selects the method; no saved draft field can loosen validation.
+    def self.optimization_method(value)
+      raise ExportError,'Método de optimización inválido: elegí General o Experto.' unless %w[general experto].include?(value)
+      value
+    end
+    def self.board_rotatable?(board,row,rotate,method)
+      method=='experto' ? board['grain']==false : rotate && rotatable?(board,row)
+    end
     # Placas del proyecto con sus piezas, los cantos que llevan (1 el de más metros, 2 el siguiente; desempata
     # el id), los problemas que impiden su TXT y las piezas que no van a ninguna placa (con el motivo).
     # The list and the actual TXT validate the same requested orientation; never mutate the saved draft.
-    def board_draft(draft,rotate: false)
+    def board_draft(draft,rotate: false, method: 'general')
+      method=self.class.optimization_method(method)
+      raise ExportError,'Experto utiliza medidas nominales, sin perfil de descuento de cantos.' if method=='experto' && @maderera
       items=@catalog['items'].to_h { |item| [item['id'],item] }
       draft=self.class.normalize(draft)
       draft.merge('profile'=>TXT_PROFILE.dup,'rows'=>draft['rows'].map do |row|
         board=items[row['materialId']]
-        row.merge('grainPolicy'=>rotate && board && self.class.rotatable?(board,row) ? 'rotate' : 'locked')
+        row.merge('grainPolicy'=>board && self.class.board_rotatable?(board,row,rotate,method) ? 'rotate' : 'locked')
       end)
     end
-    def boards(draft,rotate: false)
-      draft=board_draft(draft,rotate:rotate);groups={};outside=[];items=@catalog['items'].to_h { |item| [item['id'],item] }
+    def boards(draft,rotate: false, method: 'general')
+      method=self.class.optimization_method(method)
+      draft=board_draft(draft,rotate:rotate,method:method);groups={};outside=[];items=@catalog['items'].to_h { |item| [item['id'],item] }
       draft['rows'].each do |row|
         board=items[row['materialId']];board=nil unless board && board['kind']=='sheet'
         reason=if !row['include'] then 'excluded'
@@ -317,7 +336,7 @@ module PlanosSanto
       end
       global=nil
       reasons=begin
-        validate(draft,collect_errors:true).to_h { |error| [error['id'],error['reasons']] }
+        validate(draft,collect_errors:true,method:method).to_h { |error| [error['id'],error['reasons']] }
       rescue ExportError => error
         global=error.message;{}
       end
@@ -361,15 +380,16 @@ module PlanosSanto
     end
     # TXT de una placa con las medidas de las piezas (no las del diagrama). Ruby revisa de nuevo cada pieza
     # de la placa y frena ante el primer problema. `rotate`: rota 1 en las piezas que se pueden girar.
-    def board_txt(draft,key,rotate: false,listed: nil)
-      draft=board_draft(draft,rotate:rotate)
-      found=(listed || boards(draft,rotate:rotate)['boards']).find { |board| board['key']==key }
+    def board_txt(draft,key,rotate: false,listed: nil, method: 'general')
+      method=self.class.optimization_method(method)
+      draft=board_draft(draft,rotate:rotate,method:method)
+      found=(listed || boards(draft,rotate:rotate,method:method)['boards']).find { |board| board['key']==key }
       raise ExportError,'Esa placa ya no está en el proyecto: la lista se actualizó; revisala y volvé a exportar.' unless found
       label="#{found['name']} #{mm(found['thicknessMm'])} mm"
       raise ExportError,"#{label}: #{found['blocker']}" if found['blocker']
       material(found['materialId'],'sheet');ids=found['rowIds']
       begin
-        validate(draft,only:ids)
+        validate(draft,only:ids,method:method)
       rescue ExportError => error
         raise ExportError,"#{label}: #{error.message}"
       end

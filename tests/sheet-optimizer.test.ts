@@ -147,3 +147,32 @@ describe('Corte de la seccionadora',()=>{
   expect(cutFields.kerfMm.range).toEqual([0,10]);expect(cutFields.trimMm.range).toEqual([0,50]);
  });
 });
+
+// Los dos métodos usan la ficha real, nunca infieren el formato por el nombre o la marca.
+describe('Selección Experto por material y espesor',()=>{
+ const experto=cut({method:'experto',kerfMm:4.4,trimMm:10,allowRotate:true});
+ it('formato personalizado, trim total, giros con cantos asimétricos y medidas nominales',()=>{
+  const custom:Catalog={...catalog,items:[item({id:'mel',kind:'sheet',lengthMm:1500,widthMm:1000,grain:false})]};
+  const r=row('a',{edgeMap:[1,0,2,0]}),p=plan([r],{a:geom(900,1490)}),groups=[board('mel',18,['a'])];
+  const snapshot=JSON.stringify({custom,p,groups});
+  const m=optimizeBoards(p,custom,groups,experto).materials[0];
+  expect(m).toMatchObject({status:'ok',method:'experto',trimMode:'total',lengthMm:1500,widthMm:1000,rotatable:1,sheets:[{placements:[{id:'a',x:10,y:10,w:1490,h:900,rotated:true}]}]});
+  expect(m.legend[0]).toMatchObject({base:900,height:1490});
+  expect(JSON.stringify({custom,p,groups})).toBe(snapshot);
+  expect(optimizeBoards(p,custom,groups,cut({allowRotate:true})).materials[0].oversize).toHaveLength(1);
+ });
+ it('veta no gira y un rechazo no entrega un parcial como compra completa',()=>{
+  const custom:Catalog={...catalog,items:[item({id:'mel',kind:'sheet',lengthMm:1500,widthMm:1000,grain:true})]};
+  const result=optimizeBoards(plan([row('a'),row('b')],{a:geom(900,1490),b:geom(600,400)}),custom,[board('mel',18,['a','b'])],experto).materials[0];
+  expect(result.status).toBe('blocked');expect(result.sheets).toEqual([]);expect(result.boughtM2).toBe(0);expect(result.utilization).toBeNull();expect(result.errors?.length).toBeGreaterThan(0);
+ });
+ it('piezas sin dimensiones bloquean el lote completo y conserva total físico',()=>{
+  const result=optimizeBoards(plan([row('a'),row('b')],{a:geom(600,400)}),catalog,[board('mel',18,['a','b'])],experto).materials[0];
+  expect(result).toMatchObject({status:'blocked',pieces:1,unsized:1,sheets:[],boughtM2:0,utilization:null});
+ });
+ it('caso A son tres placas del formato configurado y 37.3464 m de sierra',()=>{
+  const custom:Catalog={...catalog,items:[item({id:'mel',kind:'sheet',lengthMm:2750,widthMm:1830})]};
+  const result=optimizeBoards(plan(['a','b','c'].map(id=>row(id)),Object.fromEntries(['a','b','c'].map(id=>[id,geom(1500,1500)]))),custom,[board('mel',18,['a','b','c'])],experto).materials[0];
+  expect(result.status).toBe('ok');expect(result.sheets).toHaveLength(3);expect(result.layouts).toHaveLength(1);expect(result.sawMetres).toBeCloseTo(37.3464,6);expect(result.estimatedSawSteps).toBe(4);
+ });
+});

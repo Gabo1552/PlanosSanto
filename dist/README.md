@@ -1,3 +1,15 @@
+# Entrega 0.8.22 — Experto/General y Santo Carpintero, PENDIENTE DE VALIDACIÓN REAL
+
+[Instalar candidata](PlanosSanto-0.8.22-candidata.rbz) · [SHA256](PlanosSanto-0.8.22-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.22-Validacion-Local.zip).
+
+Maderera por material y espesor, detalle individual y TXT. Experto usa la referencia suministrada y formato de la ficha; General es implementación propia sin dependencia de OpenCutList. Logo y colores originales de Santo Carpintero. Preserva guías A4, nombres, pintura y notas.
+
+[Cambios y límites](../docs/validacion-0822/CAMBIOS.md) · [Pruebas](../docs/validacion-0822/RESULTADOS.json) · [Verificación local](../docs/validacion-0822/VALIDACION_LOCAL.md).
+
+Cerrar todas las ventanas de SketchUp después de instalar y reabrir. Biblioteca sigue en v4: conservar respaldo. Validar ejecución nativa y proveedor antes de producción. Versiones anteriores intactas.
+
+---
+
 # Entrega 0.8.21 — correcciones de la revisión, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.21-candidata.rbz` sin descomprimirlo, con todas las ventanas de SketchUp cerradas antes de actualizar. Comprobar el SHA256 adjunto y respaldar la biblioteca: sigue siendo v4 y no la abren versiones hasta 0.8.19.

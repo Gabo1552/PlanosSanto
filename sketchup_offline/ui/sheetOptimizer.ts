@@ -2,6 +2,7 @@
 // escrito para Planos Santo: todos los cortes van de lado a lado de un rectángulo libre, como en una seccionadora.
 // Determinística: mismas piezas, mismas placas. Corre en la UI con las filas, la geometría y la biblioteca que manda Ruby:
 // se recalcula en vivo al cambiar disco, refilado o giro. Es una estimación: la maderera puede optimizar distinto.
+import {packExperto} from './expertoOptimizer';
 import {rotationBlock,rowDimensions} from './workshopRules';
 import type {Catalog,CatalogItem,OrderPlan,OrderRow} from './WorkshopPanel';
 
@@ -98,7 +99,8 @@ export function packSheets(pieces:SheetPiece[],spec:SheetSpec):PackResult{
 
 // --- De las placas del proyecto a la optimización --------------------------------------------------------------------
 /** Corte de la seccionadora: disco (kerf), refilado por lado y si se giran las piezas que lo permiten. */
-export type CutSettings={kerfMm:number;trimMm:number;allowRotate:boolean};
+export type OptimizationMethod='general'|'experto';
+export type CutSettings={kerfMm:number;trimMm:number;allowRotate:boolean;method?:OptimizationMethod};
 /** Una placa del proyecto (material + espesor real de la pieza), como la arma Ruby (SupplierOrder#boards). */
 export type BoardGroup={key:string;materialId:string;name:string;sku:string;thicknessMm:number;rowIds:string[]};
 export type LegendEntry={key:string;base:number;height:number;count:number;details:string[]};
@@ -106,19 +108,21 @@ export type OversizePiece={id:string;detail:string;base:number;height:number};
 /** Placas con la misma distribución se dibujan una vez: sheetNumbers dice cuáles son (1, 2…). */
 export type LayoutGroup={sheetNumbers:number[];layout:SheetLayout};
 export type MaterialOptimization={key:string;materialId:string;name:string;sku:string;thicknessMm:number;grain:boolean|null;lengthMm:number|null;widthMm:number|null;trimMm:number;kerfMm:number;
- status:'ok'|'no_format'|'no_usable';pieces:number;unsized:number;rotatable:number;sheets:SheetLayout[];layouts:LayoutGroup[];legend:LegendEntry[];keys:Record<string,string>;oversize:OversizePiece[];netM2:number;boughtM2:number;utilization:number|null};
+ trimMode?:'total'|'per_side';method?:OptimizationMethod;errors?:string[];warnings?:string[];sawMetres?:number;estimatedSawSteps?:number;
+ status:'ok'|'no_format'|'no_usable'|'blocked';pieces:number;unsized:number;rotatable:number;sheets:SheetLayout[];layouts:LayoutGroup[];legend:LegendEntry[];keys:Record<string,string>;oversize:OversizePiece[];netM2:number;boughtM2:number;utilization:number|null};
 export type OrderOptimization={materials:MaterialOptimization[];trimMm:number;kerfMm:number;allowRotate:boolean};
 const measured=(value:number|null|undefined):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>0;
 /** Letras de leyenda: A…Z, AA, AB… */
 export function legendKey(index:number){let out='',n=index;do{out=String.fromCharCode(65+n%26)+out;n=Math.floor(n/26)-1;}while(n>=0);return out;}
 const size=(value:number)=>Math.round(value*10)/10;
 /** Se gira solo si se pidió, la placa no tiene veta y los cantos son simétricos: la misma regla que el TXT (rota 1). */
-export const canRotate=(row:Pick<OrderRow,'edgeMap'>,board:CatalogItem,cut:Pick<CutSettings,'allowRotate'>)=>cut.allowRotate&&rotationBlock(row,board)===null;
+export const canRotate=(row:Pick<OrderRow,'edgeMap'>,board:CatalogItem,cut:Pick<CutSettings,'allowRotate'|'method'>)=>cut.method==='experto'?board.grain===false:cut.allowRotate&&rotationBlock(row,board)===null;
 /**
  * Optimiza cada placa del proyecto con el disco y el refilado elegidos. Las medidas son las de las piezas (las mismas
  * del TXT); el kerf y el refilado solo cuentan para ubicarlas en la placa.
  */
 export function optimizeBoards(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Catalog,boards:BoardGroup[],cut:CutSettings):OrderOptimization{
+ const expert=cut.method==='experto';
  const rows=new Map(plan.rows.map(row=>[row.id,row]));
  const materials=boards.map((group):MaterialOptimization|null=>{
   const board=catalog.items.find(item=>item.id===group.materialId&&item.kind==='sheet');if(!board)return null;
@@ -130,15 +134,18 @@ export function optimizeBoards(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Ca
   // Mismas medidas (al décimo de mm) comparten letra; la leyenda va de la pieza más grande a la más chica.
   const bySize=new Map<string,LegendEntry>();for(const p of [...pieces].sort((a,b)=>b.base*b.height-a.base*a.height||tie(a,b))){const id=`${size(p.base)}x${size(p.height)}`,entry=bySize.get(id)??{key:'',base:size(p.base),height:size(p.height),count:0,details:[]};entry.count++;if(!entry.details.includes(p.detail))entry.details.push(p.detail);bySize.set(id,entry);}
   const legend=[...bySize.values()].map((entry,i)=>({...entry,key:legendKey(i)})),keys=Object.fromEntries(pieces.map(p=>[p.id,legend.find(e=>e.base===size(p.base)&&e.height===size(p.height))!.key]));
-  const base={key:group.key,materialId:board.id,name:group.name,sku:group.sku,thicknessMm:group.thicknessMm,grain:board.grain,lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:cut.trimMm,kerfMm:cut.kerfMm,
+  const base={key:group.key,materialId:board.id,name:group.name,sku:group.sku,thicknessMm:group.thicknessMm,grain:board.grain,lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:cut.trimMm,kerfMm:cut.kerfMm,trimMode:expert?'total' as const:'per_side' as const,method:cut.method??'general',
    pieces:pieces.length,unsized,rotatable:pieces.filter(p=>p.rotate).length,legend,keys,netM2};
   if(!measured(board.lengthMm)||!measured(board.widthMm))return {...base,status:'no_format',sheets:[],layouts:[],oversize:[],boughtM2:0,utilization:null};
-  const spec={lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:cut.trimMm,kerfMm:cut.kerfMm},{length,width}=usable(spec);
-  const result=packSheets(pieces,spec),boughtM2=result.sheets.length*board.lengthMm*board.widthMm/1e6;
+  const spec={lengthMm:board.lengthMm,widthMm:board.widthMm,trimMm:cut.trimMm,kerfMm:cut.kerfMm},{length,width}=expert?{length:board.lengthMm-cut.trimMm,width:board.widthMm-cut.trimMm}:usable(spec);
+  const expertResult=expert?packExperto(pieces,spec,group.thicknessMm):undefined;
+  const result=expertResult??packSheets(pieces,spec);
+  if(expert&&unsized)result.sheets=[];
+  const boughtM2=result.sheets.length*board.lengthMm*board.widthMm/1e6;
   const layouts:LayoutGroup[]=[];result.sheets.forEach((layout,i)=>{const sign=signature(layout,keys),same=layouts.find(group=>signature(group.layout,keys)===sign);if(same)same.sheetNumbers.push(i+1);else layouts.push({sheetNumbers:[i+1],layout});});
   const placedNet=result.sheets.reduce((sum,s)=>sum+s.usedMm2,0)/1e6;
-  return {...base,status:length>0&&width>0?'ok':'no_usable',sheets:result.sheets,layouts,oversize:result.oversize.map(p=>({id:p.id,detail:p.detail,base:p.base,height:p.height})),boughtM2,utilization:boughtM2>0?placedNet/boughtM2:null};
+  return {...base,errors:expertResult?.errors.map(e=>e.message),warnings:expertResult?.warnings,sawMetres:expertResult?.sawMetres,estimatedSawSteps:expertResult?.estimatedSawSteps,status:length<=0||width<=0?'no_usable':expert&&(unsized>0||!!expertResult?.errors.length)?'blocked':'ok',sheets:result.sheets,layouts,oversize:result.oversize.map(p=>({id:p.id,detail:p.detail,base:p.base,height:p.height})),boughtM2,utilization:boughtM2>0?placedNet/boughtM2:null};
  }).filter((m):m is MaterialOptimization=>m!==null);
  return {materials,trimMm:cut.trimMm,kerfMm:cut.kerfMm,allowRotate:cut.allowRotate};
 }
-const signature=(layout:SheetLayout,keys:Record<string,string>)=>layout.placements.map(p=>`${keys[p.id]}@${Math.round(p.x)},${Math.round(p.y)}${p.rotated?'r':''}`).join(';');
+const signature=(layout:SheetLayout,keys:Record<string,string>)=>layout.placements.map(p=>`${keys[p.id]}@${p.x.toFixed(6)},${p.y.toFixed(6)},${p.w.toFixed(6)},${p.h.toFixed(6)}${p.rotated?'r':''}`).join(';');

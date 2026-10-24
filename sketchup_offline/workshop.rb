@@ -272,13 +272,14 @@ module PlanosSanto
     def board_plan
       @board_plan ||= current_board_plan
     end
-    def board_list(rotate: false)
+    def board_list(rotate: false, method: 'general')
+      method=SupplierOrder.optimization_method(method)
       @board_lists ||= {}
-      @board_lists[rotate] ||= board_plan[0].boards(board_plan[1],rotate:rotate)
+      @board_lists[[rotate,method]] ||= board_plan[0].boards(board_plan[1],rotate:rotate,method:method)
     end
-    def boards(rotate: false)
-      service,plan=board_plan;listed=board_list(rotate:rotate);names=board_file_names(listed['boards'])
-      {'plan'=>service.board_draft(plan,rotate:rotate),'catalog'=>@order_catalog,'modelName'=>project_name,'boards'=>listed['boards'].map { |board| board.merge('fileName'=>names[board['key']]) },'outside'=>listed['outside']}
+    def boards(rotate: false, method: 'general')
+      service,plan=board_plan;listed=board_list(rotate:rotate,method:method);names=board_file_names(listed['boards'])
+      {'plan'=>service.board_draft(plan,rotate:rotate,method:method),'catalog'=>@order_catalog,'modelName'=>project_name,'boards'=>listed['boards'].map { |board| board.merge('fileName'=>names[board['key']]) },'outside'=>listed['outside']}
     end
     def project_name
       document=@session.document || {}
@@ -299,9 +300,9 @@ module PlanosSanto
       end
     end
     # TXT de una placa listo para guardar (valida antes de abrir el diálogo de guardado).
-    def board_export(key,rotate)
-      service,plan=board_plan;prepared=service.board_txt(plan,key,rotate:rotate,listed:board_list(rotate:rotate)['boards'])
-      prepared.merge('fileName'=>board_file_names(board_list['boards'])[key])
+    def board_export(key,rotate,method: 'general')
+      service,plan=board_plan;prepared=service.board_txt(plan,key,rotate:rotate,method:method,listed:board_list(rotate:rotate,method:method)['boards'])
+      prepared.merge('fileName'=>board_file_names(board_list(rotate:rotate,method:method)['boards'])[key])
     end
     def self.write_txt(bytes,target)
       target=target.to_s;target+='.txt' unless target.downcase.end_with?('.txt')
@@ -317,12 +318,12 @@ module PlanosSanto
     end
     # «Exportar todos»: un TXT por placa en una carpeta nueva dentro de la elegida (nunca reemplaza nada).
     # Las placas con problemas no se exportan y vuelven con el motivo.
-    def export_boards(rotate,directory)
-      service,plan=board_plan;listed=board_list(rotate:rotate)['boards'];names=board_file_names(listed)
+    def export_boards(rotate,directory,method: 'general')
+      service,plan=board_plan;listed=board_list(rotate:rotate,method:method)['boards'];names=board_file_names(listed)
       raise ExportError,'No hay placas para exportar: pintá las piezas con placas de la biblioteca.' if listed.empty?
       ready=[];skipped=[]
       listed.each do |board|
-        ready << service.board_txt(plan,board['key'],rotate:rotate,listed:listed).merge('fileName'=>names[board['key']])
+        ready << service.board_txt(plan,board['key'],rotate:rotate,listed:listed,method:method).merge('fileName'=>names[board['key']])
       rescue ExportError => error
         skipped << {'key'=>board['key'],'name'=>board['name'],'thicknessMm'=>board['thicknessMm'],'reason'=>error.message}
       end

@@ -65,6 +65,7 @@ test('cinco piezas asimétricas: el TXT de la placa y la referencia de la A4 mar
   // TXT of the board from «Maderera»: columns 6-9 are Arr·Aba·Izq·Der over base × height; canto 1 is the edge with
   // more metres on the board (EDGE-1 here), canto 2 the other one.
   await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Maderera',exact:true}).click();
+  await page.getByRole('button',{name:'Ver optimización de Placa cantos · 19,05 mm'}).click();
   const board=page.getByRole('region',{name:'Placa cantos · 19,05 mm'});
   await expect(board.getByRole('list',{name:'Cantos de Placa cantos · 19,05 mm'})).toContainText(/Canto 1 Canto principal · EDGE-1.*Canto 2 Canto secundario · EDGE-2/);
   await board.getByRole('button',{name:'Exportar TXT de Placa cantos · 19,05 mm',exact:true}).click();

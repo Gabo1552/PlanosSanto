@@ -9,10 +9,10 @@ const {version}=JSON.parse(await readFile(resolve(root,'sketchup_offline/version
 await rm(out,{recursive:true,force:true});await mkdir(resolve(out,'planos_santo/ui'),{recursive:true});
 const bundle=await build({absWorkingDir:root,entryPoints:['sketchup_offline/ui/index.tsx'],outfile:resolve(out,'planos_santo/ui/app.js'),bundle:true,
   platform:'browser',format:'iife',target:'chrome109',jsx:'automatic',minify:true,metafile:true,legalComments:'eof',
-  define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64'}});
+  define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64','.svg':'base64'}});
 const palette=await build({absWorkingDir:root,entryPoints:['sketchup_offline/ui/palette.tsx'],outfile:resolve(out,'planos_santo/ui/palette.js'),bundle:true,
   platform:'browser',format:'iife',target:'chrome109',jsx:'automatic',minify:true,metafile:true,legalComments:'eof',
-  define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64'}});
+  define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64','.svg':'base64'}});
 const copies={
   'planos_santo.rb':'sketchup_offline/planos_santo.rb',
   'planos_santo/bootstrap.rb':'sketchup_offline/bootstrap.rb',

@@ -85,7 +85,7 @@ test('revisión de materiales: conteos por filtro, vacío con salida, «/» y ve
  await dialog.getByRole('button',{name:'Quitar filtro',exact:true}).click();await expect(pieces.locator('option')).toHaveCount(allPieces);
  await dialog.getByRole('button',{name:'Limpiar filtros',exact:true}).click();await expect(rows).toHaveCount(3);
  // Los estilos del taller se acotan a .workshop-review: no alcanzan otros diálogos .material-review (p. ej. pintura).
- await expect(dialog).toHaveClass(/workshop-review/);expect(await dialog.evaluate(el=>getComputedStyle(el).getPropertyValue('--ws-accent').trim())).toBe('#19483d');
+ await expect(dialog).toHaveClass(/workshop-review/);expect(await dialog.evaluate(el=>getComputedStyle(el).getPropertyValue('--ws-accent').trim())).toBe('#000028');
  const foreign=await page.evaluate(()=>{const host=document.createElement('section');host.className='material-review paint-panel';host.innerHTML='<kbd>P</kbd>';document.body.append(host);const result={accent:getComputedStyle(host).getPropertyValue('--ws-accent').trim(),kbdMargin:getComputedStyle(host.querySelector('kbd')!).marginLeft};host.remove();return result;});
  expect(foreign).toEqual({accent:'',kbdMargin:'0px'});
  await page.screenshot({path:'artifacts/ux-taller-materiales-SINTETICA.png',fullPage:false});
