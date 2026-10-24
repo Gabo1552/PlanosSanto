@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "scope": "Local comparison, not native SketchUp or commercial approval",
+  "jsonRows": 368,
+  "pdfRows": 368,
+  "pieces": 1244,
+  "identicalCuts": true,
+  "boardMm": [
+    2750,
+    1830
+  ],
+  "thicknessMm": 18,
+  "grain": true,
+  "rotatable": 0,
+  "supplier": {
+    "boardFormats": [
+      "2750x1830"
+    ],
+    "boards": 56,
+    "utilizationPercent": 91.02,
+    "netM2": 256.5,
+    "sawMetres": 1953,
+    "sawSteps": 2100,
+    "kerfMm": 4.4,
+    "trimMm": 10
+  },
+  "local": {
+    "boards": 57,
+    "netM2": 256.507817,
+    "utilizationPercent": 89.42150303727524,
+    "sawMetres": 1981.5376,
+    "sawSteps": 2420,
+    "edgeNetMetres": 897.362,
+    "edgeWithWasteMetres": 1031.9663,
+    "edgeBuyMetres": 1032,
+    "errors": []
+  },
+  "comparable": true,
+  "boardCountMatches": false,
+  "sourceHashes": {
+    "json": "24effb9de88d422c44105c7a69d730e80c1e5d60eaf7783398a468ee90ba62c6",
+    "pdf": "a8cb3495065fa24aa8b0f8287ceba87fdb9238d9f4aa6fa022dd1defe90457c7"
+  }
+}

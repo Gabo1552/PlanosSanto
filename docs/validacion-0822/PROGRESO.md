@@ -34,3 +34,7 @@ No se ejecutó SketchUp en la nube ni se aprueba producción.
 ## Entrega
 - Candidata 0.8.22, manifiesto y SHA256 verificables. Versiones anteriores conservadas.
 - Informe, contratos, scripts de comparación y guía local incluidos. No se copiaron assets ni motor de OpenCutList; General conserva motor propio por elección expresa del usuario.
+
+## Auditoría posterior con pedido real
+- 368 filas/1244 piezas iguales entre JSON y PDF. Experto proveedor56 placas; 0.8.22/Python57. Cantos1032m coinciden; recorrido/pasos no. Paridad comercial NO aprobada.
+- Comparador reproducible y6tests sintéticos nuevos;43focales PASS. Informe en `docs/auditoria-experto-0822/REVISION.md`. Sin cambios al motor ni nueva RBZ hasta demostrar la corrección.

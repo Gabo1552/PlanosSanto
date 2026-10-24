@@ -1,5 +1,7 @@
 # Motor Experto: implementación y alcance
 
+**Auditoría real posterior:** se detectó falta de paridad (57 placas locales frente a56 del proveedor). Ver [revisión del caso real](../auditoria-experto-0822/REVISION.md). Las pruebas contra el Python no constituyen aceptación comercial.
+
 Implementación del 24/10/2026. `sketchup_offline/ui/expertoOptimizer.ts` reproduce la colocación y el cálculo de metros de sierra del Python entregado por el usuario. No consulta el servidor del proveedor y no acredita equivalencia comercial fuera de los casos que el documento original identifica como verificados.
 
 La última instrucción del usuario prevalece sobre la tabla de formatos del documento: **el largo y el ancho salen de la ficha de la placa**, incluso para formatos distintos de Faplac/Egger. No se infiere la marca, no se inventa un color y no se aplica un formato por defecto en este motor.
