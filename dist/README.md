@@ -1,3 +1,15 @@
+# Entrega 0.8.23 — fichas desde materiales del modelo, PENDIENTE DE VALIDACIÓN REAL
+
+[Instalar candidata](PlanosSanto-0.8.23-candidata.rbz) · [SHA256](PlanosSanto-0.8.23-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.23-Validacion-Local.zip).
+
+Materiales → En este modelo → Crear ficha desde material. Lee datos OCL disponibles y conserva la textura nativa. Permite completar placa o canto, sin abrir Pintar ni modificar las caras. También accesible desde Piezas. Sin dependencia de OpenCutList instalado.
+
+[Cambios](../docs/validacion-0823/CAMBIOS.md) · [Resultados](../docs/validacion-0823/RESULTADOS.json) · [Validación local](../docs/validacion-0823/VALIDACION_LOCAL.md).
+
+Cerrar todas las ventanas de SketchUp y reiniciar después de instalar. Validar primero con copia del modelo y biblioteca QA. No cambia la versión v4 del catálogo ni el motor Experto; su paridad comercial sigue pendiente.
+
+---
+
 # Entrega 0.8.22 — Experto/General y Santo Carpintero, PENDIENTE DE VALIDACIÓN REAL
 
 [Instalar candidata](PlanosSanto-0.8.22-candidata.rbz) · [SHA256](PlanosSanto-0.8.22-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.22-Validacion-Local.zip).

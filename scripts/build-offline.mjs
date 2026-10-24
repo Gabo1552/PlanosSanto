@@ -24,6 +24,7 @@ const copies={
   'planos_santo/cutlist.rb':'sketchup_offline/cutlist.rb',
   'planos_santo/catalog_store.rb':'sketchup_offline/catalog_store.rb',
   'planos_santo/material_resolver.rb':'sketchup_offline/material_resolver.rb',
+  'planos_santo/model_material_catalog.rb':'sketchup_offline/model_material_catalog.rb',
   'planos_santo/photo_material.rb':'sketchup_offline/photo_material.rb',
   'planos_santo/paint_materials.rb':'sketchup_offline/paint_materials.rb',
   'planos_santo/ocl_attributes.rb':'sketchup_offline/ocl_attributes.rb',

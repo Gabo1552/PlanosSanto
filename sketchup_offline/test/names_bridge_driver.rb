@@ -4,6 +4,8 @@ require_relative 'names_double'
 require_relative 'cantos_double'
 require_relative 'ocl_read_double'
 require_relative 'highlight_view_double'
+# The native API exposes name as well as display_name; library navigation uses it.
+Sketchup::Material.class_eval { def name; display_name; end }
 $LOADED_FEATURES << 'sketchup.rb'
 module Kernel
   def file_loaded?(_file); true; end

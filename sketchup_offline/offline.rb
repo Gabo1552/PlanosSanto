@@ -20,6 +20,7 @@ require_relative 'quick_toolbar'
 require_relative 'skm_import'
 require_relative 'piece_highlight_tool'
 require_relative 'photo_material'
+require_relative 'model_material_catalog'
 require_relative 'paint_materials'
 require_relative 'model_watch'
 
@@ -58,7 +59,7 @@ module PlanosSanto
       unwatch_model!
       stop_smart_tool(refresh:false)
       @quick_intent=nil;@palette_intent=nil
-      @photo_material=nil; @photo_preview_active=false
+      @model_material_catalog=nil;@photo_material=nil; @photo_preview_active=false
       smart_event('active'=>false,'queuedCount'=>0,'contextChanged'=>true,
                   'error'=>'Cambió el modelo activo. Volvé a analizar antes de continuar.')
     end
@@ -254,7 +255,7 @@ module PlanosSanto
         @dialog=nil;@ui_ready=false;@quick_intent=nil
         @dirty=false;@workshop_dirty=false
         unless @palette_dialog
-          @skm_import=nil;@skm_preview_active=false;@photo_material=nil;@photo_preview_active=false
+          @skm_import=nil;@skm_preview_active=false;@model_material_catalog=nil;@photo_material=nil;@photo_preview_active=false
           # 0.8.17 (cortes): the brush of the toolbar does not depend on this window.
           unless in_view_brush?
             stop_smart_tool(refresh:false);@session=nil
@@ -402,7 +403,7 @@ module PlanosSanto
       window.set_on_closed do
         next unless @palette_dialog.equal?(window)
         @palette_dialog=nil;@palette_ready=false;@palette_intent=nil
-        @photo_material=nil;@photo_preview_active=false
+        @model_material_catalog=nil;@photo_material=nil;@photo_preview_active=false
         stop_smart_tool(refresh:false) unless in_view_brush?
         unwatch_model! unless @dialog || in_view_brush?
       end
@@ -676,13 +677,13 @@ module PlanosSanto
       library=MaterialLibrary.new(@model,catalog:catalog,directory:directory)
       linked=auto_link_materials(library)
       native=library.status
-      photos=photo_material.thumbnails
+      photos=photo_material.thumbnails.merge(model_material_catalog.thumbnails)
       status=skm_importer.status
       status['rows'].each { |row| row['thumbnail']=photos[row['catalogId']] if photos[row['catalogId']] }
       status['catalog']['items'].each do |item|
-        next unless MaterialPolicy.photo?(item)
+        next unless MaterialPolicy.photo?(item) || item.dig('observed','source')=='native_material'
         row=status['rows'].find { |record| record['catalogId']==item['id'] }
-        row ||= {'catalogId'=>item['id'],'name'=>item['name'],'sourceName'=>'Foto propia'}.tap { |record| status['rows'] << record }
+        row ||= {'catalogId'=>item['id'],'name'=>item['name'],'sourceName'=>item.dig('observed','source')=='native_material' ? 'Material del modelo' : 'Foto propia'}.tap { |record| status['rows'] << record }
         row['thumbnail']=photos[item['id']]
         row['designReady']=MaterialPolicy.paintable?(item,directory:directory)
       end
@@ -715,8 +716,15 @@ module PlanosSanto
         guard:lambda { active!; raise ExportError,'Cambió el modelo de la foto. Elegí nuevamente la imagen.' unless @model.equal?(captured_model) && Sketchup.active_model.equal?(captured_model) })
     end
 
+    def model_material_catalog
+      captured_model=@model
+      directory=material_management_directory
+      @model_material_catalog ||= ModelMaterialCatalog.new(@model,catalog:CatalogStore.new(directory:directory),directory:directory,
+        guard:lambda { active!; raise ExportError,'Cambió el modelo. Volvé a abrir la ficha del material.' unless @model.equal?(captured_model) && Sketchup.active_model.equal?(captured_model) })
+    end
+
     def material_thumbnails
-      skm_importer.status['rows'].filter_map { |row| [row['catalogId'],row['thumbnail']] if row['thumbnail'] }.to_h.merge(photo_material.thumbnails)
+      skm_importer.status['rows'].filter_map { |row| [row['catalogId'],row['thumbnail']] if row['thumbnail'] }.to_h.merge(photo_material.thumbnails).merge(model_material_catalog.thumbnails)
     end
 
     # A lightweight invalidation for both HtmlDialogs. Receivers reread their
@@ -724,7 +732,7 @@ module PlanosSanto
     MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
       catalog_bind catalog_install skm_commit skm_install material_photo_create
       material_photo_install smart_assign_color smart_material_prepare smart_quick_start
-      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync material_link_resolve].freeze
+      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync material_link_resolve material_model_commit].freeze
     def dispatch(action, data)
       result=dispatch_action(action,data)
       if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
@@ -821,7 +829,7 @@ module PlanosSanto
         @session = NativeSession.new(@model)
         @naming = nil
         @paint = nil
-        @photo_material=nil; @photo_preview_active=false
+        @model_material_catalog=nil;@photo_material=nil; @photo_preview_active=false
         result = @session.scan
         @dirty = false
         watch_model!
@@ -1601,8 +1609,8 @@ module PlanosSanto
     # the smart paint tool; mutations are refused while it is active.
     MATERIAL_MANAGEMENT_ACTIONS=%w[material_extras material_duplicate material_archive
       material_package_export material_package_preview material_package_commit material_package_cancel
-      material_texture_preview material_texture_apply material_ocl_sync material_link_resolve viewport_focus].freeze
-    MATERIAL_MANAGEMENT_READONLY=%w[material_extras material_package_cancel viewport_focus].freeze
+      material_texture_preview material_texture_apply material_ocl_sync material_link_resolve material_model_preview material_model_commit material_model_cancel viewport_focus].freeze
+    MATERIAL_MANAGEMENT_READONLY=%w[material_extras material_package_cancel material_model_preview material_model_cancel viewport_focus].freeze
     def material_management_directory
       ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
     end
@@ -1627,6 +1635,16 @@ module PlanosSanto
         else
           {'focused'=>false,'method'=>'unsupported'}
         end
+      when 'material_model_preview'
+        active!
+        model_material_catalog.preview(data['materialId'])
+      when 'material_model_commit'
+        active!;clean_for_paint!
+        raise ExportError,'Volvé a abrir la ficha del material.' unless @model_material_catalog
+        refresh_after_material_change(@model_material_catalog.commit(data))
+      when 'material_model_cancel'
+        @model_material_catalog&.cancel(data['token'])
+        {'cancelled'=>true}
       when 'material_extras'
         active!
         management_library.extras

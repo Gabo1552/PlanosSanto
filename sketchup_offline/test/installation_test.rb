@@ -45,13 +45,13 @@ class InstallationTest < Minitest::Test
       import zipfile,sys,json,hashlib
       with zipfile.ZipFile(sys.argv[1]) as z:
         entries = [i.filename for i in z.infolist() if not i.is_dir()]
-        assert len(entries) == len(set(entries)) == 85
+        assert len(entries) == len(set(entries)) == 86
         manifest = json.loads(z.read('planos_santo/manifest.json'))
         assert manifest['version'] == sys.argv[2]
         assert set(entries) == set(manifest['files']) | {'planos_santo/manifest.json'}
         for name,digest in manifest['files'].items():
           assert hashlib.sha256(z.read(name)).hexdigest() == digest, name
-        for name in ('material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','maderera_profile.rb','presets-taller.json'):
+        for name in ('model_material_catalog.rb','material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','maderera_profile.rb','presets-taller.json'):
           assert 'planos_santo/' + name in manifest['files'], name
         assert all(not p.lower().endswith(('.skp','.skm','.csv','.jsonl')) for p in entries)
         for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'):

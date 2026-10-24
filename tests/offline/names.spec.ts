@@ -464,7 +464,7 @@ test('cantos por cara: se leen solos de las caras, la placa los numera y el TXT 
  await page.screenshot({path:'artifacts/cantos-069-SINTETICO.png',fullPage:false});
  await placa.getByRole('button',{name:'Exportar TXT de Placa observable · 19,05 mm',exact:true}).click();
  const file=(await placa.locator('.workshop-board-export small').textContent())!.replace(/^Archivo: /,'');
- await expect(page.getByRole('region',{name:'Optimización de placas'}).getByRole('status')).toContainText(`guardado en ${resolve(info.outputDir,file)}: 3 piezas`);
+ await expect(page.getByRole('region',{name:'Optimización de placas'}).getByRole('status').filter({hasText:'guardado en'})).toContainText(`guardado en ${resolve(info.outputDir,file)}: 3 piezas`);
  const {execFileSync}=await import('node:child_process');execFileSync('python3',['scripts/validar_txt_maderera.py',resolve(info.outputDir,file)]);
  const lines=(await readFile(resolve(info.outputDir,file),'utf8')).trim().split('\r\n').map(line=>line.split('\t'));
  expect(lines.reduce((sum,cols)=>sum+Number(cols[0]),0)).toBe(3);for(const cols of lines)expect(cols.slice(5).sort()).toEqual(['0','0','1','2']);
@@ -474,4 +474,17 @@ test('cantos por cara: se leen solos de las caras, la placa los numera y el TXT 
  await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Incluir materiales y cantos del pedido revisado en el PDF',exact:true}).check();
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
  const pdfText=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'});expect(pdfText).toContain('BOARD-19');expect(pdfText).toMatch(/[012]·[012]·[012]·[012] BOARD-19/);
+});
+
+test('Piezas abre la ficha del material nativo sin activar Pintar ni modificar el modelo',async({page},info)=>{
+ await boot(page,info.outputDir,'materials-edges');const before=await snapshot();
+ await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Piezas',exact:true}).click();
+ await page.getByRole('button',{name:'Crear ficha de Jade synthetic',exact:true}).click();
+ const ficha=page.getByRole('dialog',{name:'Crear ficha desde «Jade synthetic»'});
+ await expect(ficha).toBeVisible();await expect(ficha.getByLabel('Nombre',{exact:true})).toHaveValue('Jade synthetic');
+ expect([...actions.values()]).toContain('material_model_preview');
+ expect([...actions.values()].filter(action=>['smart_start','smart_quick_start','paint_preview','paint_apply','quick_action'].includes(action))).toEqual([]);
+ await ficha.getByRole('button',{name:'Cancelar',exact:true}).click();await expect(ficha).toHaveCount(0);
+ const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.names).toEqual(before.names);
 });

@@ -2,7 +2,9 @@
 
 Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.22:** [RBZ](dist/PlanosSanto-0.8.22-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.22-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.22-Validacion-Local.zip) · [qué cambió](docs/validacion-0822/CAMBIOS.md) · [validación local](docs/validacion-0822/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.23:** [RBZ](dist/PlanosSanto-0.8.23-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.23-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.23-Validacion-Local.zip) · [qué cambió](docs/validacion-0823/CAMBIOS.md) · [validación local](docs/validacion-0823/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+
+La 0.8.23 crea fichas desde materiales y texturas del modelo, lee datos OpenCutList sin exigir el plugin y evita abrir Pintar al asociar.
 
 **Auditoría posterior del modo Experto:** el pedido real comparado requiere 56 placas en el proveedor y 57 en la candidata. [Resultado y límites de la referencia](docs/auditoria-experto-0822/REVISION.md). Paridad comercial pendiente de corrección.
 

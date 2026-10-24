@@ -1,0 +1,66 @@
+{
+  "version": "0.8.23",
+  "date": "2026-10-24",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "productionApproved": false,
+  "rbzSha256": "a01fb2c23f2926f746935288d31475ff62a2815b19a21c1eacdc4406b64e65d0",
+  "rbzFiles": 86,
+  "rbzDirectories": 4,
+  "checks": {
+    "ruby": {
+      "suites": 74,
+      "tests": 1091,
+      "assertions": 10450,
+      "failures": 0,
+      "errors": 0
+    },
+    "vitest": {
+      "files": 53,
+      "tests": 494,
+      "failures": 0
+    },
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "offlineBuild": "PASS",
+    "diffCheck": "PASS",
+    "playwrightOffline": {
+      "uniqueCasesVerified": 251,
+      "initialFullRun": {
+        "tests": 245,
+        "passed": 242,
+        "failed": 3
+      },
+      "targetedRuns": [
+        {
+          "tests": 18,
+          "passed": 16,
+          "failed": 2
+        },
+        {
+          "tests": 5,
+          "passed": 4,
+          "failed": 1
+        },
+        {
+          "tests": 26,
+          "passed": 26,
+          "failed": 0
+        }
+      ],
+      "outstandingFailures": 0,
+      "note": "No se suman repeticiones como pruebas únicas. Los casos nuevos restantes pasaron en las repeticiones. Fallos iniciales y correcciones documentados en PROGRESO.md."
+    }
+  },
+  "reviews": {
+    "rubySecurity": "Cerrados rollback secundario, huella visual y presupuesto de miniaturas; revisión final sin hallazgos nuevos.",
+    "typescriptUx": "Corregidos material nullable, caché anterior y foco al cancelar.",
+    "integration": "Normalización de ID material:77 a 77; mismo objeto, nunca por nombre."
+  },
+  "limitations": [
+    "Pruebas Ruby con dobles y Chromium no acreditan SketchUp real.",
+    "Pendiente validación de materiales OCL reales, miniaturas/SKM nativos, UV, Undo y guardar/reabrir.",
+    "La ficha permanente permanece tras Undo del vínculo nativo.",
+    "No se modifica el optimizador Experto; paridad comercial pendiente."
+  ]
+}

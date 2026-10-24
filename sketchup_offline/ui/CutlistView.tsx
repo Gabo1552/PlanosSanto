@@ -25,6 +25,7 @@ export type CutlistViewProps={
   restoreView?:()=>Promise<{restored?:boolean}>;
   onGoToFurniture?:()=>void;
   /** Lápiz: abre la ficha de la biblioteca en Materiales. */
+  onCreateMaterial?:(modelMaterialId:string)=>void;
   onEditMaterial?:(catalogId:string)=>void;
   onDataLoaded?:(data:CutlistData)=>void;
   /** 0.8.20: «Agregar 16 mm a la ficha» (espesor fuera de la lista); por defecto la acción Ruby `catalog_add_thickness`. */
@@ -109,7 +110,7 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onDataLoaded,addThickness=defaultAddThickness}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
@@ -143,6 +144,11 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   const filter=useMemo(()=>({furnitureId:furnitureId||undefined,query}),[furnitureId,query]);
   const sections=useMemo(()=>data?buildSections(data,filter):[],[data,filter]);
   const edgeSections=useMemo(()=>data?buildEdgeSections(data,filter):[],[data,filter]);
+  const nativeMaterialId=(key:string)=>{
+    const section=sections.find(value=>value.info.key===key);
+    const ids=section?section.pieces.flatMap(piece=>piece.material?.observedId?[piece.material.observedId]:piece.material?.observedIds||[]):edgeSections.find(value=>value.info.key===key)?.info.observedIds||[];
+    const unique=[...new Set(ids)];return unique.length===1?unique[0]:undefined;
+  };
   const summary=useMemo(()=>summaryRows(sections,edgeSections),[sections,edgeSections]);
   // Orden del listado = orden del resumen (placas, cantos, «?»).
   const groups=useMemo(()=>{
@@ -312,6 +318,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <td className="type"><TypeIcon kind={row.kind}/></td>
             <td className="material"><div className="cutlist-material"><button type="button" className="cutlist-summary-link" aria-describedby={`${uid}-summary-hint`} onClick={()=>goTo(row.key,index)}><span className="sr-only">Ir a la sección </span><span className="cutlist-material-label"><Dot color={row.color}/><MaterialName row={row}/></span></button><Warnings items={row.warnings}/>
               <span className="cutlist-row-tools">
+                {!row.catalogId&&onCreateMaterial&&nativeMaterialId(row.key)&&<button type="button" className="cutlist-icon-button" aria-label={`Crear ficha de ${row.name}`} title="Crear ficha desde el material del modelo" onClick={()=>onCreateMaterial(nativeMaterialId(row.key)!)}><Icon name="pencil"/></button>}
                 {row.catalogId&&onEditMaterial&&<button type="button" className="cutlist-icon-button" aria-label={`Editar la ficha de ${row.name} en Materiales`} title="Editar la ficha en Materiales" onClick={()=>onEditMaterial(row.catalogId!)}><Icon name="pencil"/></button>}
                 <button type="button" className="cutlist-icon-button" aria-pressed={!off} aria-label={`Mostrar la sección ${title}`} title={off?'Mostrar la sección':'Ocultar la sección'} onClick={()=>flip(setHidden,row.key)}><Icon name={off?'eyeOff':'eye'}/></button>
               </span></div></td>

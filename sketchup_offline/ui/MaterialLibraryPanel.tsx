@@ -18,7 +18,7 @@ export type SkmPreviewRow={id:string;sha256:string;hash?:string;name:string;sour
 export type SkmPreview={token:string;revision:number;rows:SkmPreviewRow[]};
 type PreviewResult=SkmPreview|{cancelled:true};
 type ImportResult={catalog:Catalog;imported:number;skipped?:number;duplicates?:number;rows?:SkmLibraryRow[]};
-type Props={refreshKey?:number;onApplied?:(scan:unknown,warning?:string)=>void;onEdit:(catalogId?:string)=>void;onPaint?:(catalogId?:string,autoStart?:boolean)=>void;onManageModel?:()=>void;onClose?:()=>void;onChanged?:()=>void;onDirtyChange?:(dirty:boolean)=>void};
+type Props={initialModelMaterialId?:string;initialCatalogId?:string;navigationRequestKey?:number;refreshKey?:number;onApplied?:(scan:unknown,warning?:string)=>void;onEdit:(catalogId?:string)=>void;onPaint?:(catalogId?:string,autoStart?:boolean)=>void;onManageModel?:()=>void;onClose?:()=>void;onChanged?:()=>void;onDirtyChange?:(dirty:boolean)=>void};
 type Filter=LibraryFilter;
 type ArchiveRow={catalogId:string;name:string;inModel:number;compatibleWith:number;warnings:string[]};
 type OclChange={key:string;from?:unknown;to?:unknown;action:'write'|'update'|'remove'};
@@ -27,6 +27,7 @@ type OclPlan={catalogId?:string;dryRun:boolean;changed:number;planDigest?:string
 export type PackageRow={id:string;name:string;kind:string;status:'new'|'duplicate'|'conflict';thumbnail:string|null;files:number;warnings:string[]};
 export type PackagePreview={token:string;revision:number;package:{items:number;files:number;bytes:number;createdAt?:string};rows:PackageRow[]};
 type PhotoMeta={widthPx?:number;heightPx?:number;textureScale?:{verified?:boolean;widthMm?:number|null;heightMm?:number|null}};
+type ModelFichaPreview={token:string;revision:number;assetRevision:number;materialId:string;item:FichaItem;thumbnail?:string|null;color?:number[];warnings:string[];existingCatalogId?:string};
 type Ficha={mode:'edit';id:string;tab?:'general'|'texture'}|{mode:'create';kind:string};
 type Menu=''|'create'|'import'|'more';
 const oclValue=(value:unknown)=>value===undefined||value===null?'vacío':typeof value==='string'?value:JSON.stringify(value);
@@ -91,7 +92,7 @@ function useModal(ref:RefObject<HTMLElement|null>,active:boolean,onEscape:()=>vo
 }
 
 type ModelInfo={bound:NativeMaterial[];installed:boolean;canInstall:boolean;designReady:boolean;photoMissing:boolean;photoAvailable:boolean;thumbnail?:string|null;photo?:PhotoMeta;issues:string[]};
-type PropertiesProps={ficha:Ficha;item?:FichaItem;items:FichaItem[];defaults:StandardThicknesses;info?:ModelInfo;archived:boolean;busy:string;error:string;canPaint:boolean;
+type PropertiesProps={nativeSource?:ModelFichaPreview;ficha:Ficha;item?:FichaItem;items:FichaItem[];defaults:StandardThicknesses;info?:ModelInfo;archived:boolean;busy:string;error:string;canPaint:boolean;
  onCancel:()=>void;onApply:(item:FichaItem,color?:[number,number,number])=>void;onCreate:(draft:FichaDraft)=>void;onArchive:(value:boolean)=>void;onDuplicate:(name:string)=>void;onExport:()=>void;
  onPaint:(autoStart:boolean)=>void;onInstall:()=>void;onSync:()=>void;onReplacePhoto:()=>void;onAdjustTexture:()=>void;onWorkshop:()=>void;onDirty:(dirty:boolean)=>void;oclResult?:OclPlan;onCloseOcl:()=>void};
 
@@ -102,9 +103,10 @@ function MaterialProperties(props:PropertiesProps){
  const base=useMemo<FichaItem|undefined>(()=>item,[item?.id]);// eslint-disable-line react-hooks/exhaustive-deps
  const [draft,setDraft]=useState<FichaDraft>(()=>item?draftFromItem(item,defaults):newDraft(ficha.mode==='create'?ficha.kind:'sheet',defaults));
  const [tab,setTab]=useState<'general'|'texture'>(ficha.mode==='edit'&&ficha.tab==='texture'?'texture':'general'),[sub,setSub]=useState<'formats'|'price'>('formats');
+ const [nativeKindError,setNativeKindError]=useState(false);
  const [errors,setErrors]=useState<DraftErrors>({}),[color,setColor]=useState(''),[copy,setCopy]=useState<string>();
  const dialog=useRef<HTMLElement>(null),nameInput=useRef<HTMLInputElement>(null),copyInput=useRef<HTMLInputElement>(null),oclPanel=useRef<HTMLDivElement>(null);
- const dirty=(base?draftChanged(base,draft,defaults):true)||!!color;
+ const dirty=!!props.nativeSource||(base?draftChanged(base,draft,defaults):true)||!!color;
  const onDirty=props.onDirty;
  useEffect(()=>{onDirty(dirty);},[dirty,onDirty]);
  useEffect(()=>()=>onDirty(false),[onDirty]);
@@ -122,9 +124,10 @@ function MaterialProperties(props:PropertiesProps){
  const nativeHex=hexColor(info?.bound.find(material=>material.color)?.color);
  const hasVisual=!!info&&(info.bound.length>0||info.photoAvailable||safeImage(info.thumbnail)||info.canInstall);
  const colorEditable=!creating&&['sheet','edge'].includes(draft.kind)&&!hasVisual&&!readyForDesign(base as CatalogItem);
- const title=creating?'Nueva ficha de material':`Propiedades del material «${base?.name||''}»`;
+ const title=props.nativeSource?`Crear ficha desde «${base?.name||''}»`:creating?'Nueva ficha de material':`Propiedades del material «${base?.name||''}»`;
  function update(next:FichaDraft){setDraft(next);if(Object.keys(errors).length)setErrors({});}
  function submit(){
+  if(props.nativeSource&&!['sheet','edge'].includes(draft.kind)){setNativeKindError(true);setTab('general');requestAnimationFrame(()=>document.getElementById('material-field-kind')?.focus());return;}
   const target=base||({id:'',name:'',kind:draft.kind,sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'',sourceHash:'',observed:{}} as FichaItem);
   const result=applyDraft(target,draft);setErrors(result.errors);
   if(!result.item){
@@ -146,6 +149,7 @@ function MaterialProperties(props:PropertiesProps){
      <p id="material-properties-status" className={`material-properties-status ${missing&&missing.length?'incomplete':'complete'}`}>{missing===null?'Revisá los datos marcados.':missing.length?<>Ficha incompleta · para pedidos falta: {missing.join(', ')}</>:'Ficha completa: se puede usar en pedidos.'}{archived&&' · Archivada'}</p></div>
     <button type="button" className="material-icon-button" aria-label="Cerrar propiedades" disabled={disabled} onClick={props.onCancel}><Icon name="close"/></button>
    </header>
+   {props.nativeSource&&<div className="material-native-context"><strong>Datos del material ya usado en SketchUp</strong><p>Se conserva su textura y color. Completá los datos que falten; guardar crea la ficha y vincula este material sin repintar piezas.</p>{props.nativeSource.warnings.length>0&&<ul>{props.nativeSource.warnings.map(warning=><li key={warning}>{warning}</li>)}</ul>}</div>}
    <div className="material-tabs" role="tablist" aria-label="Secciones de la ficha">
     <button type="button" role="tab" id="material-tab-general" aria-selected={tab==='general'} aria-controls="material-panel-general" tabIndex={tab==='general'?0:-1} onClick={()=>setTab('general')} onKeyDown={event=>tabKey(event,'general')}>General</button>
     <button type="button" role="tab" id="material-tab-texture" aria-selected={tab==='texture'} aria-controls="material-panel-texture" tabIndex={tab==='texture'?0:-1} onClick={()=>setTab('texture')} onKeyDown={event=>tabKey(event,'texture')}><Icon name="texture"/>Textura</button>
@@ -169,7 +173,7 @@ function MaterialProperties(props:PropertiesProps){
       <label htmlFor="material-field-supplier">Proveedor</label>
       <input id="material-field-supplier" value={draft.supplier} maxLength={160} disabled={disabled} onChange={event=>update({...draft,supplier:event.target.value})}/>
       <label htmlFor="material-field-kind">Tipo</label>
-      <div className="material-kind-field"><Icon name={kindIcon(draft.kind)}/><select id="material-field-kind" value={draft.kind} disabled={disabled} onChange={event=>update(changeKind(draft,event.target.value,defaults))}>{(['sheet','edge','solid_wood','dimensional','veneer','unknown'] as const).map(kind=><option key={kind} value={kind}>{kindLabels[kind]}</option>)}</select></div>
+      <div className="material-kind-field"><Icon name={kindIcon(draft.kind)}/><select id="material-field-kind" value={draft.kind} disabled={disabled} aria-invalid={nativeKindError||undefined} aria-describedby={nativeKindError?'material-native-kind-error':undefined} onChange={event=>{setNativeKindError(false);update(changeKind(draft,event.target.value,defaults));}}>{(['sheet','edge','solid_wood','dimensional','veneer','unknown'] as const).map(kind=><option key={kind} value={kind}>{kindLabels[kind]}</option>)}</select>{nativeKindError&&<p id="material-native-kind-error" role="alert" className="material-field-error">Elegí Placa o Canto para crear esta ficha.</p>}</div>
      </div>
      <div className="material-subtabs" role="tablist" aria-label="Datos para pedidos">
       <button type="button" role="tab" id="material-subtab-formats" aria-selected={sub==='formats'} aria-controls="material-subpanel-formats" tabIndex={sub==='formats'?0:-1} onClick={()=>setSub('formats')} onKeyDown={event=>subKey(event,'formats')}>Formatos</button>
@@ -210,7 +214,7 @@ function MaterialProperties(props:PropertiesProps){
         <div className="material-thickness-tools"><button type="button" className="material-icon-button" disabled={disabled||draft.widths.length>=32} aria-label="Agregar ancho" onClick={()=>{focusNewWidth.current=true;update(addWidth(draft));}}><Icon name="plus"/></button></div>
         <p id="material-widths-help" className="material-field-hint">El canto se refila: el ancho no se compara con el espesor de la pieza mientras alguno la cubra. {errors.widths&&<span className="material-field-error">{errors.widths}</span>}</p>
        </div></>}
-      {!creating&&base&&['sheet','edge'].includes(draft.kind)&&<><span/><p className="material-field-hint">Cantos compatibles y variantes de espesor con SKU propio: <button type="button" className="material-link-button" disabled={disabled||dirty} onClick={props.onWorkshop}>abrir en Taller</button></p></>}
+      {!creating&&!props.nativeSource&&base&&['sheet','edge'].includes(draft.kind)&&<><span/><p className="material-field-hint">Cantos compatibles y variantes de espesor con SKU propio: <button type="button" className="material-link-button" disabled={disabled||dirty} onClick={props.onWorkshop}>abrir en Taller</button></p></>}
      </div>
      <div role="tabpanel" id="material-subpanel-price" aria-labelledby="material-subtab-price" hidden={sub!=='price'} className="material-form">
       <label htmlFor="material-field-price">Precio (opcional)</label>
@@ -233,12 +237,12 @@ function MaterialProperties(props:PropertiesProps){
        {info.photo&&<p>Foto propia{info.photo.widthPx&&info.photo.heightPx?` · ${info.photo.widthPx} × ${info.photo.heightPx} px`:''} · {info.photo.textureScale?.verified&&info.photo.textureScale.widthMm&&info.photo.textureScale.heightMm?`tamaño físico ${formatMm(info.photo.textureScale.widthMm)} × ${formatMm(info.photo.textureScale.heightMm)}`:'tamaño físico sin cargar (opcional)'}</p>}
        {info.photoMissing&&<p role="alert">No se verificaron todos los archivos privados de este material. Restaurá sus archivos antes de cargarlo o pintar.</p>}
        <div className="material-texture-actions">
-        {['sheet','edge'].includes(base.kind)&&<button type="button" disabled={disabled||dirty} onClick={props.onReplacePhoto}>{readyForDesign(base)?'Reemplazar foto / textura':'Asignar foto / textura'}</button>}
-        {readyForDesign(base)&&<button type="button" disabled={disabled||dirty||info.photoMissing} onClick={props.onAdjustTexture}>Ajustar escala y giro</button>}
+        {!props.nativeSource&&['sheet','edge'].includes(base.kind)&&<button type="button" disabled={disabled||dirty} onClick={props.onReplacePhoto}>{readyForDesign(base)?'Reemplazar foto / textura':'Asignar foto / textura'}</button>}
+        {!props.nativeSource&&readyForDesign(base)&&<button type="button" disabled={disabled||dirty||info.photoMissing} onClick={props.onAdjustTexture}>Ajustar escala y giro</button>}
        </div>
-       {dirty&&<p className="material-field-hint">Aplicá o cancelá los cambios de la ficha para cambiar su textura o pintar.</p>}
+       {dirty&&!props.nativeSource&&<p className="material-field-hint">Aplicá o cancelá los cambios de la ficha para cambiar su textura o pintar.</p>}
       </div>
-      <section className="material-model-section" aria-labelledby="material-model-title">
+      {!props.nativeSource&&<section className="material-model-section" aria-labelledby="material-model-title">
        <h3 id="material-model-title"><Icon name="model"/>En este modelo</h3>
        <p><span>{info.bound.length?`${info.bound.length} ${info.bound.length===1?'material vinculado':'materiales vinculados'}`:'No cargado en este modelo'}</span>{info.bound.length>0&&<span className="material-field-hint"> · el vínculo se resuelve solo</span>}</p>
        {info.issues.map(issue=><p key={issue} className="material-card-warning">{issue}</p>)}
@@ -250,13 +254,13 @@ function MaterialProperties(props:PropertiesProps){
        </div>
        {info.canInstall&&!info.installed&&<small id="material-install-help">No pinta piezas ni modifica el archivo original; Ctrl+Z en SketchUp lo deshace.</small>}
        {props.oclResult&&<div ref={oclPanel} tabIndex={-1} className="material-ocl-plan" role="group" aria-label="Cambios en OpenCutList">{props.oclResult.materials.map(row=><div key={row.materialId}><strong>{row.name}</strong>{row.status==='conflict'&&<p role="alert">El material ya tiene otro tipo en OpenCutList. No se cambió nada; revisalo en OpenCutList.</p>}{row.changes.length>0&&<ul aria-label={`Cambios en ${row.name}`}>{row.changes.map(change=><li key={change.key}><code>{change.key}</code>: {oclValue(change.from)} → {change.action==='remove'?'se quitó':oclValue(change.to)}</li>)}</ul>}{row.kept.length>0&&<ul aria-label={`Valores del usuario conservados en ${row.name}`}>{row.kept.map(entry=><li key={entry.key}><code>{entry.key}</code>: se conservó {oclValue(entry.current)} (la ficha diría {oclValue(entry.proposed)})</li>)}</ul>}</div>)}<p>Solo se escriben claves vacías o que Planos Santo escribió antes; Ctrl+Z en SketchUp deshace la sincronización.</p><button type="button" disabled={disabled} onClick={props.onCloseOcl}>Cerrar</button></div>}
-      </section>
+      </section>}
      </>}
     </div>
    </div>
    {(busy||error)&&<div className="material-properties-messages">{busy&&<p role="status"><span className="material-progress" aria-hidden="true"/>{busy}</p>}{error&&<p role="alert" className="material-field-error">{error}</p>}</div>}
    <footer className="material-properties-footer">
-    {!creating&&base&&(copy===undefined?<div className="material-footer-tools">
+    {!creating&&!props.nativeSource&&base&&(copy===undefined?<div className="material-footer-tools">
      <button type="button" className="material-danger" disabled={disabled||dirty} aria-label={archived?'Restaurar ficha':'Archivar ficha'} title={archived?'Restaurar ficha':'Archivar ficha: la oculta sin borrar nada'} onClick={()=>props.onArchive(!archived)}><Icon name={archived?'restore':'trash'}/></button>
      <button type="button" disabled={disabled||dirty} onClick={()=>setCopy(copyName(base.name,items.map(row=>row.name)))}><Icon name="copy"/>Duplicar…</button>
      <button type="button" disabled={disabled||dirty} onClick={props.onExport}><Icon name="export"/>Exportar (.zip)…</button>
@@ -265,13 +269,13 @@ function MaterialProperties(props:PropertiesProps){
      <p id="material-duplicate-help">La copia conserva la textura y los datos comerciales.</p>
      <button className="primary" type="submit" disabled={disabled||!copy.trim()}>Crear copia</button><button type="button" disabled={disabled} onClick={()=>setCopy(undefined)}>Cancelar copia</button>
     </form>)}
-    <div className="material-footer-main"><button type="button" disabled={disabled} onClick={props.onCancel}>Cancelar</button><button type="button" className="primary" disabled={disabled||copy!==undefined||(!creating&&!dirty)} onClick={submit}>{creating?'Crear ficha':'Aplicar'}</button></div>
+    <div className="material-footer-main"><button type="button" disabled={disabled} onClick={props.onCancel}>Cancelar</button><button type="button" className="primary" disabled={disabled||copy!==undefined||(!creating&&!dirty)} onClick={submit}>{props.nativeSource?'Guardar ficha y vincular':creating?'Crear ficha':'Aplicar'}</button></div>
    </footer>
   </section>
  </div>;
 }
 
-export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClose,onChanged,onDirtyChange,onApplied,refreshKey}:Props){
+export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,onDirtyChange,onApplied,refreshKey,initialModelMaterialId,initialCatalogId,navigationRequestKey}:Props){
  const [library,setLibrary]=useState<VisualLibrary>(),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [scope,setScope]=useState<'workshop'|'model'>('workshop'),[filter,setFilter]=useState<Filter>('all'),[query,setQuery]=useState(''),[favorites,setFavorites]=useState(false),[selectedId,setSelectedId]=useState('');
  const [menu,setMenu]=useState<Menu>(''),[preview,setPreview]=useState<SkmPreview>(),[selectedRows,setSelectedRows]=useState<string[]>([]),[renames,setRenames]=useState<Record<string,string>>({});
@@ -279,9 +283,12 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
  const [photoOpen,setPhotoOpen]=useState(false),[photoTarget,setPhotoTarget]=useState<PhotoMaterialTarget>();
  const [archivedIds,setArchivedIds]=useState<string[]>([]),[statesRevision,setStatesRevision]=useState<number>(),[oclResult,setOclResult]=useState<OclPlan>(),[textureId,setTextureId]=useState('');
  const [packagePreview,setPackagePreview]=useState<PackagePreview>(),[packageRows,setPackageRows]=useState<string[]>([]),[packageRenames,setPackageRenames]=useState<Record<string,string>>({}),[gridFocus,setGridFocus]=useState('');
+ const [modelPreview,setModelPreview]=useState<ModelFichaPreview>();
+ const nativeRequest=useRef('');
+ const nativeButtons=useRef(new Map<string,HTMLButtonElement>());
  const [ficha,setFicha]=useState<Ficha>(),[fichaDirty,setFichaDirty]=useState(false),[fichaKey,setFichaKey]=useState(0);
  const paintAfterClose=useRef<string|undefined>(undefined),onPaintRef=useRef(onPaint);onPaintRef.current=onPaint;
- const lastRefresh=useRef(refreshKey),pendingFocus=useRef<'import'|'search'|'package'|'create'|{card:string}|null>(null),returnToFicha=useRef<string|undefined>(undefined);
+ const lastRefresh=useRef(refreshKey),pendingFocus=useRef<'import'|'search'|'package'|'create'|{card:string}|{native:string}|null>(null),returnToFicha=useRef<string|undefined>(undefined);
  const importTrigger=useRef<HTMLButtonElement>(null),createTrigger=useRef<HTMLButtonElement>(null),packagePanel=useRef<HTMLElement>(null),grid=useRef<HTMLDivElement>(null),previewPanel=useRef<HTMLElement>(null),searchInput=useRef<HTMLInputElement>(null);
  const load=useCallback(async()=>{
   const next=await request<VisualLibrary>('skm_library');let archived:string[]=[],states:number|undefined;
@@ -301,6 +308,7 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
  useEffect(()=>{
   if(busy||modal||photoOpen||ficha||!pendingFocus.current)return;
   const target=pendingFocus.current;pendingFocus.current=null;
+  if(typeof target==='object'&&'native' in target){requestAnimationFrame(()=>(nativeButtons.current.get(target.native)||searchInput.current)?.focus());return;}
   if(typeof target==='object'){requestAnimationFrame(()=>grid.current?.querySelector<HTMLElement>(`.material-card-select[data-catalog-id="${target.card}"]`)?.focus());return;}
   ({import:importTrigger,package:importTrigger,create:createTrigger,search:searchInput}[target].current)?.focus();
  },[busy,modal,photoOpen,ficha]);
@@ -345,7 +353,7 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
   return {bound,installed:bound.some(material=>!material.issues?.length),canInstall:designReady||!!(asset&&!photoMissing),designReady,photoMissing,photoAvailable:photo?.available===true,
    thumbnail:library?.rows.find(row=>row.catalogId===item.id)?.thumbnail,photo:item.observed?.photo as PhotoMeta|undefined,issues:[...new Set(bound.flatMap(material=>material.issues||[]))]};
  }
- const fichaItem=ficha?.mode==='edit'?items.find(item=>item.id===ficha.id):undefined;
+ const fichaItem=modelPreview?.item||(ficha?.mode==='edit'?items.find(item=>item.id===ficha.id):undefined);
  const activeCard=ordered.some(item=>item.id===gridFocus)?gridFocus:ordered.some(item=>item.id===selectedId)?selectedId:ordered[0]?.id;
  function gridKey(event:React.KeyboardEvent<HTMLDivElement>){
   if(!['ArrowRight','ArrowLeft','ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
@@ -370,8 +378,24 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
  const packageUnresolved=packageSelected.filter(row=>row.status==='conflict'&&(!packageRenames[row.id]?.trim()||searchText(packageRenames[row.id].trim())===searchText(row.name)));
  const packageNames=packageSelected.map(row=>searchText((packageRenames[row.id]||row.name).trim()));
  const packageRepeated=packageNames.some((name,index)=>packageNames.indexOf(name)!==index);
- function openFicha(id:string,tab:'general'|'texture'='general'){setSelectedId(id);setGridFocus(id);setOclResult(undefined);setFicha({mode:'edit',id,tab});setFichaKey(key=>key+1);setMenu('');}
- function closeFicha(focusId?:string){const id=focusId||(ficha?.mode==='edit'?ficha.id:undefined);setFicha(undefined);setFichaDirty(false);setOclResult(undefined);pendingFocus.current=id?{card:id}:'create';}
+ async function openModelFicha(materialId:string){
+  const next=await request<ModelFichaPreview>('material_model_preview',{materialId});
+  if(next.existingCatalogId){if(!library?.catalog.items.some(item=>item.id===next.existingCatalogId))await load();openFicha(next.existingCatalogId);return;}
+  setModelPreview(next);setFicha({mode:'edit',id:next.item.id});setFichaKey(key=>key+1);setMenu('');
+ }
+ useEffect(()=>{
+  if(!library||busy)return;const key=`${navigationRequestKey??0}:${initialModelMaterialId||''}:${initialCatalogId||''}`;
+  if(nativeRequest.current===key||(!initialModelMaterialId&&!initialCatalogId))return;nativeRequest.current=key;
+  if(initialModelMaterialId)void run('Leyendo datos del material…',()=>openModelFicha(initialModelMaterialId));else if(initialCatalogId)void run('Abriendo ficha…',async()=>{const current=library.catalog.items.some(item=>item.id===initialCatalogId)?library:await load();if(!current.catalog.items.some(item=>item.id===initialCatalogId))throw new Error('Esta ficha ya no está en la biblioteca. Actualizá los materiales y volvé a elegirla.');openFicha(initialCatalogId);});
+ },[library,busy,initialModelMaterialId,initialCatalogId,navigationRequestKey]);// eslint-disable-line react-hooks/exhaustive-deps
+ async function saveModelFicha(item:FichaItem){
+  if(!modelPreview)return;
+  const result=await request<{catalogId:string}>('material_model_commit',{token:modelPreview.token,revision:modelPreview.revision,assetRevision:modelPreview.assetRevision,item});
+  setModelPreview(undefined);await load();onChanged?.();closeFicha(result.catalogId,false);setSelectedId(result.catalogId);
+  setNotice(`Ficha «${item.name}» guardada y vinculada al material del modelo. Se conservaron la textura y las caras pintadas.`);
+ }
+ function openFicha(id:string,tab:'general'|'texture'='general'){setModelPreview(undefined);setSelectedId(id);setGridFocus(id);setOclResult(undefined);setFicha({mode:'edit',id,tab});setFichaKey(key=>key+1);setMenu('');}
+ function closeFicha(focusId?:string,cancelNative=true){if(modelPreview&&cancelNative){void request('material_model_cancel',{token:modelPreview.token}).catch(()=>{});setModelPreview(undefined);}const id=focusId||(ficha?.mode==='edit'?ficha.id:undefined);setFicha(undefined);setFichaDirty(false);setOclResult(undefined);pendingFocus.current=modelPreview&&cancelNative?{native:modelPreview.materialId}:id?{card:id}:'create';}
  async function exportPackage(ids?:string[]){
   const result=await request<{cancelled:true}|{fileName:string;items:number;files:number;bytes:number}>('material_package_export',ids?{catalogIds:ids,includeArchived:true}:{includeArchived:false});
   if('cancelled' in result){setNotice('Exportación cancelada. No se creó ningún archivo.');return;}
@@ -477,7 +501,7 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
   setNotice(`${result.imported} materiales importados. ${result.skipped??result.duplicates??0} duplicados u omitidos. Completá las fichas a las que les falten datos para usarlas en pedidos.`);
  }
  const blocked=!!busy||!!preview||!!packagePreview;
- const fichaInfo=fichaItem?infoFor(fichaItem):undefined;
+ const fichaInfo=modelPreview?{bound:[{id:modelPreview.materialId,name:modelPreview.item.name,color:modelPreview.color,hasTexture:!!modelPreview.thumbnail}],installed:true,canInstall:false,designReady:false,photoMissing:false,photoAvailable:!!modelPreview.thumbnail,thumbnail:modelPreview.thumbnail,issues:[]}:fichaItem?infoFor(fichaItem):undefined;
  const card=(item:FichaItem)=>{
   const info=infoFor(item),inModel=modelCatalogIds.has(item.id),complete=catalogComplete(item),isArchived=archived.has(item.id);
   const visual=safeImage(info.thumbnail)?undefined:nativeColor(info.bound.find(material=>material.color)?.color);
@@ -515,6 +539,7 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
   {ambiguous.length>0&&<section className="material-link-choices" aria-labelledby="material-link-choices-title"><h2 id="material-link-choices-title"><Icon name="warning"/>Elegí la ficha de {ambiguous.length===1?'este material':'estos materiales'} del modelo</h2>
    {ambiguous.map(entry=><div className="material-link-choice" key={entry.materialId}><p>{entry.message}</p><div role="group" aria-label={`Ficha para ${entry.name}`}>{entry.candidates.map(candidate=><button type="button" key={candidate.catalogId} disabled={blocked} onClick={()=>void run('Vinculando material…',()=>resolve(entry,candidate.catalogId))}>Es «{candidate.name}» · {[kindName(candidate.kind),formatMm(candidate.thicknessMm)].filter(Boolean).join(' ')}</button>)}</div></div>)}
   </section>}
+  {scope==='workshop'&&nativeMaterials.some(material=>!material.binding?.catalogId||!catalogIds.has(material.binding.catalogId))&&<div className="material-native-entry"><div><strong>Materiales del modelo</strong><p>Hay materiales usados en SketchUp sin ficha del taller. Revisá sus datos o creá su ficha desde el material existente.</p></div><button type="button" disabled={blocked} onClick={()=>{setScope('model');setFilter('all');setFavorites(false);setQuery('');}}>Revisar materiales del modelo</button></div>}
   <div className="material-library-toolbar">
    <div className="material-library-search-field"><label className="material-library-search"><span className="sr-only">Buscar material</span><Icon name="search"/><input ref={searchInput} type="search" aria-label="Buscar materiales del taller" aria-describedby="material-search-help" placeholder="Buscar por nombre, SKU, proveedor o espesor" value={query} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==='Escape'&&query){event.preventDefault();event.stopPropagation();setQuery('');}}}/></label>{query&&<button type="button" className="material-search-clear material-icon-button" aria-label="Limpiar búsqueda" onClick={()=>{setQuery('');searchInput.current?.focus();}}><Icon name="close"/></button>}<span id="material-search-help" className="sr-only">Escape limpia la búsqueda. Usá las flechas para recorrer las tarjetas.</span></div>
    <div className="material-library-scopes" role="group" aria-label="Origen de materiales"><button type="button" aria-pressed={scope==='workshop'} onClick={()=>setScope('workshop')}>Todo el taller</button><button type="button" aria-pressed={scope==='model'} onClick={()=>setScope('model')}>En este modelo</button></div>
@@ -532,16 +557,16 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onManageModel,onClo
      <div className="material-tile-visual" style={nativeColor(material.color)?{backgroundColor:nativeColor(material.color)}:undefined}><span className="material-tile-name">{material.name}</span></div>
      <div className="material-tile-footer column"><span className="material-tile-meta">{material.hasTexture?'Color base · textura en el modelo':'Color nativo'}</span>
       {pending?<p className="material-card-warning">{pending.message}</p>:<p className="material-tile-note">Sin ficha con este nombre en la biblioteca.</p>}
-      {onManageModel&&!pending&&<button type="button" disabled={blocked} onClick={onManageModel}>Asociar a una ficha…</button>}</div>
+      <button ref={node=>{if(node)nativeButtons.current.set(material.id,node);else nativeButtons.current.delete(material.id);}} type="button" disabled={blocked} onClick={()=>void run('Leyendo datos del material…',()=>openModelFicha(material.id))}>Crear ficha desde material</button></div>
     </article>;})}</div>
    </section>}
   </div>
   {library&&!busy&&!filtered.length&&!nativeOnly.length&&<div className="material-library-empty" role="status"><strong>{!library.catalog.items.length?'Tu biblioteca empieza acá':query.trim()&&filter!=='archived'?`Ningún material coincide con «${query.trim()}»`:emptyCopy[filter][0]}</strong><p>{library.catalog.items.length?query.trim()&&filter!=='archived'?'Probá otro nombre, SKU o espesor, o quitá los filtros.':emptyCopy[filter][1]:'Creá una ficha, importá materiales SKM o un paquete .zip de otra biblioteca.'}</p><button type="button" onClick={()=>{setQuery('');setFilter('all');setFavorites(false);setScope('workshop');}}>Mostrar todos</button></div>}
   <p className="material-library-footnote">Biblioteca local del taller · Las miniaturas provienen del SKM o de la foto propia cuando están disponibles. No se usa el nombre del archivo para deducir propiedades.</p>
-  {ficha&&(ficha.mode==='create'||fichaItem)&&<MaterialProperties key={fichaKey} ficha={ficha} item={fichaItem} items={items} defaults={defaults} info={fichaInfo} archived={!!fichaItem&&archived.has(fichaItem.id)} busy={busy} error={error} canPaint={!!fichaItem&&!!fichaInfo&&['sheet','edge'].includes(fichaItem.kind)&&(fichaInfo.installed||fichaInfo.photoAvailable)&&!!onPaint}
+  {ficha&&(ficha.mode==='create'||fichaItem)&&<MaterialProperties key={fichaKey} ficha={ficha} item={fichaItem} items={items} defaults={modelPreview?{sheet:[],edge:[],edgeWidths:[]}:defaults} nativeSource={modelPreview} info={fichaInfo} archived={!!fichaItem&&archived.has(fichaItem.id)} busy={busy} error={error} canPaint={!!fichaItem&&!!fichaInfo&&['sheet','edge'].includes(fichaItem.kind)&&(fichaInfo.installed||fichaInfo.photoAvailable)&&!!onPaint}
    onDirty={setFichaDirty} oclResult={oclResult} onCloseOcl={()=>setOclResult(undefined)}
    onCancel={()=>closeFicha()}
-   onApply={(updated,color)=>void run('Guardando ficha…',()=>applyFicha(updated,color))}
+   onApply={(updated,color)=>void run('Guardando ficha…',()=>modelPreview?saveModelFicha(updated):applyFicha(updated,color))}
    onCreate={draft=>void run('Creando ficha…',()=>createFicha(draft))}
    onArchive={value=>fichaItem&&void run(value?'Archivando ficha…':'Restaurando ficha…',()=>archive(fichaItem,value))}
    onDuplicate={name=>fichaItem&&void run('Duplicando ficha…',()=>duplicate(fichaItem,name))}

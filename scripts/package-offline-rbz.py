@@ -16,7 +16,7 @@ expected_files = {
     *('planos_santo/' + name for name in (
         'bootstrap.rb', 'offline.rb', 'p1_diagnostics.rb', 'release.rb',
         'ocl_reader.rb', 'catalog_store.rb', 'material_resolver.rb',
-        'material_library.rb', 'photo_material.rb', 'material_policy.rb', 'native_paint.rb', 'paint_materials.rb', 'ocl_attributes.rb', 'smart_paint.rb', 'smart_paint_tool.rb', 'material_sample_tool.rb', 'quick_toolbar.rb', 'model_watch.rb', 'bounded_zip.rb', 'skm_import.rb', 'piece_highlight_tool.rb', 'supplier_order.rb', 'maderera_profile.rb', 'presets-taller.json',
+        'material_library.rb', 'model_material_catalog.rb', 'photo_material.rb', 'material_policy.rb', 'native_paint.rb', 'paint_materials.rb', 'ocl_attributes.rb', 'smart_paint.rb', 'smart_paint_tool.rb', 'material_sample_tool.rb', 'quick_toolbar.rb', 'model_watch.rb', 'bounded_zip.rb', 'skm_import.rb', 'piece_highlight_tool.rb', 'supplier_order.rb', 'maderera_profile.rb', 'presets-taller.json',
         'workshop.rb', 'order_proposal.rb', 'order_references.rb', 'cutlist.rb', 'names.rb', 'session.rb', 'guide_store.rb', 'exporter.rb',
         'ui/index.html', 'ui/app.js', 'ui/app.css', 'ui/palette.html', 'ui/palette.js', 'ui/palette.css', 'icon-24.png', 'icon-32.png',
         'THIRD_PARTY_LICENSES.txt', 'manifest.json',
@@ -25,7 +25,7 @@ expected_files = {
 expected_files.update(f'planos_santo/icons/{action}-{size}.png' for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main') for size in (24,32))
 expected_files.update(f'planos_santo/icons/{action}.svg' for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'))
 expected_files.update(f'planos_santo/cursors/paint-{key}{suffix}' for key in ('piece','edge','remove','blocked','sample') for suffix in ('.png','-64.png','.svg'))
-assert len(files) == 85 and set(files) == expected_files
+assert len(files) == 86 and set(files) == expected_files
 assert all(not f.endswith(('.skp', '.jsonl')) for f in files)
 assert manifest['version'] == json.loads((root / 'sketchup_offline/version.json').read_text())['version']
 assert manifest['validation'] == 'PENDIENTE de ejecución y aceptación del operador en SketchUp 2026'
