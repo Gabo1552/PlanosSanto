@@ -6,7 +6,7 @@ Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, bibliote
 
 La 0.8.23 crea fichas desde materiales y texturas del modelo, lee datos OpenCutList sin exigir el plugin y evita abrir Pintar al asociar.
 
-**Auditoría posterior del modo Experto:** el pedido real comparado requiere 56 placas en el proveedor y 57 en la candidata. [Resultado y límites de la referencia](docs/auditoria-experto-0822/REVISION.md). Paridad comercial pendiente de corrección.
+**Auditoría posterior del modo Experto:** el pedido real comparado requiere 56 placas en el proveedor y 57 en la candidata. [Resultado y límites de la referencia](docs/auditoria-experto-0822/REVISION.md). Paridad comercial pendiente de corrección. [Ensayos A/B/C del proveedor](docs/auditoria-experto-0822/ensayos/RESULTADOS-PDF.md): los tres usan una placa y el motor actual dos; C fue ejecutado en 2750 × 1830.
 
 ## Módulos de la extensión
 

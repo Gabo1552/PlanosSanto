@@ -1,0 +1,221 @@
+{
+  "scope": "Synthetic TXT probes, supplier PDF observations. Coordinates reconstructed from dimensions/kerf, not extracted exact PDF coordinates. Rotation permission comes from requested TXT, not supplier JSON; thickness 18mm not visible in PDFs. Cut lengths use existing laboratory convention including terminal kerf; only rounded aggregate comparison is verified.",
+  "cases": [
+    {
+      "id": "A",
+      "requestedBoardMm": [
+        2750,
+        1830
+      ],
+      "observedBoardMm": [
+        2750,
+        1830
+      ],
+      "kerfMm": 4.4,
+      "trimMm": 10,
+      "cuts": [
+        {
+          "quantity": 5,
+          "base": 1600,
+          "height": 500,
+          "rotate": true
+        }
+      ],
+      "supplier": {
+        "boards": 1,
+        "utilizationPercent": 79.48,
+        "sawSteps": 8,
+        "sawMetres": 19.9,
+        "pdfSha256": "6d406edf8bcb3642b37397d69c11ea7b89f72d0002bfb28ab26325e837308a13"
+      },
+      "witness": [
+        {
+          "row": 0,
+          "x": 0.0,
+          "y": 0,
+          "w": 500,
+          "h": 1600
+        },
+        {
+          "row": 0,
+          "x": 504.4,
+          "y": 0,
+          "w": 500,
+          "h": 1600
+        },
+        {
+          "row": 0,
+          "x": 1008.8,
+          "y": 0,
+          "w": 500,
+          "h": 1600
+        },
+        {
+          "row": 0,
+          "x": 1513.1999999999998,
+          "y": 0,
+          "w": 500,
+          "h": 1600
+        },
+        {
+          "row": 0,
+          "x": 2017.6,
+          "y": 0,
+          "w": 500,
+          "h": 1600
+        }
+      ],
+      "partitionCutLengthsMm": [
+        2744.4,
+        1604.4,
+        1604.4,
+        1604.4,
+        1604.4,
+        1604.4
+      ]
+    },
+    {
+      "id": "B",
+      "requestedBoardMm": [
+        2750,
+        1830
+      ],
+      "observedBoardMm": [
+        2750,
+        1830
+      ],
+      "kerfMm": 4.4,
+      "trimMm": 10,
+      "cuts": [
+        {
+          "quantity": 1,
+          "base": 2500,
+          "height": 1000,
+          "rotate": false
+        },
+        {
+          "quantity": 1,
+          "base": 2400,
+          "height": 600,
+          "rotate": false
+        },
+        {
+          "quantity": 1,
+          "base": 2600,
+          "height": 100,
+          "rotate": false
+        }
+      ],
+      "supplier": {
+        "boards": 1,
+        "utilizationPercent": 83.46,
+        "sawSteps": 8,
+        "sawMetres": 19.1,
+        "pdfSha256": "e631cd87c391b9594d9a3e705b1b97d9a1c3b1cf70fecf883dfd6eac5bf40265"
+      },
+      "witness": [
+        {
+          "row": 0,
+          "x": 0,
+          "y": 0,
+          "w": 2500,
+          "h": 1000
+        },
+        {
+          "row": 1,
+          "x": 0,
+          "y": 1004.4,
+          "w": 2400,
+          "h": 600
+        },
+        {
+          "row": 2,
+          "x": 0,
+          "y": 1608.8,
+          "w": 2600,
+          "h": 100
+        }
+      ],
+      "partitionCutLengthsMm": [
+        2744.4,
+        1004.4,
+        2744.4,
+        604.4,
+        2744.4,
+        104.4
+      ]
+    },
+    {
+      "id": "C",
+      "requestedBoardMm": [
+        2600,
+        1830
+      ],
+      "observedBoardMm": [
+        2750,
+        1830
+      ],
+      "kerfMm": 4.4,
+      "trimMm": 10,
+      "cuts": [
+        {
+          "quantity": 3,
+          "base": 2000,
+          "height": 580,
+          "rotate": false
+        },
+        {
+          "quantity": 1,
+          "base": 400,
+          "height": 1400,
+          "rotate": false
+        }
+      ],
+      "supplier": {
+        "boards": 1,
+        "utilizationPercent": 80.28,
+        "sawSteps": 8,
+        "sawMetres": 19.2,
+        "pdfSha256": "c45d74b328779fc1da865202dc196c09608a8cc7cb0083682a2104786f79c94c"
+      },
+      "witness": [
+        {
+          "row": 0,
+          "x": 0,
+          "y": 0.0,
+          "w": 2000,
+          "h": 580
+        },
+        {
+          "row": 0,
+          "x": 0,
+          "y": 584.4,
+          "w": 2000,
+          "h": 580
+        },
+        {
+          "row": 0,
+          "x": 0,
+          "y": 1168.8,
+          "w": 2000,
+          "h": 580
+        },
+        {
+          "row": 1,
+          "x": 2004.4,
+          "y": 0,
+          "w": 400,
+          "h": 1400
+        }
+      ],
+      "partitionCutLengthsMm": [
+        1824.4,
+        2004.4,
+        2004.4,
+        2004.4,
+        1824.4,
+        404.4
+      ]
+    }
+  ]
+}

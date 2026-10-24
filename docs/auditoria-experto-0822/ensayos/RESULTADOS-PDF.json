@@ -1,0 +1,155 @@
+{
+  "scope": "PDF evidence supplied by user; requested synthetic cuts reconstructed from TXT. No supplier JSON received. Rotation flags and nominal 18mm thickness taken from test protocol, not independently verified in PDF. Laboratory witnesses are not a production algorithm.",
+  "reports": [
+    {
+      "id": "A",
+      "requestedBoardMm": [
+        2750,
+        1830
+      ],
+      "formatMatchesRequested": true,
+      "sourcePdfSha256": "6d406edf8bcb3642b37397d69c11ea7b89f72d0002bfb28ab26325e837308a13",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 1,
+      "pdfRows": 1,
+      "pieces": 5,
+      "identicalCuts": true,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": false,
+      "rotatable": 5,
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 1,
+        "utilizationPercent": 79.48,
+        "netM2": 4,
+        "sawMetres": 19.9,
+        "edgeMetres": null,
+        "sawSteps": 8,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 2,
+        "netM2": 4,
+        "utilizationPercent": 39.741679085941385,
+        "sawMetres": 32.1908,
+        "sawSteps": 13,
+        "edgeNetMetres": 0,
+        "edgeWithWasteMetres": 0,
+        "edgeDisplayMetres": 0,
+        "edgeBuyMetres": 0,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": null,
+      "boardCountMatches": false
+    },
+    {
+      "id": "B",
+      "requestedBoardMm": [
+        2750,
+        1830
+      ],
+      "formatMatchesRequested": true,
+      "sourcePdfSha256": "e631cd87c391b9594d9a3e705b1b97d9a1c3b1cf70fecf883dfd6eac5bf40265",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 3,
+      "pdfRows": 3,
+      "pieces": 3,
+      "identicalCuts": true,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": false,
+      "rotatable": 0,
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 1,
+        "utilizationPercent": 83.46,
+        "netM2": 4.2,
+        "sawMetres": 19.1,
+        "edgeMetres": null,
+        "sawSteps": 8,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 2,
+        "netM2": 4.2,
+        "utilizationPercent": 41.728763040238455,
+        "sawMetres": 28.062,
+        "sawSteps": 10,
+        "edgeNetMetres": 0,
+        "edgeWithWasteMetres": 0,
+        "edgeDisplayMetres": 0,
+        "edgeBuyMetres": 0,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": null,
+      "boardCountMatches": false
+    },
+    {
+      "id": "C",
+      "requestedBoardMm": [
+        2600,
+        1830
+      ],
+      "formatMatchesRequested": false,
+      "sourcePdfSha256": "c45d74b328779fc1da865202dc196c09608a8cc7cb0083682a2104786f79c94c",
+      "schema": 1,
+      "scope": "Local comparison, not native SketchUp or commercial approval",
+      "jsonRows": 2,
+      "pdfRows": 2,
+      "pieces": 4,
+      "identicalCuts": true,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "thicknessMm": 18,
+      "grain": false,
+      "rotatable": 0,
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 1,
+        "utilizationPercent": 80.28,
+        "netM2": 4,
+        "sawMetres": 19.2,
+        "edgeMetres": null,
+        "sawSteps": 8,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "local": {
+        "boards": 2,
+        "netM2": 4.04,
+        "utilizationPercent": 40.139095876800795,
+        "sawMetres": 29.0464,
+        "sawSteps": 11,
+        "edgeNetMetres": 0,
+        "edgeWithWasteMetres": 0,
+        "edgeDisplayMetres": 0,
+        "edgeBuyMetres": 0,
+        "errors": []
+      },
+      "comparable": true,
+      "edgeDisplayMatches": null,
+      "boardCountMatches": false
+    }
+  ]
+}

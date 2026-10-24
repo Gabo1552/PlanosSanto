@@ -20,3 +20,7 @@ La columna «distribución válida» está comprobada geométricamente por el la
 Interpretación: A aísla la elección de giro; B el aprovechamiento de una franja inferior común; C la conservación de una columna lateral alta. Si Experto resuelve B y C en una placa, una regla fija «siempre horizontal» o «siempre vertical» queda descartada. Si resuelve A en una, debe evaluar una orientación alternativa antes de comprometer la primera pieza.
 
 Validación local del formato: `python3 scripts/validar_txt_maderera.py archivo.txt`, aprobada para los tres. Esto no es aceptación de importación comercial.
+
+## PDF devueltos
+
+Ya se analizaron A, B y C: [resultados y decisiones](RESULTADOS-PDF.md). Los tres usan una placa. **C fue ejecutado en 2750 × 1830**, no en el formato 2600 solicitado; el análisis conserva esa diferencia. No se recibieron los JSON.
