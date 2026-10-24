@@ -1,0 +1,2 @@
+# Supplier test TXT requires byte-exact TAB and CRLF, including on Linux checkouts.
+docs/auditoria-experto-0822/ensayos/*.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
