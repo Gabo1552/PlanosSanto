@@ -1,3 +1,11 @@
+# Entrega 0.8.24 — corrección del motor Experto, pendiente de validación nativa
+
+[Instalar candidata](PlanosSanto-0.8.24-candidata.rbz) · [SHA256](PlanosSanto-0.8.24-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.24-Validacion-Local.zip).
+
+A/B/C bajan de dos placas a una. Los cuatro pedidos pasan de 29/13/13/57 a 28/12/13/56 (proveedor: 27/11/12/56). La equivalencia comercial sigue pendiente. Conserva los materiales de 0.8.23.
+
+[Cambios y resultados](../docs/validacion-0824/CAMBIOS.md) · [Validación local](../docs/validacion-0824/VALIDACION_LOCAL.md).
+
 # Entrega 0.8.23 — fichas desde materiales del modelo, PENDIENTE DE VALIDACIÓN REAL
 
 [Instalar candidata](PlanosSanto-0.8.23-candidata.rbz) · [SHA256](PlanosSanto-0.8.23-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.23-Validacion-Local.zip).

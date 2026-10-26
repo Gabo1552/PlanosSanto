@@ -1,0 +1,174 @@
+{
+  "version": "0.8.24",
+  "scope": "Aggregate local audit against previously recorded supplier PDFs; not commercial or native SketchUp approval",
+  "cases": [
+    {
+      "caseId": "caso-1",
+      "sourceSha256": "49507a7b045b830109b36a57dd6b88e21e517129cbed59c7c3f0a678f7e979a2",
+      "pieces": 400,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "grain": false,
+      "baseline": {
+        "boards": 29,
+        "sawMetres": 794.0838,
+        "sawSteps": 675
+      },
+      "current": {
+        "boards": 28,
+        "sawMetres": 788.2328,
+        "sawSteps": 698,
+        "utilizationPercent": 86.3116393442623
+      },
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 27,
+        "utilizationPercent": 89.51,
+        "netM2": 121.6,
+        "sawMetres": 739.4,
+        "edgeMetres": 601,
+        "sawSteps": 625,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "boardCountMatches": false,
+      "invariantsPassed": true,
+      "elapsedMs": 151.72,
+      "search": {
+        "strategy": "perimeter/minarea/repeat",
+        "candidates": 90,
+        "referenceBoards": 29
+      }
+    },
+    {
+      "caseId": "caso-2",
+      "sourceSha256": "3b6da3bc8d853861c444747b1334f11ae66987151a224b3c149552cc0f124bb6",
+      "pieces": 155,
+      "boardMm": [
+        2600,
+        1830
+      ],
+      "grain": false,
+      "baseline": {
+        "boards": 13,
+        "sawMetres": 331.4724,
+        "sawSteps": 292
+      },
+      "current": {
+        "boards": 12,
+        "sawMetres": 312.4014,
+        "sawSteps": 281,
+        "utilizationPercent": 83.37566554574752
+      },
+      "supplier": {
+        "boardFormats": [
+          "2600x1830"
+        ],
+        "boards": 11,
+        "utilizationPercent": 90.96,
+        "netM2": 47.6,
+        "sawMetres": 283.3,
+        "edgeMetres": 218.7,
+        "sawSteps": 241,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "boardCountMatches": false,
+      "invariantsPassed": true,
+      "elapsedMs": 26.79,
+      "search": {
+        "strategy": "height/minarea/repeat",
+        "candidates": 90,
+        "referenceBoards": 13
+      }
+    },
+    {
+      "caseId": "caso-3",
+      "sourceSha256": "e8ddf2a58bffffacbc127974c4660e79c9c7dc10fe6b70199461b148369c7aea",
+      "pieces": 198,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "grain": false,
+      "baseline": {
+        "boards": 13,
+        "sawMetres": 370.6178,
+        "sawSteps": 368
+      },
+      "current": {
+        "boards": 13,
+        "sawMetres": 367.3526,
+        "sawSteps": 320,
+        "utilizationPercent": 85.57680003057052
+      },
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 12,
+        "utilizationPercent": 92.71,
+        "netM2": 56,
+        "sawMetres": 326.4,
+        "edgeMetres": 192.1,
+        "sawSteps": 294,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "boardCountMatches": false,
+      "invariantsPassed": true,
+      "elapsedMs": 28.68,
+      "search": {
+        "strategy": "height/reference/repeat",
+        "candidates": 90,
+        "referenceBoards": 13
+      }
+    },
+    {
+      "caseId": "caso-4",
+      "sourceSha256": "24effb9de88d422c44105c7a69d730e80c1e5d60eaf7783398a468ee90ba62c6",
+      "pieces": 1244,
+      "boardMm": [
+        2750,
+        1830
+      ],
+      "grain": true,
+      "baseline": {
+        "boards": 57,
+        "sawMetres": 1981.5376,
+        "sawSteps": 2420
+      },
+      "current": {
+        "boards": 56,
+        "sawMetres": 1935.3424,
+        "sawSteps": 2410,
+        "utilizationPercent": 91.01831559151232
+      },
+      "supplier": {
+        "boardFormats": [
+          "2750x1830"
+        ],
+        "boards": 56,
+        "utilizationPercent": 91.02,
+        "netM2": 256.5,
+        "sawMetres": 1953,
+        "edgeMetres": 1032,
+        "sawSteps": 2100,
+        "kerfMm": 4.4,
+        "trimMm": 10
+      },
+      "boardCountMatches": true,
+      "invariantsPassed": true,
+      "elapsedMs": 354.99,
+      "search": {
+        "strategy": "width/reference/normal",
+        "candidates": 40,
+        "referenceBoards": 57
+      }
+    }
+  ]
+}
