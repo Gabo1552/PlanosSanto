@@ -1,4 +1,4 @@
-import {useRef,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {mm} from '../../lib/model';
 import {edgeToBuy,edgeTotals,formatMetres,plural} from './workshopRules';
 import {usable,type BoardGroup,type LayoutGroup,type MaterialOptimization,type OrderOptimization} from './sheetOptimizer';
@@ -45,6 +45,8 @@ function SheetDiagram({material,group,total}:{material:MaterialOptimization;grou
 type BoardProps={material:MaterialOptimization;board:ProjectBoard;busy:boolean;exporting:boolean;onExport:(board:ProjectBoard)=>void;onHighlight:(id:string)=>void};
 /** Una placa del proyecto: cifras, cantos para el portal, avisos, su TXT y sus diagramas. */
 function BoardSection({material:m,board,busy,exporting,onExport,onHighlight}:BoardProps){
+ const [layoutIndex,setLayoutIndex]=useState(0),[zoom,setZoom]=useState(1);
+ const activeIndex=Math.min(layoutIndex,Math.max(0,m.layouts.length-1));
  const id=domId(board.key),label=boardLabel(board),ready=boardReady(board)&&!(m.method==='experto'&&m.status!=='ok'),{length,width}=usableOf(m);
  const notes=[
   ...(m.errors||[]),...(m.warnings||[]),
@@ -70,30 +72,44 @@ function BoardSection({material:m,board,busy,exporting,onExport,onHighlight}:Boa
    <ul aria-label={`Problemas de ${label}`}>{board.problems.map(problem=><li key={problem.id}><div><strong>{problem.detail||'Sin detalle'} · {problem.id}</strong><ul className="workshop-reasons">{problem.reasons.map(reason=><li key={reason} className="workshop-reason">{reason}</li>)}</ul></div><div className="workshop-blocked-actions"><button disabled={busy} aria-label={`Ver en el modelo ${problem.detail} · ${problem.id}`} onClick={()=>onHighlight(problem.id)}>Ver en el modelo</button></div></li>)}</ul></div>}
   {!!notes.length&&<ul className="workshop-optim-warnings" aria-label={`Avisos de ${label}`}>{notes.map(text=><li key={text}>{text}</li>)}</ul>}
   {m.status==='ok'&&!!m.sheets.length&&<>
-   <h4>Diagramas · {plural(m.sheets.length,'placa','placas')}</h4>
-   <div className="workshop-sheets">{m.layouts.map(group=><SheetDiagram key={group.sheetNumbers[0]} material={m} group={group} total={m.sheets.length}/>)}</div>
+   <p className="workshop-utilization" aria-label="Área aprovechada y desperdicio"><span style={{width:`${Math.max(0,Math.min(100,(m.utilization??0)*100))}%`}}/><strong>{percent.format(m.utilization??0)} aprovechado · {percent.format(1-(m.utilization??0))} sobrante y corte</strong></p><h4>Diagramas · {plural(m.sheets.length,'placa','placas')}</h4>
+   <div className="workshop-diagram-tools" aria-label="Navegar placas"><button disabled={activeIndex===0} onClick={()=>setLayoutIndex(activeIndex-1)} aria-label="Placa anterior">← Anterior</button><label>Distribución <select aria-label="Distribución de placas" value={activeIndex} onChange={e=>setLayoutIndex(Number(e.target.value))}>{m.layouts.map((group,index)=><option key={index} value={index}>{index+1} de {m.layouts.length} · placas {group.sheetNumbers.join(', ')}</option>)}</select></label><button disabled={activeIndex===m.layouts.length-1} onClick={()=>setLayoutIndex(activeIndex+1)} aria-label="Placa siguiente">Siguiente →</button><label>Vista <select aria-label="Ampliación del diagrama" value={zoom} onChange={e=>setZoom(Number(e.target.value))}><option value={1}>Ajustar</option><option value={1.5}>150 %</option><option value={2}>200 %</option></select></label></div>
+   <div className={`workshop-diagram-viewport${zoom===1?' is-fit':''}`} tabIndex={0} aria-label="Diagrama de corte, desplazable al ampliar"><div className="workshop-sheets" style={{width:`${zoom*100}%`}}>{m.layouts[activeIndex]&&<SheetDiagram material={m} group={m.layouts[activeIndex]} total={m.sheets.length}/>}</div></div>
    <div className="material-review-table"><table className="workshop-optim-table workshop-optim-legend"><caption>Leyenda de {label}: piezas iguales comparten letra</caption><thead><tr><th scope="col">Letra</th><th scope="col" className="workshop-num">Base × altura</th><th scope="col" className="workshop-num">Cantidad</th><th scope="col">Piezas</th></tr></thead>
-    <tbody>{(placed=>m.legend.filter(entry=>placed.has(entry.key)).map(entry=><tr key={entry.key}><th scope="row">{entry.key}</th><td className="workshop-num">{mm(entry.base)} × {mm(entry.height)} mm</td><td className="workshop-num">{placed.get(entry.key)}</td><td>{names(entry.details)}</td></tr>))(placedCount(m))}</tbody></table></div>
+    <tbody>{(placed=>m.legend.filter(entry=>placed.has(entry.key)).map(entry=><tr key={entry.key}><th scope="row">{entry.key}</th><td className="workshop-num">{mm(entry.base)} × {mm(entry.height)} mm</td><td className="workshop-num">{placed.get(entry.key)}</td><td>{names(entry.details)} <button className="workshop-piece-link" onClick={()=>{const id=m.sheets.flatMap(s=>s.placements).find(p=>m.keys[p.id]===entry.key)?.id;if(id)onHighlight(id);}} disabled={busy} aria-label={`Ver pieza ${entry.key} en SketchUp`}>Ver en el modelo</button></td></tr>))(placedCount(m))}</tbody></table></div>
    <p className="workshop-hint">{m.grain?`Veta a lo largo de la placa (${mm(m.lengthMm!)} mm): las piezas mantienen su base en ese sentido.`:'Las piezas giradas se indican en celeste y con ↻ en el diagrama.'}</p>
   </>}
  </section>;
 }
 
-type Props={result:OrderOptimization;boards:ProjectBoard[];busy:boolean;exporting:string;onExport:(board:ProjectBoard)=>void;onHighlight:(id:string)=>void;renderSettings?:(materialKey:string)=>ReactNode;methodLabel?:string;outsideCount?:number};
+type Props={result:OrderOptimization;boards:ProjectBoard[];busy:boolean;exporting:string;onExport:(board:ProjectBoard)=>void;onHighlight:(id:string)=>void;renderSettings?:(materialKey:string)=>ReactNode;methodLabel?:string;outsideCount?:number;target?:{catalogId:string;thicknessMm:number;sequence:number}};
 /** Resumen por material y espesor; solo se abre el despiece elegido. */
-export default function SheetOptimizationView({result,boards,busy,exporting,onExport,onHighlight,renderSettings,methodLabel='General',outsideCount=0}:Props){
+export default function SheetOptimizationView({result,boards,busy,exporting,onExport,onHighlight,renderSettings,methodLabel='General',outsideCount=0,target}:Props){
+ const [query,setQuery]=useState(''),[targetNotice,setTargetNotice]=useState('');
+ const handledTarget=useRef<number|undefined>(undefined);
  const [selected,setSelected]=useState<string|null>(null),back=useRef<HTMLButtonElement>(null),cards=useRef(new Map<string,HTMLButtonElement>());
  const byKey=new Map(boards.map(board=>[board.key,board])),materials=result.materials.filter(m=>byKey.has(m.key)),ok=materials.filter(m=>m.status==='ok');
+ const visibleMaterials=materials.filter(m=>`${m.name} ${m.sku} ${m.thicknessMm}`.toLocaleLowerCase('es').includes(query.trim().toLocaleLowerCase('es')));
  const current=materials.find(m=>m.key===selected),sheets=ok.reduce((sum,m)=>sum+m.sheets.length,0),net=ok.reduce((sum,m)=>sum+m.sheets.reduce((s,sheet)=>s+sheet.usedMm2,0)/1e6,0),bought=ok.reduce((sum,m)=>sum+m.boughtM2,0);
+ useEffect(()=>{
+  if(!target||busy||handledTarget.current===target.sequence)return;
+  const match=result.materials.find(m=>m.materialId===target.catalogId&&Math.abs(m.thicknessMm-target.thicknessMm)<0.01);
+  handledTarget.current=target.sequence;
+  if(match){setSelected(match.key);requestAnimationFrame(()=>back.current?.focus());setTargetNotice('');}
+  else setTargetNotice('Ese material y espesor todavía no tiene una optimización. Actualizá desde el modelo y revisá su ficha.');
+ },[target,busy,result]);
  function open(key:string){setSelected(key);requestAnimationFrame(()=>back.current?.focus());}
  function close(){const key=selected;setSelected(null);requestAnimationFrame(()=>key&&cards.current.get(key)?.focus());}
  return <section className="workshop-optim" aria-labelledby="workshop-optim-title" aria-busy={busy}>
   <div className="workshop-optim-heading"><div><h3 id="workshop-optim-title">Placas del proyecto</h3><p className="workshop-hint">{current?'Revisá las placas, piezas y cantos de este material.':'Elegí un material para ver su optimización y preparar su TXT.'}</p></div><span className="workshop-badge">{methodLabel}</span></div>
+  {targetNotice&&<p role="status">{targetNotice}</p>}
   {busy&&<p className="workshop-loading" role="status">Actualizando medidas y validaciones…</p>}
-  {current?<><button ref={back} className="workshop-back" onClick={close}>← Volver a materiales</button>{renderSettings?.(current.key)}<BoardSection material={current} board={byKey.get(current.key)!} busy={busy} exporting={exporting===current.key} onExport={onExport} onHighlight={onHighlight}/></>:<>
+  {current?<><button ref={back} className="workshop-back" onClick={close}>← Volver a materiales</button>{renderSettings?.(current.key)}<BoardSection key={current.key} material={current} board={byKey.get(current.key)!} busy={busy} exporting={exporting===current.key} onExport={onExport} onHighlight={onHighlight}/></>:<>
    {!!materials.length&&<dl className="workshop-figures workshop-project-totals" aria-label="Totales del proyecto"><div><dt>Materiales y espesores</dt><dd>{materials.length}</dd></div><div><dt>Placas calculadas</dt><dd>{sheets}<small>{(outsideCount>0||materials.some(m=>m.status!=='ok'||m.unsized||m.oversize.length))?'Total parcial · hay piezas sin ubicar':'Según la configuración actual'}</small></dd></div><div><dt>Aprovechamiento total</dt><dd>{bought?percent.format(net/bought):'—'}<small>{area.format(net)} m² ubicados / {area.format(bought)} m² de placas</small></dd></div></dl>}
    {outsideCount>0&&<p className="workshop-hint">{plural(outsideCount,'pieza fuera del cálculo','piezas fuera del cálculo')}. Revisá los motivos en «Piezas fuera de las placas».</p>}
-   {materials.length?<ul className="workshop-material-grid" aria-label="Materiales y espesores del proyecto">{materials.map(m=>{const board=byKey.get(m.key)!,ready=boardReady(board)&&!(m.method==='experto'&&m.status!=='ok'),pending=m.status!=='ok'||m.oversize.length>0||m.unsized>0||!!m.errors?.length;return <li key={m.key}><button ref={node=>{if(node)cards.current.set(m.key,node);else cards.current.delete(m.key);}} className={`workshop-material-card${m.status==='blocked'?' is-blocked':''}`} onClick={()=>open(m.key)} aria-label={`Ver optimización de ${boardLabel(m)}`}>
+   {materials.length>1&&<label className="workshop-material-search">Buscar material o SKU<input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Nombre, código o espesor"/></label>}
+   {!!materials.length&&!visibleMaterials.length&&<p role="status">No hay materiales con esa búsqueda. <button onClick={()=>setQuery('')}>Limpiar búsqueda</button></p>}
+   {materials.length?<ul className="workshop-material-grid" aria-label="Materiales y espesores del proyecto">{visibleMaterials.map(m=>{const board=byKey.get(m.key)!,ready=boardReady(board)&&!(m.method==='experto'&&m.status!=='ok'),pending=m.status!=='ok'||m.oversize.length>0||m.unsized>0||!!m.errors?.length;return <li key={m.key}><button ref={node=>{if(node)cards.current.set(m.key,node);else cards.current.delete(m.key);}} className={`workshop-material-card${m.status==='blocked'?' is-blocked':''}`} onClick={()=>open(m.key)} aria-label={`Ver optimización de ${boardLabel(m)}`}>
     <span className="workshop-material-card-top"><strong>{boardLabel(m)}</strong><span className={`workshop-badge ${!ready||pending?'is-warning':'is-ok'}`}>{!ready?'TXT bloqueado':pending?'Revisar optimización':'TXT listo'}</span></span>
     <span className="workshop-hint">{m.sku||'Sin SKU'} · {m.grain?'con veta':m.grain===false?'sin veta':'veta sin cargar'}</span>
     <span className="workshop-material-format">{m.lengthMm&&m.widthMm?`${mm(m.lengthMm)} × ${mm(m.widthMm)} mm`:'Falta el formato de placa'}</span>

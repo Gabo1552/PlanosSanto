@@ -1,0 +1,282 @@
+{
+  "actual": [
+    {
+      "mode": "exterior",
+      "longNames": false,
+      "count": 8,
+      "drawingWidthsMm": [
+        177
+      ],
+      "tableHeightMm": 45.16,
+      "nameLines": 8,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": false,
+      "count": 16,
+      "drawingWidthsMm": [
+        177
+      ],
+      "tableHeightMm": 90.31,
+      "nameLines": 16,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": false,
+      "count": 24,
+      "drawingWidthsMm": [
+        177
+      ],
+      "tableHeightMm": 135.47,
+      "nameLines": 24,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": true,
+      "count": 8,
+      "drawingWidthsMm": [
+        177
+      ],
+      "tableHeightMm": 66.32,
+      "nameLines": 14,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": true,
+      "count": 16,
+      "drawingWidthsMm": [
+        177
+      ],
+      "tableHeightMm": 132.64,
+      "nameLines": 28,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": true,
+      "count": 24,
+      "drawingWidthsMm": [
+        177
+      ],
+      "tableHeightMm": 198.97,
+      "nameLines": 42,
+      "pages": 2
+    },
+    {
+      "mode": "both",
+      "longNames": false,
+      "count": 8,
+      "drawingWidthsMm": [
+        86,
+        86
+      ],
+      "tableHeightMm": 45.16,
+      "nameLines": 8,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": false,
+      "count": 16,
+      "drawingWidthsMm": [
+        86,
+        86
+      ],
+      "tableHeightMm": 90.31,
+      "nameLines": 16,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": false,
+      "count": 24,
+      "drawingWidthsMm": [
+        86,
+        86
+      ],
+      "tableHeightMm": 135.47,
+      "nameLines": 24,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": true,
+      "count": 8,
+      "drawingWidthsMm": [
+        86,
+        86
+      ],
+      "tableHeightMm": 66.32,
+      "nameLines": 14,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": true,
+      "count": 16,
+      "drawingWidthsMm": [
+        86,
+        86
+      ],
+      "tableHeightMm": 132.64,
+      "nameLines": 28,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": true,
+      "count": 24,
+      "drawingWidthsMm": [
+        86,
+        86
+      ],
+      "tableHeightMm": 198.97,
+      "nameLines": 42,
+      "pages": 2
+    }
+  ],
+  "listado_10mm_menor": [
+    {
+      "mode": "exterior",
+      "longNames": false,
+      "count": 8,
+      "drawingWidthsMm": [
+        187
+      ],
+      "tableHeightMm": 45.16,
+      "nameLines": 8,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": false,
+      "count": 16,
+      "drawingWidthsMm": [
+        187
+      ],
+      "tableHeightMm": 90.31,
+      "nameLines": 16,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": false,
+      "count": 24,
+      "drawingWidthsMm": [
+        187
+      ],
+      "tableHeightMm": 135.47,
+      "nameLines": 24,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": true,
+      "count": 8,
+      "drawingWidthsMm": [
+        187
+      ],
+      "tableHeightMm": 73.38,
+      "nameLines": 16,
+      "pages": 1
+    },
+    {
+      "mode": "exterior",
+      "longNames": true,
+      "count": 16,
+      "drawingWidthsMm": [
+        187
+      ],
+      "tableHeightMm": 146.76,
+      "nameLines": 32,
+      "pages": 2
+    },
+    {
+      "mode": "exterior",
+      "longNames": true,
+      "count": 24,
+      "drawingWidthsMm": [
+        187
+      ],
+      "tableHeightMm": 220.13,
+      "nameLines": 48,
+      "pages": 2
+    },
+    {
+      "mode": "both",
+      "longNames": false,
+      "count": 8,
+      "drawingWidthsMm": [
+        91,
+        91
+      ],
+      "tableHeightMm": 45.16,
+      "nameLines": 8,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": false,
+      "count": 16,
+      "drawingWidthsMm": [
+        91,
+        91
+      ],
+      "tableHeightMm": 90.31,
+      "nameLines": 16,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": false,
+      "count": 24,
+      "drawingWidthsMm": [
+        91,
+        91
+      ],
+      "tableHeightMm": 135.47,
+      "nameLines": 24,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": true,
+      "count": 8,
+      "drawingWidthsMm": [
+        91,
+        91
+      ],
+      "tableHeightMm": 73.38,
+      "nameLines": 16,
+      "pages": 1
+    },
+    {
+      "mode": "both",
+      "longNames": true,
+      "count": 16,
+      "drawingWidthsMm": [
+        91,
+        91
+      ],
+      "tableHeightMm": 146.76,
+      "nameLines": 32,
+      "pages": 2
+    },
+    {
+      "mode": "both",
+      "longNames": true,
+      "count": 24,
+      "drawingWidthsMm": [
+        91,
+        91
+      ],
+      "tableHeightMm": 220.13,
+      "nameLines": 48,
+      "pages": 2
+    }
+  ]
+}

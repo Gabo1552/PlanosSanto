@@ -26,6 +26,7 @@ export function materialLabel(item:Pick<CatalogItem,'name'|'sku'|'kind'|'thickne
 }
 /** Datos que le faltan a una ficha para usarla en un pedido (mismo criterio que CatalogStore.missing). Placa: SKU, algún espesor, largo, ancho y veta. Canto: algún ancho. */
 export function catalogMissing(item:Pick<CatalogItem,'kind'|'sku'|'thicknessMm'|'widthMm'|'lengthMm'|'grain'>&Lists):string[]{
+ if(item.kind==='hardware')return [];
  if(item.kind==='sheet')return [...(item.sku.trim()?[]:['SKU']),...(thicknessesOf(item).length?[]:['espesor']),...(measured(item.lengthMm)?[]:['largo']),...(measured(item.widthMm)?[]:['ancho']),...(item.grain===true||item.grain===false?[]:['veta'])];
  if(item.kind==='edge')return widthsOf(item).length?[]:['ancho'];
  return ['tipo'];

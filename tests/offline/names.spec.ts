@@ -1,3 +1,4 @@
+import {openMaterialTool} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -182,11 +183,11 @@ test('en 1000 px la pieza y su nombre quedan visibles al seleccionarla en el dib
 
 test('Guardar y cerrar solicita el cierre solo después de guardar y mantiene el estado si se cancela el SKP',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
- await page.getByRole('button',{name:'Guardar y cerrar',exact:true}).click();
+ await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('button',{name:'Guardar y cerrar',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  expect(saveRequests[0]).toMatchObject({closeAfterSave:true,saveFile:true});expect(saveReplies[0].result).toMatchObject({modelSaved:false,closeAfterSave:false});
  await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();
+ await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();
  await page.getByRole('button',{name:'Guardar y cerrar',exact:true}).click();
  await expect.poll(()=>saveReplies.length).toBe(2);
  expect(saveRequests[1]).toMatchObject({closeAfterSave:true,saveFile:false});expect(saveReplies[1].result).toMatchObject({closeAfterSave:true});
@@ -333,7 +334,7 @@ test('agrupar no permite renombrar hijos de muebles con padres compartidos',asyn
 
 test('materiales OCL: lectura, filtros, herencia, informe nuevo y foco sin modificar modelo/guía',async({page},info)=>{
  await boot(page,info.outputDir,'materials');const before=await snapshot();
- await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();
+ await openMaterialTool(page,'Informe de materiales y cantos');
  const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});await expect(dialog).toBeVisible();
  await expect(dialog.getByText('OpenCutList 7.1.0',{exact:false})).toBeVisible();
  await expect(dialog.locator('tbody').first().locator('tr')).toHaveCount(3);
@@ -360,13 +361,13 @@ test('materiales OCL: lectura, filtros, herencia, informe nuevo y foco sin modif
  await page.screenshot({path:'artifacts/materiales-067-interfaz-SINTETICA-1000px.png',fullPage:false});
  await dialog.getByRole('button',{name:'Cerrar revisión',exact:true}).focus();await page.keyboard.press('Shift+Tab');
  expect(await dialog.evaluate(el=>el.contains(document.activeElement))).toBe(true);
- await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Materiales y cantos',exact:true})).toBeFocused();
- await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
+ await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Informe de materiales y cantos',exact:true})).toBeFocused();
+ await toMuebles(page);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
 });
 
 test('cancelar el informe de materiales no modifica el modelo ni la guía',async({page},info)=>{
  await boot(page,info.outputDir,'materials-cancel');const before=await snapshot();
- await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();
+ await openMaterialTool(page,'Informe de materiales y cantos');
  const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});
  await expect(dialog.getByRole('button',{name:'Guardar informe local…',exact:true})).toBeEnabled();
  await dialog.getByRole('button',{name:'Guardar informe local…',exact:true}).click();
@@ -377,23 +378,23 @@ test('cancelar el informe de materiales no modifica el modelo ni la guía',async
 test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin tocar geometría',async({page},info)=>{
  await boot(page,info.outputDir);const before=await snapshot();
  await writeFile(resolve(info.outputDir,'candidatos.json'),JSON.stringify({items:[{nombre_en_modelos:'Placa prueba E2E',tipo_opencutlist:'2'}]}));
- await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();
+ await openMaterialTool(page,'Compatibilidades y variantes');
  await page.getByRole('button',{name:'Importar JSON…',exact:true}).click();
- await page.getByRole('button',{name:/Placa prueba E2E/}).click();
+ await page.getByRole('dialog',{name:'Biblioteca del taller'}).getByRole('button',{name:/Placa prueba E2E/}).click();
  await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, largo, ancho, veta');await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);// biblioteca v4: la placa ya trae sus espesores estándar
  await page.getByLabel('SKU de biblioteca').fill('PL-E2E');await page.getByLabel('Proveedor de biblioteca').fill('Proveedor sintético');
  await page.getByLabel('Espesor de biblioteca').fill('19.05');await page.getByLabel('Ancho de biblioteca').fill('2000');await page.getByLabel('Largo de biblioteca').fill('3000');
  await page.getByLabel('Veta de biblioteca').selectOption('false');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
- await page.getByRole('button',{name:'Guardar biblioteca',exact:true}).click();await expect(page.getByRole('status')).toContainText('Biblioteca guardada');
+ await page.getByRole('button',{name:'Guardar biblioteca',exact:true}).click();await expect(page.getByRole('dialog',{name:'Biblioteca del taller'}).getByRole('status')).toContainText('Biblioteca guardada');
  await page.setViewportSize({width:1000,height:800});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await expect(page.getByRole('button',{name:'Cerrar biblioteca',exact:true})).toBeInViewport();
  await page.screenshot({path:'artifacts/biblioteca-068-SINTETICA-1000px.png',fullPage:false});
  expect(await snapshot()).toEqual(before);
- await page.getByRole('button',{name:'Exportar copia…',exact:true}).click();await expect(page.getByRole('status')).toContainText('Copia de biblioteca exportada');
+ await page.getByRole('button',{name:'Exportar copia…',exact:true}).click();await expect(page.getByRole('dialog',{name:'Biblioteca del taller'}).getByRole('status')).toContainText('Copia de biblioteca exportada');
  const library=JSON.parse(await readFile(resolve(info.outputDir,'biblioteca-exportada.json'),'utf8'));expect(library.items[0].price).toBeNull();expect(library.items[0].approved).toBe(false);// la casilla vieja queda en el JSON por compatibilidad, sin usarse
  await page.getByRole('button',{name:'Cerrar biblioteca',exact:true}).click();await page.reload();
- await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();await page.getByRole('button',{name:/Placa prueba E2E/}).click();
+ await openMaterialTool(page,'Compatibilidades y variantes');await page.getByRole('dialog',{name:'Biblioteca del taller'}).getByRole('button',{name:/Placa prueba E2E/}).click();
  await expect(page.getByLabel('SKU de biblioteca')).toHaveValue('PL-E2E');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
  await page.getByLabel('Espesor de biblioteca').fill('18');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
  await page.getByLabel('Espesor de biblioteca').fill('');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');// biblioteca v4: los espesores siguen en la lista
@@ -487,4 +488,51 @@ test('Piezas abre la ficha del material nativo sin activar Pintar ni modificar e
  expect([...actions.values()].filter(action=>['smart_start','smart_quick_start','paint_preview','paint_apply','quick_action'].includes(action))).toEqual([]);
  await ficha.getByRole('button',{name:'Cancelar',exact:true}).click();await expect(ficha).toHaveCount(0);
  const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.names).toEqual(before.names);
+});
+
+test('cabecera simple y Pintar usa el mismo acceso nativo; herramientas secundarias en Materiales',async({page},info)=>{
+ await boot(page,info.outputDir);
+ await expect(page.locator('.app-header')).toHaveCount(0);
+ await expect(page.locator('.ux-topbar').getByRole('button',{name:'Guardar guía',exact:true})).toBeVisible();
+ await expect(page.locator('.ux-topbar').getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeVisible();
+ const nativeActions:string[]=[];
+ await page.exposeFunction('recordNativeAction',(action:string)=>nativeActions.push(action));
+ await page.evaluate(()=>{
+  const w=window as unknown as {sketchup:{request:(message:string)=>void};PlanosSantoBridge:{receive:(reply:unknown)=>void};recordNativeAction:(action:string)=>Promise<void>};
+  const original=w.sketchup.request;
+  w.sketchup.request=raw=>{const m=JSON.parse(raw);if(['paint_in_view','create_component'].includes(m.action)){void w.recordNativeAction(m.action).then(()=>w.PlanosSantoBridge.receive({version:1,id:m.id,result:{opened:true},error:null}));}else original(raw);};
+ });
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Pintar',exact:true}).click();
+ await expect.poll(()=>nativeActions).toEqual(['paint_in_view']);
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Componente',exact:true}).click();
+ await expect.poll(()=>nativeActions).toEqual(['paint_in_view','create_component']);
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
+ await page.getByText('Más herramientas de materiales',{exact:true}).click();
+ await expect(page.getByRole('button',{name:'Informe de materiales y cantos',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Asignar materiales por caras',exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('cabecera-0825.png'),fullPage:true});
+});
+
+test('sugerencias: búsqueda, orientación plegable y acciones siempre disponibles',async({page},info)=>{
+ await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+ await page.getByRole('button',{name:'Proponer nombres por geometría…',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres'});
+ await dialog.getByRole('checkbox',{name:'Incluir piezas que ya tienen nombre'}).check();
+ await dialog.getByRole('searchbox',{name:'Buscar pieza o nombre'}).fill('P01');
+ await expect(dialog.locator('[data-suggestion-row]')).toHaveCount(1);
+ await dialog.getByRole('searchbox',{name:'Buscar pieza o nombre'}).fill('');
+ await dialog.getByText('Ajustar ejes del mueble',{exact:true}).click();
+ await expect(dialog.getByLabel('Vertical local',{exact:true})).toBeVisible();
+ await dialog.getByText('Ajustar ejes del mueble',{exact:true}).click();
+ await page.screenshot({path:info.outputPath('sugerencias-0825.png'),fullPage:true});
+ const editable=dialog.getByLabel('Nombre sugerido P01',{exact:true});
+ await dialog.getByLabel('Buscar pieza o nombre').fill('');await editable.fill('Costado');
+ await dialog.getByLabel('Buscar pieza o nombre').fill('Costado');await editable.focus();await editable.press('ControlOrMeta+a');await editable.pressSequentially('Travesaño');
+ await expect(editable).toHaveValue('Travesaño');await expect(editable).toBeFocused();
+ await dialog.getByLabel('Buscar pieza o nombre').fill('');
+ await page.setViewportSize({width:800,height:900});
+ await expect(dialog.locator('.naming-footer').getByRole('button',{name:'Cancelar',exact:true})).toBeInViewport();
+ await page.screenshot({path:info.outputPath('sugerencias-compacta-0825.png'),fullPage:true});
+ await dialog.locator('.naming-footer').getByRole('button',{name:'Cancelar',exact:true}).click();
+ await expect(dialog).toHaveCount(0);
 });

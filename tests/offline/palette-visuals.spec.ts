@@ -1,3 +1,4 @@
+import {openMaterialTool} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -27,9 +28,9 @@ async function boot(page:Page,folder:string){
  return {version:1,id:msg.id,result,error:null};});
  await page.exposeFunction('smartToolDoubleEvent',(state:State)=>{tool={...state};});
  await page.addInitScript({content:'window.sketchup={request:function(message){window.smartContractRequest(message).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};'});
- page.on('pageerror',error=>errors.push(error.message));await page.route('https://planos-santo.test/**',async route=>{const name=new URL(route.request().url()).pathname.slice(1);if(!['index.html','app.js','app.css'].includes(name))throw Error('Unexpected resource');await route.fulfill({body:await readFile(resolve('sketchup_offline/build/planos_santo/ui',name)),contentType:name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'text/css'});});page.setDefaultTimeout(10_000);await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');await expect(page.getByRole('button',{name:'Pintura avanzada',exact:true})).toBeEnabled();
+ page.on('pageerror',error=>errors.push(error.message));await page.route('https://planos-santo.test/**',async route=>{const name=new URL(route.request().url()).pathname.slice(1);if(!['index.html','app.js','app.css'].includes(name))throw Error('Unexpected resource');await route.fulfill({body:await readFile(resolve('sketchup_offline/build/planos_santo/ui',name)),contentType:name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'text/css'});});page.setDefaultTimeout(10_000);await page.context().setOffline(true);await page.goto('https://planos-santo.test/index.html');await expect(page.getByRole('button',{name:'Pintar',exact:true})).toBeEnabled();
 }
-async function open(page:Page){await page.getByRole('button',{name:'Pintura avanzada',exact:true}).click();await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Placas',exact:true})).toBeEnabled();return page.locator('.smart-paint-palette');}
+async function open(page:Page){await openMaterialTool(page,'Ajustes avanzados de pintura');await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Placas',exact:true})).toBeEnabled();return page.locator('.smart-paint-palette');}
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
 test('miniatura SKM real se muestra sin activar pintura y el material elegido queda visible',async({page},info)=>{

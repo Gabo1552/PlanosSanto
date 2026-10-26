@@ -71,7 +71,7 @@ class CatalogV2ActionsTest < Minitest::Test
       {'id'=>id,'name'=>name,'sourceName'=>"#{id}.skm",'sha256'=>Digest::SHA256.hexdigest(bytes),'hash'=>Digest::SHA256.hexdigest(bytes),'status'=>'new','suggestions'=>suggestions,'_bytes'=>bytes}
     end
     importer.instance_variable_set(:@pending,{'token'=>'t','revision'=>0,'rows'=>rows})
-    assert_raises(PlanosSanto::ExportError) { dispatch('skm_commit_typed',{'token'=>'t','selectedIds'=>%w[a b c],'revision'=>0,'confirmed'=>true,'kinds'=>{'a'=>'hardware'}}) }
+    assert_raises(PlanosSanto::ExportError) { dispatch('skm_commit_typed',{'token'=>'t','selectedIds'=>%w[a b c],'revision'=>0,'confirmed'=>true,'kinds'=>{'a'=>'not_a_kind'}}) }
     result=dispatch('skm_commit_typed',{'token'=>'t','selectedIds'=>%w[a b c],'revision'=>0,'confirmed'=>true,'kinds'=>{'a'=>'sheet','b'=>'edge'},'applySuggestions'=>true})
     assert_equal 3,result['imported']
     items=result['catalog']['items'].to_h { |item| [item['name'],item] }

@@ -27,6 +27,7 @@ export type CutlistViewProps={
   /** Lápiz: abre la ficha de la biblioteca en Materiales. */
   onCreateMaterial?:(modelMaterialId:string)=>void;
   onEditMaterial?:(catalogId:string)=>void;
+  onOptimizeMaterial?:(catalogId:string,thicknessMm:number)=>void;
   onDataLoaded?:(data:CutlistData)=>void;
   /** 0.8.20: «Agregar 16 mm a la ficha» (espesor fuera de la lista); por defecto la acción Ruby `catalog_add_thickness`. */
   addThickness?:(catalogId:string,thicknessMm:number)=>Promise<unknown>;
@@ -75,7 +76,7 @@ function Icon({name}:{name:keyof typeof PATHS}){return <svg className="cutlist-i
 function TypeIcon({kind}:{kind:SummaryKind}){
   const label=KIND_LABELS[kind];
   return <span className={`cutlist-type is-${kind}`} title={label}>
-    {kind==='unknown'?<span aria-hidden="true">?</span>:<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">{kind==='sheet'
+    {kind==='unknown'?<span aria-hidden="true">?</span>:<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">{kind==='hardware'?<><path d="M7 2h6v5l-2 2v8H9V9L7 7z"/><path d="M8 4h4M9 11h2M9 14h2"/></>:kind==='sheet'
       ?<><path d="M3 7.5 10 4l7 3.5-7 3.5z"/><path d="M3 10.5l7 3.5 7-3.5"/><path d="M3 13.5l7 3.5 7-3.5"/></>
       :<><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="3.8"/><circle cx="10" cy="10" r="1.3"/></>}</svg>}
     <span className="sr-only">{label}</span></span>;
@@ -110,7 +111,7 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
@@ -319,6 +320,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <td className="material"><div className="cutlist-material"><button type="button" className="cutlist-summary-link" aria-describedby={`${uid}-summary-hint`} onClick={()=>goTo(row.key,index)}><span className="sr-only">Ir a la sección </span><span className="cutlist-material-label"><Dot color={row.color}/><MaterialName row={row}/></span></button><Warnings items={row.warnings}/>
               <span className="cutlist-row-tools">
                 {!row.catalogId&&onCreateMaterial&&nativeMaterialId(row.key)&&<button type="button" className="cutlist-icon-button" aria-label={`Crear ficha de ${row.name}`} title="Crear ficha desde el material del modelo" onClick={()=>onCreateMaterial(nativeMaterialId(row.key)!)}><Icon name="pencil"/></button>}
+                {row.kind==='sheet'&&row.catalogId&&row.thicknessMm!=null&&onOptimizeMaterial&&<button type="button" className="cutlist-optimize" aria-label={`Ver optimización de ${row.name} · ${formatMm(row.thicknessMm)} mm`} onClick={()=>onOptimizeMaterial(row.catalogId!,row.thicknessMm!)}>Ver optimización →</button>}
                 {row.catalogId&&onEditMaterial&&<button type="button" className="cutlist-icon-button" aria-label={`Editar la ficha de ${row.name} en Materiales`} title="Editar la ficha en Materiales" onClick={()=>onEditMaterial(row.catalogId!)}><Icon name="pencil"/></button>}
                 <button type="button" className="cutlist-icon-button" aria-pressed={!off} aria-label={`Mostrar la sección ${title}`} title={off?'Mostrar la sección':'Ocultar la sección'} onClick={()=>flip(setHidden,row.key)}><Icon name={off?'eyeOff':'eye'}/></button>
               </span></div></td>

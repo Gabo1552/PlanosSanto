@@ -53,7 +53,7 @@ const copies={
   'planos_santo/icon-24.png':'sketchup/planos_santo/icon-24.png',
   'planos_santo/icon-32.png':'sketchup/planos_santo/icon-32.png',
 };
-for(const action of ['sheet','edge','remove_edge','sample','furniture','order','guides','materials','main']){
+for(const action of ['component','sheet','edge','remove_edge','sample','furniture','order','guides','materials','main']){
   for(const size of [24,32])copies[`planos_santo/icons/${action}-${size}.png`]=`sketchup_offline/icons/${action}-${size}.png`;
   // 0.8.18: vector icon, sharp at any Windows scaling; the PNGs stay as fallback.
   copies[`planos_santo/icons/${action}.svg`]=`sketchup_offline/icons/${action}.svg`;

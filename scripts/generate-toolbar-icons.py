@@ -14,14 +14,20 @@ GREEN = '#245a49'
 AMBER = '#b87925'
 PAPER = '#fffdf7'
 WARM = '#efece3'
-KEYS = ('main','sheet','edge','remove_edge','sample','furniture','order','guides','materials')
+KEYS = ('main','component','sheet','edge','remove_edge','sample','furniture','order','guides','materials')
 
 def drawing(key, box, line, poly):
     if key=='main':
         box((3,3,21,21));line([(7,17),(7,7),(13,7),(15,9),(13,12),(7,12)]);line([(12,17),(17,17),(17,13),(13,13)],AMBER)
     elif key=='sheet':
-        poly([(3,8),(12,4),(21,8),(12,12)]);poly([(3,8),(12,12),(12,20),(3,16)]);poly([(12,12),(21,8),(21,16),(12,20)],'#dde8df')
-        line([(15,4),(19,2),(22,5),(18,9)],AMBER,2.2);line([(15,9),(17,11)],AMBER,2.2)
+        poly([(3,10),(10,3),(20,13),(13,20)],'#dde8df')
+        line([(3,10),(17,10)],AMBER,2.5);line([(8,3),(8,1)],GREEN,1.7)
+        poly([(21,14),(23,19),(21,21),(19,19)],AMBER)
+    elif key=='component':
+        poly([(3,8),(11,4),(19,8),(11,12)],PAPER)
+        poly([(3,8),(11,12),(11,21),(3,17)],WARM)
+        poly([(11,12),(19,8),(19,17),(11,21)],'#dde8df')
+        line([(19,1),(19,7)],AMBER,2.5);line([(16,4),(22,4)],AMBER,2.5)
     elif key in ('edge','remove_edge'):
         poly([(3,7),(17,7),(21,11),(7,11)]);poly([(7,11),(21,11),(21,17),(7,17)])
         line([(7,11),(21,11)],AMBER,3)
@@ -85,4 +91,4 @@ if __name__=='__main__':
     for key in KEYS:
         for size in (24,32): icon(key,size).save(DEST/f'{key}-{size}.png')
         (DEST/f'{key}.svg').write_text(svg(key), encoding='utf-8')
-    print('18 original toolbar icons generated (24px / 32px) and 9 vector icons (SVG).')
+    print('20 original toolbar icons generated (24px / 32px) and 10 vector icons (SVG).')

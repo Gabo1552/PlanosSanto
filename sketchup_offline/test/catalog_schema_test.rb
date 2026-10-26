@@ -213,7 +213,10 @@ class CatalogSchemaTest < Minitest::Test
     assert_equal [nil,nil,nil],ambiguous.values_at('thicknessMm','lengthMm','widthMm'),'Formato en pulgadas: no se adivina.'
     assert_equal [3,5,12,15,18,25],ambiguous['thicknessesMm']
     assert_equal({'source'=>'ocl','fields'=>%w[thicknessMm],'presetId'=>nil},ambiguous['suggested'])
-    assert items.none? { |row| row['approved'] };assert_equal 3,items.length
+    assert items.none? { |row| row['approved'] };assert_equal 4,items.length
+    hardware=items.find { |row| row['name']=='Herraje' }
+    assert_equal 'hardware',hardware['kind']
+    assert_empty PlanosSanto::CatalogStore.missing(hardware)
   end
   def test_ficha_is_complete_or_names_what_it_lacks
     # Biblioteca v4: la placa nueva ya trae sus espesores estándar; «espesor» falta solo con la lista vacía.

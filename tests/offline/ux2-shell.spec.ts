@@ -1,3 +1,4 @@
+import {openMaterialTools} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -129,8 +130,9 @@ test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un
 
 test('con la guía sin guardar, Pintar y Pintura avanzada siguen habilitados (pintar no depende de la guía)',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Nombre pendiente');
- for(const name of ['Pintar placas y cantos','Pintura avanzada']){const button=page.getByRole('button',{name,exact:true});await expect(button).not.toHaveAttribute('aria-disabled','true');await expect(button).toBeEnabled();}
- const paint=page.getByRole('button',{name:'Pintar placas y cantos',exact:true});await paint.focus();await expect(paint).toBeFocused();
+ await openMaterialTools(page);
+ for(const name of ['Asignar materiales por caras','Ajustes avanzados de pintura']){const button=page.getByRole('button',{name,exact:true});await expect(button).not.toHaveAttribute('aria-disabled','true');await expect(button).toBeEnabled();}
+ const paint=page.getByRole('button',{name:'Asignar materiales por caras',exact:true});await paint.focus();await expect(paint).toBeFocused();
  await paint.click();await expect(page.getByRole('alert').filter({hasText:'No se puede pintar'})).toHaveCount(0);
 });
 

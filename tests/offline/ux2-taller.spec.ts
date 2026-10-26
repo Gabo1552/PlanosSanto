@@ -1,3 +1,4 @@
+import {openMaterialTool} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -49,7 +50,7 @@ test('maderera embebida: región sin diálogo, «Volver al inicio» y estado anu
 
 test('revisión de materiales y cantos observados: sin códigos internos, plural correcto y ver la pieza en el modelo',async({page},info)=>{
  await boot(page,info.outputDir,'materials');
- await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});
+ await openMaterialTool(page,'Informe de materiales y cantos');const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});
  await expect(dialog.getByRole('status')).toHaveCount(1);await expect(dialog.getByLabel('Mostrar materiales por tipo',{exact:true})).toBeVisible();
  await expect(dialog.locator('tbody').first()).not.toContainText(/\b1 piezas\b/);
  const pieces=dialog.getByLabel('Revisar una pieza: caras y materiales',{exact:true});await pieces.selectOption('1/11');

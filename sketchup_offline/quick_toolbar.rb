@@ -7,16 +7,17 @@ module PlanosSanto
   module QuickToolbar
     ACTIONS = [
       ['materials', 'Materiales', 'Abrir la biblioteca visual del taller y revisar materiales antes de usarlos.'],
-      ['sheet', 'Pintar', 'Pintar placas en el modelo: elegí el material en la tira de la vista o en la bandeja Materiales.'],
+      ['sheet', 'Pintar placas y cantos', 'Balde de pintura: elegí Placa o Canto y el material en la tira rápida del modelo.'],
       ['edge', 'Pintar canto', 'Pintar cantos en el modelo: elegí el canto en la tira de la vista o en la bandeja Materiales.'],
       ['remove_edge', 'Quitar canto', 'Restaurar la placa de una cara estrecha con alcance controlado.'],
       ['sample', 'Tomar material (cuentagotas)', 'Consultar el material de una cara sin modificar el modelo.'],
+      ['component', 'Crear componente', 'Crear un componente con la selección actual usando el diálogo de SketchUp.'],
       ['furniture', 'Muebles', 'Revisar muebles, piezas y nombres antes de confirmar cambios.'],
       ['order', 'Maderera', 'Preparar y revisar pedidos; no exporta ni guarda automáticamente.'],
       ['guides', 'Planos', 'Configurar vistas, cotas y notas; exportar PDF requiere una acción adicional.']
     ].map(&:freeze).freeze unless const_defined?(:ACTIONS, false)
 
-    PRIMARY_ACTIONS = %w[sheet edge furniture order guides materials].freeze unless const_defined?(:PRIMARY_ACTIONS, false)
+    PRIMARY_ACTIONS = %w[sheet component furniture order guides materials].freeze unless const_defined?(:PRIMARY_ACTIONS, false)
     # Pintura en vista: these start the brush in the 3D view and never open a window.
     PAINT_ACTIONS = %w[sheet edge remove_edge].freeze unless const_defined?(:PAINT_ACTIONS, false)
 
@@ -43,12 +44,17 @@ module PlanosSanto
         menu.add_item(main)
         main_toolbar = UI::Toolbar.new('Planos Santo')
         ACTIONS.each do |key, label, description|
-          command = UI::Command.new(label) { in_view?(key) ? @controller.paint_in_view(key) : @controller.quick_action(key) }
+          command = UI::Command.new(label) { key=='component' ? @controller.create_component : in_view?(key) ? @controller.paint_in_view(key) : @controller.quick_action(key) }
           command.tooltip = label
           command.status_bar_text = description
           command.small_icon = icon(key, 24)
           command.large_icon = icon(key, 32)
           command.set_validation_proc do
+            if key=='component'
+              reason=@controller.component_block_reason
+              command.status_bar_text=reason || description
+              next reason ? (Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1) : unchecked
+            end
             if in_view?(key)
               reason = @controller.paint_block_reason(key)
               command.status_bar_text = reason || description

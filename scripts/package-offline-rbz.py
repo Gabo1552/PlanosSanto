@@ -22,10 +22,10 @@ expected_files = {
         'THIRD_PARTY_LICENSES.txt', 'manifest.json',
     )),
 }
-expected_files.update(f'planos_santo/icons/{action}-{size}.png' for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main') for size in (24,32))
-expected_files.update(f'planos_santo/icons/{action}.svg' for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'))
+expected_files.update(f'planos_santo/icons/{action}-{size}.png' for action in ('component','sheet','edge','remove_edge','sample','furniture','order','guides','materials','main') for size in (24,32))
+expected_files.update(f'planos_santo/icons/{action}.svg' for action in ('component','sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'))
 expected_files.update(f'planos_santo/cursors/paint-{key}{suffix}' for key in ('piece','edge','remove','blocked','sample') for suffix in ('.png','-64.png','.svg'))
-assert len(files) == 86 and set(files) == expected_files
+assert len(files) == 89 and set(files) == expected_files
 assert all(not f.endswith(('.skp', '.jsonl')) for f in files)
 assert manifest['version'] == json.loads((root / 'sketchup_offline/version.json').read_text())['version']
 assert manifest['validation'] == 'PENDIENTE de ejecución y aceptación del operador en SketchUp 2026'

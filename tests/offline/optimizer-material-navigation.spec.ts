@@ -5,10 +5,11 @@ import {resolve,join} from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 
 // Synthetic component harness: no real model, commercial material or SketchUp claim.
-async function mount(page:Page,folder:string,busy=false,blocked=false,outsideCount=0){
+async function mount(page:Page,folder:string,busy=false,blocked=false,outsideCount=0,multiple=false){
  await mkdir(folder,{recursive:true});const entry=join(folder,'entry.tsx');
  await writeFile(entry,`import React from ${JSON.stringify(resolve('node_modules/react'))};import{createRoot}from ${JSON.stringify(resolve('node_modules/react-dom/client'))};import View from ${JSON.stringify(resolve('sketchup_offline/ui/SheetOptimizationView.tsx'))};
  const materials=['Roble de ensayo','Blanco de ensayo'].map((name,i)=>({key:'mat-'+i,materialId:'m'+i,name,sku:'QA-'+i,thicknessMm:18,grain:!!i,lengthMm:2750,widthMm:1830,trimMm:10,kerfMm:4,status:'ok',pieces:1,unsized:0,rotatable:0,sheets:[{placements:[{id:'piece-'+i,x:10,y:10,w:900,h:500,rotated:false}],usedMm2:450000}],layouts:[{sheetNumbers:[1],layout:{placements:[{id:'piece-'+i,x:10,y:10,w:900,h:500,rotated:false}],usedMm2:450000}}],legend:[{key:'A',base:900,height:500,count:1,details:['Lateral ensayo']}],keys:{['piece-'+i]:'A'},oversize:[],netM2:.45,boughtM2:5.0325,utilization:.0894}));
+ if(${multiple}){const m=materials[0],layout={placements:[{id:'second',x:10,y:10,w:500,h:900,rotated:true}],usedMm2:450000};m.sheets.push(layout);m.layouts.push({sheetNumbers:[2],layout});m.keys.second='A';m.pieces=2;m.legend[0].count=2;m.netM2=.9;m.boughtM2*=2;}
  if(${blocked})Object.assign(materials[0],{status:'blocked',errors:['El motor no pudo ubicar esta placa'],sheets:[],layouts:[]});
  const boards=materials.map((m,i)=>({...m,rowIds:['piece-'+i],edges:[],problems:i?[{id:'piece-'+i,detail:'Lateral ensayo',reasons:['Falta confirmar orientación']}]:[],blocker:null,edgeNotes:0,fileName:'QA-'+i+'.txt'}));
  createRoot(document.getElementById('root')).render(<View result={{materials,trimMm:10,kerfMm:4,allowRotate:false}} boards={boards} busy={${busy}} exporting="" outsideCount={${outsideCount}} methodLabel="Experto" renderSettings={key=><p>Configuración de {key}</p>} onExport={board=>window.lastExport=board.key} onHighlight={id=>window.lastHighlight=id}/>);`);
@@ -40,4 +41,17 @@ test('materiales: motor bloqueado conserva diagnóstico y marca total parcial',a
 
 test('materiales: piezas ajenas a las placas no quedan disimuladas en el total',async({page},info)=>{
  await mount(page,info.outputDir,false,false,3);await expect(page.getByText('Total parcial · hay piezas sin ubicar')).toBeVisible();await expect(page.getByText('3 piezas fuera del cálculo.',{exact:false})).toBeVisible();
+});
+
+test('buscar materiales y recorrer distribuciones muestra una placa completa por vez',async({page},info)=>{
+ await mount(page,info.outputDir,false,false,0,true);
+ await page.getByLabel('Buscar material o SKU').fill('inexistente');await expect(page.getByRole('status')).toContainText('No hay materiales');
+ await page.getByRole('button',{name:'Limpiar búsqueda'}).click();await page.getByLabel('Buscar material o SKU').fill('QA-0');
+ await expect(page.locator('.workshop-material-card')).toHaveCount(1);await page.getByRole('button',{name:'Ver optimización de Roble de ensayo · 18 mm'}).click();
+ await expect(page.getByRole('img')).toHaveCount(1);await expect(page.getByRole('img')).toHaveAttribute('aria-label',/^Placa 1 de 2/);
+ await expect(page.getByRole('button',{name:'Placa anterior'})).toBeDisabled();await page.getByRole('button',{name:'Placa siguiente'}).click();
+ await expect(page.getByRole('img')).toHaveAttribute('aria-label',/^Placa 2 de 2/);await expect(page.getByRole('button',{name:'Placa siguiente'})).toBeDisabled();
+ await page.getByLabel('Distribución de placas').selectOption('0');await expect(page.getByRole('img')).toHaveAttribute('aria-label',/^Placa 1 de 2/);
+ const diagram=await page.getByRole('img').boundingBox(),viewport=await page.locator('.workshop-diagram-viewport').boundingBox();expect(diagram!.height).toBeLessThanOrEqual(viewport!.height);
+ await page.getByRole('button',{name:'Ver pieza A en SketchUp'}).click();expect(await page.evaluate(()=>(window as unknown as {lastHighlight:string}).lastHighlight)).toBe('piece-0');
 });

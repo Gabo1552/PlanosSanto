@@ -159,6 +159,10 @@ module PlanosSanto
       end
       found=ids.filter_map { |id| context['materials'][id] }
       return nil if found.empty?
+      if found.size==1 && found[0]['category']=='hardware'
+        item=OrderProposal.bound_item(found[0],context['catalog'])
+        return {'source'=>'catalog','catalogId'=>item['id'],'name'=>item['name'],'sku'=>item['sku'],'category'=>'hardware'} if item
+      end
       return {'source'=>'model','observedId'=>found[0]['id'],'name'=>found[0]['name'],'category'=>found[0]['category'],'linked'=>!found[0]['native_binding'].nil?} if found.size==1
       {'source'=>'mixed','observedIds'=>found.map { |material| material['id'] }.sort,'name'=>found.map { |material| material['name'] }.join(' / ')}
     end
@@ -268,6 +272,7 @@ module PlanosSanto
 
     # Placa con ficha, o material del modelo que OpenCutList marca como placa. Lo demás no se sabe («?»).
     def self.section_kind(material)
+      return 'hardware' if material['category']=='hardware'
       return 'sheet' if material['source']=='catalog'
       material['source']=='model' && material['category']=='sheet' ? 'sheet' : 'unknown'
     end

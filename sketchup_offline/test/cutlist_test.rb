@@ -61,6 +61,21 @@ class CutlistTest < Minitest::Test
   def find(result,name);result['pieces'].find { |p| p['name']==name };end
   def side(piece,name);piece['edges'].find { |e| e['side']==name };end
 
+  def test_hardware_keeps_its_catalog_link_and_is_not_a_sheet
+    hardware=@store.new_item('Bisagra 35 mm','hardware')
+    @catalog=@store.save([*@catalog['items'],hardware],@catalog['revision'])
+    base=materials
+    define_singleton_method(:materials) { base+[{'id'=>'hinge','name'=>'Bisagra modelo','opencutlist_observed'=>{'type'=>5},'planos_santo_observed'=>{'status'=>'valid','binding'=>PlanosSanto::MaterialResolver.binding_for(hardware)}}] }
+    piece('1/1',[35,35,12],name:'Bisagra',base:'hinge')
+    result=build
+    section=result['sections'].find { |row| row['kind']=='hardware' }
+    refute_nil section
+    assert_equal hardware['id'],section['catalogId']
+    assert_equal 'Bisagra 35 mm',section['name']
+    assert_empty section['missing']
+    refute result['sections'].any? { |row| row['kind']=='sheet' }
+  end
+
   def test_groups_by_material_and_thickness_with_identical_quantities
     piece('1/1',[700,450,18],{'+y'=>'edge-a'},name:'Lateral',definition:'lateral')
     piece('1/2',[700,450,18],{'+y'=>'edge-a'},name:'Lateral',definition:'lateral')

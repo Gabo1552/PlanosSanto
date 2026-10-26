@@ -211,3 +211,18 @@ test('Precio opcional y exportar la ficha sola; el enlace a Taller abre cantos c
  expect(requests('__edit')[0].data).toEqual({value:uuid(1)});
  expect(errors).toEqual([]);
 });
+
+test('Herraje se crea por unidades sin pedir formato de corte y aparece en su grupo',async({page},info)=>{
+ const errors=await harness(page,info.outputDir);
+ await page.getByRole('button',{name:'Crear',exact:true}).click();await page.getByRole('button',{name:'Ficha nueva…',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Nueva ficha de material',exact:true});
+ await dialog.getByRole('combobox',{name:'Tipo',exact:true}).selectOption('hardware');
+ await dialog.getByRole('textbox',{name:'Nombre',exact:true}).fill('Bisagra 110 grados');
+ await expect(dialog.getByRole('textbox',{name:/Espesor|Largo del panel|Ancho del panel/})).toHaveCount(0);
+ await dialog.getByRole('button',{name:'Crear ficha',exact:true}).click();await expect(dialog).toHaveCount(0);
+ const saved=(requests('catalog_save')[0].data.items as FichaItem[]).find(row=>row.name==='Bisagra 110 grados')!;
+ expect(saved).toMatchObject({kind:'hardware',thicknessesMm:[],widthMm:null,lengthMm:null});
+ await expect(page.getByRole('region',{name:/^Herrajes/})).toContainText('Bisagra 110 grados');
+ await page.screenshot({path:info.outputPath('materiales-herraje-0825.png'),fullPage:true});
+ expect(errors).toEqual([]);
+});

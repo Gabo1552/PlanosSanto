@@ -32,22 +32,23 @@ async function boot(page:Page,folder:string){
 const count=(action:string)=>calls.filter(call=>call.action===action).length;
 const emit=(page:Page,name:string,detail:unknown)=>page.evaluate(([name,detail])=>window.dispatchEvent(new CustomEvent(name as string,{detail})),[name,detail] as const);
 const rail=(page:Page,name:string)=>page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name,exact:true});
-// Pintar exige la guía guardada (blockReason 'paint'): generar y guardar antes de abrir la paleta.
+// Prepare a saved guide to verify that palette shortcuts do not alter it.
 async function generated(page:Page){await page.keyboard.press('Alt+3');await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
- const save=page.getByRole('button',{name:'Guardar guía',exact:true});await expect(save).toBeEnabled();await save.click();await expect.poll(()=>count('save')).toBe(1);await expect(rail(page,'Pintar')).toBeEnabled();}
+ const save=page.getByRole('button',{name:'Guardar guía',exact:true});await expect(save).toBeEnabled();await save.click();await expect.poll(()=>count('save')).toBe(1);await expect(rail(page,'Pintar')).not.toHaveAttribute('aria-disabled','true');}
 test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual([]);});
 
-test('Pintar en la ventana principal: los atajos del shell no actúan y Tab navega la paleta sin ir a SketchUp',async({page},info)=>{
+test('Paleta rápida en la ventana principal: los atajos del shell no actúan y Tab navega la paleta sin ir a SketchUp',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- await rail(page,'Pintar').click();
+ await emit(page,'planos-santo-quick-action',{sequence:1,action:'sheet'});
  const palette=page.locator('.smart-paint-palette');await expect(palette).toBeVisible();
+ await expect(palette.locator('.immediate-notice')).toHaveText('Elegí un material y pintá las piezas del modelo.');
  await expect(page.getByRole('button',{name:'Pintar pieza',exact:true})).toBeEnabled();
  const saves=count('save'),scans=count('scan');
  for(const key of ['Alt+2','Alt+5','Control+s','Control+Shift+E','?'])await page.keyboard.press(key);
  await expect(palette).toBeVisible();await expect(page.locator('.ux-shell')).toBeHidden();
  expect(count('save')).toBe(saves);expect(count('pdf')).toBe(0);expect(count('scan')).toBe(scans);
  // Tab y Ctrl+Tab del pincel viven en el viewport: en la paleta, Tab conserva la navegación normal.
- await page.getByRole('button',{name:'Pintar pieza',exact:true}).focus();await page.keyboard.press('Tab');
+ await page.getByRole('button',{name:'Pintar pieza',exact:true}).focus();await expect(page.getByRole('button',{name:'Pintar pieza',exact:true})).toBeFocused();await page.keyboard.press('Tab');
  await expect(page.getByRole('button',{name:'Pintar canto',exact:true})).toBeFocused();
  await page.keyboard.press('Control+Tab');await page.keyboard.press('Shift+Tab');
  await expect(page.getByRole('button',{name:'Pintar pieza',exact:true})).toBeFocused();
@@ -57,7 +58,7 @@ test('Pintar en la ventana principal: los atajos del shell no actúan y Tab nave
 // Simplificación punto 18: the stale banner stays as information but never blocks saving.
 test('pintar con la paleta abierta deja la franja «Pintaste…» al volver; guardar igual regenera por id y la quita',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- await rail(page,'Pintar').click();await expect(page.locator('.smart-paint-palette')).toBeVisible();
+ await emit(page,'planos-santo-quick-action',{sequence:1,action:'sheet'});await expect(page.locator('.smart-paint-palette')).toBeVisible();
  // Ruby, en el mismo clic del pincel: estado de herramienta, documento invalidado y franja de escritura propia.
  await emit(page,'planos-santo-smart-paint',{active:true,mode:'sheet',changed:true,queuedCount:0});
  await emit(page,'planos-santo-document-invalidated',{scanRequired:true});

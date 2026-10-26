@@ -2,15 +2,15 @@ import type {CatalogItem} from './WorkshopPanel';
 import {catalogComplete} from './workshopRules';
 
 // Pure helpers of the material library (Hito 7). No bridge, no DOM: tested by vitest.
-export type LibraryFilter='all'|'sheet'|'edge'|'other'|'review'|'archived';
+export type LibraryFilter='hardware'|'all'|'sheet'|'edge'|'other'|'review'|'archived';
 export type Rotation=0|90|180|270;
 export const searchText=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/g,'').toLocaleLowerCase('es');
 function matchesFilter(item:CatalogItem,filter:LibraryFilter,archived:ReadonlySet<string>){
  if(filter==='archived')return archived.has(item.id);
  if(archived.has(item.id))return false;
  if(filter==='review')return !catalogComplete(item);
- if(filter==='sheet'||filter==='edge')return item.kind===filter;
- if(filter==='other')return !['sheet','edge'].includes(item.kind);
+ if(filter==='sheet'||filter==='edge'||filter==='hardware')return item.kind===filter;
+ if(filter==='other')return !['sheet','edge','hardware'].includes(item.kind);
  return true;
 }
 export function filterItems(items:CatalogItem[],{filter,query,archived,favorites=false}:{filter:LibraryFilter;query:string;archived:ReadonlySet<string>;favorites?:boolean}){
@@ -19,7 +19,7 @@ export function filterItems(items:CatalogItem[],{filter,query,archived,favorites
   .sort((a,b)=>Number(b.favorite)-Number(a.favorite)||a.name.localeCompare(b.name,'es'));
 }
 export function filterCounts(items:CatalogItem[],archived:ReadonlySet<string>):Record<LibraryFilter,number>{
- const filters:LibraryFilter[]=['all','sheet','edge','other','review','archived'];
+ const filters:LibraryFilter[]=['all','sheet','edge','hardware','other','review','archived'];
  return Object.fromEntries(filters.map(filter=>[filter,items.filter(item=>matchesFilter(item,filter,archived)).length])) as Record<LibraryFilter,number>;
 }
 export function copyName(name:string,existing:string[]){
@@ -51,20 +51,20 @@ export function textureRepeats(size:{widthMm:number;heightMm:number},sheet:{leng
 // de cada pieza (thicknessMm queda null). Un canto conserva su espesor (el que se descuenta del corte) y tiene
 // anchos estándar (widthsMm, 22 y 45 mm de fábrica; widthMm queda null): se refila, nunca bloquea.
 export type FichaItem=CatalogItem&{thicknessesMm?:number[];widthsMm?:number[]};
-export type Kind='sheet'|'edge'|'solid_wood'|'dimensional'|'veneer'|'unknown';
+export type Kind='hardware'|'sheet'|'edge'|'solid_wood'|'dimensional'|'veneer'|'unknown';
 /** Standard lists of presets-taller.json. `edgeWidths` (standardWidthsMm) is optional: an older backend does not send it. */
 export type StandardThicknesses={sheet:number[];edge:number[];edgeWidths?:number[]};
 /** Same values as presets-taller.json; only used when an older backend does not send them. */
 export const DEFAULT_THICKNESSES:StandardThicknesses={sheet:[3,5,12,15,18,25],edge:[0.45,2]};
 export const DEFAULT_WIDTHS=[22,45];
 export const MAX_THICKNESSES=32;
-export const kindLabels:Record<Kind,string>={sheet:'Placa',edge:'Canto',solid_wood:'Madera maciza',dimensional:'Perfil',veneer:'Lámina',unknown:'Sin tipo'};
-export type GroupKey='sheet'|'edge'|'other'|'unknown';
-export const groupLabels:Record<GroupKey,string>={sheet:'Placas',edge:'Cantos',other:'Otros materiales',unknown:'Sin tipo'};
-export function groupOf(kind:string):GroupKey{return kind==='sheet'||kind==='edge'?kind:kind==='unknown'||!(kind in kindLabels)?'unknown':'other';}
+export const kindLabels:Record<Kind,string>={hardware:'Herraje',sheet:'Placa',edge:'Canto',solid_wood:'Madera maciza',dimensional:'Perfil',veneer:'Lámina',unknown:'Sin tipo'};
+export type GroupKey='hardware'|'sheet'|'edge'|'other'|'unknown';
+export const groupLabels:Record<GroupKey,string>={hardware:'Herrajes',sheet:'Placas',edge:'Cantos',other:'Otros materiales',unknown:'Sin tipo'};
+export function groupOf(kind:string):GroupKey{return kind==='sheet'||kind==='edge'||kind==='hardware'?kind:kind==='unknown'||!(kind in kindLabels)?'unknown':'other';}
 /** Placa / Canto / Otros / Sin tipo, in that order, without empty groups and keeping the given order inside each one. */
 export function groupItems<T extends {kind:string}>(items:T[]):{key:GroupKey;label:string;items:T[]}[]{
- return (['sheet','edge','other','unknown'] as GroupKey[]).map(key=>({key,label:groupLabels[key],items:items.filter(item=>groupOf(item.kind)===key)})).filter(group=>group.items.length>0);
+ return (['sheet','edge','hardware','other','unknown'] as GroupKey[]).map(key=>({key,label:groupLabels[key],items:items.filter(item=>groupOf(item.kind)===key)})).filter(group=>group.items.length>0);
 }
 const round3=(value:number)=>Math.round(value*1000)/1000;
 const validMeasure=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>0&&value<=100000;
@@ -104,7 +104,7 @@ export type PriceDraft={amount:string;currency:string;unit:string;date:string;so
 export type FichaDraft={name:string;kind:string;sku:string;supplier:string;notes:string;thicknesses:string[];chosen:number|null;widths:string[];widthMm:string;lengthMm:string;grain:''|'true'|'false';price:PriceDraft};
 export type DraftErrors=Partial<Record<'name'|'thicknesses'|'widths'|'widthMm'|'lengthMm'|'price',string>>&{rows?:Record<number,string>;widthRows?:Record<number,string>};
 const today=()=>new Date().toISOString().slice(0,10);
-export function emptyPrice(kind:string):PriceDraft{return {amount:'',currency:'ARS',unit:kind==='edge'?'metro':'placa',date:today(),source:'Carga manual'};}
+export function emptyPrice(kind:string):PriceDraft{return {amount:'',currency:'ARS',unit:kind==='hardware'?'unidad':kind==='edge'?'metro':'placa',date:today(),source:'Carga manual'};}
 export function draftFromItem(item:FichaItem,defaults:StandardThicknesses=DEFAULT_THICKNESSES):FichaDraft{
  const list=standardThicknesses(item,defaults);
  return {name:item.name,kind:item.kind,sku:item.sku,supplier:item.supplier,notes:item.notes||'',thicknesses:list.map(formatMeasure),
@@ -117,9 +117,10 @@ export function newDraft(kind:string,defaults:StandardThicknesses=DEFAULT_THICKN
 }
 /** Changing the type brings that type's standard lists when the ficha still had empty or untouched default lists. A sheet never keeps a chosen thickness. */
 export function changeKind(draft:FichaDraft,kind:string,defaults:StandardThicknesses=DEFAULT_THICKNESSES):FichaDraft{
+ if(kind==='hardware')return {...draft,kind,thicknesses:[],chosen:null,widths:[],widthMm:'',lengthMm:'',grain:'',price:{...draft.price,unit:'unidad'}};
  const previous=defaultThicknesses(draft.kind,defaults).map(formatMeasure),untouched=draft.thicknesses.length===0||(draft.thicknesses.join('|')===previous.join('|')&&draft.chosen===null);
  const previousWidths=defaultWidths(draft.kind,defaults).map(formatMeasure),widthsUntouched=draft.widths.length===0||draft.widths.join('|')===previousWidths.join('|');
- const price=draft.price.amount.trim()?draft.price:{...draft.price,unit:kind==='edge'?'metro':'placa'};
+ const price=draft.price.amount.trim()?draft.price:{...draft.price,unit:kind==='hardware'?'unidad':kind==='edge'?'metro':'placa'};
  const widths=widthsUntouched?defaultWidths(kind,defaults).map(formatMeasure):draft.widths;
  const chosen=kind==='sheet'?null:draft.chosen;
  if(!untouched)return {...draft,kind,price,widths,chosen};

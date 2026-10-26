@@ -26,7 +26,7 @@ class InstallationTest < Minitest::Test
   def assert_editor(result)
     assert_equal VERSION, result['version']
     assert_empty result['messages']
-    assert_equal ['Planos Santo','Materiales','Pintar','Pintar canto','Quitar canto','Tomar material (cuentagotas)','Muebles','Maderera','Planos'], result['commands']
+    assert_equal ['Planos Santo','Materiales','Pintar placas y cantos','Pintar canto','Quitar canto','Tomar material (cuentagotas)','Crear componente','Muebles','Maderera','Planos'], result['commands']
     assert_includes result['menus'], 'Planos Santo'
     assert_includes result['menus'], 'Diagnóstico de integración (solo lectura)…'
     assert_equal [true], result['restored']
@@ -45,7 +45,7 @@ class InstallationTest < Minitest::Test
       import zipfile,sys,json,hashlib
       with zipfile.ZipFile(sys.argv[1]) as z:
         entries = [i.filename for i in z.infolist() if not i.is_dir()]
-        assert len(entries) == len(set(entries)) == 86
+        assert len(entries) == len(set(entries)) == 89
         manifest = json.loads(z.read('planos_santo/manifest.json'))
         assert manifest['version'] == sys.argv[2]
         assert set(entries) == set(manifest['files']) | {'planos_santo/manifest.json'}
@@ -54,7 +54,7 @@ class InstallationTest < Minitest::Test
         for name in ('model_material_catalog.rb','material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','maderera_profile.rb','presets-taller.json'):
           assert 'planos_santo/' + name in manifest['files'], name
         assert all(not p.lower().endswith(('.skp','.skm','.csv','.jsonl')) for p in entries)
-        for action in ('sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'):
+        for action in ('component','sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'):
           for name in (action + '-24.png', action + '-32.png', action + '.svg'):
             assert 'planos_santo/icons/' + name in manifest['files'], name
           assert z.read('planos_santo/icons/' + action + '.svg').startswith(b'<?xml'), action

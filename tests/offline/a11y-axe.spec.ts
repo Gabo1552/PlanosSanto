@@ -1,3 +1,4 @@
+import {openMaterialTool} from './fixtures/modules';
 import {test,expect,type Page,type Locator} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
@@ -47,7 +48,7 @@ async function catalog(items:{name:string;kind:string;patch:Record<string,unknow
 async function openWorkshop(page:Page){
  await generate(page);await page.getByRole('button',{name:'Guardar guía',exact:true}).click();
  await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
- await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();
+ await openMaterialTool(page,'Compatibilidades y variantes');
  const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(panel).toBeVisible();return panel;
 }
 /** 0.8.20: la Maderera es la optimización de todas las placas del proyecto (sección del riel, sin diálogo). */
@@ -162,7 +163,7 @@ for(const [w,h] of [[1500,1100],[1000,760]] as const)test.describe(`${w}px`,()=>
  test(`axe ${w}px: materiales y cantos (OCL)`,async({page},info)=>{
   await page.setViewportSize({width:w,height:h});
   await boot(page,info.outputDir,'materials');
-  await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();
+  await openMaterialTool(page,'Informe de materiales y cantos');
   const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});await expect(dialog.locator('tbody').first().locator('tr')).toHaveCount(3);
   await audit(page,'materiales-cantos',dialog);
  });

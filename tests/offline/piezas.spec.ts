@@ -193,7 +193,7 @@ test('Piezas: fichas vinculadas, «Ancho no definido», espesor fuera de la list
  const rows=summary.locator('tbody tr');
  // Con la placa vinculada, la pieza que mezclaba materiales también resuelve su placa: ya no queda «?».
  await expect(rows.locator('td.type .sr-only')).toHaveText(['Placa','Canto','Canto']);
- await expect(cells(rows.nth(0))).toHaveText(['Placa','Ir a la sección Melamina Jade / 19,05 mm','3','1,83 m','0,74 m²','0,014 m³']);
+ await expect(cells(rows.nth(0))).toHaveText(['Placa','Ir a la sección Melamina Jade / 19,05 mmVer optimización →','3','1,83 m','0,74 m²','0,014 m³']);
  // El canto sin ancho en la ficha: aviso rojo en la fila y en su sección, ancho aproximado en rojo.
  await expect(cells(rows.nth(1)).nth(1)).toHaveText('Ir a la sección Canto ABS sin ancho / 0,8 mm x 19,05 mmAncho no definido');
  await expect(rows.nth(1).locator('.cutlist-warn')).toHaveText('Ancho no definido');

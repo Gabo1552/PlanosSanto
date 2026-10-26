@@ -1,3 +1,4 @@
+import {openMaterialTool,toMuebles} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -40,10 +41,10 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 if(process.env.PLANOS_UX_CAPTURE_BASELINE==='1')test('UX baseline 083: capturas congeladas comparables del mismo fixture sintético',async({page},info)=>{
  await boot(page,info.outputDir,true);
  await shot(page,'before-inicio');
- await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();const workshop=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(workshop).toContainText('Placa QA sintética');await shot(page,'before-materials');await page.setViewportSize({width:1920,height:1080});await shot(page,'before-materials-1920');await page.setViewportSize({width:1280,height:720});
+ await openMaterialTool(page,'Compatibilidades y variantes');const workshop=page.getByRole('dialog',{name:'Biblioteca del taller'});await expect(workshop).toContainText('Placa QA sintética');await shot(page,'before-materials');await page.setViewportSize({width:1920,height:1080});await shot(page,'before-materials-1920');await page.setViewportSize({width:1280,height:720});
  await workshop.getByRole('button',{name:'Pedido maderera',exact:true}).click();await shot(page,'before-order');
  await workshop.getByRole('button',{name:/Cerrar/}).click();
- await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();await shot(page,'before-furniture');await shot(page,'before-guides');
+ await toMuebles(page);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();await shot(page,'before-furniture');await shot(page,'before-guides');
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Pintado directo',exact:true}).click();await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();await page.getByRole('button',{name:'Paleta compacta',exact:true}).click();await page.setViewportSize({width:440,height:760});await shot(page,'before-paint');
  await writeFile('artifacts/ux-084-baseline-capture.json',JSON.stringify({source:'Frozen0.8.3RBZHtmlDialog+actualRubycontrollerwithsyntheticAPIdoubles',viewport:{width:1280,height:720},paintViewport:{width:440,height:760},fixture:'NamesFixture positioned as two-board L cabinet +2fixedapprovedsyntheticcatalogitems',nativeSketchupExecuted:false,networkOffline:true,calls},null,2));
@@ -63,7 +64,7 @@ if(process.env.PLANOS_UX_CAPTURE_BASELINE!=='1'){
   await expect(page.getByRole('region',{name:'Optimización de placas'})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);await shot(page,'after-order');
   expect(calls.slice(beforeNav).some(action=>['pdf','order_save','order_export','maderera_txt','names_apply'].includes(action))).toBe(false);
   await nav.getByRole('button',{name:'Inicio',exact:true}).click();
-  await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
+  await toMuebles(page);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
   await nav.getByRole('button',{name:'Muebles',exact:true}).click();
   await page.screenshot({path:'artifacts/ux-084-after-furniture-VIEWPORT-SINTETICA.png'});
@@ -76,7 +77,7 @@ if(process.env.PLANOS_UX_CAPTURE_BASELINE!=='1'){
   expect(layout.svg.top).toBeGreaterThanOrEqual(layout.holder.top-2);
   await shot(page,'after-furniture');
   await nav.getByRole('button',{name:'Planos A4',exact:true}).click();await shot(page,'after-guides');
-  await page.getByRole('button',{name:'Pintura avanzada',exact:true}).click();await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
+  await openMaterialTool(page,'Ajustes avanzados de pintura');await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
   const compact=page.getByRole('button',{name:'Paleta compacta',exact:true});if(await compact.isVisible())await compact.click();
   await page.setViewportSize({width:440,height:760});await shot(page,'after-paint');
   expect(calls.some(action=>['pdf','order_save','order_export','names_apply','smart_tool_start'].includes(action))).toBe(false);await comparisonGallery();

@@ -145,3 +145,8 @@ describe('Nombre y color',()=>{
 
 // Keeps the CatalogItem import meaningful for the type check of FichaItem.
 const typed:CatalogItem=item();void typed;
+
+it('Herraje usa unidades y no hereda medidas de corte al cambiar desde placa',()=>{
+ const draft=changeKind({...newDraft('sheet'),name:'Bisagra',lengthMm:'2750',widthMm:'1830'},'hardware');
+ expect(draft).toMatchObject({kind:'hardware',thicknesses:[],chosen:null,widths:[],lengthMm:'',widthMm:'',grain:'',price:{unit:'unidad'}});
+});

@@ -21,7 +21,7 @@ type BoardsResult={plan:OrderPlan;catalog:Catalog;modelName:string;boards:Projec
 type TxtFile={key:string;name:string;sku:string;thicknessMm:number;edges:BoardEdge[];pieces:number;textRows:number;rotated:number};
 type TxtResult={cancelled?:boolean;path:string}&TxtFile;
 type AllResult={cancelled?:boolean;directory:string;files:(TxtFile&{file:string})[];skipped:{key:string;name:string;thicknessMm:number;reason:string}[]};
-const kinds:Record<string,string>={unknown:'Sin resolver',sheet:'Placa',edge:'Canto',solid_wood:'Madera maciza',dimensional:'Listón / perfil',veneer:'Lámina'};
+const kinds:Record<string,string>={hardware:'Herraje',unknown:'Sin resolver',sheet:'Placa',edge:'Canto',solid_wood:'Madera maciza',dimensional:'Listón / perfil',veneer:'Lámina'};
 const n=(value:string)=>value.trim()===''?null:Number(value);
 const discardCatalog='Hay cambios de la biblioteca sin guardar. ¿Descartarlos?';
 /** Disco, refilado y giro elegidos: se recuerdan en esta computadora (solo una comodidad; sin almacenamiento valen los sugeridos). */
@@ -33,7 +33,7 @@ function storeCut(cut:CutSettings){try{window.localStorage.setItem(CUT_KEY,JSON.
 /** Qué elegir en el portal de la maderera para un TXT: la placa y, si lleva, sus cantos 1 y 2. */
 const portalHint=(file:Pick<TxtFile,'name'|'thicknessMm'|'edges'>)=>`En el portal elegí ${file.name} de ${mm(file.thicknessMm)} mm${file.edges.length?`, ${file.edges.map(edge=>`canto ${edge.code} ${edge.sku||edge.name}`).join(' y ')}`:' sin cantos'}.`;
 
-export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChange,embedded=false,initialCatalogId}:{onClose:()=>void;initialTab?:'catalog'|'order';onDirtyChange?:(dirty:boolean)=>void;embedded?:boolean;initialCatalogId?:string}){
+export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChange,embedded=false,initialCatalogId,optimizationTarget}:{onClose:()=>void;initialTab?:'catalog'|'order';onDirtyChange?:(dirty:boolean)=>void;embedded?:boolean;initialCatalogId?:string;optimizationTarget?:{catalogId:string;thicknessMm:number;sequence:number}}){
  const boards=initialTab==='order';
  const [busy,setBusy]=useState(false),[activity,setActivity]=useState({label:'',action:''}),[dirty,setDirty]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const dialog=useRef<HTMLElement>(null),restoreFocus=useRef<HTMLElement|null>(null);
@@ -57,7 +57,7 @@ export default function WorkshopPanel({onClose,initialTab='catalog',onDirtyChang
   <header><div><h2 id="workshop-title">{title}</h2><p>{subtitle}</p></div><button autoFocus={!embedded} disabled={busy} onClick={close}>{embedded?'Volver al inicio':boards?'Cerrar':'Cerrar biblioteca'}</button></header>
   <div className="workshop-body">
    <p role="status" aria-live="polite" className={`workshop-live${busy?' workshop-busy':''}`}>{status}</p>{error&&<div className="workshop-error-row"><p role="alert" className="workshop-error">{error}</p></div>}
-   {boards?<BoardsSection busy={busy} run={run} label={label} notify={setNotice} keepFocus={keepFocus} current={busy?activity.action:''}/>:<CatalogSection busy={busy} dirty={dirty} mark={mark} run={run} label={label} notify={setNotice} initialCatalogId={initialCatalogId}/>}
+   {boards?<BoardsSection optimizationTarget={optimizationTarget} busy={busy} run={run} label={label} notify={setNotice} keepFocus={keepFocus} current={busy?activity.action:''}/>:<CatalogSection busy={busy} dirty={dirty} mark={mark} run={run} label={label} notify={setNotice} initialCatalogId={initialCatalogId}/>}
   </div></section></div>;
 }
 
@@ -65,7 +65,7 @@ type Run=(operation:()=>Promise<void>,label?:string,action?:string)=>Promise<voi
 type SectionProps={busy:boolean;run:Run;label:(action:string,text:string)=>string;notify:(text:string)=>void};
 
 /** 0.8.20 «Maderera»: optimización de todas las placas del proyecto y un TXT por placa. Nada se edita pieza por pieza. */
-function BoardsSection({busy,run,label,notify,keepFocus,current}:SectionProps&{keepFocus:()=>void;current:string}){
+function BoardsSection({busy,run,label,notify,keepFocus,current,optimizationTarget}:SectionProps&{keepFocus:()=>void;current:string;optimizationTarget?:{catalogId:string;thicknessMm:number;sequence:number}}){
  const [data,setData]=useState<BoardsResult>(),[validatedRotation,setValidatedRotation]=useState<string>(),[cut,setCut]=useState<CutSettings>(storedCut),[method,setMethod]=useState<OptimizationMethod>(storedMethod);
  const effectiveCut=useMemo(()=>method==='experto'?{method,kerfMm:4.4,trimMm:10,allowRotate:true}:{...cut,method},[cut,method]);
  const signature=`${method}:${effectiveCut.allowRotate}`;
@@ -105,7 +105,7 @@ function BoardsSection({busy,run,label,notify,keepFocus,current}:SectionProps&{k
    <div role="group" aria-label="Otras acciones" className="workshop-secondary-actions"><button disabled={busy} onClick={()=>void run(load,'Leyendo las piezas de los muebles analizados…','refresh')}>{label('refresh','Actualizar desde el modelo')}</button></div></div>
   {data&&optimization?<>
    <p className="workshop-hint">{plural(data.boards.length,'placa','placas')} en {data.modelName}: {plural(data.boards.reduce((sum,board)=>sum+board.rowIds.length,0),'pieza','piezas')}. «Exportar todos» guarda un TXT por placa en una carpeta nueva; cada placa también tiene su botón.</p>
-   <SheetOptimizationView outsideCount={data.outside.length} methodLabel={method==='experto'?'Experto':'General'} result={optimization} boards={data.boards} busy={busy||validating} exporting={current} onExport={exportBoard} onHighlight={highlight}/>
+   <SheetOptimizationView target={optimizationTarget} outsideCount={data.outside.length} methodLabel={method==='experto'?'Experto':'General'} result={optimization} boards={data.boards} busy={busy||validating} exporting={current} onExport={exportBoard} onHighlight={highlight}/>
    <EdgeTotalsView plan={data.plan} catalog={data.catalog} wasteFactor={method==='experto'?1.15:1}/>
    <OutsideView items={data.outside}/>
   </>:<Loading busy={busy} text="Leyendo las piezas de los muebles analizados…" retry={()=>void run(load,'Leyendo las piezas de los muebles analizados…','refresh')}/>}

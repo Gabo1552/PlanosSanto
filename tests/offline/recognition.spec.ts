@@ -43,6 +43,7 @@ test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frent
  const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog.locator('[aria-label^="Nombre sugerido"]')).toHaveCount(2);
  // Punto 21: the group axes are the default; nothing asks to confirm them.
  await expect(dialog).not.toContainText('Falta confirmar vertical y frente');await expect(dialog.getByLabel('Confirmé frente y vertical en el dibujo',{exact:true})).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true})).toBeDisabled();
+ await dialog.getByText('Ajustar ejes del mueble',{exact:true}).click();
  await dialog.getByLabel('Frente local',{exact:true}).selectOption('0,1');
  await dialog.getByLabel('Nombre sugerido P01',{exact:true}).fill('Estante corregido');await dialog.getByLabel('Nombre sugerido P02',{exact:true}).fill('Piso revisado');
  await dialog.getByRole('button',{name:'M01·P02 · ×1',exact:true}).click();await expect(dialog.locator('.diagram')).toBeVisible();await expect(dialog.locator('tr[data-current="true"]')).toContainText('P02');

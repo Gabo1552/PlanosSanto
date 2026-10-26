@@ -38,7 +38,7 @@ module PlanosSanto
     def self.validate_binding(binding)
       valid = binding.is_a?(Hash) && binding.keys.sort == BINDING_KEYS.sort && binding['schema'].is_a?(Integer) && binding['schema'] == SCHEMA &&
         %w[uuid catalogId].all? { |key| binding[key].is_a?(String) && UUID.match?(binding[key]) } &&
-        %w[sheet edge].include?(binding['kind']) && binding['catalogFingerprint'].is_a?(String) &&
+        %w[sheet edge hardware].include?(binding['kind']) && binding['catalogFingerprint'].is_a?(String) &&
         /\A[0-9a-f]{64}\z/.match?(binding['catalogFingerprint'])
       raise ArgumentError, 'Vínculo Planos Santo inválido; requiere revisión.' unless valid
       binding

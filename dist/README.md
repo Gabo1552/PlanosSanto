@@ -1,3 +1,11 @@
+# Entrega 0.8.25 — interfaz del taller, pendiente de validación nativa
+
+[Instalar candidata](PlanosSanto-0.8.25-candidata.rbz) · [SHA256](PlanosSanto-0.8.25-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.25-Validacion-Local.zip).
+
+Guardar y exportar arriba, herramientas secundarias integradas en Materiales, tipo Herraje, revisión de nombres con búsqueda y acciones fijas. Piezas abre la optimización del material; Maderera incorpora navegación y ampliación de placas. Balde único para placas/cantos y acceso a Crear componente. A4 conserva la maquetación horizontal después de comparar alternativas.
+
+[Cambios y decisión A4](../docs/validacion-0825/CAMBIOS.md) · [Validación local](../docs/validacion-0825/VALIDACION_LOCAL.md). Reiniciar SketchUp después de instalar. La biblioteca con herrajes requiere 0.8.25 o posterior.
+
 # Entrega 0.8.24 — corrección del motor Experto, pendiente de validación nativa
 
 [Instalar candidata](PlanosSanto-0.8.24-candidata.rbz) · [SHA256](PlanosSanto-0.8.24-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.24-Validacion-Local.zip).

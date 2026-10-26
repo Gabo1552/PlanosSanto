@@ -2,9 +2,9 @@
 
 Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.24:** [RBZ](dist/PlanosSanto-0.8.24-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.24-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.24-Validacion-Local.zip) · [qué cambió](docs/validacion-0824/CAMBIOS.md) · [validación local](docs/validacion-0824/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.25:** [RBZ](dist/PlanosSanto-0.8.25-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.25-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.25-Validacion-Local.zip) · [qué cambió](docs/validacion-0825/CAMBIOS.md) · [validación local](docs/validacion-0825/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: las pruebas automatizadas usan dobles de la API.
 
-La 0.8.24 corrige A/B/C a una placa y mejora los pedidos reales a 28/12/13/56 placas (proveedor: 27/11/12/56). La equivalencia con el proveedor sigue pendiente. Conserva las mejoras de 0.8.23, que crea fichas desde materiales y texturas del modelo, lee datos OpenCutList sin exigir el plugin y evita abrir Pintar al asociar.
+La 0.8.25 simplifica la cabecera, reúne las herramientas secundarias en Materiales, incorpora Herrajes y permite abrir desde Piezas la optimización de ese material. Mejora la revisión de nombres y la navegación de placas. Pintar activa la herramienta nativa y la barra incorpora Crear componente. El A4 conserva su maquetación tras comparar el espacio y la legibilidad. Mantiene el motor de 0.8.24.
 
 **Auditoría del modo Experto:** [resultados actuales y límites](docs/validacion-0824/CAMBIOS.md). A/B/C ahora usan una placa; el caso real de 1244 piezas baja de 57 a 56. Tres pedidos siguen una placa por encima del proveedor; los pasos y metros industriales todavía difieren. [Diagnóstico histórico](docs/auditoria-experto-0822/MULTICASO.md).
 
@@ -13,7 +13,7 @@ La 0.8.24 corrige A/B/C a una placa y mejora los pedidos reales a 28/12/13/56 pl
 | Módulo | Para qué |
 |---|---|
 | Pintar (barra de herramientas) | Pintar placas y cantos en la vista 3D, sin ventanas |
-| Materiales | Biblioteca de placas y cantos (fichas, fotos, espesores), vinculada sola a los materiales del modelo |
+| Materiales | Biblioteca de placas, cantos y herrajes (fichas, fotos, espesores), vinculada sola a los materiales del modelo |
 | Muebles | Elegir muebles, marcar el frente, proponer y guardar nombres, codificar el despiece |
 | Planos | Vistas exterior/interior, cotas, notas y hoja A4 (el visor es la hoja) |
 | Piezas | Listado de piezas por material, CSV e impresión |

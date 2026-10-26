@@ -21,6 +21,19 @@ class ModelMaterialCatalogTest < Minitest::Test
   def save(patch={})
     p=preview;p['item'].merge!(patch);@service.commit(p.slice('token','revision','assetRevision','item'))
   end
+  def test_hardware_preserves_native_appearance_and_reads_ocl_type_five
+    ocl('type'=>5)
+    geometry=@model.geometry
+    assert_equal 'hardware',preview['item']['kind']
+    result=save('name'=>'Bisagra de prueba')
+    item=@catalog.read['items'].find { |row| row['id']==result['catalogId'] }
+    assert_equal 'hardware',item['kind']
+    assert_empty PlanosSanto::CatalogStore.missing(item)
+    assert_equal 'hardware',PlanosSanto::MaterialResolver.read_binding(@material)['kind']
+    assert_equal geometry,@model.geometry
+    assert_equal 5,@material.get_attribute('ladb_opencutlist','type')
+    refute PlanosSanto::MaterialPolicy.paintable?(item,directory:@directory)
+  end
   def test_diagnostic_identity_resolves_the_same_material_without_name_matching
     p=@service.preview("material:#{@material.entityID}")
     assert_equal @material.entityID.to_s,p['materialId']

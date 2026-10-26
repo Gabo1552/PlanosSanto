@@ -1,3 +1,4 @@
+import {openMaterialTools} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -117,7 +118,8 @@ test('una advertencia no sobrevive al cambiar de sección con el riel',async({pa
 
 test('con la guía sin guardar, Pintura avanzada sigue disponible y abre la paleta (pintar no depende de la guía)',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Nombre pendiente');
- const advanced=page.getByRole('button',{name:'Pintura avanzada',exact:true});await expect(advanced).not.toHaveAttribute('aria-disabled','true');
+ await openMaterialTools(page);
+ const advanced=page.getByRole('button',{name:'Ajustes avanzados de pintura',exact:true});await expect(advanced).not.toHaveAttribute('aria-disabled','true');
  await advanced.focus();await page.keyboard.press('Enter');await expect(page.locator('.smart-paint-palette')).toHaveCount(1);
  await expect(page.getByRole('alert').filter({hasText:'No se puede pintar'})).toHaveCount(0);
 });

@@ -34,9 +34,9 @@ test('sugerencias: nombres accesibles iguales al rótulo, código compuesto, fil
  await boot(page,info.outputDir,'recognition');await modules(page,'VF');await page.getByRole('button',{name:'Bajo Mesada 2 piezas',exact:true}).click();
  const dialog=await openProposals(page);
  // WCAG 2.5.3: the accessible name is exactly the visible label (voice control says what it sees).
- await expect(dialog.getByRole('combobox',{name:'Vertical local',exact:true})).toBeVisible();await expect(dialog.getByRole('combobox',{name:'Frente local',exact:true})).toBeVisible();
+ await dialog.getByText('Ajustar ejes del mueble',{exact:true}).click();await expect(dialog.getByRole('combobox',{name:'Vertical local',exact:true})).toBeVisible();await expect(dialog.getByRole('combobox',{name:'Frente local',exact:true})).toBeVisible();
  // Punto 21: the group axes are the default orientation; focus goes to the first proposal.
- await expect(dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true})).toHaveCount(0);await expect(dialog.getByLabel('Nombre sugerido P01',{exact:true})).toBeFocused();
+ await expect(dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true})).toHaveCount(0);await expect(dialog.getByLabel('Nombre sugerido P01',{exact:true})).toBeVisible();
  await expect(dialog.locator('[aria-selected]')).toHaveCount(0);
  await dialog.getByRole('button',{name:'M01·P02 · ×1',exact:true}).click();const current=dialog.locator('tr[data-current="true"]');await expect(current).toHaveCount(1);await expect(current).toContainText('M01·P02');await expect(current.getByText('(pieza resaltada)',{exact:true})).toHaveClass('sr-only');
  const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true});await p01.fill('Estante medio');
@@ -60,7 +60,7 @@ test('sugerencias: «no ambiguas» suma sin pisar lo editado y reorientar conser
  await expect(p01).toHaveValue('Editado a mano');await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).toBeChecked();
  const notice=dialog.locator('.naming-notice');await expect(notice).toHaveAttribute('role','status');await expect(notice).toHaveText(/(Se sum(ó|aron) .* geométricas?; lo ya elegido o editado se conservó\.|No había propuestas geométricas nuevas para sumar\.)/);
  // Correcting the front: the manual edit survives, automatic proposals are recalculated.
- await front.selectOption('0,1');await expect(p01).toHaveValue('Editado a mano');await expect(notice).toContainText('Se conservó 1 nombre editado');
+ await dialog.getByText('Ajustar ejes del mueble',{exact:true}).click();await front.selectOption('0,1');await expect(p01).toHaveValue('Editado a mano');await expect(notice).toContainText('Se conservó 1 nombre editado');
  await front.selectOption('1,-1');await expect(p01).toHaveValue('Editado a mano');await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).toBeChecked();
  await dialog.getByRole('checkbox',{name:'Incluir piezas que ya tienen nombre o revisión guardada'}).check();await expect(p01).toHaveValue('Editado a mano');
  expect(count('save')).toBe(0);

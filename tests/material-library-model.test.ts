@@ -30,7 +30,7 @@ describe('Filtros de la biblioteca de materiales',()=>{
   expect(filterItems(items,{filter:'all',query:'',archived,favorites:true})).toEqual([]);
  });
  it('cuenta cada filtro sin mezclar archivados',()=>{
-  expect(filterCounts(items,archived)).toEqual({all:3,sheet:1,edge:1,other:1,review:2,archived:2});
+  expect(filterCounts(items,archived)).toEqual({all:3,sheet:1,edge:1,hardware:0,other:1,review:2,archived:2});
  });
 });
 

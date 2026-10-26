@@ -56,6 +56,8 @@ class QuickToolbarControllerDouble
   def initialize;@actions=[];@shown=0;@flags={};@reasons={};end
   def show;@shown+=1;end
   def quick_action(key);@actions << key;end
+  def create_component;@actions << 'component';end
+  def component_block_reason;reasons['component'];end
   def quick_block_reason(key);reasons[key];end
   def quick_validation(key);raise IOError,'validation failure' if failure;flags.fetch(key,MF_UNCHECKED);end
 end
@@ -72,15 +74,15 @@ class QuickToolbarTest < Minitest::Test
     registry=install
     assert_equal ['Planos Santo'],UI.toolbars.map(&:name)
     assert_same registry[:main_toolbar],registry[:tools_toolbar]
-    assert_equal %w[sheet edge furniture order guides materials].map { |key| registry[:commands][key] },registry[:main_toolbar].items
-    assert_equal ['Pintar','Pintar canto','Muebles','Maderera','Planos','Materiales'],registry[:main_toolbar].items.map(&:name)
-    %w[main remove_edge sample].each do |key|
+    assert_equal %w[sheet component furniture order guides materials].map { |key| registry[:commands][key] },registry[:main_toolbar].items
+    assert_equal ['Pintar placas y cantos','Crear componente','Muebles','Maderera','Planos','Materiales'],registry[:main_toolbar].items.map(&:name)
+    %w[main edge remove_edge sample].each do |key|
       refute_includes registry[:main_toolbar].items,registry[:commands][key]
       assert_includes registry[:menu].items.map(&:first),registry[:commands][key]
     end
-    assert_equal %w[main materials sheet edge remove_edge sample furniture order guides],registry[:commands].keys
+    assert_equal %w[main materials sheet edge remove_edge sample component furniture order guides],registry[:commands].keys
     assert_equal 'Planos Santo',registry[:menu].name
-    assert_equal 14,registry[:menu].items.length
+    assert_equal 15,registry[:menu].items.length
     registry[:commands].each do |key,command|
       assert_includes registry[:menu].items.map(&:first),command
       refute_empty command.tooltip
@@ -88,9 +90,9 @@ class QuickToolbarTest < Minitest::Test
       command.call
     end
     assert_equal 1,@controller.shown
-    assert_equal %w[materials sheet edge remove_edge sample furniture order guides],@controller.actions
-    assert_equal 9,registry[:commands].values.map(&:tooltip).uniq.length
-    assert_equal 9,registry[:commands].values.map(&:status_bar_text).uniq.length
+    assert_equal %w[materials sheet edge remove_edge sample component furniture order guides],@controller.actions
+    assert_equal 10,registry[:commands].values.map(&:tooltip).uniq.length
+    assert_equal 10,registry[:commands].values.map(&:status_bar_text).uniq.length
   end
   # Pintura en vista: paint commands go to paint_in_view (no window), with their
   # own validation; the palette stays reachable from the menu.
@@ -137,7 +139,7 @@ class QuickToolbarTest < Minitest::Test
     assert_same first,install
     assert_equal 1,UI.toolbars.length
     assert_equal 1,UI.menu('Extensions').submenus.length
-    assert_equal 14,first[:menu].items.length
+    assert_equal 15,first[:menu].items.length
   end
   def test_operator_hidden_toolbar_is_never_forced_visible
     UI.toolbar_states={'Planos Santo'=>TB_VISIBLE,'Planos Santo - Herramientas'=>TB_HIDDEN}
@@ -194,7 +196,7 @@ class QuickToolbarTest < Minitest::Test
         payloads << Digest::SHA256.hexdigest(bytes)
       end
     end
-    assert_equal 18,payloads.uniq.length
+    assert_equal 20,payloads.uniq.length
   end
   # 0.8.18 (calidad visual): Windows takes the vector icon (sharp at 125-200 %);
   # macOS and an installation without the SVG keep the PNGs.

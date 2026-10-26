@@ -10,7 +10,7 @@ module PlanosSanto
   class CatalogStore
     attr_reader :directory
     MAX_BYTES=8*1024*1024
-    KINDS=%w[unknown sheet edge solid_wood dimensional veneer].freeze
+    KINDS=%w[unknown sheet edge hardware solid_wood dimensional veneer].freeze
     SCHEMA=4
     FIELDS_V1=%w[id name kind sku supplier thicknessMm widthMm lengthMm grain compatibleIds price favorite approved updatedAt sourceHash observed].freeze
     # Schema 2 (F-MAT-D): base item of a thickness variant, free notes and the
@@ -231,6 +231,7 @@ module PlanosSanto
     # Ficha completa (0.8.16): the data an order needs, computed, never ticked by hand.
     # Placa: SKU, al menos un espesor, largo, ancho y veta definida. Canto: al menos un ancho.
     def self.missing(item)
+      return [] if item.is_a?(Hash) && item['kind']=='hardware'
       return ['tipo'] unless item.is_a?(Hash) && %w[sheet edge].include?(item['kind'])
       measure=->(key) { item[key].is_a?(Numeric) && item[key].finite? && item[key]>0 }
       if item['kind']=='sheet'
@@ -408,12 +409,12 @@ module PlanosSanto
         raise ExportError,'Candidatos de importación inválidos.' unless data['items'].all? { |row| row.is_a?(Hash) && row['nombre_en_modelos'].is_a?(String) }
         data['items'].map do |row|
           # No material-name heuristic: candidate types stay unresolved if not a known code.
-          kind={'2'=>'sheet','4'=>'edge','1'=>'solid_wood','3'=>'dimensional','6'=>'veneer'}[row['tipo_opencutlist'].to_s] || 'unknown'
+          kind={'2'=>'sheet','4'=>'edge','1'=>'solid_wood','3'=>'dimensional','6'=>'veneer','5'=>'hardware'}[row['tipo_opencutlist'].to_s] || 'unknown'
           new_item(row.fetch('nombre_en_modelos'),kind,row)
         end
       elsif data.is_a?(Hash) && data['schema']=='planos-santo.material-review.v1'
         raise ExportError,'Materiales del modelo inválidos.' unless data['materials'].is_a?(Array) && data['materials'].all? { |row| row.is_a?(Hash) && row['name'].is_a?(String) && row['category'].is_a?(String) }
-        data['materials'].reject { |row| row['category']=='hardware' }.map do |row|
+        data['materials'].map do |row|
           observed={'name'=>row['name'],'attributes'=>row['attributes_observed'],'kind'=>row['category']}
           suggested_item(row.fetch('name'),row.fetch('category'),ocl_values(row['category'],row['attributes_observed']),'ocl',observed,
             lists:ocl_lists(row['category'],row['attributes_observed']))

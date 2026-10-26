@@ -16,7 +16,7 @@ export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];name
   lengthMm:number;widthMm:number;thicknessMm:number;thicknessInList?:boolean|null;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
 export type SheetTotals={pieces:number;lengthM:number;areaM2:number;volumeM3:number};
 export type EdgeTotals={strips:number;lengthM:number;areaM2:number;volumeM3:number|null};
-export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';kind:'sheet'|'unknown';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;
+export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';kind:'sheet'|'hardware'|'unknown';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;
   catalogThicknessMm?:number|null;standardThicknessesMm?:number[]|null;thicknessInList?:boolean|null;format?:[number,number]|null;grain?:boolean|null;colorRgb?:number[]|null;missing:string[];totals?:SheetTotals};
 export type CutlistEdgeSectionInfo={key:string;source:'catalog'|'model';kind:'edge';name:string;sku?:string|null;catalogId?:string|null;observedIds?:string[];
   thicknessMm:number|null;widthMm:number|null;widthsMm?:number[];colorRgb?:number[]|null;missing:string[];widthApprox?:boolean;totals?:EdgeTotals};
@@ -26,13 +26,13 @@ export type CutlistFilter={furnitureId?:string;query?:string};
 export type CutlistSection={info:CutlistSectionInfo;pieces:CutlistPiece[];totals:SheetTotals};
 export type StripRow={key:string;letter:string;piece:CutlistPiece;strip:CutlistStrip};
 export type CutlistEdgeSection={info:CutlistEdgeSectionInfo;rows:StripRow[];totals:EdgeTotals};
-export type SummaryKind='sheet'|'edge'|'unknown';
+export type SummaryKind='sheet'|'edge'|'hardware'|'unknown';
 /** Fila de la tabla resumen: una por sección de placa, de canto o sin tipo, con sus Σ. */
 export type SummaryRow={key:string;kind:SummaryKind;name:string;thicknessMm:number|null;widthMm:number|null;widthApprox:boolean;color:string|null;
   warnings:string[];catalogId:string|null;count:number;lengthM:number;areaM2:number|null;volumeM3:number|null};
 
 export const SIDES:CutlistSide[]=['arr','aba','izq','der'];
-export const KIND_LABELS:Record<SummaryKind,string>={sheet:'Placa',edge:'Canto',unknown:'Sin tipo definido'};
+export const KIND_LABELS:Record<SummaryKind,string>={hardware:'Herraje',sheet:'Placa',edge:'Canto',unknown:'Sin tipo definido'};
 
 const fold=(text:string)=>text.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
 const round=(value:number,digits:number)=>{const factor=10**digits;return Math.round(value*factor)/factor;};
@@ -102,7 +102,7 @@ export const hexColor=(color?:number[]|null)=>color?.length===3&&color.every(val
 /** Tabla resumen: placas, después cantos y al final lo que no tiene tipo («?»), como en el listado. */
 export function summaryRows(sections:CutlistSection[],edges:CutlistEdgeSection[]):SummaryRow[]{
   const sheet=(section:CutlistSection):SummaryRow=>{const {info,totals}=section;const known=info.kind==='sheet';
-    return {key:info.key,kind:known?'sheet':'unknown',name:info.name,thicknessMm:info.thicknessMm,widthMm:null,widthApprox:false,color:hexColor(info.colorRgb),
+    return {key:info.key,kind:info.kind==='hardware'?'hardware':known?'sheet':'unknown',name:info.name,thicknessMm:info.kind==='hardware'?null:info.thicknessMm,widthMm:null,widthApprox:false,color:hexColor(info.colorRgb),
       warnings:missingLabels(info.missing),catalogId:info.catalogId||null,count:totals.pieces,lengthM:totals.lengthM,areaM2:known?totals.areaM2:null,volumeM3:known?totals.volumeM3:null};};
   // Sin ancho en la ficha se muestra el de las tiras (espesor de la pieza) si es uno solo, marcado como aproximado.
   const uniform=(rows:StripRow[])=>{const widths=[...new Set(rows.map(row=>row.strip.widthMm))];return widths.length===1?widths[0]:null;};

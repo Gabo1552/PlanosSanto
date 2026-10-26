@@ -193,3 +193,16 @@ test('Experto: ficha real, giro con canto asimétrico, compra +15 %, método per
  await method.selectOption('general');await expect(cut.getByLabel('Disco (kerf) mm')).toHaveValue('3.2');await expect(cut.getByLabel('Refilado por lado mm')).toHaveValue('15');await expect(cut.getByRole('checkbox',{name:'Girar piezas en placas sin veta (rota 1)'})).not.toBeChecked();await expect(edges.locator('tbody tr td').nth(1)).toHaveText('2 metros');
  await region.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'}).click();await board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm'}).click();await expect(region.getByRole('status').first()).toContainText('TXT de Melamina Jade · 19,05 mm guardado');const general=(await readFile(join(info.outputDir,file),'utf8')).trim().split('\r\n').map(row=>row.split('\t'));expect(general.every(row=>row[4]==='0')).toBe(true);
 });
+
+test('Piezas abre directamente la optimización del material y espesor y permite ampliar el plano',async({page},info)=>{
+ await boot(page,info.outputDir);await library({});await openMaderera(page);
+ await rail(page,'Piezas').click();
+ await page.getByRole('button',{name:/Ver optimización de Melamina Jade/}).click();
+ const region=page.getByRole('region',{name:'Optimización de placas'});
+ await expect(region.getByRole('region',{name:'Melamina Jade · 19,05 mm',exact:true})).toBeVisible();
+ await region.getByLabel('Ampliación del diagrama').selectOption('1.5');
+ await expect(region.locator('.workshop-sheets')).toHaveAttribute('style',/150%/);
+ await region.getByLabel('Ampliación del diagrama').selectOption('1');
+ expect(await axe(page)).toEqual([]);
+ await page.screenshot({path:info.outputPath('maderera-0825.png'),fullPage:true});
+});

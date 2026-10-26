@@ -1,3 +1,4 @@
+import {openMaterialTool} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -41,7 +42,7 @@ test.afterEach(async()=>{child?.stdin.end();child?.kill();expect(errors).toEqual
 test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prompt nativo',async({page},info)=>{
  await boot(page,info.outputDir);await catalog([{name:'Placa existente',kind:'sheet',patch:{}},{name:'Canto existente',kind:'edge',patch:{}}]);
  let prompted=false;page.on('dialog',dialog=>{prompted=true;void dialog.dismiss();});
- await page.getByRole('button',{name:'Biblioteca del taller',exact:true}).click();const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
+ await openMaterialTool(page,'Compatibilidades y variantes');const panel=page.getByRole('dialog',{name:'Biblioteca del taller'});
  const list=panel.getByRole('group',{name:'Materiales de biblioteca'});await expect(list.getByRole('button')).toHaveCount(2);
  // Biblioteca v4: el canto nuevo ya trae los anchos estándar 22 y 45 mm, así que solo la placa (sin SKU ni formato) queda incompleta.
  await expect(list.locator('.workshop-badge',{hasText:'Incompleta'})).toHaveCount(1);
@@ -69,7 +70,7 @@ test('biblioteca: alta en línea validada, flechas en la lista y Ctrl+S sin prom
 
 test('revisión de materiales: conteos por filtro, vacío con salida, «/» y ver piezas que usan un material',async({page},info)=>{
  await boot(page,info.outputDir,'materials');
- await page.getByRole('button',{name:'Materiales y cantos',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});
+ await openMaterialTool(page,'Informe de materiales y cantos');const dialog=page.getByRole('dialog',{name:'Materiales y cantos',exact:true});
  const filter=dialog.getByLabel('Mostrar materiales por tipo',{exact:true}),rows=dialog.locator('tbody').first().locator('tr');await expect(rows).toHaveCount(3);
  await expect(filter.locator('option')).toHaveText(['Todos (3)','Placas (2)','Cantos (1)','Sin resolver (0)','Sin aplicar (1)','Con conflicto (0)']);
  await expect(dialog.getByText('Mostrando 3 de 3 materiales',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Limpiar filtros'})).toHaveCount(0);

@@ -31,8 +31,8 @@ type ModelFichaPreview={token:string;revision:number;assetRevision:number;materi
 type Ficha={mode:'edit';id:string;tab?:'general'|'texture'}|{mode:'create';kind:string};
 type Menu=''|'create'|'import'|'more';
 const oclValue=(value:unknown)=>value===undefined||value===null?'vacío':typeof value==='string'?value:JSON.stringify(value);
-const filterLabels:[Filter,string][]=[['all','Todos'],['sheet','Placas'],['edge','Cantos'],['other','Otros'],['review','Por completar'],['archived','Archivados']];
-const emptyCopy:Record<Filter,[string,string]>={all:['No hay materiales con estos filtros','Probá otro nombre o quitá los filtros.'],sheet:['No hay placas con estos filtros','Probá otra búsqueda o creá una placa desde una foto.'],edge:['No hay cantos con estos filtros','Probá otra búsqueda o importá los cantos del proveedor.'],other:['No hay otros materiales','Maciza, perfiles y láminas aparecen acá cuando los clasificás.'],review:['No hay fichas por completar','Todas las fichas visibles tienen los datos que necesita un pedido.'],archived:['No hay fichas archivadas','Archivar oculta una ficha sin borrarla ni borrar sus archivos. Podés restaurarla cuando quieras.']};
+const filterLabels:[Filter,string][]=[['all','Todos'],['sheet','Placas'],['edge','Cantos'],['hardware','Herrajes'],['other','Otros'],['review','Por completar'],['archived','Archivados']];
+const emptyCopy:Record<Filter,[string,string]>={hardware:['No hay herrajes con estos filtros','Creá una ficha de tipo Herraje para bisagras, correderas o accesorios.'],all:['No hay materiales con estos filtros','Probá otro nombre o quitá los filtros.'],sheet:['No hay placas con estos filtros','Probá otra búsqueda o creá una placa desde una foto.'],edge:['No hay cantos con estos filtros','Probá otra búsqueda o importá los cantos del proveedor.'],other:['No hay otros materiales','Maciza, perfiles y láminas aparecen acá cuando los clasificás.'],review:['No hay fichas por completar','Todas las fichas visibles tienen los datos que necesita un pedido.'],archived:['No hay fichas archivadas','Archivar oculta una ficha sin borrarla ni borrar sus archivos. Podés restaurarla cuando quieras.']};
 export function readyForDesign(item:CatalogItem){const observed=item.observed as Record<string,unknown>|undefined;const photo=observed?.photo as Record<string,unknown>|undefined;return ['sheet','edge'].includes(item.kind)&&photo?.schema===1&&photo?.designReady===true;}
 const kindName=(kind:string)=>kindLabels[kind as keyof typeof kindLabels]||kind;
 // Biblioteca v4: una placa muestra sus espesores («3 a 25 mm»); el resto, su espesor.
@@ -64,7 +64,7 @@ const iconPaths:Record<string,ReactNode>={
 };
 function Icon({name,className}:{name:string;className?:string}){return <svg className={`material-icon ${className||''}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">{iconPaths[name]}</svg>;}
 const kindIcon=(kind:string)=>kind==='sheet'||kind==='edge'?kind:kind==='unknown'||!(kind in kindLabels)?'unknown':'other';
-const groupIcon:Record<GroupKey,string>={sheet:'sheet',edge:'edge',other:'other',unknown:'unknown'};
+const groupIcon:Record<GroupKey,string>={hardware:'other',sheet:'sheet',edge:'edge',other:'other',unknown:'unknown'};
 
 function Thumbnail({uri,name}:{uri?:string|null;name:string}){
  const [failed,setFailed]=useState(false);
@@ -127,7 +127,7 @@ function MaterialProperties(props:PropertiesProps){
  const title=props.nativeSource?`Crear ficha desde «${base?.name||''}»`:creating?'Nueva ficha de material':`Propiedades del material «${base?.name||''}»`;
  function update(next:FichaDraft){setDraft(next);if(Object.keys(errors).length)setErrors({});}
  function submit(){
-  if(props.nativeSource&&!['sheet','edge'].includes(draft.kind)){setNativeKindError(true);setTab('general');requestAnimationFrame(()=>document.getElementById('material-field-kind')?.focus());return;}
+  if(props.nativeSource&&!['sheet','edge','hardware'].includes(draft.kind)){setNativeKindError(true);setTab('general');requestAnimationFrame(()=>document.getElementById('material-field-kind')?.focus());return;}
   const target=base||({id:'',name:'',kind:draft.kind,sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'',sourceHash:'',observed:{}} as FichaItem);
   const result=applyDraft(target,draft);setErrors(result.errors);
   if(!result.item){
@@ -173,7 +173,7 @@ function MaterialProperties(props:PropertiesProps){
       <label htmlFor="material-field-supplier">Proveedor</label>
       <input id="material-field-supplier" value={draft.supplier} maxLength={160} disabled={disabled} onChange={event=>update({...draft,supplier:event.target.value})}/>
       <label htmlFor="material-field-kind">Tipo</label>
-      <div className="material-kind-field"><Icon name={kindIcon(draft.kind)}/><select id="material-field-kind" value={draft.kind} disabled={disabled} aria-invalid={nativeKindError||undefined} aria-describedby={nativeKindError?'material-native-kind-error':undefined} onChange={event=>{setNativeKindError(false);update(changeKind(draft,event.target.value,defaults));}}>{(['sheet','edge','solid_wood','dimensional','veneer','unknown'] as const).map(kind=><option key={kind} value={kind}>{kindLabels[kind]}</option>)}</select>{nativeKindError&&<p id="material-native-kind-error" role="alert" className="material-field-error">Elegí Placa o Canto para crear esta ficha.</p>}</div>
+      <div className="material-kind-field"><Icon name={kindIcon(draft.kind)}/><select id="material-field-kind" value={draft.kind} disabled={disabled} aria-invalid={nativeKindError||undefined} aria-describedby={nativeKindError?'material-native-kind-error':undefined} onChange={event=>{setNativeKindError(false);update(changeKind(draft,event.target.value,defaults));}}>{(['sheet','edge','hardware','solid_wood','dimensional','veneer','unknown'] as const).map(kind=><option key={kind} value={kind}>{kindLabels[kind]}</option>)}</select>{nativeKindError&&<p id="material-native-kind-error" role="alert" className="material-field-error">Elegí Placa, Canto o Herraje para crear esta ficha.</p>}</div>
      </div>
      <div className="material-subtabs" role="tablist" aria-label="Datos para pedidos">
       <button type="button" role="tab" id="material-subtab-formats" aria-selected={sub==='formats'} aria-controls="material-subpanel-formats" tabIndex={sub==='formats'?0:-1} onClick={()=>setSub('formats')} onKeyDown={event=>subKey(event,'formats')}>Formatos</button>
@@ -183,7 +183,7 @@ function MaterialProperties(props:PropertiesProps){
       {draft.kind==='sheet'&&<><label htmlFor="material-field-grain">Dirección de fibra</label>
        <select id="material-field-grain" value={draft.grain} disabled={disabled} onChange={event=>update({...draft,grain:event.target.value as FichaDraft['grain']})}><option value="">Sin definir</option><option value="true">La fibra sigue el largo (con veta)</option><option value="false">Sin veta (se puede girar)</option></select></>}
       {/* 0.8.20: una placa vale para todos sus espesores (sin elegir uno); el canto marca el suyo, que se descuenta del corte. */}
-      <span className="material-form-label" id="material-thicknesses-label">{sheetKind?'Espesores disponibles':'Espesores estándar'}</span>
+      {draft.kind!=='hardware'&&<>      <span className="material-form-label" id="material-thicknesses-label">{sheetKind?'Espesores disponibles':'Espesores estándar'}</span>
       <div>
        <div role={sheetKind?'group':'radiogroup'} aria-labelledby="material-thicknesses-label" aria-describedby="material-thicknesses-help" className={`material-thickness-list${sheetKind?' is-plain':''}`}>
         {thicknessRows.map(({value,index})=><div className="material-thickness-row" key={index}>
@@ -198,6 +198,8 @@ function MaterialProperties(props:PropertiesProps){
         {!sheetKind&&draft.chosen!==null&&<button type="button" className="material-link-button" disabled={disabled} onClick={()=>update(chooseThickness(draft,null))}>Dejar sin espesor elegido</button>}</div>
        <p id="material-thicknesses-help" className="material-field-hint">{sheetKind?'Todos valen: al pintar es el mismo material y el listado de piezas lo separa por el espesor real de cada pieza. Un espesor que no está acá se lista igual y se marca para agregarlo.':draft.kind==='edge'?'Marcá el espesor del canto (se descuenta del corte); el resto queda como opciones del material.':'Marcá el espesor de esta ficha; el resto queda como opciones del material.'} {errors.thicknesses&&<span className="material-field-error">{errors.thicknesses}</span>}</p>
       </div>
+</>}
+      {draft.kind==='hardware'&&<p className="material-field-hint">Herraje para identificar y listar por unidades. No se incluye en el cálculo de placas ni requiere espesor, veta o formato de corte.</p>}
       {draft.kind==='sheet'&&<><span className="material-form-label" id="material-size-label">Tamaño de panel</span>
        <div><div className="material-size-field" role="group" aria-labelledby="material-size-label"><span className="material-mm-input"><input inputMode="decimal" aria-label="Largo del panel (mm)" placeholder="Largo" value={draft.lengthMm} disabled={disabled} aria-invalid={!!errors.lengthMm} onChange={event=>update({...draft,lengthMm:event.target.value})}/><span aria-hidden="true">mm</span></span><span aria-hidden="true">×</span><span className="material-mm-input"><input inputMode="decimal" aria-label="Ancho del panel (mm)" placeholder="Ancho" value={draft.widthMm} disabled={disabled} aria-invalid={!!errors.widthMm} onChange={event=>update({...draft,widthMm:event.target.value})}/><span aria-hidden="true">mm</span></span></div>
         {(errors.lengthMm||errors.widthMm)&&<p className="material-field-error">{errors.lengthMm||errors.widthMm}</p>}</div></>}
@@ -524,7 +526,7 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
  };
  return <section className="visual-material-library" aria-labelledby="materials-library-title" aria-busy={!!busy}>
   <header className="material-library-heading">
-   <div><h1 id="materials-library-title">Materiales del taller</h1><p>Placas y cantos disponibles en todos tus proyectos. Se vinculan solos con los materiales del modelo.</p></div>
+   <div><h1 id="materials-library-title">Materiales del taller</h1><p>Placas, cantos y herrajes disponibles en todos tus proyectos. Se vinculan solos con los materiales del modelo.</p></div>
    <div className="material-library-main-actions">
     <button type="button" className="material-refresh" disabled={blocked} onClick={()=>void run('Actualizando biblioteca…',async()=>{const next=await load();const linked=next.autoLink?.changed||0;setNotice(linked?`Biblioteca actualizada. ${linked} ${linked===1?'material se vinculó solo':'materiales se vincularon solos'} con su ficha.`:'Biblioteca actualizada.');})}><Icon name="refresh"/>Actualizar</button>
     <div className="material-menu"><button ref={createTrigger} type="button" disabled={blocked} aria-expanded={menu==='create'} aria-haspopup="true" onClick={()=>setMenu(value=>value==='create'?'':'create')}><Icon name="plus"/>Crear</button>

@@ -1,0 +1,65 @@
+{
+  "version": "0.8.25",
+  "date": "2026-10-26",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "productionParityApproved": false,
+  "rbzSha256": "8352bcb5e5a4fd635ff6bd8d88464e4f83a73b63d132250864cd36d59c358244",
+  "checks": {
+    "vitest": {
+      "files": 55,
+      "tests": 539,
+      "passed": 539
+    },
+    "ruby": {
+      "suites": 74,
+      "tests": 1095,
+      "assertions": 10503,
+      "failures": 0,
+      "errors": 0
+    },
+    "playwrightOffline": {
+      "fullRunTests": 255,
+      "fullRunPassed": 230,
+      "initialFailures": 25,
+      "subsequentRuns": [
+        {
+          "tests": 22,
+          "passed": 19
+        },
+        {
+          "tests": 53,
+          "passed": 52
+        },
+        {
+          "tests": 2,
+          "passed": 2
+        }
+      ],
+      "uniqueTestsVerified": 256,
+      "outstandingFailures": 0
+    },
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "zipManifestHashes": "PASS",
+    "diffCheck": "PASS",
+    "reviewers": [
+      "Ruby",
+      "TypeScript/React",
+      "Seguridad y datos"
+    ],
+    "a4CompositionCases": 12,
+    "productA4LayoutChanged": false
+  },
+  "notes": [
+    "Las pruebas usan Chromium y dobles de SketchUp: no equivalen a ejecución nativa.",
+    "Las pruebas que buscaban los botones eliminados se migraron a Materiales. La paleta conserva pruebas de su evento nativo; Pintar en el riel ahora comprueba paint_in_view.",
+    "La regresión encontró y corrigió el bloqueo del controlador contra su propia solicitud paint_in_view. Una prueba del puente real verifica activación y rechazo concurrente.",
+    "La revisión detectó el guard de Pintar y la desaparición de una fila filtrada mientras se editaba; ambos se corrigieron y se verificó la edición continua.",
+    "Una prueba de teclado esperaba antes de terminar la carga de la paleta: ahora espera el estado listo, conservando las aserciones de foco.",
+    "Los 256 casos únicos se verificaron en varias corridas: 255 de la suite inicial más un caso nuevo de búsqueda y navegación entre distribuciones. No es una única corrida final de 256.",
+    "La comparación A4 cede 10 mm del listado al dibujo: el caso de 16 nombres largos pasa de una hoja a dos; se conserva horizontal y no se modifica pdf.ts.",
+    "El motor Experto conserva las mejoras y los límites de 0.8.24."
+  ]
+}

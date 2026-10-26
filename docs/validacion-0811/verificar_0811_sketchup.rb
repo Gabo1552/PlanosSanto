@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-# Verificador de SOLO LECTURA para las candidatas 0.8.11 a 0.8.24 (Hitos 1 a 7) en SketchUp 2026.
+# Verificador de SOLO LECTURA para las candidatas 0.8.11 a 0.8.25 (Hitos 1 a 7) en SketchUp 2026.
 # Parte del verificador 0.8.10 y suma: integridad del manifiesto (archivos sobrantes y
 # módulos nuevos), estados de pintura con fichas archivadas, perfil de maderera si existe,
 # ModelWatch registrado, cursores del pincel, costo de la huella y tiempos del pincel; y, tras
@@ -12,7 +12,7 @@ require 'json'
 require 'digest'
 
 module PlanosSantoValidacion0811
-  VERSION = '0.8.24'
+  VERSION = '0.8.25'
   # Módulos que tiene que traer una candidata con los Hitos 1, 2, 3, 5, 6 y 7.
   MODULOS = %w[paint_materials.rb ocl_attributes.rb model_watch.rb bounded_zip.rb skm_import.rb
                smart_paint_tool.rb piece_highlight_tool.rb material_library.rb photo_material.rb

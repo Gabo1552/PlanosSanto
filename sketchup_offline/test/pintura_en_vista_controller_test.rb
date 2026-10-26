@@ -14,6 +14,7 @@ module Sketchup
   class AppObserver;end
   class << self;attr_accessor :vista_model,:vista_prefs,:vista_status;end
   def self.active_model;vista_model;end
+  def self.send_action(_action);true;end
   def self.read_default(section,key,default);(vista_prefs||{}).fetch([section,key],default);end
   def self.write_default(section,key,value);self.vista_prefs||={};vista_prefs[[section,key]]=value;end
   def self.status_text=(text);(self.vista_status||=[]) << text;end
@@ -56,6 +57,16 @@ class PinturaEnVistaControllerTest < Minitest::Test
   end
   PREFS=['PlanosSanto','smart_paint_settings_v2'].freeze
 
+  def test_component_uses_the_native_dialog_and_rejects_empty_selection
+    @model.selection.clear
+    assert_raises(PlanosSanto::ExportError) { @controller.create_component }
+    @model.selection << @model.entities[0]
+    called=[]
+    Sketchup.stub(:send_action,->(action) { called << action;true }) do
+      assert_equal({'opened'=>true},@controller.create_component)
+    end
+    assert_equal ['makeComponent:'],called
+  end
   def setup
     @dir=Dir.mktmpdir;@old=ENV['PLANOS_SANTO_DATA_DIR'];ENV['PLANOS_SANTO_DATA_DIR']=@dir
     @model=NamesFixture.model;Sketchup.vista_model=@model;Sketchup.vista_prefs={};Sketchup.vista_status=[]
@@ -111,6 +122,22 @@ class PinturaEnVistaControllerTest < Minitest::Test
   def paint(action='sheet');with_tool { @controller.paint_in_view(action) };end
   def tool;@selected.compact.last;end
   def write_prefs(settings);Sketchup.vista_prefs[PREFS]='ps2:'+Base64.strict_encode64(JSON.generate('schema'=>2,'settings'=>settings));end
+
+  def test_main_dialog_request_activates_the_same_brush_without_blocking_itself
+    replies=[]
+    @controller.define_singleton_method(:reply) { |id,**payload| replies << payload.merge(id:id) }
+    with_tool { @controller.handle(JSON.generate('version'=>1,'id'=>'rail-paint','action'=>'paint_in_view','data'=>{})) }
+    assert_nil replies.last[:error]
+    assert_nil replies.last.dig(:result,'error')
+    assert_equal true,replies.last.dig(:result,'toolState','active')
+    assert_equal 0,UI.vista_dialogs
+    assert_instance_of VistaToolDouble,tool
+    @controller.instance_variable_set(:@busy,true)
+    with_tool { @controller.handle(JSON.generate('version'=>1,'id'=>'concurrent','action'=>'paint_in_view','data'=>{})) }
+    assert_match(/Esperá/,replies.last[:error])
+  ensure
+    @controller.instance_variable_set(:@busy,false)
+  end
 
   def test_toolbar_paint_starts_the_brush_in_the_view_without_opening_any_window
     result=paint('sheet')

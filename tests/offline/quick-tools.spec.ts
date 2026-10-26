@@ -22,6 +22,7 @@ async function boot(page:Page,folder:string,intent?:QuickIntent,settings:Record<
  await page.exposeFunction('quickContractRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});let result:unknown;
   if(action==='ui_ready')result={intent};
   else if(action==='ui_loading'||action==='quick_action_ack')result=true;
+  else if(action==='paint_in_view')result={active:true};
   else if(action==='smart_palette_load')result={catalog:{schema:1,revision:1,items},visuals:{materials},settings,toolState:tool};
   else if(action==='smart_palette_compact')result={compact:data.compact};
   else if(action==='smart_tool_status')result={toolState:tool};
@@ -79,6 +80,10 @@ test('cambiar el modelo no descarta los nombres sin guardar y bloquea guardar/ex
 });
 
 
-test('Pintar de navegación activa el material recordado sin un segundo botón de activación',async({page},info)=>{
- await boot(page,info.outputDir,undefined,{catalogId:'edge-a',mode:'edge',scope:'all'});const navigation=page.getByRole('navigation',{name:'Módulos de Planos Santo'});await navigation.getByRole('button',{name:'Pintar',exact:true}).click();await expect.poll(()=>calls.filter(call=>call.action==='smart_quick_start').length).toBe(1);expect(calls.find(call=>call.action==='smart_quick_start')?.data).toMatchObject({catalogId:'edge-a',materialUuid:'uuid-edge-a',mode:'edge',immediate:true,immediatePiece:false,batch:false});await expect(page.getByText('● Pintando',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Pintar',exact:true})).toHaveCount(0);await expect(page.getByRole('combobox')).toHaveCount(0);await expect(page.getByRole('checkbox')).toHaveCount(0);expect(starts()).toHaveLength(0);expect(calls.some(call=>['scan','save','generate'].includes(call.action)&&call.action!=='scan')).toBe(false);
+test('Pintar de navegación activa la misma herramienta nativa de la barra rápida',async({page},info)=>{
+ await boot(page,info.outputDir,undefined,{catalogId:'edge-a',mode:'edge',scope:'all'});
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Pintar',exact:true}).click();
+ await expect.poll(()=>calls.filter(call=>call.action==='paint_in_view').length).toBe(1);
+ await expect(page.locator('.smart-paint-palette')).toHaveCount(0);
+ expect(calls.filter(call=>['smart_quick_start','smart_tool_start','generate','save'].includes(call.action))).toHaveLength(0);
 });

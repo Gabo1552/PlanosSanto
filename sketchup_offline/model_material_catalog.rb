@@ -33,7 +33,7 @@ module PlanosSanto
       existing=existing_id(material,catalog)
       return {'existingCatalogId'=>existing,'materialId'=>@library.material_id(material),'revision'=>catalog['revision'],'assetRevision'=>index['revision'],'warnings'=>[]} if existing
       attrs=OclAttributes::KNOWN_KEYS.to_h { |key| [key,material.get_attribute(OclAttributes::DICT,key,nil)] }.compact
-      kind={2=>'sheet',4=>'edge'}[attrs['type']] || 'unknown'
+      kind={2=>'sheet',4=>'edge',5=>'hardware'}[attrs['type']] || 'unknown'
       # OCL serialized lengths are strings with units. A bare numeric value has
       # no unit contract here (native Length values may be inches): don't guess.
       safe=attrs.transform_values { |value| (value.is_a?(String) && value.bytesize<=4096) || value==true || value==false ? value : nil }
@@ -46,7 +46,7 @@ module PlanosSanto
       fields=(values.keys+lists.keys).uniq.sort
       item['suggested']={'source'=>'ocl','fields'=>fields.map { |key| {'thicknessesMm'=>'thicknessMm','widthsMm'=>'widthMm'}.fetch(key,key) }.uniq.sort,'presetId'=>nil} unless fields.empty?
       warnings=[]
-      warnings << 'Elegí Placa o Canto: el material no tiene un tipo OpenCutList reconocido.' if kind=='unknown'
+      warnings << 'Elegí Placa, Canto o Herraje: el material no tiene un tipo OpenCutList reconocido.' if kind=='unknown'
       warnings << 'Las medidas sin unidad, listas de formatos o valores ambiguos no se completaron. Revisá los campos vacíos.' if (attrs.key?('std_sizes') && (!values['lengthMm'] || !values['widthMm'])) || (attrs.key?('std_thicknesses') && !values['thicknessMm'] && !lists['thicknessesMm']) || (attrs.key?('thickness') && !values['thicknessMm']) || (attrs.key?('std_widths') && !values['widthMm'] && !lists['widthsMm'])
       warnings << 'La ficha conserva la apariencia actual. Guardarla no pinta ni cambia superficies del modelo.'
       thumbnail=begin
@@ -98,7 +98,7 @@ module PlanosSanto
       guard!
       raise ExportError,'Volvé a abrir la ficha del material: la previsualización venció.' unless data.is_a?(Hash) && @pending && data['token']==@pending['token'] && Process.clock_gettime(Process::CLOCK_MONOTONIC)-@pending['createdAt']<=600
       raise ExportError,'Ficha inválida.' unless data['item'].is_a?(Hash)
-      raise ExportError,'Elegí Placa o Canto para guardar este material.' unless %w[sheet edge].include?(data['item']['kind'])
+      raise ExportError,'Elegí Placa, Canto o Herraje para guardar este material.' unless %w[sheet edge hardware].include?(data['item']['kind'])
       raise ExportError,'Falta la revisión de los activos; volvé a abrir la ficha.' unless data['assetRevision'].is_a?(Integer)
       item=Marshal.load(Marshal.dump(@pending['item']))
       EDITABLE.each { |key| item[key]=data['item'][key] if data['item'].key?(key) }

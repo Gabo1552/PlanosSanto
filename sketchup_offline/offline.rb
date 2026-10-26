@@ -128,9 +128,9 @@ module PlanosSanto
     # in the view (strip of swatches) or in SketchUp's Materials tray. Painting
     # needs no analysis and no saved guide; only open library/order edits block.
     PAINT_IN_VIEW=%w[sheet edge remove_edge].freeze
-    def paint_block_reason(action)
+    def paint_block_reason(action,handling_request:false)
       return 'Acceso de herramientas desconocido.' unless PAINT_IN_VIEW.include?(action)
-      return 'Esperá a que termine la operación actual.' if @busy
+      return 'Esperá a que termine la operación actual.' if @busy && !handling_request
       return 'Terminá o cancelá la vista previa de importación antes de pintar.' if @skm_preview_active || @photo_preview_active
       return 'Abrí un modelo de SketchUp antes de pintar.' unless Sketchup.respond_to?(:active_model) && Sketchup.active_model
       return 'Guardá los cambios de biblioteca o pedido antes de pintar.' if @workshop_dirty
@@ -146,8 +146,22 @@ module PlanosSanto
       Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1
     end
 
-    def paint_in_view(action)
-      reason=paint_block_reason(action)
+    def component_block_reason
+      return 'No hay un modelo abierto.' unless Sketchup.active_model
+      return 'Seleccioná las entidades que querés convertir en componente.' if Sketchup.active_model.selection.empty?
+      nil
+    end
+
+    def create_component
+      reason=component_block_reason
+      raise ExportError,reason if reason
+      stop_smart_tool(refresh:false)
+      raise ExportError,'SketchUp no pudo abrir Crear componente.' if Sketchup.send_action('makeComponent:')==false
+      {'opened'=>true}
+    end
+
+    def paint_in_view(action,handling_request:false)
+      reason=paint_block_reason(action,handling_request:handling_request)
       raise ExportError,reason if reason
       if smart_state['active']==true && smart_state['mode']==action && @smart_tool.respond_to?(:immediate?) && @smart_tool.immediate?
         result=stop_smart_tool
@@ -778,6 +792,11 @@ module PlanosSanto
         stop_smart_tool(refresh:false)
         @palette_dialog&.close
         quick_action('materials',destination:data['destination'])
+      when 'paint_in_view'
+        # handle already acquired the busy guard for this request.
+        paint_in_view('sheet',handling_request:true)
+      when 'create_component'
+        create_component
       when 'smart_quick_start'
         quick_paint_start(data)
       when 'guide_names_preview'

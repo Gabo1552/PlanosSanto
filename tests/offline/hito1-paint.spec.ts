@@ -43,7 +43,9 @@ async function savePhotoWithoutPainting(page:Page){
  await dialog.getByRole('button',{name:'Guardar material',exact:true}).click();await expect(dialog).toBeHidden();
 }
 async function openQuickPalette(page:Page){
- await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Pintar',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Pintar',exact:true})).not.toHaveAttribute('aria-disabled','true');
+ // The palette still accepts native quick-action events; the rail now starts the in-view tool directly.
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-quick-action',{detail:{sequence:1,action:'sheet'}})));
  await expect(page.getByRole('heading',{name:'Pintado directo',exact:true})).toBeVisible();
  return page.locator('.immediate-palette');
 }
