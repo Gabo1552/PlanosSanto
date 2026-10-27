@@ -2,11 +2,11 @@
 
 Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.23:** [RBZ](dist/PlanosSanto-0.8.23-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.23-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.23-Validacion-Local.zip) · [qué cambió](docs/validacion-0823/CAMBIOS.md) · [validación local](docs/validacion-0823/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.24:** [RBZ](dist/PlanosSanto-0.8.24-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.24-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.24-Validacion-Local.zip) · [qué cambió](docs/validacion-0824/CAMBIOS.md) · [validación local](docs/validacion-0824/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: todas las pruebas automatizadas usan dobles de la API.
 
-La 0.8.23 crea fichas desde materiales y texturas del modelo, lee datos OpenCutList sin exigir el plugin y evita abrir Pintar al asociar.
+La 0.8.24 corrige A/B/C a una placa y mejora los pedidos reales a 28/12/13/56 placas (proveedor: 27/11/12/56). La equivalencia con el proveedor sigue pendiente. Conserva las mejoras de 0.8.23, que crea fichas desde materiales y texturas del modelo, lee datos OpenCutList sin exigir el plugin y evita abrir Pintar al asociar.
 
-**Auditoría posterior del modo Experto:** el pedido real comparado requiere 56 placas en el proveedor y 57 en la candidata. [Resultado y límites de la referencia](docs/auditoria-experto-0822/REVISION.md). Paridad comercial pendiente de corrección. [Ensayos A/B/C del proveedor](docs/auditoria-experto-0822/ensayos/RESULTADOS-PDF.md): los tres usan una placa y el motor actual dos; C fue ejecutado en 2750 × 1830.
+**Auditoría del modo Experto:** [resultados actuales y límites](docs/validacion-0824/CAMBIOS.md). A/B/C ahora usan una placa; el caso real de 1244 piezas baja de 57 a 56. Tres pedidos siguen una placa por encima del proveedor; los pasos y metros industriales todavía difieren. [Diagnóstico histórico](docs/auditoria-experto-0822/MULTICASO.md).
 
 ## Módulos de la extensión
 

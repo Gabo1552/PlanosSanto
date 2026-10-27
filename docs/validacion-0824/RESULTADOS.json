@@ -1,0 +1,57 @@
+{
+  "version": "0.8.24",
+  "date": "2026-10-26",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "productionParityApproved": false,
+  "rbzSha256": "05a89ca7794bcf37f3caecb443728bf63c4c353abb4c17e3c49a93f12c935d70",
+  "checks": {
+    "vitest": {
+      "fullRunFiles": 55,
+      "fullRunTests": 537,
+      "subsequentVersionCompatibilityTests": 3,
+      "uniqueTestsVerified": 538,
+      "outstandingFailures": 0
+    },
+    "ruby": {
+      "suites": 74,
+      "tests": 1091,
+      "assertions": 10450,
+      "failures": 0,
+      "errors": 0
+    },
+    "playwrightOffline": {
+      "tests": 8,
+      "passed": 8
+    },
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "zipManifestHashes": "PASS",
+    "syntheticProbesBoards": [
+      1,
+      1,
+      1
+    ],
+    "realCasesInvariantsPassed": 4,
+    "realCasesBoards": [
+      28,
+      12,
+      13,
+      56
+    ],
+    "supplierBoards": [
+      27,
+      11,
+      12,
+      56
+    ]
+  },
+  "notes": [
+    "El primer intento completo de Vitest en sandbox no pudo iniciar Ruby/pdftotext (EPERM); la pasada con procesos auxiliares autorizados completó 537 pruebas.",
+    "La primera integración UI detectó que el lector no aceptaba la versión 0.8.24 y bloqueaba la generación de guías. Se agregó la versión, una regresión que lee version.json y se repitieron los ocho casos en el build final.",
+    "No se ejecutó toda la suite de Playwright; se verificaron Maderera y navegación por material.",
+    "El contador de candidatos incluye alternativas abandonadas al superar la cantidad de placas de la mejor distribución.",
+    "Persisten diferencias comerciales en tres pedidos y en los metros/pasos de sierra."
+  ]
+}

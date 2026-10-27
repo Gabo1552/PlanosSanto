@@ -27,7 +27,7 @@ require_relative '../model_watch'
 
 module PlanosSanto
   class ExportError < StandardError;end unless const_defined?(:ExportError, false)
-  module Release;VERSION = '0.8.23';end
+  module Release;VERSION = '0.8.24';end
   module QuickToolbar
     def self.registry;{ commands: { 'paint' => 1, 'materials' => 2 } };end
   end
@@ -212,7 +212,7 @@ class Verificador0811Test < Minitest::Test
   end
 
   # Instalación sintética: cada módulo exigido, los cursores y un manifiesto con sus hashes.
-  def build_install(version: '0.8.23')
+  def build_install(version: '0.8.24')
     FileUtils.mkdir_p(File.join(@folder, 'cursors'))
     File.write(File.join(@root, 'planos_santo.rb'), "# cargador\n")
     files = { 'planos_santo.rb' => nil }
@@ -274,7 +274,7 @@ class Verificador0811Test < Minitest::Test
     PlanosSanto::Release.send(:remove_const, :VERSION);PlanosSanto::Release.const_set(:VERSION, '0.8.10')
     assert V.integridad(version: '0.8.10')['passed']
   ensure
-    PlanosSanto::Release.send(:remove_const, :VERSION);PlanosSanto::Release.const_set(:VERSION, '0.8.23')
+    PlanosSanto::Release.send(:remove_const, :VERSION);PlanosSanto::Release.const_set(:VERSION, '0.8.24')
   end
 
   def test_integridad_rechaza_rutas_peligrosas_y_otra_version_de_sketchup

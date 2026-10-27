@@ -1,6 +1,6 @@
 import { expect,it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync,readFileSync } from 'node:fs';
 import { importRubyDocument } from '../lib/ruby-import';
 import { createDemo } from '../lib/demo';
 import { applyEdit,toEdit,type RawDocument } from '../lib/model';
@@ -31,4 +31,10 @@ it('rechaza un fixture sin procedencia Ruby o sin revisión y medidas adulterada
   expect(()=>importRubyDocument(unreviewed)).toThrow();
   const bad=rubyFixture();bad.furniture[0].children[0].metadata!.dimensionsMm![0]=1;
   expect(()=>importRubyDocument(bad)).toThrow(/difieren/);
+});
+
+it('acepta la versión actual de la extensión offline al generar una guía',()=>{
+  const doc=rubyFixture(),release=JSON.parse(readFileSync(new URL('../sketchup_offline/version.json',import.meta.url),'utf8'));
+  Object.assign(doc.exporter!,{version:release.version});
+  expect(importRubyDocument(doc).source).toBe('sketchup-ruby');
 });

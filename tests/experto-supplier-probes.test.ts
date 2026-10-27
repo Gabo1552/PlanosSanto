@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import probes from './fixtures/experto/supplier-probes.json';
-import {packExperto} from '../sketchup_offline/ui/expertoOptimizer';
+import {packExperto,packExpertoReference} from '../sketchup_offline/ui/expertoOptimizer';
 
 describe('Ensayos sintéticos devueltos por el proveedor: testigos, no algoritmo inferido',()=>{
  for(const probe of probes.cases){
@@ -19,11 +19,23 @@ describe('Ensayos sintéticos devueltos por el proveedor: testigos, no algoritmo
    expect(probe.partitionCutLengthsMm.length+2).toBe(probe.supplier.sawSteps);
    expect(Math.round((2*length+2*width+probe.partitionCutLengthsMm.reduce((a,b)=>a+b,0))/100)/10).toBe(probe.supplier.sawMetres);
   });
-  it(`${probe.id}: registra la discrepancia del motor 0.8.23 con el formato realmente observado`,()=>{
+  it(`${probe.id}: corrige las dos placas del motor 0.8.23 con el formato realmente observado`,()=>{
    const pieces=probe.cuts.flatMap((p,row)=>Array.from({length:p.quantity},(_,i)=>({id:`${row}/${i}`,base:p.base,height:p.height,rotate:p.rotate,detail:'Ensayo sintético'})));
    const result=packExperto(pieces,{lengthMm:probe.observedBoardMm[0],widthMm:probe.observedBoardMm[1],kerfMm:probe.kerfMm,trimMm:probe.trimMm},18);
-   expect(result.errors).toEqual([]);expect(result.sheets).toHaveLength(2);
-   // Update this known-discrepancy assertion when implementing the calibrated search.
+   expect(result.errors).toEqual([]);expect(result.sheets).toHaveLength(1);
+   const baseline=packExpertoReference(pieces,{lengthMm:probe.observedBoardMm[0],widthMm:probe.observedBoardMm[1],kerfMm:probe.kerfMm,trimMm:probe.trimMm},18);
+   expect(baseline.sheets).toHaveLength(2);
+   expect(result.search?.referenceBoards).toBe(2);
+   const placed=result.sheets.flatMap(s=>s.placements);
+   expect(placed.map(p=>p.id).sort()).toEqual(pieces.map(p=>p.id).sort());
+   for(const [i,p] of placed.entries()){
+    const input=pieces.find(v=>v.id===p.id)!;
+    expect([p.w,p.h]).toEqual(p.rotated?[input.height,input.base]:[input.base,input.height]);
+    if(p.rotated)expect(input.rotate).toBe(true);
+    expect(p.x).toBeGreaterThanOrEqual(probe.trimMm);expect(p.y).toBeGreaterThanOrEqual(probe.trimMm);
+    expect(p.x+p.w).toBeLessThanOrEqual(probe.observedBoardMm[0]+1e-6);expect(p.y+p.h).toBeLessThanOrEqual(probe.observedBoardMm[1]+1e-6);
+    for(const b of placed.slice(i+1))expect(p.x+p.w+probe.kerfMm<=b.x+1e-6||b.x+b.w+probe.kerfMm<=p.x+1e-6||p.y+p.h+probe.kerfMm<=b.y+1e-6||b.y+b.h+probe.kerfMm<=p.y+1e-6).toBe(true);
+   }
    expect(probe.supplier.boards).toBe(1);
   });
  }
