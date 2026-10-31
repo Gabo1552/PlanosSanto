@@ -100,14 +100,21 @@ class GuideStoreCoverageTest < Minitest::Test
     assert_equal :abort,model.operations.last[0]
   end
   def test_save_size_limit_and_furniture_limit
-    big=Array.new(100) { |i| edit.merge('id'=>"otro-#{i}") }
+    big=Array.new(PlanosSanto::GuideStore::MAX_FURNITURE) { |i| edit.merge('id'=>"otro-#{i}") }
     stored(guide(big).merge('revision'=>0,'selection'=>[]))
-    refuse_save([edit],/100 muebles/)
+    refuse_save([edit],/500 muebles/)
     @model.attributes.clear
     @store.stub(:validate,[edit.merge('pieces'=>[{'id'=>'1/11','name'=>'L','code'=>'P01'}],'filler'=>'x'*(PlanosSanto::GuideStore::LIMIT+1))]) do
       refuse_save([edit],/superan 5 MB/)
     end
     assert_empty @model.operations
+  end
+  def test_more_than_the_old_100_furniture_limit_saves
+    big=Array.new(150) { |i| edit.merge('id'=>"otro-#{i}") }
+    stored(guide(big).merge('revision'=>0,'selection'=>[]))
+    saved=@store.save(@document,[edit],0)
+    assert_equal 151,saved['furniture'].length
+    assert_equal 151,@store.read['furniture'].length
   end
   def test_work_code_inherits_and_explicit_empty_clears
     @store.save(@document,[edit],0,work_code:'VF')

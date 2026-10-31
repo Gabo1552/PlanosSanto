@@ -40,6 +40,13 @@ class ExporterTest < Minitest::Test
     assert_raises(PlanosSanto::ExportError) { document(['1','1/13']) }
     assert_raises(PlanosSanto::ExportError) { document(['missing']) }
   end
+  def test_furniture_count_limit_is_500
+    # 101 to 500 pass the count check (these ids do not exist, so the error is a different one).
+    error=assert_raises(PlanosSanto::ExportError) { document(Array.new(101) { |i| "falta-#{i}" }) }
+    refute_match(/muebles/,error.message)
+    error=assert_raises(PlanosSanto::ExportError) { document(Array.new(501) { |i| "falta-#{i}" }) }
+    assert_match(/Elegí entre 1 y 500 muebles/,error.message)
+  end
   def test_reflection_and_non_uniform_scale
     @model.entities[0].transformation=Geom::Transformation.scale(-2,3,1)
     doc=@exporter.document(@exporter.tree,['1/11'])

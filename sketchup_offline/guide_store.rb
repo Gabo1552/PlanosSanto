@@ -8,6 +8,8 @@ module PlanosSanto
     DICTIONARY = 'PlanosSanto'
     KEY = 'guide_v1'
     LIMIT = 5 * 1024 * 1024
+    # Muebles por guía. El tope real es el tamaño (LIMIT) y la geometría del escaneo; este solo frena datos absurdos.
+    MAX_FURNITURE = 500
 
     def initialize(model)
       @model = model
@@ -19,7 +21,7 @@ module PlanosSanto
       raise ExportError, 'Los datos de la guía superan el límite. No se sobrescribieron.' unless raw.is_a?(String) && raw.bytesize <= LIMIT
       guide = JSON.parse(raw)
       valid = guide.is_a?(Hash) && guide['version'] == 1 && guide['revision'].is_a?(Integer) && guide['revision'] >= 0 &&
-              guide['furniture'].is_a?(Array) && guide['furniture'].length <= 100 && guide['selection'].is_a?(Array) && guide['selection'].length <= 100
+              guide['furniture'].is_a?(Array) && guide['furniture'].length <= MAX_FURNITURE && guide['selection'].is_a?(Array) && guide['selection'].length <= MAX_FURNITURE
       raise ExportError, 'La guía guardada tiene un formato incompatible. Conservá una copia del SKP; no se sobrescribió.' unless valid
       raise ExportError, 'La selección guardada es incompatible.' unless guide['selection'].all? { |id| id.is_a?(String) && id.length.between?(1,1000) }
       validate_work_code!(guide['workCode']) if guide.key?('workCode')
@@ -49,7 +51,7 @@ module PlanosSanto
       furniture = validate(document, edits, old)
       selected = furniture.map { |f| f['id'] }
       merged = old['furniture'].reject { |f| selected.include?(f['id']) } + furniture
-      raise ExportError, 'La guía supera 100 muebles guardados.' if merged.length > 100
+      raise ExportError, "La guía supera #{MAX_FURNITURE} muebles guardados." if merged.length > MAX_FURNITURE
       result = { 'version' => 1, 'revision' => old['revision'] + 1, 'selection' => selected, 'furniture' => merged }
       code = work_code.nil? ? old['workCode'] : work_code
       validate_work_code!(code) unless code.nil?
