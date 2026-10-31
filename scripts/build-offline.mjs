@@ -39,6 +39,7 @@ const copies={
   'planos_santo/bounded_zip.rb':'sketchup_offline/bounded_zip.rb',
   'planos_santo/skm_import.rb':'sketchup_offline/skm_import.rb',
   'planos_santo/piece_highlight_tool.rb':'sketchup_offline/piece_highlight_tool.rb',
+  'planos_santo/draw_component_tool.rb':'sketchup_offline/draw_component_tool.rb',
   'planos_santo/supplier_order.rb':'sketchup_offline/supplier_order.rb',
   'planos_santo/maderera_profile.rb':'sketchup_offline/maderera_profile.rb',
   'planos_santo/presets-taller.json':'sketchup_offline/presets-taller.json',
