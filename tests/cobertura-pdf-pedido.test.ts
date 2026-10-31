@@ -233,7 +233,8 @@ describe('Errores de encaje A4: causa, acción y detalle',()=>{
   const legend=await fitError(project,references);
   expect(legend.kind).toBe('legend');
   expect(legend.reason).toBe('Las notas y observaciones no dejan lugar a la leyenda de cantos del pedido debajo de las vistas.');
-  expect(legend.detail).toMatch(/^Necesita \d+ mm de 42 mm\.$/);
+  // 0.8.29: la leyenda compacta (7 pt) tiene hasta 36 mm debajo de las vistas.
+  expect(legend.detail).toMatch(/^Necesita \d+ mm de 36 mm\.$/);
   // Sin pedido entra: la leyenda de cantos era la que sobraba.
   await expect(createOfflinePdf(project,regular,mono)).resolves.toBeInstanceOf(Uint8Array);
  });
@@ -252,7 +253,9 @@ describe('Errores de encaje A4: causa, acción y detalle',()=>{
  });
  it('un listado largo de piezas distintas con medidas repetidas sugiere plegar por medidas',async()=>{
   const project=single(),f=project.furniture[0],template=f.pieces[0];
-  f.pieces=Array.from({length:30},(_,i)=>({...template,id:`medida/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:'Lateral',definition:`def-${i}`}));
+  // 0.8.29: iguales con el mismo nombre ya comparten fila; cada una pintada distinto queda en su fila y solo «Agrupar por medidas» las pliega.
+  const painted=(i:number)=>({...template.mesh,faceMaterials:template.mesh.triangles.map(()=>({front:{id:`pintura-${i}`,name:`Pintura ${i}`,color:[200,190,180] as [number,number,number],opacity:1,textured:false},back:null}))});
+  f.pieces=Array.from({length:30},(_,i)=>({...template,id:`medida/${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:'Lateral',definition:`def-${i}`,mesh:painted(i)}));
   expect((await fitAdvice(project)).action).toBe('Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.');
  });
  it('un listado largo sin otra palanca nombra las filas de nombres más largos o sugiere separar el mueble',async()=>{

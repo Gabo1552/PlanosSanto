@@ -24,7 +24,7 @@ test('Hoja 2: se agrega sola sin casilla ni bloqueo; el paginador lista 1a, 1b, 
  const preview=await harness(page,info.outputDir);
  await expect(page.getByRole('checkbox',{name:'Permitir hoja 2: despiece completo',exact:true})).toHaveCount(0);
  await expect(preview.getByRole('alert')).toHaveCount(0);
- await expect(preview.getByTestId('a4-sheet-fit')).toContainText(/^El listado sigue en la hoja 2\. Necesita \d+ mm de 139 mm: .+ Para que entre en una sola hoja: /);
+ await expect(preview.getByTestId('a4-sheet-fit')).toContainText(/^El listado sigue en la hoja 2\. Necesita \d+ mm de 127 mm: .+ Para que entre en una sola hoja: /);
  const sheet=preview.getByRole('combobox',{name:'Hoja visible',exact:true});
  await expect(sheet.locator('option')).toHaveText([/^Hoja 1a de 2 · /,/^Hoja 1b de 2 · /,/^Hoja 1c de 2 · /,/^Hoja 2 de 2 · /]);
  await expect(preview.getByTestId('a4-sheet-size')).toContainText('4 hojas');

@@ -1,0 +1,135 @@
+{
+  "nota": "SINTÉTICO: createA4Demo sin «Agrupar componentes iguales». Medidas en mm desde el borde superior izquierdo de la hoja.",
+  "antes": {
+    "1-vista": {
+      "views": [
+        {
+          "view": "front",
+          "cajaMm": {
+            "x": 8,
+            "arriba": 44,
+            "ancho": 177,
+            "alto": 124.7
+          },
+          "muebleDibujadoMm": {
+            "ancho": 100.9,
+            "alto": 89.8
+          },
+          "textoIdCotasPt": 10.19
+        }
+      ],
+      "filasListado": 17,
+      "sumaCant": 17,
+      "piezas": 17,
+      "leyendaArribaMm": 178,
+      "bandaVistaArribaMm": 38.2
+    },
+    "2-vistas": {
+      "views": [
+        {
+          "view": "front",
+          "cajaMm": {
+            "x": 8,
+            "arriba": 44,
+            "ancho": 86,
+            "alto": 125
+          },
+          "muebleDibujadoMm": {
+            "ancho": 60.2,
+            "alto": 53.6
+          },
+          "textoIdCotasPt": 9.9
+        },
+        {
+          "view": "back",
+          "cajaMm": {
+            "x": 99,
+            "arriba": 44,
+            "ancho": 86,
+            "alto": 125
+          },
+          "muebleDibujadoMm": {
+            "ancho": 59.9,
+            "alto": 53.6
+          },
+          "textoIdCotasPt": 9.9
+        }
+      ],
+      "filasListado": 17,
+      "sumaCant": 17,
+      "piezas": 17,
+      "leyendaArribaMm": 178,
+      "bandaVistaArribaMm": 38.2
+    }
+  },
+  "despues": {
+    "1-vista": {
+      "views": [
+        {
+          "view": "front",
+          "cajaMm": {
+            "x": 8,
+            "arriba": 25,
+            "ancho": 189,
+            "alto": 158.1
+          },
+          "muebleDibujadoMm": {
+            "ancho": 127.9,
+            "alto": 113.8
+          },
+          "textoIdCotasPt": 9.91
+        }
+      ],
+      "filasListado": 8,
+      "sumaCant": 17,
+      "piezas": 17,
+      "leyendaArribaMm": 184.8,
+      "notasDelArmadorMm": {
+        "arriba": 78.2,
+        "alto": 116.8
+      },
+      "bandaVistaArribaMm": 21.4
+    },
+    "2-vistas": {
+      "views": [
+        {
+          "view": "front",
+          "cajaMm": {
+            "x": 8,
+            "arriba": 25,
+            "ancho": 92.5,
+            "alto": 155.2
+          },
+          "muebleDibujadoMm": {
+            "ancho": 64.7,
+            "alto": 57.6
+          },
+          "textoIdCotasPt": 9.91
+        },
+        {
+          "view": "back",
+          "cajaMm": {
+            "x": 104.5,
+            "arriba": 25,
+            "ancho": 92.5,
+            "alto": 155.2
+          },
+          "muebleDibujadoMm": {
+            "ancho": 64.4,
+            "alto": 57.6
+          },
+          "textoIdCotasPt": 9.91
+        }
+      ],
+      "filasListado": 8,
+      "sumaCant": 17,
+      "piezas": 17,
+      "leyendaArribaMm": 181.8,
+      "notasDelArmadorMm": {
+        "arriba": 78.2,
+        "alto": 116.8
+      },
+      "bandaVistaArribaMm": 21.4
+    }
+  }
+}

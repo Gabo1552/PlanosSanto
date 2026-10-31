@@ -4,7 +4,7 @@ import { bounds, type Furniture, type Mesh, type Note, type Piece, type Vec3 } f
 import {defaultCamera,type CameraAngles,type Presentation} from './presentation';
 import type {NamingReference} from './naming';
 import {exteriorFromOrientation,proposeOrientation} from './nameSuggestions';
-import {pieceCodeMap,pieceRows,groupedNameIssues,groupedPieces} from './pieceGroups';
+import {pieceCodeMap,pieceRows,groupedNameIssues,groupedPieces,sheetCodeMap} from './pieceGroups';
 import { makeDimensions } from './dimensions';
 import {convexHull,paintOrder,type Solid} from './paintOrder';
 
@@ -16,7 +16,11 @@ export type View = 'front'|'back';
  * labels only those pieces.
  * `frame: 'sphere'` fits the bounding sphere, so the drawing keeps its size while it turns.
  */
-export type SceneOptions = {view?:View;layout?:'editor'|'sheet';width?:number;height?:number;camera?:CameraAngles;offsets?:ReadonlyMap<string,Vector3>;explosion?:number;zoom?:number;pan?:[number,number];frame?:'bounds'|'sphere';labels?:boolean|ReadonlySet<string>;notes?:boolean;dimensions?:boolean};
+/**
+ * `groups` (sheet layout of a guide, 0.8.29): the rows of the printed list as piece ids, first the row's representative.
+ * Each row is labelled once with its code and «×N» visible pieces, as «Agrupar componentes iguales» does.
+ */
+export type SceneOptions = {view?:View;layout?:'editor'|'sheet';width?:number;height?:number;camera?:CameraAngles;offsets?:ReadonlyMap<string,Vector3>;explosion?:number;zoom?:number;pan?:[number,number];frame?:'bounds'|'sphere';labels?:boolean|ReadonlySet<string>;notes?:boolean;dimensions?:boolean;groups?:readonly (readonly string[])[]};
 export function cameraBasis(view:View='front',angles?:CameraAngles){
   const sign=view==='front'?1:-1;
   const right=new Vector3(sign,sign,0).normalize();
@@ -217,8 +221,8 @@ function outlineLoop(triangles:readonly (readonly number[])[]):number[]|undefine
 
 export function makeScene(f: Furniture,options:SceneOptions={}) {
   // Codes and groups are only needed for the ID labels: a viewer frame without labels skips them.
-  const labelling=options.labels!==false&&!f.presentation?.hideIds,codes=labelling?pieceCodeMap(f):new Map<string,string>();
-  const view=options.view||'front',sheet=options.layout==='sheet';
+  const view=options.view||'front',sheet=options.layout==='sheet',printed=sheet&&!!f.presentation?.guide?options.groups:undefined;
+  const labelling=options.labels!==false&&!f.presentation?.hideIds,codes=labelling?printed?sheetCodeMap(f,printed):pieceCodeMap(f):new Map<string,string>();
   const config=sheetView(f);
   const width=options.width??(sheet?config.width:WIDTH),height=options.height??(sheet?config.height:HEIGHT);
   const guide=f.presentation?.guide;
@@ -298,11 +302,13 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
   const occupied: Rect[] = notes.map(n=>n.rect);
   const labels: Label[] = [];
   let labelsFit = true;
-  const groupedSheet=!!guide&&sheet&&!!f.groupIdentical;
+  const byId=new Map(visiblePieces.map(p=>[p.id,p]));
+  const printedGroups=printed?.map(ids=>ids.flatMap(id=>byId.get(id)||[])).filter(group=>group.length);
+  const groupedSheet=!!guide&&sheet&&(!!f.groupIdentical||!!printedGroups);
   // A sheet labels one visible occurrence of each interchangeable type; the table retains total quantity.
-  const quantities=new Map(labelling?groupedPieces(groupedSheet?visibleFurniture:f).map(group=>[group[0].id,group.length]):[]);
+  const quantities=new Map(labelling?(printedGroups||groupedPieces(groupedSheet?visibleFurniture:f)).map(group=>[group[0].id,group.length]):[]);
   const labelled=options.labels instanceof Set?options.labels:undefined;
-  for (const p of (options.labels===false||f.presentation?.hideIds||compactFront?[]:compact||groupedSheet?pieceRows(visibleFurniture):visiblePieces).filter(p=>!labelled||labelled.has(p.id))) {
+  for (const p of (options.labels===false||f.presentation?.hideIds||compactFront?[]:printedGroups?printedGroups.map(group=>group[0]):compact||groupedSheet?pieceRows(visibleFurniture):visiblePieces).filter(p=>!labelled||labelled.has(p.id))) {
     const quantity=compact||groupedSheet?quantities.get(p.id)||1:1,labelWidth=quantity>1?70:46;
     const a = anchor(p.id,bounds(p.mesh).getCenter(new Vector3()).toArray());
     let best: Rect | undefined;

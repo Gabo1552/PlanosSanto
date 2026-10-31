@@ -147,7 +147,7 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  const {execFileSync}=await import('node:child_process');
  const pdfPath=resolve(info.outputDir,'PlanosSanto-A4.pdf');
  const text=execFileSync('pdftotext',['-raw',pdfPath,'-'],{encoding:'utf8'}).replace(/\s+/g,' ');expect(text).toContain('VF M01 Lateral');expect(text).toContain('VF M02 Base ajena');
- const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','124','-W','504','-H','405','-raw',pdfPath,'-'],{encoding:'utf8'});expect(drawing).not.toContain('P01');
+ const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','70','-W','532','-H','458','-raw',pdfPath,'-'],{encoding:'utf8'});expect(drawing).not.toContain('P01');
  await copyFile(pdfPath,'artifacts/ajustes-060-SINTETICO-A4.pdf');await page.screenshot({path:'artifacts/ajustes-060-complemento.png',fullPage:true});
 });
 
@@ -315,7 +315,7 @@ test('componentes iguales: nombre/ID compartidos, cantidad 2, notas físicas, gu
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
  const {execFileSync}=await import('node:child_process');const pdf=resolve(info.outputDir,'PlanosSanto-A4.pdf');
  const text=execFileSync('pdftotext',['-raw',pdf,'-'],{encoding:'utf8'});expect(text).not.toContain('P02');expect(text).toContain('Indicación anclada');
- const table=execFileSync('pdftotext',['-x','538','-y','147','-W','282','-H','405','-raw',pdf,'-'],{encoding:'utf8'});expect(table.match(/P01/g)).toHaveLength(1);expect(table.replace(/\s+/g,' ')).toContain('VF M01 PT');expect(table).toMatch(/\b2\b/);
+ const table=execFileSync('pdftotext',['-x','566','-y','70','-W','254','-H','484','-raw',pdf,'-'],{encoding:'utf8'});expect(table.match(/P01/g)).toHaveLength(1);expect(table.replace(/\s+/g,' ')).toContain('VF M01 PT');expect(table).toMatch(/\b2\b/);
  expect(execFileSync('pdfinfo',[pdf],{encoding:'utf8'})).toMatch(/Pages:\s+1/);await copyFile(pdf,'artifacts/componentes-iguales-064-CONTRATO-A4.pdf');
  await page.reload();await page.getByRole('button',{name:'Generar guías (1)',exact:true}).click();await expect(page.getByRole('checkbox',{name:'Agrupar componentes iguales',exact:true})).toBeChecked();await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveValue('PT');await expect(page.locator('[data-piece-row]')).toHaveCount(1);await expect(page.locator('[data-label="P01"]')).toHaveCount(2);
  await toPlanos(page);await showIds(page);await expect(page.locator('[data-label="P01"]')).toHaveCount(1);await expect(page.locator('[data-label="P01"]')).toContainText('×2');await toMuebles(page);
