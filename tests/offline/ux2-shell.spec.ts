@@ -1,4 +1,4 @@
-import {openMaterialTools} from './fixtures/modules';
+import {openOptions,optionsToggle,toggleOptions,openMaterialTools} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -50,13 +50,40 @@ test('a 1366×768 los avisos de guardar y de bloqueo quedan a la vista aunque se
  await expect(page.getByRole('status').filter({hasText:'Guía guardada'})).toBeVisible();expect(await inViewport(page,'.ux-notices .ux-notice')).toBe(true);
 });
 
+// 0.8.26: cabecera compacta. Una fila desde 1000 px; estado de guardado y motivo de bloqueo visibles; el menú «Opciones»
+// se abre con teclado, Escape lo cierra y devuelve el foco, y un clic afuera también lo cierra. A 650 px, dos filas.
+test('cabecera compacta: una fila, estado y motivo visibles, menú Opciones accesible y dos filas a 650 px',async({page},info)=>{
+ await boot(page,info.outputDir);
+ const header=page.locator('.ux-topbar'),chip=page.locator('.ux-project-chip'),save=page.getByRole('button',{name:'Guardar guía',exact:true}),pdf=page.getByRole('button',{name:'Exportar PDF A4',exact:true}),toggle=optionsToggle(page),panel=page.locator('#ux-options-panel');
+ const spread=()=>page.evaluate(()=>{const c=['.ux-corporate-logo','.ux-module-heading','.ux-project-chip','.ux-save-button','.ux-document-actions .primary','.ux-options-toggle'].map(s=>{const b=document.querySelector(s)!.getBoundingClientRect();return b.top+b.height/2;});return Math.max(...c)-Math.min(...c);});
+ for(const width of [1500,1100,1000]){await page.setViewportSize({width,height:900});expect(await spread()).toBeLessThan(14);expect((await header.boundingBox())!.height).toBeLessThan(72);}
+ await expect(chip).toHaveAttribute('data-tone','idle');await expect(chip).toContainText('Sin guía');await expect(page.locator('#export-block-reason')).toBeVisible();
+ await expect(pdf).toHaveAccessibleDescription('Primero generá las guías en Muebles');await expect(save).toHaveAccessibleDescription('Primero generá las guías en Muebles');await expect(pdf).toHaveAttribute('title',/Primero generá las guías en Muebles/);
+ await generated(page);await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral editado');
+ await expect(page.locator('#save-state')).toHaveText('sin guardar');await expect(save).toHaveAccessibleDescription('sin guardar');await expect(chip).toHaveAttribute('data-tone','pending');await expect(chip).toContainText('Cambios pendientes');
+ await openOptions(page);await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await toggleOptions(page);
+ await save.click();await expect.poll(()=>count('save')).toBe(1);await expect(page.locator('#save-state')).toHaveText('falta SKP');await expect(chip).toContainText('Falta guardar SKP');
+ // Teclado: Enter abre, Tab entra al menú, Escape cierra y devuelve el foco; clic afuera también cierra.
+ await toggle.focus();await page.keyboard.press('Enter');await expect(toggle).toHaveAttribute('aria-expanded','true');await expect(panel).toBeVisible();
+ await page.keyboard.press('Tab');await expect(panel.getByRole('checkbox').first()).toBeFocused();
+ await page.keyboard.press('Escape');await expect(panel).toHaveCount(0);await expect(toggle).toBeFocused();await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await toggle.click();await expect(panel.getByRole('button',{name:'Plegar',exact:true})).toBeVisible();await expect(panel.getByText(/^Último aviso/)).toBeVisible();
+ await page.locator('.ux-module-heading').click();await expect(panel).toHaveCount(0);
+ // 650 px: las acciones bajan a una segunda fila, todo visible y sin scroll horizontal.
+ await page.setViewportSize({width:650,height:900});
+ for(const target of [chip,save,pdf,toggle,page.locator('#save-state')])await expect(target).toBeInViewport();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ const chipBox=(await chip.boundingBox())!,saveBox=(await save.boundingBox())!;expect(saveBox.y).toBeGreaterThanOrEqual(chipBox.y+chipBox.height-1);
+ await toggle.click();const menu=(await panel.boundingBox())!;expect(menu.x).toBeGreaterThanOrEqual(72);expect(menu.x+menu.width).toBeLessThanOrEqual(650);
+});
+
 test('un guardado sin SKP es una advertencia ámbar que no se cierra sola y ofrece Guardar SKP',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await page.getByText('Opciones de guardado',{exact:true}).click();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await toggleOptions(page);
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect.poll(()=>count('save')).toBe(1);expect(calls.filter(call=>call.action==='save')[0].data.saveFile).toBe(false);
  const warning=page.getByRole('status').filter({hasText:'Falta guardar el archivo .skp'});await expect(warning).toHaveClass(/warning/);await expect(warning).toHaveAttribute('data-tone','warning');
  await page.mouse.move(5,5);await page.clock.fastForward(7000);await expect(warning).toBeVisible();await page.clock.fastForward(21000);await expect(warning).toBeVisible();
- await page.getByText(/^Último aviso/).click();await expect(page.locator('.ux-last-notice p')).toContainText('Falta guardar el archivo .skp');
+ await openOptions(page);await expect(page.locator('.ux-last-notice p')).toContainText('Falta guardar el archivo .skp');await toggleOptions(page);
  await warning.getByRole('button',{name:'Guardar SKP',exact:true}).click();await expect.poll(()=>count('save')).toBe(2);expect(calls.filter(call=>call.action==='save')[1].data.saveFile).toBe(true);
 });
 
@@ -64,15 +91,15 @@ test('un cuelgue de SketchUp ofrece Analizar de nuevo; el foco vuelve al botón 
  await boot(page,info.outputDir);await generated(page);
  const saveButton=page.getByRole('button',{name:'Guardar guía',exact:true});await saveButton.focus();await page.keyboard.press('Enter');await expect.poll(()=>count('save')).toBe(1);
  await expect(page.locator('.ux-busy')).toHaveCount(0);await expect(saveButton).toBeFocused();
- await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();hang=true;await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();await expect(page.locator('.ux-busy')).toBeVisible();
+ await openOptions(page);await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();hang=true;await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();await expect(page.locator('.ux-busy')).toBeVisible();
  await page.clock.fastForward(121_000);const alert=page.getByRole('alert');await expect(alert).toContainText('SketchUp no respondió');
- // The help popover stays open over the notice in the shorter Muebles page: close it first, as the operator would.
- hang=false;const scans=count('scan');await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Atajos y diagnóstico'})).toHaveCount(0);await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);
+ // The help popover and the «Opciones» menu stay open over the notice: close both first (Escape twice), as the operator would.
+ hang=false;const scans=count('scan');await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'Atajos y diagnóstico'})).toHaveCount(0);await page.keyboard.press('Escape');await expect(page.locator('#ux-options-panel')).toHaveCount(0);await alert.getByRole('button',{name:'Analizar de nuevo',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);
 });
 
 test('el riel conserva el foco durante una operación y explica el bloqueo al tabular o hacer clic',async({page},info)=>{
  await boot(page,info.outputDir);await page.keyboard.press('Alt+3');const furniture=rail(page,'Muebles');
- await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();held=new Promise(done=>{release=done;});await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
+ await openOptions(page);await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();held=new Promise(done=>{release=done;});await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
  await furniture.focus();await expect(furniture).toHaveAttribute('aria-disabled','true');await expect(furniture).toBeFocused();await expect(furniture).toHaveAccessibleDescription(/Esperá a que termine «Comprobando instalación»/);
  await rail(page,'Maderera').click({force:true});await expect(page.getByRole('alert')).toContainText('Esperá a que termine la operación actual');await expect(rail(page,'Muebles')).toHaveAttribute('aria-current','page');await furniture.focus();
  release();await expect(page.locator('.ux-busy')).toHaveCount(0);await expect(furniture).not.toHaveAttribute('aria-disabled','true');await expect(furniture).toBeFocused();
@@ -122,7 +149,7 @@ test('el foco vuelve a Proponer nombres, las advertencias no se releen enteras y
 
 test('si el pedido no está listo la hoja A4 se ve igual, sin materiales, con un aviso que lleva al pedido',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:/Incluir materiales y cantos/}).check();await page.getByText('Opciones de guardado',{exact:true}).click();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:/Incluir materiales y cantos/}).check();await toggleOptions(page);
  await page.keyboard.press('Alt+5');const notice=page.locator('.ux-sheet-notice');await expect(notice).toContainText('Hoja sin materiales');await expect(notice).toContainText('Guardá primero el borrador revisado del pedido.');
  await expect(page.locator('.a4-sheet-preview')).not.toContainText('Guardá primero el borrador revisado del pedido.');await expect(page.locator('.a4-sheet-preview nav[aria-label="Acciones de vista previa"]')).toBeVisible({timeout:20000});
  await notice.getByRole('button',{name:'Abrir Maderera',exact:true}).click();await expect(page.getByRole('dialog',{name:'Optimización de placas'})).toBeVisible();
@@ -138,8 +165,8 @@ test('con la guía sin guardar, Pintar y Pintura avanzada siguen habilitados (pi
 
 test('una advertencia sticky no se arrastra a otra sección',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await page.getByText('Opciones de guardado',{exact:true}).click();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await toggleOptions(page);
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();const warning=page.getByRole('status').filter({hasText:'Falta guardar el archivo .skp'});await expect(warning).toBeVisible();
  await page.keyboard.press('Alt+4');await expect(rail(page,'Maderera')).toHaveAttribute('aria-current','page');await expect(warning).toHaveCount(0);
- await page.getByText(/^Último aviso/).click();await expect(page.locator('.ux-last-notice p')).toContainText('Falta guardar el archivo .skp');
+ await openOptions(page);await expect(page.locator('.ux-last-notice p')).toContainText('Falta guardar el archivo .skp');
 });

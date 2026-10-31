@@ -1,4 +1,4 @@
-import {openMaterialTool} from './fixtures/modules';
+import {toggleOptions,openMaterialTool,toMuebles,toPlanos} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -6,7 +6,6 @@ import {readFile,mkdir,copyFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {toMuebles,toPlanos} from './fixtures/modules';
 import {pickFace,showIds} from './ids';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 let saveRequests:unknown[],saveReplies:Reply[],actions:Map<string,string>;
@@ -133,7 +132,7 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  const dimension=page.getByRole('button',{name:/^Mover cota P01 largo:/});await dimension.focus();await page.keyboard.press('ArrowDown');
  const beforeDrag=await dimension.boundingBox();await page.mouse.move(beforeDrag!.x+beforeDrag!.width/2,beforeDrag!.y+beforeDrag!.height/2);await page.mouse.down();await page.mouse.move(beforeDrag!.x+beforeDrag!.width/2+7,beforeDrag!.y+beforeDrag!.height/2+2,{steps:2});await page.mouse.up();
  const afterDrag=await dimension.boundingBox();expect(afterDrag!.x).toBeGreaterThan(beforeDrag!.x+5);
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  const saved=await snapshot();expect(saved.names['11']).toBe('VF M01 Lateral');expect(saved.names['12']).toBe('VF M01 Base');expect(saved.names['21']).toBe('VF M02 Base ajena');
  expect(saved.geometryHash).toBe(before.geometryHash);expect(saved.definitions).toEqual(before.definitions);
@@ -183,8 +182,9 @@ test('en 1000 px la pieza y su nombre quedan visibles al seleccionarla en el dib
 
 test('Guardar y cerrar solicita el cierre solo después de guardar y mantiene el estado si se cancela el SKP',async({page},info)=>{
  await boot(page,info.outputDir);await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('button',{name:'Guardar y cerrar',exact:true}).click();
- await expect(page.getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
+ await toggleOptions(page);await page.getByRole('button',{name:'Guardar y cerrar',exact:true}).click();
+ // El menú queda abierto y repite el aviso en «Último aviso»: se mira el aviso principal.
+ await expect(page.locator('.ux-notices').getByText('Guía guardada en el modelo abierto.',{exact:false})).toBeVisible();
  expect(saveRequests[0]).toMatchObject({closeAfterSave:true,saveFile:true});expect(saveReplies[0].result).toMatchObject({modelSaved:false,closeAfterSave:false});
  await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
  await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();
@@ -472,7 +472,7 @@ test('cantos por cara: se leen solos de las caras, la placa los numera y el TXT 
  const after=await snapshot();expect(after.geometryHash).toBe(before.geometryHash);expect(after.definitions).toEqual(before.definitions);
  // La A4 con materiales usa las mismas fichas y el mismo orden de lados.
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Inicio',exact:true}).click();
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Incluir materiales y cantos del pedido revisado en el PDF',exact:true}).check();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:'Incluir materiales y cantos del pedido revisado en el PDF',exact:true}).check();
  await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
  const pdfText=execFileSync('pdftotext',['-raw',resolve(info.outputDir,'PlanosSanto-A4.pdf'),'-'],{encoding:'utf8'});expect(pdfText).toContain('BOARD-19');expect(pdfText).toMatch(/[012]·[012]·[012]·[012] BOARD-19/);
 });
@@ -504,7 +504,7 @@ test('cabecera simple y Pintar usa el mismo acceso nativo; herramientas secundar
  });
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Pintar',exact:true}).click();
  await expect.poll(()=>nativeActions).toEqual(['paint_in_view']);
- await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Componente',exact:true}).click();
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Dibujar pieza',exact:true}).click();
  await expect.poll(()=>nativeActions).toEqual(['paint_in_view','create_component']);
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
  await page.getByText('Más herramientas de materiales',{exact:true}).click();
