@@ -1,0 +1,50 @@
+{
+  "version": "0.8.30",
+  "date": "2026-10-31",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "871d3959bdb1b6c657b9d2c1709954bac1b9a281bc167de2b36405c43c88165a",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "buildReproducible": "PASS",
+    "vitest": {
+      "tests": 579,
+      "passed": 579
+    },
+    "ruby33": {
+      "runs": 1153,
+      "assertions": 11205,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1153,
+      "assertions": 11205,
+      "failures": 0,
+      "errors": 0
+    },
+    "rubyExporter": {
+      "runs": 15,
+      "assertions": 76,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 263,
+      "passed": 263
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    }
+  },
+  "notes": [
+    "Pruebas con dobles de la API de SketchUp, no ejecución nativa. No se probó un modelo real de más de 100 muebles."
+  ]
+}
