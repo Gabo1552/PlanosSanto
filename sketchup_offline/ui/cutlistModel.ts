@@ -10,10 +10,13 @@ export type CutlistStrip={side:CutlistSide;label:string;edgeKey:string;lengthMm:
 /** Biblioteca v4 (0.8.20): una ficha de placa trae sus espesores (`thicknessesMm`), no uno solo. */
 export type CutlistMaterial={source:'catalog'|'model'|'mixed';name:string;catalogId?:string;sku?:string|null;thicknessMm?:number|null;thicknessesMm?:number[];format?:[number,number]|null;grain?:boolean|null;observedId?:string;observedIds?:string[];category?:string;linked?:boolean};
 export type CutlistGrain='length'|'width'|'none'|null;
+/** 0.8.26: veta de la pieza (Grain en Ruby). `grainAxis`: eje local; `grainSource`: automática o elegida en Piezas;
+ * `grainDirection`: sentido en el mueble; `grainReview`: caso ambiguo para confirmar; `grainBlock`: por qué no se puede girar. */
+export type CutlistGrainInfo={grainAxis?:number|null;grainSource?:'auto'|'manual'|null;grainDirection?:'vertical'|'horizontal'|null;grainReview?:string|null;grainBlock?:string|null};
 /** `thicknessMm`: espesor real de la pieza (eje menor), el que separa las secciones y usa la maderera; `thicknessInList`: si está
  * entre los de la ficha (null sin ficha de placa). */
 export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];name:string;furnitureId:string;furnitureName:string;quantity:number;
-  lengthMm:number;widthMm:number;thicknessMm:number;thicknessInList?:boolean|null;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]};
+  lengthMm:number;widthMm:number;thicknessMm:number;thicknessInList?:boolean|null;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]}&CutlistGrainInfo;
 export type SheetTotals={pieces:number;lengthM:number;areaM2:number;volumeM3:number};
 export type EdgeTotals={strips:number;lengthM:number;areaM2:number;volumeM3:number|null};
 export type CutlistSectionInfo={key:string;source:'catalog'|'model'|'mixed'|'none';kind:'sheet'|'hardware'|'unknown';name:string;thicknessMm:number;sku?:string|null;catalogId?:string|null;
@@ -143,6 +146,21 @@ export const sectionTitle=(info:{name:string;thicknessMm:number|null})=>info.thi
 export function grainNote(info:CutlistSectionInfo,pieces:CutlistPiece[]):string|undefined{
   if(info.grain!==true)return undefined;
   return pieces.some(piece=>piece.grain==='width')?'La fibra sigue la longitud, salvo donde se indica':'La fibra sigue la longitud';
+}
+
+/** Indicador de veta de la fila (columna Veta): ↕ vertical o ↔ horizontal en el mueble, «auto» o «manual». null: la placa no tiene veta. */
+export type GrainCell={symbol:'↕'|'↔';direction:string;source:'auto'|'manual';label:string;review:string|null;block:string|null};
+export function grainCell(piece:CutlistPiece):GrainCell|null{
+  if(piece.grain!=='length'&&piece.grain!=='width')return null;
+  const vertical=piece.grainDirection==='vertical',source=piece.grainSource==='manual'?'manual':'auto';
+  const direction=piece.grainDirection?vertical?'vertical':'horizontal':'sin leer';
+  const along=piece.grain==='width'?'a lo ancho':'a lo largo';
+  return {symbol:vertical?'↕':'↔',direction,source,label:`Veta ${direction} (${along}, ${source==='manual'?'elegida a mano':'automática'})`,review:piece.grainReview||null,block:piece.grainBlock||null};
+}
+/** Mensaje después de girar o volver a automática la veta de una fila (acción Ruby `piece_grain`). */
+export function grainNotice(mode:'rotate'|'auto',count:number,warnings:string[]=[]):string{
+  const pieces=count===1?'1 pieza':`${formatMm(count)} piezas`;
+  return [`${mode==='rotate'?'Veta girada 90°':'Veta automática'} en ${pieces}. Ctrl+Z en SketchUp lo deshace.`,...warnings].join(' ');
 }
 
 // Opciones de la vista (por usuario, en el navegador): columnas del resumen y detalle de la designación.

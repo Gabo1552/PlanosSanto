@@ -13,7 +13,9 @@ const metadataSchema = z.object({
   persistentId:z.string().max(100),instancePath:z.array(z.string().max(100)).max(25),
   originalName:z.string().max(1000),nameBase:z.string().max(80).optional(),definitionName:z.string().max(1000),
   hidden:z.boolean(),effectiveVisible:z.boolean(),tag:z.string().max(200),
-  material:materialSchema.nullable(),worldTransform:matrix,grainAxis:z.number().int().min(0).max(2).optional(),
+  material:materialSchema.nullable(),worldTransform:matrix,
+  // 0.8.26: veta de corte (Grain en Ruby): eje local, automática o elegida en Piezas, sentido en el mueble y aviso si es ambigua.
+  grainAxis:z.number().int().min(0).max(2).optional(),grainSource:z.enum(['auto','manual']).optional(),grainReview:z.string().max(500).nullable().optional(),grainDirection:z.enum(['vertical','horizontal']).optional(),
   localBounds:z.object({min:vec3,max:vec3}).optional(),
   dimensionsMm:vec3.optional(),rectangular:z.boolean().optional(),warnings:z.array(z.string().max(500)).max(100),errors:z.array(z.string().max(500)).max(100).optional(),
 });

@@ -7,6 +7,7 @@ require 'time'
 require 'date'
 require_relative 'maderera_profile'
 require_relative 'order_proposal'
+require_relative 'grain'
 
 module PlanosSanto
   class SupplierOrder
@@ -36,6 +37,7 @@ module PlanosSanto
       copy=Marshal.load(Marshal.dump(draft));copy['rows']=copy['rows'].map { |row| normalize_row(row) };copy
     end
     # Grain follows the board (0.8.16): with grain it runs along the base (U); without grain there is none.
+    # 0.8.26: the base (U, axes[0]) of a grained piece IS its grain axis (Grain), so «u» stays true per lot.
     def self.grain_axis(board);board && board['grain']==true ? 'u' : 'none';end
     # Espesores que ofrece una ficha de placa: el de la ficha y, si la biblioteca los trae (material con varios
     # espesores), los de `thicknessesMm`. Una pieza vale si su eje de espesor coincide con alguno (±0,1 mm).
@@ -59,7 +61,11 @@ module PlanosSanto
       orthogonal=[[0,1],[0,2],[1,2]].all? { |a,b| scales[a]>0 && scales[b]>0 && (3.times.sum { |i| matrix[a*4+i]*matrix[b*4+i] }/(scales[a]*scales[b])).abs<1e-6 }
       lengths=3.times.map { |i| (bounds['max'][i]-bounds['min'][i])*scales[i] }
       determinant=matrix[0]*(matrix[5]*matrix[10]-matrix[6]*matrix[9])-matrix[4]*(matrix[1]*matrix[10]-matrix[2]*matrix[9])+matrix[8]*(matrix[1]*matrix[6]-matrix[2]*matrix[5])
-      {'lengths'=>lengths,'bounds'=>bounds,'scales'=>scales,'mirrored'=>determinant<0,'rectangular'=>meta['rectangular']==true && orthogonal,
+      rectangular=meta['rectangular']==true && orthogonal
+      # 0.8.26: eje local de la veta (Grain); con veta, la base del pedido (u) va a lo largo de ese eje.
+      grain=rectangular ? Grain.from_metadata(meta,lengths,matrix) : {}
+      {'lengths'=>lengths,'bounds'=>bounds,'scales'=>scales,'mirrored'=>determinant<0,'rectangular'=>rectangular,
+       'grainAxis'=>grain['grainAxis'],'grainSource'=>grain['grainSource'],'grainReview'=>grain['grainReview'],'grainDirection'=>grain['grainDirection'],
        'vertices'=>node['mesh']['vertices'],'triangles'=>node['mesh']['triangles']}
     end
     # Bare rows (one per physical piece) before the model proposal fills them.
@@ -177,6 +183,10 @@ module PlanosSanto
       if board
         check.call do
           raise ExportError,'Giro inválido: elegí mantener la orientación (rota 0) o permitir el giro (rota 1).' unless %w[locked rotate].include?(row['grainPolicy'])
+          # Largo = medida a lo largo de la veta: con veta, la base del TXT tiene que ser el eje de la veta de la pieza.
+          if board['grain']==true && g['grainAxis'].is_a?(Integer) && axes[0]!=g['grainAxis']
+            raise ExportError,'La base de la pieza no sigue su veta: volvé a abrir el pedido para que se proponga desde el modelo (la veta se elige en Piezas).'
+          end
           if row['grainPolicy']=='rotate'
             raise ExportError,'No se puede girar una placa con veta: mantené la orientación (rota 0).' unless board['grain']==false
             raise ExportError,'Cantos asimétricos: no se puede girar la pieza; mantené la orientación (rota 0).' if method!='experto' && mapped && mapping.uniq.length!=1
