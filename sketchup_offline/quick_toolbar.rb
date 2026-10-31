@@ -11,7 +11,7 @@ module PlanosSanto
       ['edge', 'Pintar canto', 'Pintar cantos en el modelo: elegí el canto en la tira de la vista o en la bandeja Materiales.'],
       ['remove_edge', 'Quitar canto', 'Restaurar la placa de una cara estrecha con alcance controlado.'],
       ['sample', 'Tomar material (cuentagotas)', 'Consultar el material de una cara sin modificar el modelo.'],
-      ['component', 'Crear componente', 'Crear un componente con la selección actual usando el diálogo de SketchUp.'],
+      ['component', 'Dibujar componente', 'Dibujar una pieza: primera esquina, rectángulo y espesor. Medidas exactas en la casilla de SketchUp.'],
       ['furniture', 'Muebles', 'Revisar muebles, piezas y nombres antes de confirmar cambios.'],
       ['order', 'Maderera', 'Preparar y revisar pedidos; no exporta ni guarda automáticamente.'],
       ['guides', 'Planos', 'Configurar vistas, cotas y notas; exportar PDF requiere una acción adicional.']

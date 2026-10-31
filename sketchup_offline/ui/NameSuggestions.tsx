@@ -17,9 +17,9 @@ export default function NameSuggestions({furniture,workCode,onConfirm,onClose,bu
  // asked when the group is oblique to it. Marking the front alone confirms the orientation.
  const [proposal]=useState(()=>proposeOrientation(furniture)),[source,setSource]=useState<OrientationSource|'marcado'|'manual'>(proposal.source);
  const [orientation,setOrientation]=useState<NamingOrientation>(proposal.orientation),[includeNamed,setIncludeNamed]=useState(false);
- const [query,setQuery]=useState(''),[editingId,setEditingId]=useState<string>();
+ const [groupEqual,setGroupEqual]=useState(true),[query,setQuery]=useState(''),[editingId,setEditingId]=useState<string>();
  const [selectedId,setSelectedId]=useState(furniture.pieces[0]?.id),[pickFront,setPickFront]=useState(false),[pickError,setPickError]=useState(''),[filter,setFilter]=useState<Filter>('all');
- const suggestions=useMemo(()=>nameSuggestions(furniture,orientation,includeNamed),[furniture,orientation,includeNamed]);
+ const suggestions=useMemo(()=>nameSuggestions(furniture,orientation,includeNamed,groupEqual),[furniture,orientation,includeNamed,groupEqual]);
  // Geometric proposals are applied without ticking them; ambiguous ones wait for the operator.
  const [chosen,setChosen]=useState<Record<string,string>>(()=>geometric(suggestions)),[groupName,setGroupName]=useState(furniture.name),[notice,setNotice]=useState('');
  const moduleCode=furniture.naming?.moduleCode||moduleFromName(groupName),finalName=(base:string)=>fullPieceName(workCode,moduleCode,base.trim()),prefixNote=!workCode?' (sin prefijo de obra)':!moduleCode?' (falta el módulo del mueble)':'';
@@ -27,13 +27,13 @@ export default function NameSuggestions({furniture,workCode,onConfirm,onClose,bu
  const visible=suggestions.filter(s=>(filter==='all'||s.confidence===filter)&&(editingId===s.ids[0]||`${s.previous} ${s.base} ${chosen[s.ids[0]]??''} ${s.code} ${s.position}`.toLocaleLowerCase('es').includes(query.trim().toLocaleLowerCase('es')))),selected=suggestions.filter(s=>chosen[s.ids[0]]!==undefined).length,visibleOn=visible.filter(s=>chosen[s.ids[0]]!==undefined).length,allVisible=!!visible.length&&visibleOn===visible.length;
  const emptyIds=Object.keys(chosen).filter(id=>!chosen[id].trim()),empty=emptyIds.length,emptyReason=`Completá o desmarcá ${empty===1?'1 propuesta vacía':`${empty} propuestas vacías`}.`,pending=[...(!groupName.trim()?['Completá el nombre del mueble.']:[]),...(!Object.values(chosen).some(v=>v.trim())?['Elegí al menos una propuesta.']:[]),...(empty?[emptyReason]:[]),...(tooLong?[longReason]:[])],canConfirm=!busy&&!pending.length;
  // Re-orienting keeps manual edits of rows that are still listed; automatic proposals are recalculated.
- function recalc(value:NamingOrientation,named:boolean){const next=nameSuggestions(furniture,value,named),carried=carryEdits(chosen,suggestions,next);setChosen({...geometric(next),...carried.chosen});setNotice(carryNotice(carried,true));}
+ function recalc(value:NamingOrientation,named:boolean,grouped=groupEqual){const next=nameSuggestions(furniture,value,named,grouped),carried=carryEdits(chosen,suggestions,next);setChosen({...geometric(next),...carried.chosen});setNotice(carryNotice(carried,true));}
  function reset(value:NamingOrientation,from:'marcado'|'manual'='manual'){recalc(value,includeNamed);setOrientation(value);setSource(from);setPickError('');}
  function addHigh(){const high=suggestions.filter(s=>s.confidence==='high'),added=high.filter(s=>chosen[s.ids[0]]===undefined).length;setChosen(old=>({...Object.fromEntries(high.map(s=>[s.ids[0],s.base])),...old}));setNotice(added?`Se ${added===1?'sumó 1 propuesta geométrica':`sumaron ${added} propuestas geométricas`}; lo ya elegido o editado se conservó.`:'No había propuestas geométricas nuevas para sumar.');}
  async function confirm(){
   let result=withNaming({...furniture,name:groupName,groupName},workCode);
   const reviews=[...(result.naming?.reviews||[])];
-  for(const suggestion of suggestions){const base=chosen[suggestion.ids[0]]?.trim();if(!base)continue;result=withNaming(result,workCode,undefined,{id:suggestion.ids[0],base});for(const id of suggestion.ids){const index=reviews.findIndex(r=>r.id===id);if(index>=0)reviews.splice(index,1);reviews.push({id,proposed:suggestion.proposed||suggestion.base,base});}}
+  for(const suggestion of suggestions){const base=chosen[suggestion.ids[0]]?.trim();if(!base)continue;for(const id of suggestion.ids){result=withNaming(result,workCode,undefined,{id,base});const index=reviews.findIndex(r=>r.id===id);if(index>=0)reviews.splice(index,1);reviews.push({id,proposed:suggestion.proposed||suggestion.base,base});}}
   result={...result,naming:{...result.naming!,reference:orientation,reviews}};
   if(await onConfirm(result))onClose();
  }
@@ -58,7 +58,8 @@ export default function NameSuggestions({furniture,workCode,onConfirm,onClose,bu
  </details><p className="naming-front-status" data-front-source={source}>{`Frente ${orientation.frontSign>0?'+':'−'}${'XYZ'[orientation.frontAxis]} · arriba ${orientation.upSign===-1?'−':'+'}${'XYZ'[orientation.upAxis]}`} · {sources[source]}</p></div>
  <div className="naming-proposals"><h3><span className="naming-step">2</span> Revisá los nombres</h3><label>Nombre del mueble<input aria-label="Nombre del mueble en propuestas" disabled={busy} value={groupName} maxLength={80} onChange={e=>setGroupName(e.target.value)}/></label>
  <label><input type="checkbox" disabled={busy} checked={includeNamed} onChange={e=>{recalc(orientation,e.target.checked);setIncludeNamed(e.target.checked);}}/> Incluir piezas que ya tienen nombre o revisión guardada</label>
- <p className="naming-explainer">Las propuestas geométricas están seleccionadas. Revisá las ambiguas antes de aplicarlas. Las piezas agrupadas comparten nombre.</p><label className="naming-search">Buscar pieza o nombre<input type="search" value={query} onChange={e=>{setEditingId(undefined);setQuery(e.target.value);}} placeholder="Código, nombre actual o sugerido"/></label>
+ <label><input type="checkbox" disabled={busy} checked={groupEqual} onChange={e=>{recalc(orientation,includeNamed,e.target.checked);setGroupEqual(e.target.checked);}}/> Agrupar piezas iguales en las sugerencias</label>
+ <p className="naming-explainer">Las propuestas geométricas están seleccionadas. Revisá las ambiguas antes de aplicarlas. Cada fila agrupada muestra su cantidad y aplica el nombre a todas sus piezas.</p><label className="naming-search">Buscar pieza o nombre<input type="search" value={query} onChange={e=>{setEditingId(undefined);setQuery(e.target.value);}} placeholder="Código, nombre actual o sugerido"/></label>
 
  {pending.length>0&&<ul id="naming-pending" className="naming-pending" aria-label="Falta para confirmar">{pending.map(reason=><li key={reason}>{reason}{reason===emptyReason&&<> <button type="button" onClick={()=>reveal(emptyIds[0])}>Ir a la propuesta vacía</button></>}{reason===longReason&&<> <button type="button" onClick={()=>{const s=suggestions.find(item=>chosen[item.ids[0]]!==undefined&&finalName(chosen[item.ids[0]]).length>FULL_NAME_LIMIT);if(s)reveal(s.ids[0]);}}>Ir a la propuesta larga</button></>}</li>)}</ul>}
  <div className="naming-selection"><p aria-live="polite">{selected} de {suggestions.length} propuestas seleccionadas</p><button disabled={busy||!selected} onClick={()=>{setChosen({});setNotice('');}}>Desmarcar todas</button></div><p role="status" className="naming-notice">{notice}</p>

@@ -1,6 +1,6 @@
 import {Box3,Matrix3,Matrix4,Triangle,Vector3} from 'three';
 import {bounds,type Furniture,type Piece,type Vec3} from './model';
-import {groupedPieces} from './pieceGroups';
+import {groupedPieces,identicalGroups} from './pieceGroups';
 import type {NamingReference} from './naming';
 export type NamingOrientation=NamingReference;
 export type NameSuggestion={ids:string[];code:string;previous:string;base:string;confidence:'high'|'review'|'unclassified';reason:string;position?:string;proposed?:string};
@@ -106,7 +106,7 @@ export function furnitureExterior(f:Furniture){
  const proposal=proposeOrientation(f);
  return {...exteriorFromOrientation(proposal.orientation,f.referenceTransform),saved:proposal.source==='guardado'};
 }
-export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includeNamed=false):NameSuggestion[]{
+export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includeNamed=false,groupEqual=false):NameSuggestion[]{
  const mirrored=new Matrix4().fromArray(f.referenceTransform||new Matrix4().toArray()).determinant()<0;
  const up=unit(orientation.upAxis,orientation.upSign||1),front=unit(orientation.frontAxis,orientation.frontSign),right=new Vector3().crossVectors(up,front).normalize().multiplyScalar(mirrored?-1:1);
  const contexts=pieceContexts(f);
@@ -163,7 +163,7 @@ export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includ
   }
   return result('Sin clasificar','unclassified','Pieza oblicua respecto a los ejes elegidos; no hay clasificación confiable.');
  }
- return groupedPieces(f).filter(group=>includeNamed||group.some(p=>!f.naming?.reviews?.some(r=>r.id===p.id)&&((p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name)===''||generic.test(p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name)))).map(group=>{
+ return (groupEqual?identicalGroups(f,true):groupedPieces(f)).filter(group=>includeNamed||group.some(p=>!f.naming?.reviews?.some(r=>r.id===p.id)&&((p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name)===''||generic.test(p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name)))).map(group=>{
   const proposals=group.map(classify),same=proposals.every(p=>p.base===proposals[0].base);
   const proposal:NameSuggestion={ids:group.map(p=>p.id),code:group[0].code,previous:group[0].name,base:same?proposals[0].base:'Panel',confidence:same&&proposals.every(p=>p.confidence==='high')?'high':same?proposals[0].confidence:'review',reason:same?proposals[0].reason:'Componentes iguales en posiciones con funciones distintas; mantener nombre común requiere revisión.',position:[...new Set(proposals.map(p=>p.position))].join(' / ')};
   proposal.proposed=proposal.base;

@@ -23,6 +23,7 @@ require_relative 'photo_material'
 require_relative 'model_material_catalog'
 require_relative 'paint_materials'
 require_relative 'model_watch'
+require_relative 'draw_component_tool'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -148,7 +149,6 @@ module PlanosSanto
 
     def component_block_reason
       return 'No hay un modelo abierto.' unless Sketchup.active_model
-      return 'Seleccioná las entidades que querés convertir en componente.' if Sketchup.active_model.selection.empty?
       nil
     end
 
@@ -156,8 +156,9 @@ module PlanosSanto
       reason=component_block_reason
       raise ExportError,reason if reason
       stop_smart_tool(refresh:false)
-      raise ExportError,'SketchUp no pudo abrir Crear componente.' if Sketchup.send_action('makeComponent:')==false
-      {'opened'=>true}
+      tool=DrawComponentTool.new(Sketchup.active_model,on_created:lambda { |_component| model_watch_changed(['model']) })
+      Sketchup.active_model.select_tool(tool)
+      {'opened'=>true,'tool'=>'draw_component'}
     end
 
     def paint_in_view(action,handling_request:false)

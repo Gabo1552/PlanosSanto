@@ -4,14 +4,14 @@ export type PieceRow=Omit<Piece,'quantity'> & {quantity:number;memberIds:string[
 const order=(a:Piece,b:Piece)=>a.code.localeCompare(b.code,undefined,{numeric:true})||a.id.localeCompare(b.id);
 
 /** Only equivalent instances of one definition, inside this furniture. Physical IDs stay unique. */
-export function identicalGroups(f:Furniture):Piece[][]{
+export function identicalGroups(f:Furniture,acrossDefinitions=false):Piece[][]{
   const groups:{pieces:Piece[];signature:string;scales:number[];mirrored:boolean}[]=[];
   for(const p of [...f.pieces].sort(order)){
     const t=p.transform;
     const scales=[0,4,8].map(i=>Math.hypot(...t.slice(i,i+3)));
     const mirrored=t[0]*(t[5]*t[10]-t[6]*t[9])-t[4]*(t[1]*t[10]-t[2]*t[9])+t[8]*(t[1]*t[6]-t[2]*t[5])<0;
-    const signature=JSON.stringify([p.definition,p.mesh,p.metadata?.material||null]);
-    const match=p.definition&&groups.find(g=>g.signature===signature&&g.mirrored===mirrored&&scales.every((v,i)=>Math.abs(v-g.scales[i])<=1e-8)&&p.dimensions.every((v,i)=>Math.abs(v-g.pieces[0].dimensions[i])<=1e-6));
+    const signature=JSON.stringify([acrossDefinitions?null:p.definition,p.mesh,p.metadata?.material||null,p.metadata?.grainAxis??null]);
+    const match=(acrossDefinitions||p.definition)&&groups.find(g=>g.signature===signature&&g.mirrored===mirrored&&scales.every((v,i)=>Math.abs(v-g.scales[i])<=1e-8)&&p.dimensions.every((v,i)=>Math.abs(v-g.pieces[0].dimensions[i])<=1e-6));
     if(match)match.pieces.push(p);else groups.push({pieces:[p],signature,scales,mirrored});
   }
   return groups.map(g=>g.pieces);
