@@ -1,0 +1,45 @@
+{
+  "version": "0.8.27",
+  "date": "2026-10-31",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "baacd3c0f9478058c0d41305174e096ee0fdb84da26f13851c54d2750ece89f6",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "vitest": {
+      "tests": 566,
+      "passed": 566
+    },
+    "ruby33": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 262,
+      "passed": 262
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    },
+    "newTestFailsWithoutChange": true
+  },
+  "notes": [
+    "Cambio acotado a maderera_boards/maderera_txt en offline.rb y avisos en WorkshopPanel.tsx; la UI no cambia de otra forma, por eso no se repitió la corrida en Chromium 88 de 0.8.26.",
+    "Pruebas con dobles de la API de SketchUp: no equivalen a ejecución nativa."
+  ]
+}

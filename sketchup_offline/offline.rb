@@ -888,8 +888,11 @@ module PlanosSanto
           workshop.export_catalog(path)
         when 'ocl_open' then OclGateway.open(data.fetch('tab'))
         else
-          raise ExportError,'Guardá los cambios de la guía antes de preparar el pedido.' if @dirty
-          case action
+          # Maderera (optimización por placa y TXT) solo lee el modelo: no frena por una guía sin guardar.
+          # Nombres y códigos salen de la última guía guardada; el resultado lo avisa con guideUnsaved.
+          maderera=%w[maderera_boards maderera_txt].include?(action)
+          raise ExportError,'Guardá los cambios de la guía antes de preparar el pedido.' if @dirty && !maderera
+          result=case action
           when 'order_audit' then workshop.audit(data.fetch('plan'))
           when 'order_edges' then workshop.edge_observations(data.fetch('row'))
           when 'order_references' then workshop.references
@@ -919,6 +922,7 @@ module PlanosSanto
               workshop.write_board(prepared,path)
             end
           end
+          maderera && @dirty && result.is_a?(Hash) && !result['cancelled'] ? result.merge('guideUnsaved'=>true) : result
         end
       when 'cutlist'
         # Vista «Piezas»: solo lectura, no escribe el modelo ni el pedido.
