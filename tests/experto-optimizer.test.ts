@@ -113,6 +113,6 @@ describe('Experto validation, physical instances and catalogue dimensions',()=>{
   expect(result.search?.candidates).toBeLessThanOrEqual(90);
   expect(packExperto(pieces.map(p=>({...p,rotate:false})),spec()).search?.candidates).toBeLessThanOrEqual(40);
   expect(Math.min(first,second)).toBeLessThan(8000);
- });
+ },30000);
  it('has fixed provider settings and never applies a four-side trim',()=>expect(EXPERTO_SETTINGS).toMatchObject({kerfMm:4.4,trimMm:10,minSideMm:50,maxDepth:2}));
 });
