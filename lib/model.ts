@@ -8,6 +8,8 @@ export type Vec3 = [number, number, number];
 const number = z.number().finite();
 const vec3 = z.tuple([number, number, number]);
 const matrix = z.array(number).length(16);
+/** Muebles por guía o exportación: el tope real es la geometría (200.000 vértices/triángulos) y el tamaño de la guía. */
+export const MAX_FURNITURE=500;
 const materialSchema = z.object({id:z.string().max(200),name:z.string().max(200),color:vec3,opacity:number.min(0).max(1),textured:z.boolean()});
 const metadataSchema = z.object({
   persistentId:z.string().max(100),instancePath:z.array(z.string().max(100)).max(25),
@@ -34,8 +36,8 @@ const rawNode: z.ZodType<RawNode> = z.lazy(() => z.object({
 }));
 export const rawDocumentSchema = z.object({
   version: z.literal(1), units: z.enum(['mm', 'in']), name: z.string().min(1).max(120),
-  furniture: z.array(rawNode).min(1).max(100),
-  exporter:z.object({name:z.literal('Planos Santo Ruby'),version:z.enum(['0.2.0','0.3.0','0.4.0','0.4.1','0.4.2','0.4.3','0.4.4','0.5.0','0.5.1','0.5.2','0.5.3','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.6.7','0.6.8','0.6.9','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.8.8','0.8.9','0.8.10','0.8.11','0.8.12','0.8.13','0.8.14','0.8.15','0.8.16','0.8.17','0.8.18','0.8.19','0.8.20','0.8.21','0.8.22','0.8.23','0.8.24','0.8.25','0.8.26','0.8.27','0.8.28','0.8.29']),sketchupVersion:z.string().max(100),modelGuid:z.string().min(1).max(200),modelName:z.string().max(200),exportedAt:z.iso.datetime(),selectionPaths:z.array(z.string()).min(1).max(100),reviewed:z.literal(true),warnings:z.array(z.string().max(500)).max(500)}).optional(),
+  furniture: z.array(rawNode).min(1).max(MAX_FURNITURE),
+  exporter:z.object({name:z.literal('Planos Santo Ruby'),version:z.enum(['0.2.0','0.3.0','0.4.0','0.4.1','0.4.2','0.4.3','0.4.4','0.5.0','0.5.1','0.5.2','0.5.3','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.6.7','0.6.8','0.6.9','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.8.8','0.8.9','0.8.10','0.8.11','0.8.12','0.8.13','0.8.14','0.8.15','0.8.16','0.8.17','0.8.18','0.8.19','0.8.20','0.8.21','0.8.22','0.8.23','0.8.24','0.8.25','0.8.26','0.8.27','0.8.28','0.8.29','0.8.30']),sketchupVersion:z.string().max(100),modelGuid:z.string().min(1).max(200),modelName:z.string().max(200),exportedAt:z.iso.datetime(),selectionPaths:z.array(z.string()).min(1).max(MAX_FURNITURE),reviewed:z.literal(true),warnings:z.array(z.string().max(500)).max(500)}).optional(),
 });
 export type RawDocument = z.infer<typeof rawDocumentSchema>;
 export type Piece = { id: string; code: string; name: string; definition?: string; mesh: Mesh; transform: number[]; dimensions: Vec3; quantity: 1; warnings: string[]; metadata?:NodeMetadata };
@@ -57,7 +59,7 @@ export const editSchema = z.object({
     pieces: z.array(z.object({ id: z.string(), name: z.string().trim().min(1).max(80) })).max(500),
     notes: z.array(noteSchema).max(40),
     hiddenDimensions:hiddenDimensionsSchema.optional(),presentation:presentationSchema.optional(),groupIdentical:z.boolean().optional(),
-  })).max(100),
+  })).max(MAX_FURNITURE),
 }).strict();
 export type Edit = z.infer<typeof editSchema>;
 export const identity = () => new Matrix4().toArray();

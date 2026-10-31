@@ -13,6 +13,7 @@ module PlanosSanto
     MM = 25.4
     MAX_VERTICES = 200_000
     MAX_TRIANGLES = 200_000
+    MAX_FURNITURE = 500
     OCL_DICTIONARY = 'ladb_opencutlist'
     OCL_HARDWARE = '5'
     HARDWARE_WARNING = 'Herraje (material de tipo herraje en OpenCutList): no se tesela ni entra en el despiece.'
@@ -275,7 +276,7 @@ module PlanosSanto
     end
 
     def document(snapshot, selected_ids)
-      raise ExportError, 'Elegí entre 1 y 100 muebles.' unless selected_ids.is_a?(Array) && selected_ids.length.between?(1,100) && selected_ids.uniq.length == selected_ids.length
+      raise ExportError, "Elegí entre 1 y #{MAX_FURNITURE} muebles." unless selected_ids.is_a?(Array) && selected_ids.length.between?(1,MAX_FURNITURE) && selected_ids.uniq.length == selected_ids.length
       ids = selected_ids.map(&:to_s)
       raise ExportError, 'No se puede elegir un mueble y también uno de sus descendientes.' if ids.any? { |a| ids.any? { |b| a != b && b.start_with?(a + '/') } }
       index = {}; self.class.each_node(snapshot.fetch('roots')) { |n| index[n['id']] = n }
