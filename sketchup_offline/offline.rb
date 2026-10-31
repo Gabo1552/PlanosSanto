@@ -24,6 +24,7 @@ require_relative 'model_material_catalog'
 require_relative 'paint_materials'
 require_relative 'model_watch'
 require_relative 'draw_component_tool'
+require_relative 'piece_grain'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -919,6 +920,33 @@ module PlanosSanto
         raise ExportError,'CSV de piezas inválido.' unless text.is_a?(String) && text.bytesize.between?(1,Cutlist::CSV_MAX_BYTES)
         target=with_user_dialog { UI.savepanel('Exportar piezas CSV',nil,Cutlist.csv_file_name(data['modelName'])) }
         target ? Cutlist.write_csv(text,target) : {'cancelled'=>true}
+      when 'piece_grain'
+        # 0.8.26 «Girar veta 90°» / «Veta automática» de Piezas: una operación (Ctrl+Z) sobre todas las piezas
+        # de la fila. Mismos bloqueos que pintar en la vista: el pincel se detiene solo; la biblioteca o el pedido
+        # sin guardar, una importación abierta o un modelo que cambió desde el análisis frenan antes de escribir.
+        # Como al pintar, una guía sin guardar no frena: sus ediciones siguen en la ventana (mismos ids).
+        active!
+        stop_brush_for!(action)
+        raise ExportError,'Terminá o cancelá la vista previa de importación antes de cambiar la veta.' if @skm_preview_active || @photo_preview_active
+        raise ExportError,'Guardá los cambios de biblioteca o pedido antes de cambiar la veta.' if @workshop_dirty
+        raise ExportError,'Elegí piezas y un ajuste de veta.' unless data.is_a?(Hash) && data['ids'].is_a?(Array) && data['mode'].is_a?(String)
+        @session.check_current!
+        known=[];Exporter.each_node(@session.document['furniture']) { |node| known << node['id'] if node['mesh'] }
+        raise ExportError,'Esas piezas ya no están en Piezas: volvé a generar el listado.' unless (data['ids']-known).empty?
+        paths=@session.document['exporter']['selectionPaths']
+        directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+        result=PieceGrain.new(@model,catalog:CatalogStore.new(directory:directory)).change(data['ids'],data['mode'])
+        # El análisis se rehace con los mismos muebles para que Piezas, el pedido y las guías lean la veta nueva;
+        # el editor regenera sus guías solo (aviso de análisis desactualizado, como después de pintar).
+        @naming=nil;@paint=nil
+        begin
+          session=NativeSession.new(@model);session.scan;session.generate(paths);@session=session
+        rescue ExportError => error
+          @session=NativeSession.new(@model)
+          result['warnings'] << "La veta se guardó, pero el listado no se pudo actualizar: #{error.message}"
+        end
+        mark_stale('material')
+        result.merge('stale'=>true)
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
       when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','catalog_add_thickness','skm_commit_typed'
         active!

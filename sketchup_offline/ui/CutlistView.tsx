@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useId,useMemo,useRef,useState,type KeyboardEvent as ReactKeyboardEvent,type ReactNode} from 'react';
-import {request} from './bridge';
+import {changePieceGrain,request,type PieceGrainMode,type PieceGrainResult} from './bridge';
 import HelpPopover from './HelpPopover';
-import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainNote,
+import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainCell,grainNote,grainNotice,
   highlightNotice,nextFocus,parseOptions,rowLetter,sectionTitle,stripDesignation,summaryRows,
   type CutlistData,type CutlistEdgeSection,type CutlistHighlight,type CutlistOptions,type CutlistPiece,type CutlistSection,type SummaryKind,type SummaryRow} from './cutlistModel';
 import './cutlist.css';
@@ -31,6 +31,8 @@ export type CutlistViewProps={
   onDataLoaded?:(data:CutlistData)=>void;
   /** 0.8.20: «Agregar 16 mm a la ficha» (espesor fuera de la lista); por defecto la acción Ruby `catalog_add_thickness`. */
   addThickness?:(catalogId:string,thicknessMm:number)=>Promise<unknown>;
+  /** 0.8.26: «Girar veta 90°» y «Veta automática» de una fila (todas sus piezas); por defecto la acción Ruby `piece_grain`. */
+  changeGrain?:(ids:string[],mode:PieceGrainMode)=>Promise<PieceGrainResult>;
 };
 
 const defaultLoad=()=>request<CutlistData>('cutlist');
@@ -111,11 +113,13 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
   const [options,setOptions]=useState<CutlistOptions>(readOptions),[showOptions,setShowOptions]=useState(false),[exporting,setExporting]=useState(false);
+  // Veta (0.8.26): fila que está cambiando y el aviso de la última que no se pudo cambiar.
+  const [grainBusy,setGrainBusy]=useState(''),[grainError,setGrainError]=useState<{key:string;text:string}>();
   const sequence=useRef(0),uid=useId(),optionsTrigger=useRef<HTMLButtonElement>(null),optionsPanel=useRef<HTMLDivElement>(null);
   const lookSequence=useRef(0),flashTimer=useRef<number|undefined>(undefined),summaryTable=useRef<HTMLTableElement>(null);
   useEffect(()=>()=>window.clearTimeout(flashTimer.current),[]);
@@ -255,6 +259,34 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     try{await addThickness(info.catalogId,info.thicknessMm);setNotice(`${formatMm(info.thicknessMm)} mm agregado a los espesores de «${info.name}».`);await refresh();}
     catch(value){setError(value instanceof Error?value.message:String(value));}
   }
+  // 0.8.26: girar la veta 90° o volver a la automática en todas las piezas de la fila; una operación en SketchUp
+  // (Ctrl+Z la deshace) y el listado se vuelve a leer con largo y ancho según la veta nueva.
+  async function grain(piece:CutlistPiece,key:string,mode:PieceGrainMode){
+    if(grainBusy)return;
+    setGrainBusy(key);setGrainError(undefined);setNotice('');setError('');
+    try{
+      const result=await changeGrain(piece.ids.length?piece.ids:[piece.id],mode);
+      setNotice(grainNotice(mode,result?.pieces??piece.quantity,result?.warnings));
+      await refresh();
+    }catch(value){setGrainError({key,text:value instanceof Error?value.message:String(value)});}
+    finally{setGrainBusy('');}
+  }
+  /** Celda Veta: ↕/↔, auto/manual, aviso del caso ambiguo y los dos botones (o por qué no se puede). */
+  function grainColumn(piece:CutlistPiece,key:string){
+    const cell=grainCell(piece);
+    if(!cell)return <td className="grain"><span className="sr-only">Sin veta</span></td>;
+    const blocked=!!cell.block,busy=grainBusy===key,failed=grainError?.key===key?grainError.text:'';
+    return <td className="grain">
+      <span className={`cutlist-grain-cell is-${cell.source}`} title={cell.label}><span aria-hidden="true" className="cutlist-grain-symbol">{cell.symbol}</span><span className="sr-only">{cell.label}</span><small aria-hidden="true">{cell.source}</small></span>
+      {cell.review&&<span className="cutlist-grain-review" role="note"><Icon name="warn"/>{cell.review}</span>}
+      {blocked?<span className="cutlist-grain-blocked" role="note">{cell.block}</span>:<span className="cutlist-grain-tools">
+        <button type="button" disabled={!!grainBusy||loading} aria-label={`Girar veta 90°: ${piece.name}`} title="Gira la veta de todas las piezas de la fila y su textura en SketchUp" onClick={()=>void grain(piece,key,'rotate')}>Girar veta 90°</button>
+        <button type="button" disabled={!!grainBusy||loading} aria-label={`Veta automática: ${piece.name}`} title="Vertical en puertas y laterales; en piezas horizontales, el lado más largo" onClick={()=>void grain(piece,key,'auto')}>Veta automática</button>
+      </span>}
+      {busy&&<span className="cutlist-grain-status" role="status">Cambiando la veta en SketchUp…</span>}
+      {failed&&<span className="cutlist-grain-error" role="alert"><Icon name="warn"/>{failed}</span>}
+    </td>;
+  }
   async function exportCsv(only?:{sheets:CutlistSection[];edges:CutlistEdgeSection[]}){
     if(!data)return;
     setExporting(true);setNotice('');setError('');
@@ -334,7 +366,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
         if(hidden.has(row.key))return null;
         const open=!collapsed.has(row.key),bodyId=`${groupId(index)}-body`,titleId=`${groupId(index)}-title`,title=row.kind==='edge'?row.name:sectionTitle(row);
         const sheet=kind==='sheet'?section as CutlistSection:undefined,edge=kind==='edge'?section as CutlistEdgeSection:undefined;
-        const note=sheet?grainNote(sheet.info,sheet.pieces):undefined;
+        const note=sheet?grainNote(sheet.info,sheet.pieces):undefined,grained=sheet?.info.grain===true;
         const menu:MenuItem[]=[{label:'Exportar CSV de esta sección',onSelect:()=>void exportCsv(sheet?{sheets:[sheet],edges:[]}:{sheets:[],edges:[edge!]})},
           ...(row.catalogId&&onEditMaterial?[{label:'Editar la ficha en Materiales',onSelect:()=>onEditMaterial(row.catalogId!)}]:[]),
           {label:'Ocultar la sección',onSelect:()=>flip(setHidden,row.key)}];
@@ -357,7 +389,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
           <div id={bodyId} className="cutlist-table-wrap" hidden={!open}>
             {sheet&&<table className="cutlist-table">
               <caption className="sr-only">Piezas de {title}</caption>
-              <thead><tr><th scope="col" rowSpan={2} className="no">No.</th><th scope="col" rowSpan={2}>Designación</th><th scope="col" rowSpan={2} className="qty">Cant.</th><th scope="colgroup" colSpan={row.kind==='unknown'?3:2}>Finales</th></tr>
+              <thead><tr><th scope="col" rowSpan={2} className="no">No.</th><th scope="col" rowSpan={2}>Designación</th><th scope="col" rowSpan={2} className="qty">Cant.</th><th scope="colgroup" colSpan={row.kind==='unknown'?3:2}>Finales</th>{grained&&<th scope="col" rowSpan={2} className="grain">Veta</th>}</tr>
                 <tr><th scope="col" className="num"><abbr title="Longitud">L</abbr></th><th scope="col" className="num"><abbr title="Ancho">A</abbr></th>{row.kind==='unknown'&&<th scope="col" className="num"><abbr title="Espesor">E</abbr></th>}</tr></thead>
               <tbody>{sheet.pieces.map((piece,rowIndex)=>{const key=`${row.key}:${piece.id}`,approx=!piece.rectangular;
                 return <tr key={piece.id} className={selected===key?'is-selected':undefined} aria-current={selected===key?'true':undefined} onClick={event=>{if(!onControl(event))activate(piece,key,row.key,piece.name);}} data-piece-id={piece.id}>
@@ -368,6 +400,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
                     {lookPanel(piece,key,row.key,piece.name)}</td>
                   <td className="num qty">{piece.quantity}</td>
                   <td className="num">{finalMm(piece.lengthMm,approx)}</td><td className="num">{finalMm(piece.widthMm,approx)}</td>{row.kind==='unknown'&&<td className="num">{finalMm(piece.thicknessMm,approx)}</td>}
+                  {grained&&grainColumn(piece,key)}
                 </tr>;})}</tbody>
             </table>}
             {edge&&<table className="cutlist-table">

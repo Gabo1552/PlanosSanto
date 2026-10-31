@@ -4,6 +4,8 @@ require_relative 'names_double'
 require_relative 'cantos_double'
 require_relative 'ocl_read_double'
 require_relative 'highlight_view_double'
+# Piezas 0.8.26 (veta): caras con textura posicionable y «Hacer único» en memoria.
+require_relative 'grain_double' if ARGV[1]=='materials-cutlist-grain'
 # The native API exposes name as well as display_name; library navigation uses it.
 Sketchup::Material.class_eval { def name; display_name; end }
 $LOADED_FEATURES << 'sketchup.rb'
@@ -14,8 +16,9 @@ module Sketchup
   def self.active_model
     @names_model ||= begin
       model=ARGV[1] == 'shared' ? NamingModelDouble.new(Fixture.model) : ARGV[1]=='cantos' ? CantosFixture.model : NamesFixture.model
+      model=GrainDouble::Model.new(model.__getobj__) if ARGV[1]=='materials-cutlist-grain'
       OclReadFixture.prepare(model) if ARGV[1].to_s.start_with?('materials')
-      if %w[materials-edges materials-cutlist materials-cutlist-pair].include?(ARGV[1])
+      if %w[materials-edges materials-cutlist materials-cutlist-pair materials-cutlist-grain].include?(ARGV[1])
         board=model.materials[0];first=model.materials[1]
         second=Sketchup::Material.new(890,'Canto secundario de prueba',Sketchup::Color.new(80,80,80),1,nil);second.ocl_attributes={'type'=>4,'thickness'=>'1mm','std_widths'=>'22mm'};model.materials << second
         faces=model.entities[0].entities[0].definition.entities;faces[1].material=nil;faces[3].material=first;faces[4].material=second
@@ -27,6 +30,11 @@ module Sketchup
         # Piezas 0.8.20: un segundo «Lateral - Blanco» dentro de «Interior estructural» (otro módulo del mismo mueble).
         nested=model.entities[0].entities[1];left=model.entities[0].entities[0]
         nested.entities << Sketchup::ComponentInstance.new(14,'Lateral - Blanco',left.definition,Geom::Transformation.translation(40,0,0))
+      end
+      if ARGV[1]=='materials-cutlist-grain'
+        # Veta: la placa tiene textura (1000 × 500 mm) y cada pieza se puede hacer única.
+        model.materials[0].texture=GrainDouble::Texture.new(1000/25.4,500/25.4)
+        model.all_instances.each { |entity| GrainDouble.enable_unique(entity) }
       end
       if ARGV[1].to_s.start_with?('materials-cutlist')
         # Cámara y vista sintéticas para «ver en SketchUp» (no se dibuja nada).
@@ -97,6 +105,13 @@ STDIN.each_line do |line|
     # Piezas 0.8.20: una pieza borrada después de leer el listado.
     id=msg.fetch('data',{}).fetch('persistentId').to_s
     model.all_instances.find { |e| e.persistent_id.to_s==id }.invalid_for_names=true;controller.reply(msg['id'],result:true)
+  when '__grain_inspect'
+    # Piezas 0.8.26: veta guardada por instancia, textura posicionada y definiciones (sin SketchUp).
+    controller.reply(msg['id'],result:model.all_instances.to_h do |e|
+      faces=e.definition.entities.grep(Sketchup::Face)
+      [e.persistent_id.to_s,{'axis'=>e.get_attribute('PlanosSantoGrain','axis_v1'),'definition'=>e.definition.guid,'positioned'=>faces.count { |f| f.respond_to?(:uv) && !f.uv.empty? },
+                             'materials'=>faces.map { |f| f.material&.display_name }}]
+    end)
   when '__view_inspect'
     # Piezas 0.8.20: cámara, transiciones, selección y contexto abierto del doble.
     view=model.respond_to?(:active_view) ? model.active_view : nil

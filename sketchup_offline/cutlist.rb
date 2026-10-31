@@ -7,6 +7,7 @@ require_relative 'ocl_reader'
 require_relative 'order_proposal'
 require_relative 'guide_store'
 require_relative 'workshop'
+require_relative 'piece_grain'
 
 module PlanosSanto
   # Vista «Piezas»: lista de corte de los muebles generados, agrupada por material y espesor real de la pieza
@@ -40,7 +41,15 @@ module PlanosSanto
       rescue ExportError
         {}
       end
-      build(session.document,service,report,catalog,guide:guide,stored:stored_draft(model))
+      # 0.8.26: por qué una fila no puede girar su veta (bloqueada, compartida sin poder aislarse, textura
+      # proyectada…). Solo lectura: un recorrido de nombres sin geometría y ninguna operación.
+      grain=PieceGrain.new(model,catalog:CatalogStore.new(directory:directory))
+      snapshot=nil
+      check=lambda do |ids|
+        snapshot ||= NameManager.new(model).inventory(geometry:false)
+        grain.blocker(ids,snapshot:snapshot)
+      end
+      build(session.document,service,report,catalog,guide:guide,stored:stored_draft(model),grain_check:check)
     end
 
     # Exportar CSV: la UI arma el texto (lo que se ve en la pestaña) y Ruby solo lo valida y lo escribe
@@ -77,7 +86,7 @@ module PlanosSanto
     end
 
     # document: el documento generado (muebles y piezas); service: SupplierOrder; report: OclReader.
-    def self.build(document,service,report,catalog,guide: {},stored: nil)
+    def self.build(document,service,report,catalog,guide: {},stored: nil,grain_check: nil)
       proposal=service.proposal;geometry=proposal['geometry']
       fresh=stored.is_a?(Hash) && stored['fingerprint']==proposal['fingerprint'] && stored['catalogRevision']==proposal['catalogRevision'] && stored['rows'].is_a?(Array)
       saved=fresh ? stored['rows'].select { |row| row.is_a?(Hash) && row['id'].is_a?(String) }.to_h { |row| [row['id'],row] } : {}
@@ -106,6 +115,7 @@ module PlanosSanto
         piece(work,kept,geometry.fetch(id),planner,context).merge('code'=>code,'name'=>name,'furnitureId'=>roots[id]['id'],'furnitureName'=>roots[id]['name'])
       end
       pieces=group(entries)
+      pieces.each { |piece| piece['grainBlock']=grain_block(piece,grain_check) }
       order=document.fetch('furniture',[]).each_with_index.to_h { |root,index| [root['id'],index] }
       pieces.sort_by! { |piece| [order[piece['furnitureId']] || 0,piece['code'].empty? ? 1 : 0,natural(piece['code']),piece['name'].to_s,piece['id']] }
       {'schema'=>1,'complete'=>report['complete']==true,'readOnly'=>true,'modelName'=>(document['name'] || document['modelName']).to_s,'unit'=>'mm',
@@ -131,11 +141,14 @@ module PlanosSanto
         key=edge_key(edge)
         key ? edge.merge('edgeKey'=>key) : edge
       end
+      along=grain(board,g,u,v);grained=along && along!='none'
       {'id'=>id,'strips'=>strips(edges,thickness,g['rectangular']==true,context),'ids'=>[id],'definitionId'=>observed && observed['definition_id'],'quantity'=>1,
        'lengthMm'=>lengths[u].round(2),'widthMm'=>lengths[v].round(2),'thicknessMm'=>thickness,
        'rectangular'=>g['rectangular']==true,'mirrored'=>g['mirrored']==true,'material'=>material,'thicknessInList'=>thickness_in_list(board,thickness),
        'sectionKey'=>"#{section_source_key(material)}|#{format('%.1f',thickness)}",'edges'=>edges,
-       'grain'=>grain(board,kept,u,v),'notes'=>stage ? (stage['notes'].map { |note| note['text'] }+stage['blockers']).uniq : ['Geometría no rectangular: medidas aproximadas por la caja de la pieza; cantos sin leer.']}
+       # 0.8.26: veta de la pieza (eje local, automática o manual, sentido en el mueble y aviso si es ambigua).
+       'grain'=>along,'grainAxis'=>grained ? g['grainAxis'] : nil,'grainSource'=>grained ? g['grainSource'] : nil,
+       'grainDirection'=>grained ? g['grainDirection'] : nil,'grainReview'=>grained ? g['grainReview'] : nil,'notes'=>stage ? (stage['notes'].map { |note| note['text'] }+stage['blockers']).uniq : ['Geometría no rectangular: medidas aproximadas por la caja de la pieza; cantos sin leer.']}
     end
 
     # ¿El espesor real de la pieza está entre los de la ficha? nil sin ficha de placa o sin lista. Fuera de la lista
@@ -220,13 +233,23 @@ module PlanosSanto
       value.is_a?(Numeric) && value.finite? && value.positive?
     end
 
-    # La veta sale de la ficha de la placa. Si el pedido guardado ya fijó el eje, se respeta.
-    def self.grain(board,kept,u,v)
+    # La veta: la ficha dice si la placa tiene veta y la pieza (Grain, en la geometría del pedido) en qué eje.
+    # 0.8.26: es la única fuente; el «grainAxis» u/v de un pedido guardado antes de 0.8.16 ya no se lee. El
+    # largo (u) de una pieza rectangular con veta es su eje de veta: «length». «width» queda para el caso
+    # raro en que la veta no pudo ser la base (cae en el eje que la placa toma como espesor).
+    def self.grain(board,g,u,v)
       return nil unless board && [true,false].include?(board['grain'])
       return 'none' unless board['grain']
-      axes=kept['axes'];axis=kept['grainAxis']
-      return 'length' unless axes.is_a?(Array) && axes.size==2 && %w[u v].include?(axis)
-      axes[axis=='u' ? 0 : 1]==v ? 'width' : 'length'
+      g['grainAxis'].is_a?(Integer) && g['grainAxis']==v && g['grainAxis']!=u ? 'width' : 'length'
+    end
+    # Motivo por el que «Girar veta 90°» y «Veta automática» no se pueden usar en la fila, o nil.
+    def self.grain_block(piece,check)
+      return nil unless piece['grain'] && piece['grain']!='none'
+      return 'Pieza no rectangular: la veta no se puede orientar.' unless piece['rectangular']
+      return 'No se pudo leer la veta de la pieza: volvé a generar Piezas.' unless piece['grainAxis'].is_a?(Integer)
+      check ? check.call(piece['ids']) : nil
+    rescue StandardError => error
+      error.is_a?(ExportError) ? error.message : 'No se pudo revisar la veta de esta pieza en el modelo.'
     end
 
     # Piezas idénticas del mismo mueble en una fila: misma definición, nombre, material, medidas, cantos y veta.
@@ -234,7 +257,7 @@ module PlanosSanto
       groups={}
       entries.each do |entry|
         signature=[entry['furnitureId'],entry['definitionId'] || entry['id'],entry['name'],entry['sectionKey'],entry['lengthMm'],entry['widthMm'],entry['thicknessMm'],
-                   entry['edges'].map { |edge| [edge['status'],edge['catalogId'],edge['observedIds']] },entry['grain'],entry['rectangular']]
+                   entry['edges'].map { |edge| [edge['status'],edge['catalogId'],edge['observedIds']] },entry['grain'],entry['rectangular'],entry['grainAxis'],entry['grainSource'],entry['grainReview']]
         found=groups[signature]
         if found
           found['ids'] << entry['id'];found['quantity']+=1;found['codes'] |= [entry['code']] unless entry['code'].empty?

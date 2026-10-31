@@ -222,6 +222,8 @@ module PlanosSanto
       raise ExportError, 'Definición recursiva no soportada.' if stack.include?(definition.object_id)
       pid = entity.persistent_id.to_s
       route = path + [pid]
+      # 0.8.26: veta de corte. El contenedor de primer nivel marca la vertical del mueble (aviso si está acostado).
+      @grain_root = entity.transformation.to_a if path.empty?
       world = parent * entity.transformation
       tag = entity.layer
       effective = visible && !entity.hidden? && tag.visible?
@@ -255,6 +257,8 @@ module PlanosSanto
         begin
           metadata.merge!(bounds_and_shape(mesh, world))
           warnings << 'No es un sólido rectangular en sus ejes locales: medidas de caja, verificar orientación.' unless metadata['rectangular']
+          # Eje local de la veta (Grain, solo en la extensión offline): automático o el elegido en Piezas.
+          metadata.merge!(PlanosSanto::Grain.metadata(metadata['localBounds'], world.to_a, entity, @grain_root)) if metadata['rectangular'] && defined?(PlanosSanto::Grain)
         rescue ExportError => e
           errors << e.message
         end
