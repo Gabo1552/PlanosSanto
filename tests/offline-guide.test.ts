@@ -52,12 +52,14 @@ describe('Guías locales; fixtures sintéticos, sin ejecutar SketchUp',()=>{
     f.notes=[{id:crypto.randomUUID(),pieceId:f.pieces[0].id,anchor:[0,0,0],position:[718,528],text:'La tarjeta no entra'}];
     expect(makeScene(f).warnings.join()).toMatch(/fuera/);
     const positioned=await PDFDocument.load(await createOfflinePdf(project,fonts[0],fonts[1]));expect(positioned.getPageCount()).toBe(2);expect(f.notes[0].position).toEqual([718,528]);
-    f.notes=[];f.pieces=Array.from({length:50},(_,i)=>({...f.pieces[i%6],id:`board-${i}`,code:`P${String(i+1).padStart(2,'0')}`}));
+    // Distinct names: since 0.8.29 equal pieces with the same name share one row and this list would fit.
+    // 0.8.29: the bigger views fit the labels of 50 stacked pieces; 90 still do not.
+    f.notes=[];f.pieces=Array.from({length:90},(_,i)=>({...f.pieces[i%6],id:`board-${i}`,code:`P${String(i+1).padStart(2,'0')}`,name:`${f.pieces[i%6].name} ${i+1}`}));
     // IDs are hidden by default since 0.8.19: the list goes on to hoja 2. Shown IDs do not fit and block the sheet.
     expect((await PDFDocument.load(await createOfflinePdf(project,fonts[0],fonts[1]))).getPageCount()).toBeGreaterThan(2);
     f.presentation={...f.presentation,hideIds:false};
     await expect(createOfflinePdf(project,fonts[0],fonts[1])).rejects.toThrow(/listado|etiquetas/);
-    expect(f.pieces).toHaveLength(50);
+    expect(f.pieces).toHaveLength(90);
   });
   it('rechaza una leyenda de notas que excede el espacio junto a las dos vistas, sin omitirlas',async()=>{
     const project=createDemo();project.furniture=project.furniture.slice(0,1);const f=project.furniture[0];

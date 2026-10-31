@@ -20,5 +20,5 @@ test('web guarda rotación, IDs ocultos y cota movida; recarga y exporta las mis
  await page.reload();await expect(page.locator('[data-label]')).toHaveCount(0);await expect(page.getByLabel('Nombre P01',{exact:true})).toBeVisible();
  const response=await request.get(`/api/pdf/${id}`);expect(response.status()).toBe(200);
  const file='artifacts/ajustes-060-WEB-SINTETICO-A4.pdf';await writeFile(file,await response.body());
- const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','124','-W','504','-H','405','-raw',file,'-'],{encoding:'utf8'});expect(drawing).not.toContain('P01');
+ const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','70','-W','532','-H','458','-raw',file,'-'],{encoding:'utf8'});expect(drawing).not.toContain('P01');
 });

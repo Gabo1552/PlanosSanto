@@ -2,8 +2,8 @@ import { PDFDocument, rgb, pushGraphicsState, popGraphicsState, concatTransforma
 import fontkit from '@pdf-lib/fontkit';
 import { Color } from 'three';
 import { makeScene, guideViews, type View } from '../../lib/scene';
-import { mm, type Furniture, type Project } from '../../lib/model';
-import {pieceRows,groupedNameIssues,identicalGroups,type PieceRow} from '../../lib/pieceGroups';
+import { mm, type Furniture, type Piece, type Project } from '../../lib/model';
+import {groupedNameIssues,groupedPieces,sheetCodeMap,sheetGroups,type PieceRow} from '../../lib/pieceGroups';
 import { sheetCaption, sheetEntries } from '../../lib/sheet';
 import { DIMENSION_FONT_SIZE,isDimensionNotice } from '../../lib/dimensions';
 import release from '../version.json';
@@ -87,23 +87,34 @@ export type A4Page={furnitureId:string;name:string;label:string;fit?:{detail:str
 export const PENDING_TEXT='pendiente de pedido';
 const PENDING_LEGEND={full:'Pendiente de pedido: la fila sigue en revisión en Maderera; se imprime sin placa ni cantos.',compact:'Pendiente de pedido: sin placa ni cantos hasta revisarla.'};
 /**
- * Rows of the printed list. Identical instances may share a row only with the same order assignment;
- * with `foldTable` rows with equal measures, material, order assignment and name are folded too (codes stay in the drawing).
+ * Rows of the printed list, always grouped since 0.8.29 (lib/pieceGroups sheetGroups): pieces that print the same name,
+ * are physically equal (measures ±0,5 mm, material and painted faces, grain, shape) and carry the same order assignment
+ * (board, edges per side, cut, grain, lot) or the same pending state share one row, across definitions. The row prints
+ * the code of its first piece and the drawing labels it once with that code and «×N» (SceneOptions.groups).
+ * Pieces that already share an ID («Agrupar componentes iguales») must carry the same assignment: otherwise it throws.
  */
-export function listRows(f:Furniture,references?:OrderReferences,fold=!!f.presentation?.guide?.foldTable,pending?:readonly string[]):ListRow[]{
+function printedRows(f:Furniture,references?:OrderReferences,pending?:readonly string[]):ListRow[]{
   const codes=new Map(f.pieces.map(p=>[p.id,p.code])),waiting=new Set(pending||[]);
-  const rows=pieceRows(f).map(piece=>{
-    const assigned=references?piece.memberIds.map(id=>orderReference(references[id])):[];
-    // A grouped row with a member still under review prints as pending: its order data is not final for any of them.
-    if(piece.memberIds.some(id=>waiting.has(id)&&!assigned[piece.memberIds.indexOf(id)]))return {piece,reference:undefined,also:[] as string[],pending:true};
+  const units=groupedPieces(f),order=new Map<Piece[],{reference?:OrderReference;pending:boolean}>();
+  for(const unit of units){
+    const ids=unit.map(p=>p.id),code=unit[0].code,assigned=references?ids.map(id=>orderReference(references[id])):[];
+    // A unit with a member still under review prints as pending: its order data is not final for any of them.
+    if(ids.some((id,i)=>waiting.has(id)&&!assigned[i])){order.set(unit,{pending:true});continue;}
     const keys=assigned.map(referenceKey),other=keys.findIndex(key=>key!==keys[0]);
     if(other>0){
-      const a=codes.get(piece.memberIds[0])||piece.code,b=codes.get(piece.memberIds[other])||piece.memberIds[other];
-      throw new A4FitError(undefined,{furniture:f.name,furnitureId:f.id,kind:'order',reason:a===b?`${a}: las piezas agrupadas tienen placa o cantos distintos en el pedido.`:`${a} y ${b} comparten el ID ${piece.code} pero tienen placa o cantos distintos en el pedido.`});
+      const a=codes.get(ids[0])||code,b=codes.get(ids[other])||ids[other];
+      throw new A4FitError(undefined,{furniture:f.name,furnitureId:f.id,kind:'order',reason:a===b?`${a}: las piezas agrupadas tienen placa o cantos distintos en el pedido.`:`${a} y ${b} comparten el ID ${code} pero tienen placa o cantos distintos en el pedido.`});
     }
-    return {piece,reference:assigned[0],also:[] as string[],pending:!assigned[0]&&piece.memberIds.some(id=>waiting.has(id))};
+    order.set(unit,{reference:assigned[0],pending:!assigned[0]&&ids.some(id=>waiting.has(id))});
+  }
+  const key=(unit:Piece[])=>{const o=order.get(unit)!;return JSON.stringify([o.pending,referenceKey(o.reference),o.reference?.grain??null,o.reference?.lot??null]);};
+  return sheetGroups(f,key,units).map(group=>{
+    const members=group.flat(),o=order.get(group[0])!;
+    return {piece:{...members[0],quantity:members.length,memberIds:members.map(p=>p.id)},reference:o.reference,also:[] as string[],pending:o.pending};
   });
-  if(!fold)return rows;
+}
+/** «Agrupar por medidas en el listado A4»: rows with equal measures, material, order assignment and name fold too («también …»). */
+function foldRows(rows:ListRow[]):ListRow[]{
   const folded=new Map<string,ListRow>();
   for(const row of rows){
     const {piece}=row,material=piece.metadata?.material;
@@ -115,14 +126,32 @@ export function listRows(f:Furniture,references?:OrderReferences,fold=!!f.presen
   }
   return [...folded.values()];
 }
+/** Rows of the printed list (printedRows); with `foldTable` also folded by measures (codes stay in the drawing). */
+export function listRows(f:Furniture,references?:OrderReferences,fold=!!f.presentation?.guide?.foldTable,pending?:readonly string[]):ListRow[]{
+  const rows=printedRows(f,references,pending);
+  return fold?foldRows(rows):rows;
+}
+/**
+ * What the drawing and the legend need from the printed list: its rows as piece ids (the scene labels each once, «×N»),
+ * the code each piece prints with and whether a row joins pieces. An order that does not validate falls back to the
+ * list without order, as the viewer does while the sheet is blocked.
+ */
+export function printedGroups(f:Furniture,references?:OrderReferences,pending?:readonly string[]){
+  let rows:ListRow[];try{rows=printedRows(f,references,pending);}catch{rows=printedRows(f,undefined,pending);}
+  const groups=rows.map(r=>r.piece.memberIds);
+  return {groups,codes:sheetCodeMap(f,groups),merged:groups.some(g=>g.length>1)};
+}
 /** One spreadsheet cell: no tabs or line breaks, and text that a spreadsheet would evaluate as a formula is quoted. */
 export function tsvCell(value:string){const flat=value.replace(/[\t\r\n]+/g,' ').trim();return /^[=+\-@]/.test(flat)?`'${flat}`:flat;}
 /**
  * Tab separated list for a spreadsheet or a message: the same rows, quantities and order validation as the printed list
- * (with «Agrupar por medidas» the folded codes go in «También»), decimal comma. Throws the A4FitError of listRows.
+ * (the other codes of a grouped or folded row go in «También»), decimal comma. Throws the A4FitError of listRows.
  */
 export function exportTableTsv(project:Project,references?:OrderReferences,pending?:readonly string[]):{text:string;rows:number;furniture:number}{
-  const withOrder=!!references,listed=project.furniture.map(f=>({f,rows:listRows(f,references,undefined,pending)})),folded=listed.some(({rows})=>rows.some(r=>r.also.length));
+  const withOrder=!!references,codes=new Map(project.furniture.flatMap(f=>f.pieces.map(p=>[p.id,p.code] as const)));
+  // Every other code of the row (grouped or folded), so the spreadsheet still finds each label of the TXT.
+  const others=(piece:PieceRow)=>[...new Set(piece.memberIds.map(id=>codes.get(id)||id))].filter(code=>code!==piece.code);
+  const listed=project.furniture.map(f=>({f,rows:listRows(f,references,undefined,pending).map(row=>({...row,also:others(row.piece)}))})),folded=listed.some(({rows})=>rows.some(r=>r.also.length));
   const lines=[['Mueble','ID','Nombre','Largo','Ancho','Esp.','Cant.',...(folded?['También']:[]),...(withOrder?['Placa','Cantos']:[])].join('\t')];
   for(const {f,rows} of listed)for(const {piece,reference,also,pending:waiting} of rows){
     lines.push([tsvCell(f.name),tsvCell(piece.code),tsvCell(piece.name),...piece.dimensions.map(plainMm),String(piece.quantity),
@@ -219,14 +248,29 @@ function diagram(page:PDFPage,f:Furniture,fonts:Fonts,view:View,scene:ReturnType
     page.pushOperators(popGraphicsState());
   }
   const caption=sheetCaption(f,view);
-  // The footer lives outside the scene: it never covers a measured edge.
-  const captions=linesFor(caption,box.width-8*MM,fonts.regular,7);
-  captions.forEach((value,index)=>text(page,value,box.x+2*MM,box.top+box.height+2+index*8,7,fonts.regular,GRAY));
+  // The footer goes in the strip the sheet scene keeps free at its bottom (40 units, no piece, ID, note or placed cota):
+  // it never covers a measured edge and leaves the whole box to the drawing.
+  const captions=linesFor(caption,box.width-4*MM,fonts.regular,CAPTION_FONT);
+  captions.forEach((value,index)=>text(page,value,box.x+2*MM,box.top+box.height-1.5*MM-(captions.length-index)*CAPTION_LEADING,CAPTION_FONT,fonts.regular,GRAY));
 }
 
 type EdgeDetail={code:string;codeWidth:number;top:number;lines:string[]};
 type TableRow={piece:PieceRow;lines:string[];extra:string[];reference?:OrderReference;detail?:EdgeDetail;orderLines:number;height:number;pending:number};
-const LEGEND_LIMIT=42*MM, TABLE_FONT=8, TABLE_LEADING=10, REF_FONT=7, REF_LEADING=8.5, CODE_FONT=6.5, NAME_W=35*MM, GLYPH_W=10*MM, GLYPH_H=4.5*MM, DETAIL_W=74*MM, TABLE_LIMIT=139*MM;
+/**
+ * Page geometry in mm (0.8.29): a low header strip down to `headerRule`, the title bands from `bandTop`, views and list
+ * from `contentTop` down to `contentBottom`, 8 mm side margins and the footer under `footerRule`. The list column
+ * (`tableX`, `tableWidth`) keeps «Notas del armador» under the rows, at least `notesMin` high.
+ */
+export const A4_LAYOUT={margin:8,headerRule:18,bandTop:20,bandHeight:5,contentTop:25,rowsTop:30,contentBottom:195,footerRule:197,viewsRight:197,viewGap:4,tableX:201,tableWidth:88,notesMin:35,notesGap:3,legendLimit:36} as const;
+const L=A4_LAYOUT,MARGIN=L.margin*MM,CONTENT_TOP=L.contentTop*MM,CONTENT_BOTTOM=L.contentBottom*MM,TABLE_X=L.tableX*MM,TABLE_W=L.tableWidth*MM,ROWS_TOP=L.rowsTop*MM;
+/** Columns of the page-1 list, from its left edge (mm): ID, Nombre, Largo, Ancho, Esp., Cant. */
+const TABLE_COLS=[0,10.5,45,57,69,79] as const;
+/** Scene units per point: the text of IDs and cotas (13 units) prints at the same 9,9 pt whatever the box. */
+const SCENE_UNIT=86*MM/320;
+const LEGEND_LIMIT=L.legendLimit*MM, LEGEND_FONT=7, LEGEND_LEADING=8.5, LEGEND_TITLE=10, CAPTION_FONT=7, CAPTION_LEADING=8;
+const TABLE_FONT=8, TABLE_LEADING=10, REF_FONT=7, REF_LEADING=8.5, CODE_FONT=7, NAME_W=(TABLE_COLS[2]-TABLE_COLS[1]-2)*MM, GLYPH_W=10*MM, GLYPH_H=4.5*MM, DETAIL_W=(TABLE_COLS[5]-TABLE_COLS[1]-2)*MM;
+/** Room of the page-1 rows: «Notas del armador» keeps `notesMin` below them. */
+const TABLE_LIMIT=(L.contentBottom-L.notesMin-L.notesGap-L.rowsTop)*MM;
 /**
  * Name (and «también …», then «pendiente de pedido» for a row still under review) inside the Nombre cell; with an order row, the edge glyph at the cell's right and,
  * below, one line «1·1·0·2  SKU / 18 mm · corte 720 × 560» that spans the measure columns (they hold a single value).
@@ -278,7 +322,7 @@ function edgeLegend(rows:TableRow[]):{full:string;compact:string}|undefined{
   return {full:`Cantos: ${[principal&&`1 = ${principal} (principal)`,secondary&&`2 = ${secondary} (secundario)`,'0 = sin canto'].filter(Boolean).join(' · ')} · orden Arr·Aba·Izq·Der sobre base × altura del pedido.`,
     compact:`Cantos Arr·Aba·Izq·Der: ${[principal&&`1 = ${principal}`,secondary&&`2 = ${secondary}`,'0 = sin canto'].filter(Boolean).join(' · ')}.`};
 }
-function foldCount(f:Furniture,references?:OrderReferences,pending?:readonly string[]){try{return listRows(f,references,true,pending).length;}catch{return Infinity;}}
+function rowCount(f:Furniture,references:OrderReferences|undefined,pending:readonly string[]|undefined,fold:boolean){try{return listRows(f,references,fold,pending).length;}catch{return Infinity;}}
 /** Numbers and the lever that matches the cause, for a list that does not fit on page 1. Since 0.8.16 it is advice: the list continues on hoja 2. */
 function tableDiagnosis(f:Furniture,rows:TableRow[],used:number,references?:OrderReferences,pending?:readonly string[]){
   const over=Math.max(1,Math.ceil((used-TABLE_LIMIT)/(used/rows.length)));
@@ -286,14 +330,14 @@ function tableDiagnosis(f:Furniture,rows:TableRow[],used:number,references?:Orde
   const total=rows.reduce((n,r)=>n+r.lines.length+r.extra.length+(r.detail?r.detail.lines.length:0),0),fromOrder=rows.reduce((n,r)=>n+r.orderLines,0);
   let action:string;
   if(references&&fromOrder*2>total)action='Desactivá «Incluir materiales y cantos del pedido» en Opciones de guardado o activá «Agrupar por medidas en el listado A4».';
-  else if(!f.groupIdentical&&identicalGroups(f).some(group=>group.length>1))action='Activá Agrupar componentes iguales en este mueble.';
-  else if(!f.presentation?.guide?.foldTable&&foldCount(f,references,pending)<rows.length)action='Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.';
+  else if(!f.groupIdentical&&rowCount({...f,groupIdentical:true},references,pending,!!f.presentation?.guide?.foldTable)<rows.length)action='Activá Agrupar componentes iguales en este mueble.';
+  else if(!f.presentation?.guide?.foldTable&&rowCount(f,references,pending,true)<rows.length)action='Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.';
   else{const long=rows.filter(r=>r.lines.length>1).sort((a,b)=>b.lines.length-a.lines.length).slice(0,3).map(r=>r.piece.code);action=long.length?`Acortá los nombres más largos: ${long.join(', ')}.`:'Separá el mueble en dos grupos de SketchUp para imprimir cada uno en su hoja.';}
   return {detail,action};
 }
 
 
-const DETAIL_COLS=[0,14,110,128,146,160,174,210],DETAIL_X=8*MM,SHEET2_W=281*MM,DETAIL_TOP=50*MM,DETAIL_BOTTOM=196*MM,DETAIL_PAGES=20;
+const DETAIL_COLS=[0,14,110,128,146,160,174,210],DETAIL_X=MARGIN,SHEET2_W=281*MM,DETAIL_HEAD=L.contentTop*MM,DETAIL_TOP=(L.contentTop+5.5)*MM,DETAIL_BOTTOM=CONTENT_BOTTOM,DETAIL_PAGES=20;
 type DetailRow={kind:'row';piece:PieceRow;reference?:OrderReference;pending?:boolean;lines:string[];extra:string[];cut:string;code:string;height:number};
 type DetailItem=DetailRow|{kind:'group';lines:string[];height:number};
 const piecesText=(n:number)=>`${n} ${n===1?'pieza':'piezas'}`;
@@ -331,10 +375,9 @@ function detailPages(rows:ListRow[],fonts:Metrics):DetailItem[][]{
 }
 function drawDetail(page:PDFPage,items:DetailItem[],fonts:Fonts){
   const col=DETAIL_COLS.map(n=>DETAIL_X+n*MM),right=DETAIL_X+SHEET2_W;
-  page.drawRectangle({x:DETAIL_X,y:PAGE_H-43*MM,width:SHEET2_W,height:7*MM,color:TEAL});
-  text(page,'DESPIECE COMPLETO · AGRUPADO POR PLACA',DETAIL_X+2*MM,38*MM,8,fonts.regular,WHITE);
-  page.drawRectangle({x:DETAIL_X,y:PAGE_H-DETAIL_TOP,width:SHEET2_W,height:7*MM,color:INK});
-  ['ID','Nombre','Largo','Ancho','Esp.','Cant.','Corte','Cantos'].forEach((value,i)=>text(page,value,col[i]+MM,45*MM,7.3,fonts.regular,WHITE));
+  band(page,DETAIL_X,SHEET2_W,'DESPIECE COMPLETO · AGRUPADO POR PLACA',fonts);
+  page.drawRectangle({x:DETAIL_X,y:PAGE_H-DETAIL_TOP,width:SHEET2_W,height:DETAIL_TOP-DETAIL_HEAD,color:INK});
+  ['ID','Nombre','Largo','Ancho','Esp.','Cant.','Corte','Cantos'].forEach((value,i)=>text(page,value,col[i]+MM,DETAIL_HEAD+1.6*MM,7.3,fonts.regular,WHITE));
   let top=DETAIL_TOP,stripe=0;
   for(const item of items){
     if(item.kind==='group'){
@@ -359,18 +402,21 @@ function drawDetail(page:PDFPage,items:DetailItem[],fonts:Fonts){
 type Fail=(reason:string,kind:A4FitKind,action?:string,detail?:string)=>never;
 const failFor=(f:Furniture):Fail=>(reason,kind,action,detail)=>{throw new A4FitError(undefined,{furniture:f.name,furnitureId:f.id,reason,kind,action,detail});};
 type SheetView={view:View;box:DiagramBox;width:number;height:number};
-/** The drawing boxes left above a legend of `legendHeight` points: one 640-unit view or two of 320. */
+/**
+ * The drawing boxes left above a legend of `legendHeight` points: one view across the left column or two side by
+ * side. Scene units keep SCENE_UNIT, so a bigger box draws the furniture bigger with the same text size.
+ */
 function sheetViews(f:Furniture,legendHeight:number):SheetView[]{
-  const legendTop=194*MM-legendHeight, diagramTop=44*MM, diagramBottom=legendTop-9*MM;
-  const views=guideViews(f),single=views.length===1,diagramWidth=(single?177:86)*MM,width=single?640:320;
-  const height=Math.floor((diagramBottom-diagramTop)/(diagramWidth/width));
-  return views.map((view,index)=>({view,width,height,box:{x:(single?8:index===0?8:99)*MM,top:diagramTop,width:diagramWidth,height:height*(diagramWidth/width)}}));
+  const legendTop=CONTENT_BOTTOM-legendHeight,bottom=legendTop-1.5*MM,gap=L.viewGap*MM,area=L.viewsRight*MM-MARGIN;
+  const views=guideViews(f),boxWidth=views.length===1?area:(area-gap)/2,width=Math.round(boxWidth/SCENE_UNIT),unit=boxWidth/width;
+  const height=Math.floor((bottom-CONTENT_TOP)/unit);
+  return views.map((view,index)=>({view,width,height,box:{x:MARGIN+index*(boxWidth+gap),top:CONTENT_TOP,width:boxWidth,height:height*unit}}));
 }
 /** Legend of page 1 and the views above it. The PDF and the editor viewer both compose the sheet from here. */
-function sheetFrame(f:Furniture,rows:TableRow[],fonts:Metrics,fail:Fail){
+function sheetFrame(f:Furniture,rows:TableRow[],entries:string[],fonts:Metrics,fail:Fail){
   const cantos=edgeLegend(rows),waiting=rows.some(r=>r.pending)?PENDING_LEGEND:undefined,order=[cantos,waiting].filter(o=>!!o);
-  const entries=sheetEntries(f),hasObservations=!!f.presentation?.guide?.observations?.trim();
-  const legendFor=(first:string[]=[])=>{const lines=[...first,...entries].flatMap(entry=>linesFor(entry,175*MM,fonts.regular,8));return {lines,height:Math.max(16*MM,lines.length*10+14+(hasObservations?0:8*MM))};};
+  // Automatic notes only: «Notas del armador», under the list, is the blank space to write by hand.
+  const legendFor=(first:string[]=[])=>{const lines=[...first,...entries].flatMap(entry=>linesFor(entry,L.viewsRight*MM-MARGIN,fonts.regular,LEGEND_FONT));return {lines,height:LEGEND_TITLE+lines.length*LEGEND_LEADING+2};};
   // The order legends (edges, pending rows) are not editable: their compact forms are tried before blaming the notes, and a failure caused by them says so.
   let legend=legendFor(order.map(o=>o.full));
   if(legend.height>LEGEND_LIMIT&&order.length)legend=legendFor(order.map(o=>o.compact));
@@ -382,44 +428,52 @@ function sheetFrame(f:Furniture,rows:TableRow[],fonts:Metrics,fail:Fail){
     }
     fail('Las notas y observaciones no caben legiblemente debajo de las vistas.','legend',undefined,detail);
   }
-  return {legendLines:legend.lines,legendTop:194*MM-legend.height,views:sheetViews(f,legend.height)};
+  return {legendLines:legend.lines,legendTop:CONTENT_BOTTOM-legend.height,views:sheetViews(f,legend.height)};
 }
+const legendEntries=(f:Furniture,printed:ReturnType<typeof printedGroups>)=>sheetEntries(f,{codes:printed.codes,merged:printed.merged});
 /**
- * One view exactly as page 1 of the PDF draws it: same furniture defaults (IDs, guide), the same drawing box from the
- * same legend and fonts, hence the same cotas, omissions and positions. A sheet that cannot be printed still gets a
- * view, with the smallest drawing box, so the editor keeps showing what is being corrected.
+ * One view exactly as page 1 of the PDF draws it: same furniture defaults (IDs, guide), the same grouped list, the
+ * same drawing box from the same legend and fonts, hence the same IDs «×N», cotas, omissions and positions. A sheet that
+ * cannot be printed still gets a view, with the smallest drawing box, so the editor keeps showing what is being corrected.
  */
 export function a4ViewScene(source:Furniture,view:View,fonts:Metrics,references?:OrderReferences,pending?:readonly string[]){
-  const f=a4Furniture(source);
+  const f=a4Furniture(source),printed=printedGroups(f,references,pending);
   let views:SheetView[];
-  try{let list:ListRow[];try{list=listRows(f,references,undefined,pending);}catch{list=listRows(f,undefined,undefined,pending);}views=sheetFrame(f,tableRows(list,fonts),fonts,failFor(f)).views;}
+  try{let list:ListRow[];try{list=listRows(f,references,undefined,pending);}catch{list=listRows(f,undefined,undefined,pending);}views=sheetFrame(f,tableRows(list,fonts),legendEntries(f,printed),fonts,failFor(f)).views;}
   catch{views=sheetViews(f,LEGEND_LIMIT);}
   const {width,height}=views.find(v=>v.view===view)||views[0];
-  return makeScene(f,{view,layout:'sheet',width,height});
+  return makeScene(f,{view,layout:'sheet',width,height,groups:printed.groups});
 }
+/** Header texts of a page and the width each line may use. */
+const HEADER_TEXT_X=37*MM,HEADER_TEXT_W=185*MM,HEADER_KIND='GUÍA DE ARMADO',HEADER_NAME=12,HEADER_SMALL=7.5;
+const detailNotice=(f:Furniture,label:string)=>`El despiece completo de ${piecesText(f.pieces.length)} sigue en la hoja ${label}, agrupado por placa.`;
+const DETAIL_NOTICE=8.5,DETAIL_NOTICE_LEADING=11;
 
 /**
- * Page 1 of one furniture, before drawing: list rows, legend, the scene of each view and the hoja 2 pages.
- * Infeasible layouts throw an A4FitError; cotas without a free position only add `notices`.
+ * Page 1 of one furniture, before drawing: list rows, legend, the scene of each view, «Notas del armador» and the
+ * hoja 2 pages. Infeasible layouts throw an A4FitError; cotas without a free position only add `notices`.
+ * `notesBox` and `tableBottom` are in points from the top of the page; `label` is the first page of hoja 2 («1b»).
  */
-export function composeA4(project:Pick<Project,'name'>,source:Furniture,fonts:Metrics,references?:OrderReferences,pending?:readonly string[]){
+export function composeA4(project:Pick<Project,'name'>,source:Furniture,fonts:Metrics,references?:OrderReferences,pending?:readonly string[],label='1b'){
   const f=a4Furniture(source),fail=failFor(f);
   try{
   if(f.pieces.some(p=>!p.name.trim()))fail('Hay piezas sin nombre.','names');
-  const list=listRows(f,references,undefined,pending),rows=tableRows(list,fonts),used=rows.reduce((h,r)=>h+r.height,0);
+  const list=listRows(f,references,undefined,pending),rows=tableRows(list,fonts),used=rows.reduce((h,r)=>h+r.height,0),printed=printedGroups(f,references,pending);
   let detailSheets:DetailItem[][]|undefined,fit:{detail:string;action:string}|undefined;
   if(used>TABLE_LIMIT){
     fit=tableDiagnosis(f,rows,used,references,pending);
     detailSheets=detailPages(list,fonts);
     if(detailSheets.length>DETAIL_PAGES)fail(`El despiece completo necesita ${detailSheets.length} hojas; el máximo es ${DETAIL_PAGES} hojas por mueble.`,'size','Separá el mueble en dos grupos de SketchUp para imprimir cada uno con su despiece.');
   }
+  // Each value must fit its own column, with 1,5 mm of padding.
+  const room=(i:number)=>((TABLE_COLS[i+1]??L.tableWidth)-TABLE_COLS[i]-1.5)*MM;
   for(const {piece} of rows){
-    if(fonts.regular.widthOfTextAtSize(piece.code,TABLE_FONT)>9*MM)fail(`${piece.code}: el identificador no entra en la columna ID.`,'table','Acortá el código de la pieza.');
-    for(const value of [...piece.dimensions.map(mm),String(piece.quantity)])if(fonts.regular.widthOfTextAtSize(value,TABLE_FONT)>12*MM)fail(`${piece.code}: una medida o cantidad no entra en su columna.`,'table','Revisá la medida o la cantidad de esa pieza.');
+    if(fonts.regular.widthOfTextAtSize(piece.code,TABLE_FONT)>room(0))fail(`${piece.code}: el identificador no entra en la columna ID.`,'table','Acortá el código de la pieza.');
+    for(const [i,value] of [...piece.dimensions.map(mm),String(piece.quantity)].entries())if(fonts.regular.widthOfTextAtSize(value,TABLE_FONT)>room(i+2))fail(`${piece.code}: una medida o cantidad no entra en su columna.`,'table','Revisá la medida o la cantidad de esa pieza.');
   }
-  const frame=sheetFrame(f,rows,fonts,fail),{legendLines,legendTop}=frame,notices:string[]=[];
+  const frame=sheetFrame(f,rows,legendEntries(f,printed),fonts,fail),{legendLines,legendTop}=frame,notices:string[]=[];
   const scenes=frame.views.map(({view,box,width,height})=>{
-    const scene=makeScene(f,{view,layout:'sheet',width,height}),name=view==='front'?'Vista exterior':'Vista interior',scale=box.width/width;
+    const scene=makeScene(f,{view,layout:'sheet',width,height,groups:printed.groups}),name=view==='front'?'Vista exterior':'Vista interior',scale=box.width/width;
     // A cota without a free position prints anyway, flagged: only the rest of the layout can block the sheet.
     const warnings=[...groupedNameIssues(f),...scene.warnings.filter(w=>!isDimensionNotice(w))];
     if(warnings.length)fail(`${name}: ${[...new Set(warnings)].join(' ')}`,'view');
@@ -428,14 +482,34 @@ export function composeA4(project:Pick<Project,'name'>,source:Furniture,fonts:Me
     if((scene.labels.length&&13*scale<7)||(scene.dimensions.length&&DIMENSION_FONT_SIZE*scale<7))fail(`Las etiquetas o cotas quedarían por debajo de 7 pt${frame.views.length===1?'':' con dos vistas'}.`,'scale',frame.views.length===1?'Reducí el zoom o la cantidad de cotas y etiquetas.':undefined);
     return {view,scene,box};
   });
-  if(linesFor(f.name,130*MM,fonts.regular,13).length>1||linesFor(project.name,130*MM,fonts.regular,9).length>1)fail('El nombre del proyecto o del mueble no entra en el encabezado.','header');
-  return {f,rows,legendLines,legendTop,scenes,detailSheets,fit,notices};
+  if(linesFor(f.name,HEADER_TEXT_W,fonts.regular,HEADER_NAME).length>1||linesFor(`${HEADER_KIND} · ${project.name}`,HEADER_TEXT_W,fonts.regular,HEADER_SMALL).length>1)fail('El nombre del proyecto o del mueble no entra en el encabezado.','header');
+  const notice=detailSheets?linesFor(detailNotice(f,label),TABLE_W-4*MM,fonts.regular,DETAIL_NOTICE):undefined;
+  // «Notas del armador» fills the list column under the rows (or under the hoja 2 notice), never under notesMin.
+  const tableBottom=notice?CONTENT_TOP+2*MM+notice.length*DETAIL_NOTICE_LEADING:ROWS_TOP+used,notesTop=tableBottom+L.notesGap*MM;
+  const notesBox={x:TABLE_X,top:notesTop,width:TABLE_W,height:CONTENT_BOTTOM-notesTop};
+  return {f,rows,legendLines,legendTop,scenes,detailSheets,fit,notices,notice,notesBox,tableBottom};
   }catch(error){if(error instanceof A4FitError&&!error.furniture){error.furniture=f.name;error.furnitureId=f.id;error.message=error.compose();}throw error;}
 }
 /** The PDF bytes. Same contract as createOfflinePdfPages. */
 export async function createOfflinePdf(project:Project,fontBytes:Uint8Array,monoBytes:Uint8Array,logoBytes?:Uint8Array,references?:OrderReferences,options?:A4Options):Promise<Uint8Array>{
   return (await createOfflinePdfPages(project,fontBytes,monoBytes,logoBytes,references,options)).bytes;
 }
+/** Title band (teal) over a view, the list or hoja 2. */
+function band(page:PDFPage,x:number,width:number,title:string,fonts:Fonts){
+  page.drawRectangle({x,y:PAGE_H-(L.bandTop+L.bandHeight)*MM,width,height:L.bandHeight*MM,color:TEAL});
+  text(page,title,x+2*MM,(L.bandTop+1.25)*MM,7.5,fonts.regular,WHITE);
+}
+export const NOTES_TITLE='NOTAS DEL ARMADOR';
+const NOTES_RULE=7*MM;
+/** Blank box with ruled lines to write by hand, under the list. */
+function armadorNotes(page:PDFPage,box:DiagramBox,fonts:Fonts){
+  page.drawRectangle({x:box.x,y:PAGE_H-box.top-box.height,width:box.width,height:box.height,color:WHITE,borderColor:RULE,borderWidth:0.6});
+  page.drawRectangle({x:box.x,y:PAGE_H-box.top-5*MM,width:box.width,height:5*MM,color:BAND});
+  text(page,NOTES_TITLE,box.x+2*MM,box.top+1.25*MM,7.5,fonts.regular,BLUE);
+  for(let y=box.top+5*MM+NOTES_RULE;y<=box.top+box.height-2*MM;y+=NOTES_RULE)line(page,box.x+2*MM,y,box.x+box.width-2*MM,y,RULE,0.45);
+}
+/** Logo box of the header (mm): a horizontal logo fills its width; a taller one is refused. */
+const LOGO={width:22,maxHeight:9.5} as const;
 /**
  * One furniture, one A4 page. A furniture whose list does not fit prints, by itself (punto 29, no consent), page «{n}a»
  * with views and legend and the full list on «{n}b», «{n}c»… grouped by board. Infeasible layouts fail before any bytes are returned.
@@ -447,44 +521,44 @@ export async function createOfflinePdfPages(project:Project,fontBytes:Uint8Array
   const fonts:Fonts={regular:await pdf.embedFont(fontBytes,{subset:true}),mono:await pdf.embedFont(monoBytes,{subset:true})};
   const logo=logoBytes?await pdf.embedPng(logoBytes):undefined;
   pdf.setTitle(`Planos Santo · ${project.name}`);pdf.setCreator(`Planos Santo ${version} · PDF A4 offline`);
-  const prepared=project.furniture.map(source=>composeA4(project,source,fonts,references,pending));
-  const total=project.furniture.length,printed:A4Page[]=[];
-  /** A new page with the furniture header and the footer, both carrying the page label. */
+  const prepared=project.furniture.map((source,i)=>composeA4(project,source,fonts,references,pending,`${i+1}b`));
+  const total=project.furniture.length,printed:A4Page[]=[],pageRight=(L.tableX+L.tableWidth)*MM;
+  const right=(page:PDFPage,value:string,top:number,size:number,color=INK)=>text(page,value,pageRight-fonts.regular.widthOfTextAtSize(value,size),top,size,fonts.regular,color);
+  /**
+   * A new page with the header strip (logo, furniture, «GUÍA DE ARMADO · obra», «Hoja N de M · X piezas», «A4 horizontal ·
+   * medidas en mm») and the footer, both carrying the page label.
+   */
   const sheet=(f:Furniture,label:string,fit?:{detail:string;action:string},notices:string[]=[])=>{
     const page=pdf.addPage([PAGE_W,PAGE_H]);page.setMediaBox(0,0,PAGE_W,PAGE_H);page.setCropBox(0,0,PAGE_W,PAGE_H);printed.push({furnitureId:f.id,name:f.name,label,...(fit?{fit}:{}),...(notices.length?{notices}:{})});
-    if(logo){const w=43*MM,h=w*logo.height/logo.width;if(h>22*MM)throw new Error('El logotipo supera el espacio del encabezado A4. Usá una imagen horizontal.');page.drawImage(logo,{x:8*MM,y:PAGE_H-8*MM-h,width:w,height:h});}
-    else{text(page,'SANTO CARPINTERO',8*MM,9*MM,10,fonts.regular);text(page,'AMOBLAMIENTOS',8*MM,16*MM,8,fonts.regular);}
-    text(page,'GUÍA DE ARMADO',56*MM,7*MM,9,fonts.regular,BLUE);
-    text(page,f.name,56*MM,13*MM,13,fonts.regular);
-    text(page,project.name,56*MM,22*MM,9,fonts.regular,GRAY);
-    page.drawRectangle({x:190*MM,y:PAGE_H-30*MM,width:99*MM,height:23*MM,color:rgb(0.95,0.96,0.97),borderColor:RULE,borderWidth:0.5});
-    text(page,'FICHA DE MUEBLE',193*MM,9*MM,8,fonts.regular,BLUE);
-    text(page,`Hoja ${label} de ${total} · ${f.pieces.length} piezas`,193*MM,16*MM,9,fonts.regular);
-    text(page,'A4 HORIZONTAL · MEDIDAS EN mm',193*MM,23*MM,8,fonts.regular,GRAY);
-    line(page,8*MM,33*MM,289*MM,33*MM,INK,1);
-    line(page,8*MM,198*MM,289*MM,198*MM,TEAL,0.8);
-    text(page,'PLANOS SANTO · 297 × 210 mm · Imprimir al 100 % · No medir sobre el dibujo',8*MM,201*MM,8,fonts.regular,GRAY);
-    const footer=`${label} / ${total}`;text(page,footer,Math.min(279*MM,289*MM-fonts.regular.widthOfTextAtSize(footer,8)),201*MM,8,fonts.regular,GRAY);
+    if(logo){const w=LOGO.width*MM,h=w*logo.height/logo.width;if(h>LOGO.maxHeight*MM)throw new Error('El logotipo supera el espacio del encabezado A4. Usá una imagen horizontal.');page.drawImage(logo,{x:MARGIN,y:PAGE_H-MARGIN-h,width:w,height:h});}
+    else{text(page,'SANTO CARPINTERO',MARGIN,8.5*MM,7,fonts.regular);text(page,'AMOBLAMIENTOS',MARGIN,12.5*MM,6,fonts.regular,GRAY);}
+    text(page,f.name,HEADER_TEXT_X,7.6*MM,HEADER_NAME,fonts.regular);
+    text(page,`${HEADER_KIND} ·`,HEADER_TEXT_X,13.2*MM,HEADER_SMALL,fonts.regular,BLUE);
+    text(page,project.name,HEADER_TEXT_X+fonts.regular.widthOfTextAtSize(`${HEADER_KIND} · `,HEADER_SMALL),13.2*MM,HEADER_SMALL,fonts.regular,GRAY);
+    right(page,`Hoja ${label} de ${total} · ${piecesText(f.pieces.length)}`,8*MM,9);
+    right(page,'A4 horizontal · medidas en mm',13.2*MM,HEADER_SMALL,GRAY);
+    line(page,MARGIN,L.headerRule*MM,pageRight,L.headerRule*MM,INK,0.8);
+    line(page,MARGIN,L.footerRule*MM,pageRight,L.footerRule*MM,TEAL,0.6);
+    text(page,'PLANOS SANTO · 297 × 210 mm · Imprimir al 100 % · No medir sobre el dibujo',MARGIN,(L.footerRule+1.3)*MM,7,fonts.regular,GRAY);
+    right(page,`${label} / ${total}`,(L.footerRule+1.3)*MM,7,GRAY);
     return page;
   };
-  for(const [pageIndex,{f,rows,legendLines,legendTop,scenes,detailSheets,fit,notices}] of prepared.entries()){
+  for(const [pageIndex,{f,rows,legendLines,legendTop,scenes,detailSheets,fit,notices,notice,notesBox}] of prepared.entries()){
     const n=pageIndex+1,page=sheet(f,detailSheets?`${n}a`:String(n),fit,notices);
     for(const {view,scene,box} of scenes){
-      page.drawRectangle({x:box.x,y:PAGE_H-43*MM,width:box.width,height:7*MM,color:TEAL});
-      text(page,view==='front'?'VISTA EXTERIOR':'VISTA INTERIOR',box.x+2*MM,38*MM,8,fonts.regular,WHITE);
+      band(page,box.x,box.width,view==='front'?'VISTA EXTERIOR':'VISTA INTERIOR',fonts);
       page.drawRectangle({x:box.x,y:PAGE_H-box.top-box.height,width:box.width,height:box.height,borderColor:RULE,borderWidth:0.5});
       diagram(page,f,fonts,view,scene,box);
     }
-    const tx=190*MM,tw=99*MM;
-    page.drawRectangle({x:tx,y:PAGE_H-43*MM,width:tw,height:7*MM,color:TEAL});
-    text(page,'LISTADO COMPLETO DE PIEZAS',tx+2*MM,38*MM,8,fonts.regular,WHITE);
-    if(detailSheets){
-      linesFor(`El despiece completo de ${f.pieces.length} piezas sigue en la hoja ${n}b, agrupado por placa.`,tw-4*MM,fonts.regular,9).forEach((s,i)=>text(page,s,tx+2*MM,48*MM+i*12,9,fonts.regular));
+    const tx=TABLE_X,tw=TABLE_W;
+    band(page,tx,tw,'LISTADO COMPLETO DE PIEZAS',fonts);
+    if(notice){
+      notice.forEach((s,i)=>text(page,s,tx+2*MM,CONTENT_TOP+2*MM+i*DETAIL_NOTICE_LEADING,DETAIL_NOTICE,fonts.regular));
     }else{
-    const col=[0,11,48,61,74,87].map(n=>tx+n*MM);
-    page.drawRectangle({x:tx,y:PAGE_H-52*MM,width:tw,height:7*MM,color:INK});
-    ['ID','Nombre','Largo','Ancho','Esp.','Cant.'].forEach((value,i)=>text(page,value,col[i]+MM,47*MM,7.3,fonts.regular,WHITE));
-    let top=52*MM;
+    const col=TABLE_COLS.map(c=>tx+c*MM);
+    page.drawRectangle({x:tx,y:PAGE_H-ROWS_TOP,width:tw,height:ROWS_TOP-CONTENT_TOP,color:INK});
+    ['ID','Nombre','Largo','Ancho','Esp.','Cant.'].forEach((value,i)=>text(page,value,col[i]+MM,CONTENT_TOP+1.4*MM,7.3,fonts.regular,WHITE));
+    let top=ROWS_TOP;
     for(const [rowIndex,{piece,lines,extra,reference,detail,height,pending}] of rows.entries()){
       if(rowIndex%2===1)page.drawRectangle({x:tx,y:PAGE_H-top-height,width:tw,height,color:rgb(0.95,0.96,0.97)});
       line(page,tx,top,tx+tw,top,RULE,0.45);
@@ -500,9 +574,9 @@ export async function createOfflinePdfPages(project:Project,fontBytes:Uint8Array
     }
     line(page,tx,top,tx+tw,top,RULE,0.45);
     }
-    text(page,'NOTAS Y OBSERVACIONES DE ARMADO',8*MM,legendTop,8,fonts.regular,BLUE);
-    legendLines.forEach((s,i)=>text(page,s,8*MM,legendTop+13+i*10,8,fonts.regular,GRAY));
-    if(!f.presentation?.guide?.observations?.trim()){text(page,'Observaciones:',8*MM,188*MM,8,fonts.regular,GRAY);line(page,8*MM,193*MM,185*MM,193*MM,RULE,0.45);}
+    armadorNotes(page,notesBox,fonts);
+    text(page,'NOTAS Y OBSERVACIONES DE ARMADO',MARGIN,legendTop,7.5,fonts.regular,BLUE);
+    legendLines.forEach((s,i)=>text(page,s,MARGIN,legendTop+LEGEND_TITLE+i*LEGEND_LEADING,LEGEND_FONT,fonts.regular,GRAY));
     detailSheets?.forEach((items,i)=>drawDetail(sheet(f,`${n}${String.fromCharCode(98+i)}`),items,fonts));
   }
   const bytes=await pdf.save();

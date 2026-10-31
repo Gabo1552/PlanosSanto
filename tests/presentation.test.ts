@@ -106,7 +106,7 @@ describe('Rotación, cotas e identificación persistentes',()=>{
     const dir=await mkdtemp(join(tmpdir(),'planos-presentation-'));
     try{
       const file=join(dir,'ajustes.pdf');await writeFile(file,await createOfflinePdf(p,await readFile('sketchup_offline/assets/DejaVuSans.ttf'),await readFile('sketchup_offline/assets/DejaVuSansMono.ttf')));
-      const diagram=execFileSync('pdftotext',['-x','22','-y','124','-W','504','-H','405','-raw',file,'-'],{encoding:'utf8'});
+      const diagram=execFileSync('pdftotext',['-x','22','-y','70','-W','532','-H','458','-raw',file,'-'],{encoding:'utf8'});
       const text=execFileSync('pdftotext',['-raw',file,'-'],{encoding:'utf8'});
       expect(diagram).not.toContain('P01');expect(text).toContain('P01');expect(text).toContain(f.pieces[0].name);expect(diagram).toMatch(/mm/);
     }finally{await rm(dir,{recursive:true,force:true});}

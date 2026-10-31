@@ -19,7 +19,7 @@ test('web: clic y lista ocultan/restauran cotas, persisten y llegan al PDF sin c
   await page.reload();await expect(own).toHaveCount(0);await expect(page.locator('[data-dimension]')).toHaveCount(before.length);
   const response=await request.get(`/api/pdf/${project.id}`);expect(response.ok()).toBe(true);await mkdir('artifacts',{recursive:true});
   const path='artifacts/cota-oculta-WEB-SINTETICO-A4.pdf';await writeFile(path,await response.body());
-  const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','124','-W','246','-H','405','-raw',path,'-'],{encoding:'utf8'});
+  const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','70','-W','262','-H','458','-raw',path,'-'],{encoding:'utf8'});
   const values=[...drawing.matchAll(/(\d+(?:,\d+)?)\s+mm\b/g)].map(m=>Number(m[1].replace(',','.'))).sort((a,b)=>a-b);
   expect(values).toEqual([...before].sort((a,b)=>a-b));expect(drawing).toContain('1 OCULTA');
   await page.locator('.dimension-controls>summary').click();await expect(page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true})).not.toBeChecked();

@@ -177,9 +177,9 @@ test('cotas: ocultar una, guardar/reabrir y PDF sin esa cota; restaurar con tecl
   await expect(page.locator('[data-dimension]')).toHaveCount(1);expect(await page.locator('tbody').innerText()).toBe(table);
   await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
   const pdfPath=resolve(info.outputDir,'PlanosSanto-A4.pdf');
-  const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','124','-W','246','-H','405','-raw',pdfPath,'-'],{encoding:'utf8'});
+  const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','70','-W','262','-H','458','-raw',pdfPath,'-'],{encoding:'utf8'});
   expect(drawing).toMatch(/406,4\s+mm/);expect(drawing).not.toMatch(/609,6\s+mm/);expect(drawing).toContain('1 OCULTA');
-  const tablePdf=execFileSync('pdftotext',['-f','1','-l','1','-x','538','-y','147','-W','282','-H','405','-raw',pdfPath,'-'],{encoding:'utf8'});
+  const tablePdf=execFileSync('pdftotext',['-f','1','-l','1','-x','566','-y','70','-W','254','-H','484','-raw',pdfPath,'-'],{encoding:'utf8'});
   expect(tablePdf).toContain('609,6');expect(tablePdf).toContain('P01');expect(tablePdf).toContain('P02');
   await page.locator('.dimension-controls>summary').click();
   await expect(page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true})).not.toBeChecked();

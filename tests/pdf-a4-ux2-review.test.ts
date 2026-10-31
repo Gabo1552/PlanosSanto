@@ -47,13 +47,14 @@ describe('Revisión UX2 planos A4',()=>{
   for(let n=6;n<400;n+=n<150?16:1){
    const project=groupsProject(2),f=project.furniture[0];f.presentation!.guide!.observations=Array.from({length:n},(_,i)=>words[i%words.length]).join(' ');
    const bare=await outcome(project);if(bare.error)break;
-   const withOrder=await outcome(project,Object.fromEntries(f.pieces.map(p=>[p.id,asymmetric])));
+   // 0.8.29: at 7 pt across the left column a one-board legend fits one line in full; two boards need its compact form.
+   const withOrder=await outcome(project,{[f.pieces[0].id]:asymmetric,[f.pieces[1].id]:{...asymmetric,text:'OTRA / 18 mm',board:'OTRA / 18 mm',principal:'EDGE-Q',secondary:'EDGE-R'}});
    if(withOrder.error){
     // A guide that fits without the order never fails with the generic «acortá observaciones» lever alone.
     expect(withOrder.error).toMatchObject({kind:'legend',furnitureId:f.id});expect(withOrder.error.reason).toMatch(/leyenda de cantos/);
-    expect(withOrder.error.action).toMatch(/«Incluir materiales y cantos del pedido»/);expect(withOrder.error.detail).toMatch(/^Necesita \d+ mm de 42 mm\.$/);blamed=true;
+    expect(withOrder.error.action).toMatch(/«Incluir materiales y cantos del pedido»/);expect(withOrder.error.detail).toMatch(/^Necesita \d+ mm de 36 mm\.$/);blamed=true;
     break;
-   }else if(!compact&&text(withOrder.bytes!).replace(/\s+/g,' ').includes('Cantos Arr·Aba·Izq·Der: 1 = EDGE-P · 2 = EDGE-S · 0 = sin canto.'))compact=true;
+   }else if(!compact&&text(withOrder.bytes!).replace(/\s+/g,' ').includes('Cantos Arr·Aba·Izq·Der por placa: TEST-18 / 18 mm: 1 = EDGE-P, 2 = EDGE-S · OTRA / 18 mm: 1 = EDGE-Q, 2 = EDGE-R · 0 = sin canto.'))compact=true;
   }
   expect(compact).toBe(true);expect(blamed).toBe(true);
  },60000);

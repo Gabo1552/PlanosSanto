@@ -35,19 +35,21 @@ describe('UX2 planos A4: cantos, agrupación por medidas, diagnóstico y tabla p
   expect(output).not.toContain('Arr:EDGE-P');
  });
  it('con el código de cantos entran muchas más filas que con el texto largo del pedido',async()=>{
+  // 0.8.29: doce estantes iguales comparten una fila; con medidas distintas cada uno sigue en su fila.
   const project=groupsProject(12,'Estante'),ids=project.furniture[0].pieces.map(p=>p.id);
+  project.furniture[0].pieces.forEach((p,i)=>{p.dimensions=[720,560-i,18];p.mesh=box(18,560-i,720);});
   const structured=Object.fromEntries(ids.map(id=>[id,asymmetric])),legacy=Object.fromEntries(ids.map(id=>[id,asymmetric.text+' · Lote y observación del proveedor']));
   await expect(createOfflinePdf(project,regular,mono,undefined,structured)).resolves.toBeInstanceOf(Uint8Array);
   expect((await createOfflinePdfPages(project,regular,mono,undefined,structured)).pages.map(p=>p.label)).toEqual(['1']);
   const fit=(await advice(project,legacy))!;
-  expect(fit.action).toMatch(/^Desactivá «Incluir materiales y cantos del pedido»/);expect(fit.detail).toMatch(/^Necesita \d+ mm de 139 mm: (sobra 1 fila|sobran unas \d+ filas)\.$/);
+  expect(fit.action).toMatch(/^Desactivá «Incluir materiales y cantos del pedido»/);expect(fit.detail).toMatch(/^Necesita \d+ mm de 127 mm: (sobra 1 fila|sobran unas \d+ filas)\.$/);
  });
- it('agrupa por medidas seis laterales hechos con grupos y separa los que tienen otro canto',async()=>{
+ it('agrupa siempre seis laterales iguales hechos con grupos y separa los que tienen otro canto',async()=>{
+  // 0.8.29: iguales en nombre, medidas y material comparten fila sin «Agrupar por medidas» ni «componentes iguales».
   const project=groupsProject(6),f=project.furniture[0];
-  expect(listRows(f)).toHaveLength(6);
-  f.presentation!.guide!.foldTable=true;
-  const rows=listRows(f);expect(rows).toHaveLength(1);expect(rows[0].piece).toMatchObject({code:'P01',quantity:6});expect(rows[0].also).toEqual(['P02','P03','P04','P05','P06']);
-  const output=text(await createOfflinePdf(project,regular,mono)).replace(/\s+/g,' ');expect(output).toContain('también P02, P03, P04, P05, P06');
+  const rows=listRows(f);expect(rows).toHaveLength(1);expect(rows[0].piece).toMatchObject({code:'P01',quantity:6});expect(rows[0].also).toEqual([]);
+  f.presentation!.guide!.foldTable=true;expect(listRows(f)).toEqual(rows);
+  const output=text(await createOfflinePdf(project,regular,mono)).replace(/\s+/g,' ');expect(output).toContain('P01 Lateral 720 560 18 6');expect(output).not.toContain('P02');
   const references=Object.fromEntries(f.pieces.map((p,i)=>[p.id,i<4?asymmetric:{...asymmetric,edgeMap:[1,1,1,1],text:'otro'}]));
   const split=listRows(f,references);expect(split.map(r=>r.piece.quantity)).toEqual([4,2]);expect(split[1].piece.code).toBe('P05');
   expect(f.pieces.map(p=>p.code)).toEqual(['P01','P02','P03','P04','P05','P06']);
@@ -63,7 +65,9 @@ describe('UX2 planos A4: cantos, agrupación por medidas, diagnóstico y tabla p
  it('cuando el listado no entra pasa a la hoja 2 y aconseja la acción según la causa',async()=>{
   // Stacked synthetic pieces: the interior view keeps one, so only the list grows.
   const stacked=(project:Project)=>{const f=project.furniture[0];f.presentation={...f.presentation,guide:{mode:'interior',hiddenPieceIds:f.pieces.slice(1).map(p=>p.id),sharedCamera:true,observations:''}};return project;};
-  const groups=stacked(groupsProject(45));
+  // 0.8.29: 45 laterales iguales ya comparten una fila; pintados cada uno de otro color siguen separados y solo «Agrupar por medidas» los pliega.
+  const same=stacked(groupsProject(45));expect(listRows(same.furniture[0])).toHaveLength(1);expect((await createOfflinePdfPages(same,regular,mono)).pages.map(p=>p.label)).toEqual(['1']);
+  const groups=stacked(groupsProject(45));groups.furniture[0].pieces.forEach((p,i)=>{p.mesh={...p.mesh,faceMaterials:p.mesh.triangles.map(()=>({front:{id:`pintura-${i}`,name:`Pintura ${i}`,color:[200,190,180] as [number,number,number],opacity:1,textured:false},back:null}))};});
   expect(await advice(groups)).toMatchObject({action:'Activá «Agrupar por medidas en el listado A4» en Vistas de la guía A4.'});
   groups.furniture[0].presentation!.guide!.foldTable=true;expect(listRows(groups.furniture[0])).toHaveLength(1);
   const folded=await createOfflinePdfPages(groups,regular,mono).then(result=>result.pages,(error:A4FitError)=>error);expect(Array.isArray(folded)?folded.map(p=>p.label):folded.kind).toEqual(['1']);
