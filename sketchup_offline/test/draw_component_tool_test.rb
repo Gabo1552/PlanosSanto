@@ -340,4 +340,105 @@ class DrawComponentToolTest < Minitest::Test
     assert_operator @view.input_draws,:>=,2
     assert_empty @model.operations
   end
+
+  # Revisión 0826 · 1: corregir por VCB borra y rehace la caja, así que nunca
+  # después de otro trabajo sobre la pieza.
+  def test_painting_after_creating_and_then_typing_measures_erases_nothing
+    draw_floor;click(600,400);component=piece
+    face=component.definition.entities.grep(Sketchup::Face).first;face.material='Roble'
+    after=@model.state;count=@model.operations.length
+    type('700;450')
+    assert_same component,piece;assert_same face,component.definition.entities.grep(Sketchup::Face).first
+    assert_equal 'Roble',face.material;assert face.valid?
+    assert_equal after,@model.state;assert_equal count,@model.operations.length,'Ninguna operación'
+    assert_equal [600.0,400.0,18.0],size_mm(component)
+    assert_match(/ya cambió.*herramientas de SketchUp/,Sketchup.status_text)
+    assert_equal 'Medidas',Sketchup.vcb_label,'Se descartó la corrección'
+    type('700;450');assert_match(/Marcá primero la esquina/,Sketchup.status_text)
+  end
+
+  def test_any_later_change_to_the_piece_cancels_the_correction
+    edits={
+      'dorso pintado'=>lambda { |c| c.definition.entities.grep(Sketchup::Face).last.back_material='Roble' },
+      'material de la instancia'=>lambda { |c| c.material='Roble' },
+      'atributo propio'=>lambda { |c| c.set_attribute('Taller','nota','revisar') },
+      'definición renombrada'=>lambda { |c| c.definition.name='Lateral' },
+      'otra instancia'=>lambda { |c| @model.entities.items << Sketchup::ComponentInstance.new(@model,c.definition) },
+      'geometría agregada'=>lambda { |c| c.definition.entities.add_face(pt(0,0,0),pt(10,0,0),pt(10,10,0)) }
+    }
+    edits.each do |label,edit|
+      draw_floor;click(600,400);component=created.last
+      edit.call(component);after=@model.state;count=@model.operations.length
+      type('700;450')
+      assert_equal after,@model.state,label;assert_equal count,@model.operations.length,label
+      assert_equal [600.0,400.0,18.0],size_mm(component),label
+      assert_match(/ya cambió/,Sketchup.status_text,label)
+    end
+    # Sin cambios sigue corrigiendo la misma pieza.
+    draw_floor;click(600,400);component=created.last;type('700;450')
+    assert_equal [700.0,450.0,18.0],size_mm(component)
+  end
+
+  # Revisión 0826 · 5: SketchUp repite onKeyDown con repeat>1 al mantener la tecla.
+  def test_holding_an_arrow_does_not_toggle_the_locked_plane
+    assert @tool.onKeyDown(39,1,0,@view);assert_equal :x,@tool.locked
+    assert @tool.onKeyDown(39,2,0,@view);assert @tool.onKeyDown(39,3,0,@view);assert_equal :x,@tool.locked
+    click(0,0);assert @tool.onKeyDown(38,1,0,@view);assert_equal :z,@tool.locked
+    (2..6).each { |count| assert @tool.onKeyDown(38,count,0,@view) }
+    assert_equal :z,@tool.locked;assert_point vec(0,0,1),@tool.normal
+    assert @tool.onKeyDown(38,1,0,@view);assert_nil @tool.locked,'Una nueva pulsación sí alterna'
+    assert_empty @model.operations
+  end
+
+  # Revisión 0826 · 6: la caja local tiene que ser [0,w]x[0,h]x[0,t].
+  def test_box_must_fill_the_positive_local_box_or_the_operation_aborts
+    draw_floor;click(600,400);component=piece
+    box=Geom::BoundingBox.new.add(component.definition.entities.grep(Sketchup::Face).flat_map(&:points))
+    assert_point pt(0,0,0),box.min;assert_point pt(600,400,18),box.max
+    after=@model.state;undo=@model.undo_stack.length
+    @model.pushpull_flip=true
+    draw_floor;click(600,400)
+    assert_equal after,@model.state;assert_equal %i[start abort],ops.last(2);assert_equal undo,@model.undo_stack.length
+    assert_match(/extruyó la caja fuera de su lugar.*El modelo quedó como estaba/,Sketchup.status_text)
+    # Lo mismo al corregir la pieza recién creada.
+    @tool.onCancel(0,@view);@model.pushpull_flip=false;draw_floor;click(600,400);component=created.last;after=@model.state
+    @model.pushpull_flip=true;type('700;450')
+    assert_equal after,@model.state;assert_equal [600.0,400.0,18.0],size_mm(component);assert_equal :abort,ops.last
+  end
+
+  # Revisión 0826 · 7: InputPoint#transformation puede ser nil.
+  def test_face_normal_without_input_transformation_uses_the_identity
+    @view.mode=:front;@view.raw_transformation=true
+    wall=Sketchup::Face.new(@model,@furniture.entities,[pt(0,0,0),pt(0,0,900),pt(800,0,900),pt(800,0,0)],vec(0,-1,0))
+    @view.picks[[100,50]]=Pick.new(pt(100,0,50),wall,nil,2,'En la cara')
+    click(100,50)
+    assert_equal :rectangle,@tool.phase,Sketchup.status_text;assert_point vec(0,-1,0),@tool.normal
+  end
+
+  # Revisión 0826 · 9: una excepción fuera de StandardError también aborta.
+  def test_an_exception_outside_standard_error_still_aborts_the_operation
+    fatal=Class.new(Exception)
+    draw_floor
+    @model.entities.define_singleton_method(:add_group) { raise fatal,'sintética' }
+    assert_raises(fatal) { click(600,400) }
+    assert_equal @before,@model.state;assert_equal %i[start abort],ops.last(2);assert_empty @model.undo_stack
+  end
+
+  # Revisión 0826 · 9: ninguna excepción de un evento llega a SketchUp y draw avisa una sola vez.
+  def test_no_event_lets_an_exception_reach_sketchup_and_draw_warns_once
+    broken=Object.new;broken.define_singleton_method(:to_a) { raise 'ruta rota' }
+    click(0,0);@model.active_path=broken
+    assert @tool.onKeyDown(38,1,0,@view);assert_match(/ruta rota/,Sketchup.status_text)
+    @tool.activate;assert_match(/ruta rota/,Sketchup.status_text)
+    @model.active_path=nil;@tool.activate;@tool.onCancel(1,@view);assert_equal :corner,@tool.phase
+    @model.define_singleton_method(:select_tool) { |_tool| raise 'sin herramienta' }
+    @tool.onCancel(0,@view);assert_match(/sin herramienta/,Sketchup.status_text)
+    calls=0;flaky=Sketchup::ViewDouble.new;flaky.define_singleton_method(:invalidate) { calls+=1;raise 'vista' if calls==1 }
+    @tool.resume(flaky);assert_match(/vista/,Sketchup.status_text)
+    failing=Sketchup::ViewDouble.new;failing.define_singleton_method(:draw) { |*_| raise 'gl' }
+    click(0,0);move(600,400)
+    _out,err=capture_io { 3.times { @tool.draw(failing) } }
+    assert_equal 1,err.scan(/no se pudo dibujar la vista previa/).length
+    assert_empty @model.operations
+  end
 end

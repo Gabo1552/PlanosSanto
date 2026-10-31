@@ -42,12 +42,13 @@ module PlanosSanto
         {}
       end
       # 0.8.26: por qué una fila no puede girar su veta (bloqueada, compartida sin poder aislarse, textura
-      # proyectada…). Solo lectura: un recorrido de nombres sin geometría y ninguna operación.
+      # proyectada…). Solo lectura: un recorrido de nombres sin geometría y ninguna operación. La biblioteca
+      # ya leída arriba sirve para todas las filas: no se vuelve a leer por fila.
       grain=PieceGrain.new(model,catalog:CatalogStore.new(directory:directory))
       snapshot=nil
       check=lambda do |ids|
         snapshot ||= NameManager.new(model).inventory(geometry:false)
-        grain.blocker(ids,snapshot:snapshot)
+        grain.blocker(ids,snapshot:snapshot,catalog:catalog)
       end
       build(session.document,service,report,catalog,guide:guide,stored:stored_draft(model),grain_check:check)
     end

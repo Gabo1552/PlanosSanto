@@ -60,7 +60,7 @@ window.PlanosSantoBridge={receive,receiveChunk};
 /** 0.8.26 · Piezas: veta de las piezas de una fila (acción Ruby `piece_grain`), girar 90° o volver a automática,
  * en una sola operación de SketchUp. `stale`: el editor vuelve a generar sus guías solo. */
 export type PieceGrainMode='rotate'|'auto';
-export type PieceGrainResult={changed:boolean;mode:PieceGrainMode;pieces:number;orientedFaces:number;paintedFaces:number;isolated:number;warnings:string[];stale?:boolean};
+export type PieceGrainResult={changed:boolean;mode:PieceGrainMode;pieces:number;orientedFaces:number;paintedFaces:number;texturelessFaces?:number;isolated:number;warnings:string[];stale?:boolean};
 export const changePieceGrain=(ids:string[],mode:PieceGrainMode)=>request<PieceGrainResult>('piece_grain',{ids,mode});
 export function request<T>(action:string,data:unknown={}):Promise<T>{
   return new Promise((resolve,reject)=>{

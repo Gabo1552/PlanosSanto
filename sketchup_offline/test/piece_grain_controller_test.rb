@@ -66,4 +66,39 @@ class PieceGrainControllerTest < Minitest::Test
     refute @model.operations.any? { |o| o[1]=='Orientar veta Planos Santo' },'Nada se escribió'
     assert_nil @left.get_attribute(PlanosSanto::Grain::DICT,PlanosSanto::Grain::KEY)
   end
+  # Revisión 0826 · 4: después del commit el modelo ya cambió; un reescaneo que falla es un aviso, no un error.
+  def test_a_failing_rescan_after_commit_becomes_a_warning_and_still_marks_stale
+    GrainDouble.enable_unique(@left)
+    session=PlanosSanto::NativeSession
+    session.send(:alias_method,:__scan_before_test,:scan)
+    session.send(:define_method,:scan) { raise 'reescaneo sintético' }
+    begin
+      result=dispatch('piece_grain','ids'=>['1/11'],'mode'=>'rotate')
+    ensure
+      session.send(:alias_method,:scan,:__scan_before_test);session.send(:remove_method,:__scan_before_test)
+    end
+    assert_equal [true,true],result.values_at('changed','stale')
+    assert_match(/La veta se guardó, pero el listado no se pudo actualizar: error interno \(RuntimeError\)/,result['warnings'].join(' '))
+    assert @stale.last['stale'],'El aviso de análisis desactualizado sale igual'
+    assert_equal 1,@left.get_attribute(PlanosSanto::Grain::DICT,PlanosSanto::Grain::KEY)
+    assert_equal :commit,@model.operations.last[0]
+  end
+  # Revisión 0826 · 12: Piezas lee la biblioteca una vez por cálculo, no una vez por fila.
+  module CountReads
+    class << self;attr_accessor :count;end
+    def read;CountReads.count+=1 if CountReads.count;super;end
+  end
+  PlanosSanto::CatalogStore.prepend(CountReads)
+  def test_cutlist_reads_the_catalog_once_per_calculation
+    GrainDouble.enable_unique(@left)
+    before=dispatch('cutlist')
+    CountReads.count=0
+    pieces=dispatch('cutlist')['pieces']
+    reads=CountReads.count
+    assert_operator pieces.length,:>=,2
+    assert_equal 1,reads,'Una lectura para todas las filas'
+    assert_equal before,dispatch('cutlist'),'El resultado no cambia'
+  ensure
+    CountReads.count=nil
+  end
 end

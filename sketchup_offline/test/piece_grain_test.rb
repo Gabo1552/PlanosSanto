@@ -93,9 +93,10 @@ class PieceGrainTest < Minitest::Test
     assert_equal [true,1,0],result.values_at('changed','pieces','isolated')
     assert_equal 1,axis_of(@side),'Lateral girado: la veta va por el eje Y (560 mm)'
     w=1000/25.4;h=500/25.4
-    # Cara ancha −X: U (1,0) a lo largo de Y con el ancho real de la textura; V a lo largo de Z.
+    # Cara ancha −X: U (1,0) a lo largo de Y con el ancho real de la textura; V a lo largo de −Z, porque
+    # Y×Z apunta a +X y la cara mira a −X: así la foto no sale espejada (revisión 0826 · 10).
     a=D.face(@side_def,'-x').vertices.first.position.to_a.map(&:to_f)
-    assert_equal [a,[0,0,1],[a[0],a[1]+w,a[2]],[1,0,1],[a[0],a[1],a[2]+h],[0,1,1]].map { |p| p.map { |v| v.round(6) } },uv(@side_def,'-x')
+    assert_equal [a,[0,0,1],[a[0],a[1]+w,a[2]],[1,0,1],[a[0],a[1],a[2]-h],[0,1,1]].map { |p| p.map { |v| v.round(6) } },uv(@side_def,'-x')
     refute_nil uv(@side_def,'+x');assert_nil uv(@side_def,'-y'),'La testa de la veta no se toca'
     assert_same @band,D.face(@side_def,'+y').material;assert_nil uv(@side_def,'+y'),'El canto no se toca'
     assert_equal 1,@model.operations.count { |o| o[0]==:start };assert_equal 1,@model.undo_states.length
@@ -179,5 +180,76 @@ class PieceGrainTest < Minitest::Test
     assert_match(/no se puede aislar/,@grain.blocker(['1/12']))
     # Con todas sus apariciones y la misma veta sí se puede: es la misma pieza en los dos placares.
     @grain.change(['1/12','3/12'],'rotate');assert_equal 1,axis_of(@side)
+  end
+
+  # --- Revisión 0826 ----------------------------------------------------------------------------------
+  # 2: la misma definición con dos objetos Ruby distintos (otro envoltorio, mismo guid) se agrupa una vez.
+  def test_definitions_are_grouped_by_guid_not_by_the_ruby_wrapper
+    @other_door.definition=Sketchup::Definition.new(@door_def.name,@door_def.guid,@door_def.entities)
+    @door.define_singleton_method(:make_unique) { raise 'no debe aislar' }
+    result=@grain.change(['1/11','2/21'],'rotate')
+    assert_equal [4,0],result.values_at('orientedFaces','isolated'),'Las cuatro caras anchas, una sola vez'
+    assert_equal [0,0],[axis_of(@door),axis_of(@other_door)]
+  end
+  # 3: dos apariciones de la misma definición con escalas distintas no comparten la textura.
+  def test_shared_occurrences_with_different_scales_are_isolated_or_blocked
+    @other_door.transformation=T.scale(2,1,1)
+    error=assert_raises(PlanosSanto::ExportError) { @grain.change(['1/11','2/21'],'rotate') }
+    assert_match(/escalas distintas.*no se puede aislar/,error.message);assert_empty @model.operations
+    assert_match(/escalas distintas/,@grain.blocker(['1/11','2/21']))
+    D.enable_unique(@door);D.enable_unique(@other_door)
+    result=@grain.change(['1/11','2/21'],'rotate')
+    assert_equal 1,result['isolated'];refute_same @door_def,@door.definition;assert_same @door_def,@other_door.definition
+    w=1000/25.4
+    mine=uv(@door.definition,'-y');theirs=uv(@door_def,'-y')
+    assert_in_delta mine[0][0]+w,mine[2][0],1e-6,'Escala 1: la textura entera'
+    assert_in_delta theirs[0][0]+w/2,theirs[2][0],1e-6,'Escala 2 en X: medio tramo local'
+    assert_equal [0,0],[axis_of(@door),axis_of(@other_door)]
+  end
+  # 10: U×V sigue a la cara que se mira: frente, dorso de la cara e instancia espejada.
+  def test_mapping_keeps_the_texture_unmirrored_on_front_and_back_faces
+    h=500/25.4
+    front=D.face(@side_def,'+x');back=D.face(@side_def,'-x')
+    v=lambda { |face,**options| m=G.mapping(face,@wood,[1.0,1.0,1.0],1,**options);m['points'][2][2]-m['points'][0][2] }
+    assert_in_delta h,v.call(front),1e-9,'+X: Y×Z = +X, V sube'
+    assert_in_delta(-h,v.call(back),1e-9,'−X: Y×Z = +X apunta al revés, V baja')
+    assert_in_delta(-h,v.call(front,front:false),1e-9,'El dorso de la cara se mira desde el otro lado')
+    assert_in_delta(-h,v.call(front,mirrored:true),1e-9,'Instancia espejada')
+    assert_in_delta h,v.call(back,front:false),1e-9
+    assert G.mirrored?(T.scale(-2,2,2).to_a);refute G.mirrored?(T.scale(2,2,2).to_a)
+  end
+  # 11: una placa sin textura no se pinta, pero la veta se guarda y se avisa.
+  def test_board_without_texture_is_not_painted_but_keeps_the_grain_and_warns
+    @wood.texture=nil
+    result=@grain.change(['1/13'],'rotate')
+    assert_equal [0,0,2],result.values_at('paintedFaces','orientedFaces','texturelessFaces')
+    %w[-z +z].each { |key| assert_nil D.face(@shelf_def,key).material,"#{key} sigue heredando" }
+    assert_equal 1,axis_of(@shelf),'La veta manda en Piezas, el TXT y la optimización'
+    assert_match(/«Roble veteado» no tiene textura: no hay textura que orientar/,result['warnings'].join(' '))
+    refute_match(/pint/,result['warnings'].join(' '))
+  end
+  # 8: con la pieza abierta en SketchUp no se escribe nada.
+  def test_open_piece_in_the_active_path_is_refused_before_any_operation
+    D.enable_unique(@door)
+    @model.active_path=[@root,@door]
+    assert_match(/«Puerta» está abierta para editar/,assert_raises(PlanosSanto::ExportError) { @grain.change(['1/11'],'rotate') }.message)
+    assert_match(/abierta para editar/,@grain.blocker(['1/12','1/11']))
+    assert_empty @model.operations;assert_same @door_def,@door.definition
+    @model.active_path=[@root];@grain.change(['1/12'],'rotate');assert_equal 1,axis_of(@side),'Con el mueble abierto sí'
+  end
+  # 9: una excepción fuera de StandardError también revierte la operación.
+  def test_an_exception_outside_standard_error_aborts_the_operation
+    fatal=Class.new(Exception)
+    D.face(@side_def,'+x').define_singleton_method(:position_material) { |*_| raise fatal,'sintética' }
+    assert_raises(fatal) { @grain.change(['1/12'],'rotate') }
+    assert_equal :abort,@model.operations.last[0];assert_empty @model.undo_states;assert_nil axis_of(@side)
+  end
+  # 12: Piezas revisa muchas filas con la biblioteca ya leída.
+  def test_blocker_uses_the_catalog_it_is_given
+    reads=0;data=@catalog.read;@catalog.define_singleton_method(:read) { reads+=1;data }
+    snapshot=PlanosSanto::NameManager.new(@model).inventory(geometry:false)
+    %w[1/12 1/13 1/14].each { |id| assert_nil @grain.blocker([id],snapshot:snapshot,catalog:data),id }
+    assert_equal 0,reads
+    @grain.blocker(['1/12'],snapshot:snapshot);assert_equal 1,reads,'Sin catálogo lo lee como antes'
   end
 end

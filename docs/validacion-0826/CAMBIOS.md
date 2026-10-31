@@ -54,6 +54,27 @@ Base: 0.8.25 (`5ea204e`) más el WIP `e4f1479` (rama `codex/vetas-dibujo-compone
    - Antes medía el reloj y fallaba con la máquina cargada, sin cambios en el motor.
    - Ahora exige el límite documentado de planes: 90 con giro y 40 sin giro. El reloj queda como control grueso de 8 s.
 
+## Revisión de código (rama `agente/revision-0826`)
+
+Correcciones con prueba propia; todo simulado con dobles de la API, sin SketchUp.
+
+- **Dibujar pieza**
+  - La corrección por medidas después de crear (`redo_last!`) sólo rehace la caja si la pieza sigue igual: caras sin material ni dorso pintado, instancia sin material ni atributos propios, mismo nombre de definición, una sola instancia y la misma cantidad de entidades. Si no, avisa que la pieza ya cambió y que se corrige con las herramientas de SketchUp.
+  - Mantener apretada una flecha (autorepetición, `repeat`>1) ya no alterna el plano fijado.
+  - `build_box` comprueba que la caja ocupe [0,w]×[0,h]×[0,t] en coordenadas locales; si SketchUp extruyó hacia el otro lado, aborta.
+  - `face_normal` acepta `InputPoint#transformation` nil (usa la identidad).
+  - La operación aborta ante cualquier excepción (bandera de commit en `ensure`). `onKeyDown`, `onCancel`, `activate` y `resume` no dejan pasar excepciones a SketchUp, y el aviso de `draw` sale una sola vez por herramienta.
+  - Las coordenadas no cambian (mundo en el contexto abierto, sin `edit_transform.inverse`); el comentario cita la documentación oficial.
+- **Veta**
+  - Las definiciones se agrupan por `guid`, y las entidades y materiales por `persistent_id`/`entityID`, no por el objeto Ruby.
+  - Si las apariciones elegidas de una definición compartida tienen escalas físicas distintas (o una está espejada y otra no), se aíslan por aparición, o se bloquea si no se puede aislar.
+  - Se rechaza, antes de abrir la operación, si la pieza (o algo que haya que hacer único) está abierta para editar en SketchUp.
+  - **Cambio de comportamiento deliberado:** la textura ya no sale espejada en las caras del lado negativo, en el dorso de una cara ni en instancias espejadas: si `(eje × otro)·normal < 0`, V se invierte. La prueba `test_rotate_then_auto_aligns_texture_u_with_the_grain_in_one_undo_step_each` se actualizó: en la cara −X del lateral, V ahora va hacia −Z.
+  - Una placa sin textura no se pinta. La veta igual se guarda, y el resultado avisa que no hay textura que orientar (`texturelessFaces`).
+  - La operación aborta ante cualquier excepción (bandera de commit en `ensure`).
+  - Después de confirmar la operación, cualquier error del reescaneo o de la regeneración pasa a `warnings` y el aviso de análisis desactualizado sale siempre.
+  - Piezas lee la biblioteca una vez por cálculo, no una vez por fila.
+
 ## Se conserva
 
 - El motor Experto de 0.8.24 y 0.8.25 y el motor General.
@@ -66,5 +87,7 @@ Base: 0.8.25 (`5ea204e`) más el WIP `e4f1479` (rama `codex/vetas-dibujo-compone
 - El frente de cajón vertical sigue el criterio confirmado («vertical en puertas y laterales»), pero queda marcado para revisar. **Falta confirmar con el taller si los frentes de cajón van con veta horizontal.**
 - En Dibujar pieza no se implementó el bloqueo de inferencia con Shift, y la vista previa es sólo de líneas.
 - Para SketchUp 2022, ver los riesgos y las pruebas M1–M15 en `SKETCHUP_2022.md`.
+- **Hacer único al orientar la veta (no corregido):** `make_unique` renombra la definición a «X#1». Si la instancia no tiene nombre propio, Piezas podría partir la fila en dos (la pieza aislada y las demás). **Validarlo en SketchUp real.**
+- Las coordenadas de Dibujar pieza en un grupo abierto (mundo, sin `edit_transform.inverse`), la verificación de la caja local de `build_box` y el sentido de la textura en caras del dorso e instancias espejadas sólo se probaron con dobles. **Validarlos en SketchUp real.**
 
 Ver `RESULTADOS.json` y `VALIDACION_LOCAL.md`.

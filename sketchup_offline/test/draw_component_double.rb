@@ -139,8 +139,10 @@ module Sketchup
     def hidden?;false;end
     def mesh(_flags=0);Mesh.new(@points,[[1,2,3],[1,3,4]]);end
     # Lone face pushed along its normal: six outward faces.
+    # pushpull_flip simula un empuje hacia el lado contrario al pedido.
     def pushpull(distance)
       @model.fail!(:pushpull)
+      distance=-distance if @model.pushpull_flip
       offset=Geom::Vector3d.new(@normal.x*distance,@normal.y*distance,@normal.z*distance)
       top=@points.map { |point| point+offset }
       center=@points.inject(Geom::Vector3d.new) { |sum,point| sum+Geom::Vector3d.new(*point.to_a) }
@@ -191,7 +193,13 @@ module Sketchup
       @persistent_id=model.next_id;@layer=Layer.new('Untagged',true)
     end
     def hidden?;@hidden==true;end
-    def get_attribute(_dictionary,_key,default=nil);default;end
+    # Diccionarios propios de la instancia (nil si no tiene, como SketchUp).
+    Dictionary=Struct.new(:name,:values) { def keys;values.keys;end }
+    def attribute_dictionaries;@dictionaries && !@dictionaries.empty? ? @dictionaries.values : nil;end
+    def get_attribute(dictionary,key,default=nil);(@dictionaries||{})[dictionary]&.values&.fetch(key,default) || default;end
+    def set_attribute(dictionary,key,value)
+      @dictionaries||={};(@dictionaries[dictionary]||=Dictionary.new(dictionary,{})).values[key]=value
+    end
   end
   class Group < ComponentInstance
     def entities;definition.entities;end
@@ -244,7 +252,8 @@ module Sketchup
       view.pick_calls << [x,y,reference&.position]
       result=view.pick_at(x,y)
       return clear && false unless result
-      @position=result.position;@face=result.face;@transformation=result.transformation || Geom::Transformation.new
+      # raw_transformation: como algunas inferencias reales, sin transformación (nil).
+      @position=result.position;@face=result.face;@transformation=view.raw_transformation ? result.transformation : (result.transformation || Geom::Transformation.new)
       @degrees_of_freedom=result.degrees_of_freedom || 2;@tooltip=result.tooltip.to_s;@valid=true
     end
     def valid?;@valid;end
@@ -261,7 +270,7 @@ module Sketchup
   # x,y on z=0); :front looks along +Y (screen x,y → world x,z). picks
   # overrides the inference answer per pixel.
   class ViewDouble
-    attr_accessor :mode,:drawing_color,:line_width,:tooltip,:input_draws
+    attr_accessor :mode,:drawing_color,:line_width,:tooltip,:input_draws,:raw_transformation
     attr_reader :picks,:pick_calls,:draws,:invalidations
     def initialize(mode=:top);@mode=mode;@picks={};@pick_calls=[];@draws=[];@invalidations=0;@input_draws=0;end
     def invalidate;@invalidations+=1;end
@@ -279,7 +288,7 @@ module Sketchup
   end
 
   class ModelDouble
-    attr_accessor :active_path,:edit_transform,:fail_at,:commit_result,:axes
+    attr_accessor :active_path,:edit_transform,:fail_at,:commit_result,:axes,:pushpull_flip
     attr_reader :entities,:definitions,:selection,:active_view,:operations,:selected_tools,:undo_stack
     def initialize(unique_name: true)
       @objects=[];@collections=[];@ids=100;@operations=[];@undo_stack=[];@selected_tools=[]

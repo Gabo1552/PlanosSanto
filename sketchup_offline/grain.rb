@@ -36,6 +36,11 @@ module PlanosSanto
       length>1e-12 ? column[2].abs/length : 0.0
     end
     def self.scales(matrix);[0,4,8].map { |i| Math.sqrt(matrix[i,3].sum { |v| v.to_f*v.to_f }) };end
+    # Instancia espejada: el determinante de la parte lineal (columnas x, y, z) es negativo.
+    def self.mirrored?(matrix)
+      x,y,z=[0,4,8].map { |i| matrix[i,3].map(&:to_f) }
+      x[0]*(y[1]*z[2]-y[2]*z[1])-x[1]*(y[0]*z[2]-y[2]*z[0])+x[2]*(y[0]*z[1]-y[1]*z[0])<0
+    end
 
     # lengths: medidas físicas (mm) por eje local; matrix: transformación mundo de la pieza; root: la del
     # contenedor de primer nivel (para avisar un mueble acostado). nil si la pieza no tiene un espesor claro.
@@ -93,7 +98,9 @@ module PlanosSanto
     # Puntos para Face#position_material: U de la textura a lo largo de `axis`, con el tamaño físico de la
     # textura aunque la instancia esté escalada (las caras están en coordenadas locales). nil sin textura o
     # cuando la cara es la testa de la veta (su normal es el eje de la veta).
-    def self.mapping(face,material,scales,axis)
+    # Sentido: U×V tiene que apuntar hacia quien mira ese lado de la cara; si (eje × otro)·normal < 0 (caras
+    # del lado negativo, el dorso `front: false` o una instancia espejada) V va al revés y la foto no sale espejada.
+    def self.mapping(face,material,scales,axis,front: true,mirrored: false)
       texture=material.texture
       return nil unless texture
       normal=face_axis(face)
@@ -102,8 +109,13 @@ module PlanosSanto
       other=([0,1,2]-[normal,axis]).first
       size=[texture.width.to_f,texture.height.to_f]
       raise ExportError,'La escala de la textura o de la pieza no es válida: revisala antes de orientar la veta.' unless (size+scales).all? { |v| v.finite? && v>1e-9 }
+      u=[0.0,0.0,0.0];v=[0.0,0.0,0.0];u[axis]=1.0;v[other]=1.0
+      cross=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
+      facing=cross.zip(face.normal.to_a).sum { |p,q| p*q.to_f }
+      facing=-facing unless front
+      facing=-facing if mirrored
       a=face.vertices.first.position.to_a.map(&:to_f);b=a.dup;c=a.dup
-      b[axis]+=size[0]/scales[axis];c[other]+=size[1]/scales[other]
+      b[axis]+=size[0]/scales[axis];c[other]+=(facing<0 ? -size[1] : size[1])/scales[other]
       {'points'=>[a,b,c],'uv'=>[[0,0],[1,0],[0,1]]}
     end
     # UV como Point3d con q=1 (UVQ), igual que los devuelve UVHelper.

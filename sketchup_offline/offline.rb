@@ -949,14 +949,26 @@ module PlanosSanto
         result=PieceGrain.new(@model,catalog:CatalogStore.new(directory:directory)).change(data['ids'],data['mode'])
         # El análisis se rehace con los mismos muebles para que Piezas, el pedido y las guías lean la veta nueva;
         # el editor regenera sus guías solo (aviso de análisis desactualizado, como después de pintar).
+        # La operación ya se confirmó: desde acá ningún error vuelve como error (el modelo ya cambió); va a
+        # `warnings` y el aviso de análisis desactualizado sale siempre.
         @naming=nil;@paint=nil
         begin
           session=NativeSession.new(@model);session.scan;session.generate(paths);@session=session
-        rescue ExportError => error
-          @session=NativeSession.new(@model)
-          result['warnings'] << "La veta se guardó, pero el listado no se pudo actualizar: #{error.message}"
+        rescue StandardError => error
+          begin
+            @session=NativeSession.new(@model)
+          rescue StandardError
+            @session=nil
+          end
+          reason=error.is_a?(ExportError) ? error.message : "error interno (#{error.class}). Volvé a analizar en Muebles."
+          result['warnings'] << "La veta se guardó, pero el listado no se pudo actualizar: #{reason}"
+        ensure
+          begin
+            mark_stale('material')
+          rescue StandardError => error
+            result['warnings'] << "La veta se guardó, pero no se pudo avisar que el análisis quedó desactualizado (#{error.class}). Volvé a analizar en Muebles."
+          end
         end
-        mark_stale('material')
         result.merge('stale'=>true)
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
       when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','catalog_add_thickness','skm_commit_typed'
