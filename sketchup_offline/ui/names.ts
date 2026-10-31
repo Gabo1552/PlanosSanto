@@ -10,13 +10,19 @@ export function compositeCode(moduleCode:string|undefined,code:string){
 }
 // Final SketchUp name limit shared with the guide (lib/pieceGroups.ts, guide_store.rb).
 export const FULL_NAME_LIMIT=80;
-// Re-orienting or widening the proposal list recalculates automatic proposals.
-// Manual edits (value different from the previous base) survive when their row still
-// exists; accepted automatic proposals are dropped so they are recalculated.
+// Re-orienting, widening, grouping or ungrouping the proposal list recalculates automatic proposals.
+// Manual edits (value different from the base of its row) are kept per piece (0.8.26): they survive
+// while the piece is still listed, whatever row it lands in, and never move to another piece.
+// Counts are per row of `before`, as the operator saw them.
 type Proposal={ids:string[];base:string};
 export function carryEdits(chosen:Record<string,string>,before:Proposal[],after:{ids:string[]}[]){
-  const bases=new Map(before.map(s=>[s.ids[0],s.base])),present=new Set(after.map(s=>s.ids[0])),next:Record<string,string>={};let kept=0,lost=0,auto=0;
-  for(const [id,value] of Object.entries(chosen)){const manual=!bases.has(id)||value!==bases.get(id);if(!manual)auto++;else if(present.has(id)){next[id]=value;kept++;}else lost++;}
+  const rows=new Map(before.flatMap(s=>s.ids.map(id=>[id,s] as const))),present=new Set(after.flatMap(s=>s.ids)),next:Record<string,string>={},counted=new Set<Proposal|string>();let kept=0,lost=0,auto=0;
+  for(const [id,value] of Object.entries(chosen)){
+    const row=rows.get(id),manual=!row||value!==row.base;
+    if(manual&&present.has(id))next[id]=value;
+    const unit=row||id;if(counted.has(unit))continue;counted.add(unit);
+    if(!manual)auto++;else if((row?.ids||[id]).some(item=>present.has(item)))kept++;else lost++;
+  }
   return {chosen:next,kept,lost,auto};
 }
 // reapplied: the geometric proposals of the new list were applied again by themselves (punto 21).

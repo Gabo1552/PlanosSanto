@@ -38,7 +38,8 @@ test('sugerencias: nombres accesibles iguales al rótulo, código compuesto, fil
  // Punto 21: the group axes are the default orientation; focus goes to the first proposal.
  await expect(dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true})).toHaveCount(0);await expect(dialog.getByLabel('Nombre sugerido P01',{exact:true})).toBeVisible();
  await expect(dialog.locator('[aria-selected]')).toHaveCount(0);
- await dialog.getByRole('button',{name:'M01·P02 · ×1',exact:true}).click();const current=dialog.locator('tr[data-current="true"]');await expect(current).toHaveCount(1);await expect(current).toContainText('M01·P02');await expect(current.getByText('(pieza resaltada)',{exact:true})).toHaveClass('sr-only');
+ // 0.8.26: el doble tiene dos piezas iguales en la misma posición; se desagrupan para revisarlas fila por fila.
+ await dialog.getByRole('checkbox',{name:'Agrupar piezas iguales en las sugerencias',exact:true}).uncheck();await dialog.getByRole('button',{name:'M01·P02',exact:true}).click();const current=dialog.locator('tr[data-current="true"]');await expect(current).toHaveCount(1);await expect(current).toContainText('M01·P02');await expect(current.getByText('(pieza resaltada)',{exact:true})).toHaveClass('sr-only');
  const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true});await p01.fill('Estante medio');
  const hint=await p01.getAttribute('aria-describedby');expect(hint).toBeTruthy();await expect(dialog.locator(`[id="${hint}"]`)).toHaveText('Quedará: VF M01 Estante medio');
  await expect(dialog.getByRole('checkbox',{name:'Aplicar propuesta P01',exact:true})).toBeChecked();
