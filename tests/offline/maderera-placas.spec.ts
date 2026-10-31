@@ -206,3 +206,29 @@ test('Piezas abre directamente la optimización del material y espesor y permite
  expect(await axe(page)).toEqual([]);
  await page.screenshot({path:info.outputPath('maderera-0825.png'),fullPage:true});
 });
+
+test('con la guía sin guardar, Maderera optimiza igual y el TXT avisa que usa los nombres guardados',async({page},info)=>{
+ await boot(page,info.outputDir);await library({});
+ // Guías generadas y sin guardar: antes Ruby frenaba con «Guardá los cambios de la guía antes de preparar el pedido».
+ await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Guardar guía',exact:true})).toBeEnabled();
+ await rail(page,'Maderera').click();
+ const region=page.getByRole('region',{name:'Optimización de placas'});
+ await expect(region.getByRole('list',{name:'Materiales y espesores del proyecto'})).toBeVisible();
+ await expect(page.getByText('Guardá los cambios de la guía antes de preparar el pedido.')).toHaveCount(0);
+ await expect(region.getByRole('note')).toContainText('La guía tiene cambios sin guardar. La optimización no depende de ellos');
+ const optim=region.getByRole('region',{name:'Placas del proyecto'});
+ await optim.getByRole('button',{name:'Ver optimización de Melamina Jade · 19,05 mm'}).click();
+ const board=optim.getByRole('region',{name:'Melamina Jade · 19,05 mm'});
+ await expect(board.getByRole('img',{name:/^Placa 1 de 1: 3 piezas/})).toBeVisible();
+ const fileName=(await board.locator('.workshop-board-export small').textContent())!.replace(/^Archivo: /,'');
+ await board.getByRole('button',{name:'Exportar TXT de Melamina Jade · 19,05 mm',exact:true}).click();
+ const status=region.getByRole('status').first();
+ await expect(status).toContainText(`guardado en ${join(info.outputDir,fileName)}: 3 piezas`);
+ await expect(status).toContainText('La guía tiene cambios sin guardar: los nombres y códigos del TXT son los de la última guía guardada.');
+ expect(validate(join(info.outputDir,fileName))).toEqual(ok);
+ expect(await axe(page)).toEqual([]);
+ // El pedido viejo, que escribe su borrador en el modelo, sigue pidiendo guardar la guía.
+ const reply=await raw(JSON.stringify({version:1,id:randomUUID(),action:'order_plan',data:{}}));
+ expect(reply.error).toContain('Guardá los cambios de la guía antes de preparar el pedido.');
+});

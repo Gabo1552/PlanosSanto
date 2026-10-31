@@ -17,10 +17,10 @@ export type OrderRow={id:string;include:boolean;excludeReason:string;detail:stri
 export type Geometry={lengths:number[];bounds:{min:number[];max:number[]};scales:number[];mirrored:boolean;rectangular:boolean;vertices:number[][];triangles:number[][]};
 export type OrderPlan={schema:1;fingerprint:string;catalogRevision:number;profile:{encoding:string;decimal:string;header:boolean};rows:OrderRow[];geometry:Record<string,Geometry>;detailCode?:'none'|'module_piece';codes?:Record<string,string>};
 /** 0.8.20 «Maderera»: todas las piezas de los muebles analizados, por placa (Workshop#boards). */
-type BoardsResult={plan:OrderPlan;catalog:Catalog;modelName:string;boards:ProjectBoard[];outside:OutsidePiece[]};
+type BoardsResult={plan:OrderPlan;catalog:Catalog;modelName:string;boards:ProjectBoard[];outside:OutsidePiece[];guideUnsaved?:boolean};
 type TxtFile={key:string;name:string;sku:string;thicknessMm:number;edges:BoardEdge[];pieces:number;textRows:number;rotated:number};
-type TxtResult={cancelled?:boolean;path:string}&TxtFile;
-type AllResult={cancelled?:boolean;directory:string;files:(TxtFile&{file:string})[];skipped:{key:string;name:string;thicknessMm:number;reason:string}[]};
+type TxtResult={cancelled?:boolean;path:string;guideUnsaved?:boolean}&TxtFile;
+type AllResult={cancelled?:boolean;guideUnsaved?:boolean;directory:string;files:(TxtFile&{file:string})[];skipped:{key:string;name:string;thicknessMm:number;reason:string}[]};
 const kinds:Record<string,string>={hardware:'Herraje',unknown:'Sin resolver',sheet:'Placa',edge:'Canto',solid_wood:'Madera maciza',dimensional:'Listón / perfil',veneer:'Lámina'};
 const n=(value:string)=>value.trim()===''?null:Number(value);
 const discardCatalog='Hay cambios de la biblioteca sin guardar. ¿Descartarlos?';
@@ -85,16 +85,17 @@ function BoardsSection({busy,run,label,notify,keepFocus,current,optimizationTarg
  const refreshAfter=async(operation:()=>Promise<void>)=>{try{await operation();}catch(e){try{await load();}catch{/* el error original es el que se muestra */}throw e;}};
  const exportBoard=(board:ProjectBoard)=>{keepFocus();void run(()=>refreshAfter(async()=>{
   const result=await request<TxtResult>('maderera_txt',{key:board.key,rotate:effectiveCut.allowRotate,...(method==='experto'?{method}:{})});
-  notify(result.cancelled?'Exportación cancelada.':`TXT de ${boardLabel(board)} guardado en ${result.path}: ${plural(result.pieces,'pieza','piezas')} en ${plural(result.textRows,'línea','líneas')}. ${portalHint(result)}`);
+  notify(result.cancelled?'Exportación cancelada.':`TXT de ${boardLabel(board)} guardado en ${result.path}: ${plural(result.pieces,'pieza','piezas')} en ${plural(result.textRows,'línea','líneas')}. ${portalHint(result)}${result.guideUnsaved?unsavedNote:''}`);
  }),`Exportando el TXT de ${boardLabel(board)}…`,board.key);};
  const exportAll=()=>void run(()=>refreshAfter(async()=>{
   const result=await request<AllResult>('maderera_txt',{all:true,rotate:effectiveCut.allowRotate,...(method==='experto'?{method}:{})});
   if(result.cancelled){notify('Exportación cancelada.');return;}
-  notify(`${plural(result.files.length,'TXT guardado','TXT guardados')} en ${result.directory}: ${result.files.map(file=>file.file).join(', ')}.${result.skipped.length?` Sin exportar por problemas: ${result.skipped.map(item=>`${boardLabel(item)}`).join(', ')}.`:''}`);
+  notify(`${plural(result.files.length,'TXT guardado','TXT guardados')} en ${result.directory}: ${result.files.map(file=>file.file).join(', ')}.${result.skipped.length?` Sin exportar por problemas: ${result.skipped.map(item=>`${boardLabel(item)}`).join(', ')}.`:''}${result.guideUnsaved?unsavedNote:''}`);
  }),'Exportando un TXT por placa…','all');
+ const unsavedNote=' La guía tiene cambios sin guardar: los nombres y códigos del TXT son los de la última guía guardada.';
  const highlight=(id:string)=>{keepFocus();void run(async()=>{await request('piece_highlight',{pieceId:id});notify('Pieza resaltada en SketchUp. Volvé a esta ventana para seguir.');},'Resaltando en SketchUp…','highlight');};
  return <>
-  <div className="workshop-method"><label>Método de optimización <select aria-label="Método de optimización" value={method} disabled={busy} onChange={e=>chooseMethod(e.target.value as OptimizationMethod)}><option value="general">General</option><option value="experto">Experto</option></select></label><p className="workshop-hint">Las medidas de placa se toman de su ficha en Materiales. Los materiales y espesores se optimizan por separado, juntando todos los muebles.</p></div>
+  <div className="workshop-method"><label>Método de optimización <select aria-label="Método de optimización" value={method} disabled={busy} onChange={e=>chooseMethod(e.target.value as OptimizationMethod)}><option value="general">General</option><option value="experto">Experto</option></select></label><p className="workshop-hint">Las medidas de placa se toman de su ficha en Materiales. Los materiales y espesores se optimizan por separado, juntando todos los muebles.</p>{data?.guideUnsaved&&<p className="workshop-hint" role="note">La guía tiene cambios sin guardar. La optimización no depende de ellos; los nombres y códigos de las piezas salen de la última guía guardada.</p>}</div>
   {method==='experto'?<p className="workshop-hint">Experto: disco 4,4 mm · refilado total de 10 mm por eje · lado mínimo 50 mm · giro automático sin veta. Se conservan las medidas nominales y los lados con canto. Estimación según la referencia suministrada; pendiente de contrastar con pedidos reales.</p>:<fieldset className="workshop-cut" aria-describedby="workshop-cut-help"><legend>Corte de la seccionadora</legend>
    {(Object.keys(cutFields) as CutField[]).map(field=><label key={field}>{cutFields[field].label}<input type="number" inputMode="decimal" min={cutFields[field].range[0]} max={cutFields[field].range[1]} step="any" value={texts[field]} aria-invalid={invalid(field)||undefined} aria-describedby={invalid(field)?`workshop-cut-${field}`:undefined} onChange={e=>edit(field,e.target.value)}/>{invalid(field)&&<small id={`workshop-cut-${field}`} className="workshop-field-error">Entre {cutFields[field].range[0]} y {cutFields[field].range[1]} mm. Se sigue usando {mm(cut[field])} mm.</small>}</label>)}
    <label className="workshop-cut-rotate"><input type="checkbox" checked={cut.allowRotate} disabled={busy} onChange={e=>choose({...cut,allowRotate:e.target.checked})}/> Girar piezas en placas sin veta (rota 1)</label>
