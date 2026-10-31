@@ -75,7 +75,7 @@ class QuickToolbarTest < Minitest::Test
     assert_equal ['Planos Santo'],UI.toolbars.map(&:name)
     assert_same registry[:main_toolbar],registry[:tools_toolbar]
     assert_equal %w[sheet component furniture order guides materials].map { |key| registry[:commands][key] },registry[:main_toolbar].items
-    assert_equal ['Pintar placas y cantos','Crear componente','Muebles','Maderera','Planos','Materiales'],registry[:main_toolbar].items.map(&:name)
+    assert_equal ['Pintar placas y cantos','Dibujar pieza','Muebles','Maderera','Planos','Materiales'],registry[:main_toolbar].items.map(&:name)
     %w[main edge remove_edge sample].each do |key|
       refute_includes registry[:main_toolbar].items,registry[:commands][key]
       assert_includes registry[:menu].items.map(&:first),registry[:commands][key]
@@ -112,6 +112,18 @@ class QuickToolbarTest < Minitest::Test
     assert_equal %w[sheet edge remove_edge],checks
     registry[:menu].items.find { |item,_| item=='Paleta de pintura…' }.last.call
     assert_equal [:opened],palette
+  end
+
+  # 0.8.26: «Dibujar pieza» is checked while its tool is active, grayed with a reason.
+  def test_draw_piece_command_reflects_the_active_tool_and_block_reason
+    active=false;@controller.define_singleton_method(:component_active?) { active }
+    command=install[:commands]['component']
+    assert_equal 'Dibujar pieza',command.name
+    assert_equal MF_UNCHECKED,command.validation
+    active=true;assert_equal MF_CHECKED,command.validation
+    @controller.reasons['component']='El grupo o componente abierto está bloqueado.'
+    assert_equal MF_GRAYED,command.validation;assert_equal 'El grupo o componente abierto está bloqueado.',command.status_bar_text
+    command.call;assert_equal ['component'],@controller.actions
   end
 
   def test_main_command_prefers_full_interface_navigation_without_registering_again

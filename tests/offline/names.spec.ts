@@ -504,7 +504,7 @@ test('cabecera simple y Pintar usa el mismo acceso nativo; herramientas secundar
  });
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Pintar',exact:true}).click();
  await expect.poll(()=>nativeActions).toEqual(['paint_in_view']);
- await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Componente',exact:true}).click();
+ await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Dibujar pieza',exact:true}).click();
  await expect.poll(()=>nativeActions).toEqual(['paint_in_view','create_component']);
  await page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Materiales',exact:true}).click();
  await page.getByText('Más herramientas de materiales',{exact:true}).click();

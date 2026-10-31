@@ -1,149 +1,473 @@
 # frozen_string_literal: true
 module PlanosSanto
-  # Original three-stage tool: rectangle, thickness, one isolated component/Undo.
-  # Coordinates shown by InputPoint are world coordinates; creation uses the active edit frame.
+  # «Dibujar pieza»: herramienta propia de tres pasos (primera esquina,
+  # rectángulo y espesor) que crea un componente aislado en UNA operación de
+  # Deshacer. La idea del flujo viene de OpenCutList; el código es propio.
+  #
+  # Coordenadas: InputPoint, View#pickray y las entidades del contexto abierto
+  # se informan en coordenadas del mundo (la misma regla que usa
+  # PieceHighlightTool#world_matrix), así que la transformación del componente
+  # nuevo se escribe en mundo dentro de Model#active_entities. edit_transform
+  # sólo aporta los ejes por defecto del grupo abierto y la identidad del
+  # contexto. PENDIENTE de comprobar en SketchUp real.
+  #
+  # APIs (versión mínima): InputPoint#pick(view,x,y,ref), #copy!, #clear,
+  # #degrees_of_freedom, #face, #transformation, #tooltip (6); View#pickray,
+  # #tooltip=, #draw (6); Geom.intersect_line_plane, Geom.closest_points,
+  # Transformation.axes, Vector3d#axes, Entities#clear! (6);
+  # Model#start_operation con transparent (7); Group#to_component (7);
+  # Model#active_path y #edit_transform (7); String#to_l, Sketchup.format_length,
+  # Sketchup.vcb_label=/vcb_value= (6). Protegidas con respond_to?/defined?:
+  # DefinitionList#unique_name, Model#axes (2016), Sketchup::RegionalSettings
+  # (2017), constantes VK_* y GL_LINES.
   class DrawComponentTool
-    attr_reader :phase
-    def initialize(model,on_created:nil)
-      @model=model;@on_created=on_created;@thickness=18.0/25.4
+    MM = 1 / 25.4
+    MIN = 0.1 * MM
+    MAX = 100_000 * MM
+    DEFAULT_THICKNESS = 18 * MM
+    NAME = 'Pieza'
+    OPERATION = 'Dibujar pieza'
+    PLANES = {x:'lateral (eje rojo)',y:'frente (eje verde)',z:'suelo (eje azul)'}.freeze
+    COLORS = {x:'Red',y:'Green',z:'Blue'}.freeze
+
+    attr_reader :phase,:width,:height,:thickness,:normal,:origin,:locked,:last
+
+    def initialize(model)
+      @model=model;@default_thickness=DEFAULT_THICKNESS;@locked=nil;@active=false;@phase=:corner
     end
-    def activate
-      @input=Sketchup::InputPoint.new;@context=context;reset
-    end
-    def context
-      [(@model.active_path||[]).map(&:persistent_id),@model.edit_transform.to_a]
-    end
-    def valid_context!
-      raise ExportError,'Cambió el contexto de edición. Reiniciá Dibujar componente.' unless Sketchup.active_model.equal?(@model) && context==@context
-      raise ExportError,'El contenedor está bloqueado.' if (@model.active_path||[]).any?(&:locked?)
-    end
-    def reset
-      @phase=0;@origin=nil;@corner=nil;@width=nil;@height=nil;@locked_plane=nil
-      status;@model.active_view.invalidate
-    end
-    def status(message=nil)
-      Sketchup.status_text=message || ['Dibujar componente: marcá la primera esquina. ↑ suelo · ← lateral · → frente.',
-        'Marcá la esquina opuesta o escribí ancho;alto (ej. 600mm;400mm). Esc cancela.',
-        'Definí el espesor con un clic o escribí una medida (ej. 18mm). Esc cancela.'][@phase]
-      Sketchup.vcb_label=@phase==1 ? 'Ancho;alto' : 'Espesor'
-      Sketchup.vcb_value=@phase==2 ? Sketchup.format_length(@thickness) : ''
-    end
+
+    def active?;@active;end
     def enableVCB?;true;end
-    def plane
-      return @locked_plane if @locked_plane
-      if @input.face
-        points=@input.face.vertices.first(3).map { |v| v.position.transform(@input.transformation) }
-        n=(points[1]-points[0]).cross(points[2]-points[0]);return n.normalize if n.length>1e-8
-      end
-      Geom::Vector3d.new(0,0,1)
+
+    def activate
+      @active=true;@last=nil
+      @input=Sketchup::InputPoint.new;@first=Sketchup::InputPoint.new
+      remember_context;reset
+      @model.active_view.invalidate if @model.respond_to?(:active_view) && @model.active_view
     end
-    def frame(normal)
-      @normal=normal.normalize
-      seed=@normal.z.abs>0.9 ? Geom::Vector3d.new(1,0,0) : Geom::Vector3d.new(0,0,1)
-      @u=seed.cross(@normal).normalize;@v=@normal.cross(@u).normalize
-      # Horizontal plane: X then Y; upright planes: horizontal then vertical.
-      if @normal.z.abs>0.9
-        @u=Geom::Vector3d.new(1,0,0);@v=@normal.cross(@u).normalize
-      end
+
+    # Salir (segundo Esc, otra herramienta, cerrar el modelo) nunca toca el modelo.
+    def deactivate(view)
+      @active=false;@last=nil;@phase=:corner
+      Sketchup.status_text='';Sketchup.vcb_label='';Sketchup.vcb_value=''
+      view&.invalidate
     end
+
+    def resume(view);status(@message);view.invalidate;end
+    def suspend(_view);end
+
+    # reason: 0 Esc, 1 volver a elegir la herramienta, 2 Deshacer.
+    def onCancel(reason,view)
+      @last=nil
+      return @model.select_tool(nil) if reason==0 && @phase==:corner
+      reset;view.invalidate
+    end
+
     def onMouseMove(_flags,x,y,view)
-      valid_context!;@input.pick(view,x,y)
-      if @phase==1
-        hit=Geom.intersect_line_plane(view.pickray(x,y),[@origin,@normal])
-        if hit
-          delta=hit-@origin;@width=delta.dot(@u);@height=delta.dot(@v)
-          Sketchup.vcb_value=[@width.abs,@height.abs].map { |v| Sketchup.format_length(v) }.join(';')
-        end
-      elsif @phase==2
-        points=Geom.closest_points([@origin,@normal],view.pickray(x,y))
-        if points
-          distance=(points[0]-@origin).dot(@normal)
-          @thickness=distance if distance.abs>0.1/25.4
-          Sketchup.vcb_value=Sketchup.format_length(@thickness)
-        end
+      check_context!;track(x,y,view)
+    rescue StandardError => error
+      status(error.message);view.invalidate
+    end
+
+    def onLButtonDown(_flags,x,y,view)
+      check_context!;track(x,y,view)
+      case @phase
+      when :corner
+        raise ExportError,'Marcá un punto en el modelo para la primera esquina.' unless @input.valid?
+        start_at(@input.position,face_normal(@input) || reference_axes[2]);@first.copy!(@input);@press=[x,y]
+      when :rectangle then accept_rectangle!
+      when :thickness then create!
       end
       view.invalidate
     rescue StandardError => error
-      status(error.message)
+      status(error.message);view.invalidate
     end
-    def onLButtonDown(flags,x,y,view)
-      onMouseMove(flags,x,y,view);valid_context!
-      if @phase==0
-        return unless @input.valid?
-        @origin=@input.position;frame(plane);@phase=1
-      elsif @phase==1
-        dimensions!;@phase=2
-      else
-        create
+
+    # Arrastrar con el botón apretado también cierra el rectángulo.
+    def onLButtonUp(flags,x,y,view)
+      press=@press;@press=nil
+      return unless @phase==:rectangle && press && (x-press[0])**2+(y-press[1])**2>=64
+      onLButtonDown(flags,x,y,view)
+    end
+
+    def onKeyDown(key,_repeat,_flags,view)
+      axis=plane_keys[key]
+      return false unless axis && @phase!=:thickness
+      @locked=axis==:free || @locked==axis ? nil : axis
+      if @phase==:rectangle
+        frame(@locked ? locked_normal : @picked_normal);@width=@height=nil
       end
       status;view.invalidate
-    rescue StandardError => error
-      status(error.message)
+      true
     end
+
     def onUserText(text,view)
-      valid_context!
-      if @phase==1
-        parts=text.split(';');raise ExportError,'Escribí ancho;alto, por ejemplo 600mm;400mm.' unless parts.length==2
-        @width=parts[0].to_l.to_f;@height=parts[1].to_l.to_f;dimensions!;@phase=2
-      elsif @phase==2
-        @thickness=text.to_l.to_f;create
-      else
-        raise ExportError,'Marcá primero una esquina en el modelo.'
+      check_context!
+      values=parse_list(text)
+      case @phase
+      when :corner
+        raise ExportError,'Marcá primero la esquina en el modelo; las medidas se escriben después.' unless @last
+        redo_last!(values)
+      when :rectangle
+        @width=directed(values[0],@width,'el ancho');@height=directed(values[1],@height,'el alto')
+        accept_rectangle!
+        if values.length==3
+          @thickness=directed(values[2],@thickness,'el espesor');create!
+        end
+      when :thickness
+        raise ExportError,'Escribí sólo el espesor, por ejemplo 18mm.' unless values.length==1
+        @thickness=directed(values[0],@thickness,'el espesor');create!
       end
-      status;view.invalidate
+      view.invalidate
     rescue StandardError => error
-      status(error.message)
+      status(error.message);view.invalidate
     end
-    def dimensions!
-      raise ExportError,'Ancho y alto deben ser mayores que cero y menores que 100 m.' unless [@width,@height].all? { |v| v && v.finite? && v.abs>0.1/25.4 && v.abs<=100_000/25.4 }
+
+    def draw(view)
+      @input.draw(view) if @input&.valid? && (!@input.respond_to?(:display?) || @input.display?)
+      lines=preview_lines
+      return if lines.empty?
+      view.line_width=2 if view.respond_to?(:line_width=)
+      view.drawing_color=COLORS[@locked] || 'Magenta'
+      view.draw(Object.const_defined?(:GL_LINES) ? Object.const_get(:GL_LINES) : 1,lines)
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo dibujar la vista previa (#{error.class}).")
     end
-    def create
-      valid_context!;dimensions!
-      raise ExportError,'El espesor debe ser mayor que cero y menor que el ancho y el alto.' unless @thickness.finite? && @thickness.abs>0.1/25.4 && @thickness.abs<[@width.abs,@height.abs].min
-      started=false
-      begin
-        raise ExportError,'No se pudo iniciar el dibujo.' unless @model.start_operation('Dibujar componente Planos Santo',true)
-        started=true
+
+    def getExtents
+      box=Geom::BoundingBox.new
+      box.add(@input.position) if @input&.valid?
+      box.add(@origin) if @origin && @phase!=:corner
+      corners.each { |point| box.add(point) }
+      box
+    rescue StandardError
+      Geom::BoundingBox.new
+    end
+
+    def corners
+      return [] if @phase==:corner || !@width || !@height
+      base=[@origin,@origin+scaled(@u,@width),@origin+scaled(@u,@width)+scaled(@v,@height),@origin+scaled(@v,@height)]
+      @phase==:thickness ? base+base.map { |point| point+scaled(@normal,@thickness) } : base
+    end
+
+    private
+
+    def track(x,y,view)
+      case @phase
+      when :corner then @input.pick(view,x,y)
+      when :rectangle
+        @input.pick(view,x,y,@first)
+        point=plane_point(view,x,y)
+        if point
+          delta=point-@origin;@width=delta.dot(@u);@height=delta.dot(@v)
+        end
+      when :thickness
+        @input.pick(view,x,y,@first)
+        value=thickness_at(view,x,y);@thickness=value if value
+      end
+      Sketchup.vcb_value=vcb_value
+      view.tooltip=@input.tooltip if @input.valid? && view.respond_to?(:tooltip=)
+      view.invalidate
+    end
+
+    def plane_keys
+      key=lambda { |name,fallback| Object.const_defined?(name) ? Object.const_get(name) : fallback }
+      {key.call(:VK_RIGHT,39)=>:x,key.call(:VK_LEFT,37)=>:y,key.call(:VK_UP,38)=>:z,key.call(:VK_DOWN,40)=>:free}
+    end
+
+    def active_path
+      path=@model.respond_to?(:active_path) ? @model.active_path : nil
+      path.respond_to?(:to_a) ? path.to_a : []
+    end
+
+    def context_key;[active_path.map(&:object_id),@model.edit_transform.to_a];end
+    def remember_context;@context=context_key;end
+
+    # In the corner phase the tool adopts the current context; with a drawing in
+    # progress any change of model or context cancels it without touching the model.
+    def check_context!
+      raise ExportError,'Cambiaste de modelo. Volvé a activar Dibujar pieza en este modelo.' unless Sketchup.active_model.equal?(@model)
+      unless context_key==@context
+        drawing=@phase!=:corner
+        remember_context;@last=nil
+        if drawing
+          reset
+          raise ExportError,'Cambió el contexto de edición: se canceló el dibujo sin tocar el modelo. Marcá de nuevo la primera esquina.'
+        end
+      end
+      return unless active_path.any? { |entity| entity.respond_to?(:locked?) && entity.locked? }
+      raise ExportError,'El grupo o componente abierto está bloqueado. Desbloquealo o salí de él para dibujar.'
+    end
+
+    def reset
+      @phase=:corner;@origin=@corner=@width=@height=@picked_normal=@press=nil
+      @thickness=@default_thickness
+      @input&.clear;@first&.clear
+      status
+    end
+
+    # natural: the plane of the face under the corner (or the floor); a locked
+    # plane wins while it lasts and releasing it goes back to the natural one.
+    def start_at(point,natural)
+      @origin=point;@picked_normal=natural;frame(@locked ? locked_normal : natural);@width=@height=nil;@last=nil;@phase=:rectangle
+      status
+    end
+
+    def accept_rectangle!
+      raise ExportError,'Mové el mouse para abrir el rectángulo o escribí ancho;alto (ej. 600;400).' unless @width && @height
+      check_size!(@width,'El ancho');check_size!(@height,'El alto')
+      @corner=@origin+scaled(@u,@width)+scaled(@v,@height);@phase=:thickness
+      status
+    end
+
+    def check_size!(value,label)
+      return if value.is_a?(Numeric) && value.finite? && value.abs>=MIN && value.abs<=MAX
+      raise ExportError,"#{label} tiene que estar entre 0,1 mm y 100 m."
+    end
+
+    # A typed value keeps the direction of the mouse; a negative one reverses it.
+    def directed(value,current,label)
+      return current if value.nil? && current
+      raise ExportError,"Falta #{label}: escribilo o marcalo con el mouse." if value.nil?
+      current && current<0 ? -value : value
+    end
+
+    def parse_list(text)
+      raw=text.to_s.strip
+      raise ExportError,'Escribí una medida, por ejemplo 600mm;400mm.' if raw.empty?
+      parts=raw.split(separator,-1)
+      raise ExportError,'Escribí hasta tres medidas: ancho;alto;espesor.' if parts.length>3
+      parts.map { |part| part.strip.empty? ? nil : length(part.strip) }
+    end
+
+    # «;» always separates; «,» too when the decimal separator is the point.
+    def separator
+      decimal=defined?(Sketchup::RegionalSettings) && Sketchup::RegionalSettings.respond_to?(:decimal_separator) ? Sketchup::RegionalSettings.decimal_separator : ','
+      decimal=='.' ? /[;,]/ : /;/
+    end
+
+    def length(text)
+      value=text.to_l.to_f
+      raise ArgumentError unless value.finite?
+      value
+    rescue ArgumentError,TypeError
+      raise ExportError,"No entiendo «#{text}». Escribí un número con o sin unidad: 600, 600mm, 60cm o 0,6m."
+    end
+
+    def locked_normal
+      x,y,z=reference_axes
+      {x:x,y:y.reverse,z:z}.fetch(@locked)
+    end
+
+    # Exact world normal of the face, also for concave faces and scaled or
+    # mirrored instances: two in-plane axes are transformed and crossed.
+    def face_normal(input)
+      face=input.face
+      return nil unless face
+      transformation=input.transformation
+      local=face.normal
+      a,b=local.axes
+      world=a.transform(transformation).cross(b.transform(transformation))
+      return nil unless world.length>1e-9
+      world=world.normalize
+      world.dot(local.transform(transformation))<0 ? world.reverse : world
+    end
+
+    # Default axes follow the open group (edit_transform) or the drawing axes.
+    def reference_axes
+      transformation=active_path.empty? ? nil : @model.edit_transform
+      if transformation
+        orthonormal(transformation.xaxis,transformation.yaxis)
+      elsif @model.respond_to?(:axes) && @model.axes
+        orthonormal(@model.axes.xaxis,@model.axes.yaxis)
+      else
+        [Geom::Vector3d.new(1,0,0),Geom::Vector3d.new(0,1,0),Geom::Vector3d.new(0,0,1)]
+      end
+    end
+
+    def orthonormal(x,y)
+      x=x.normalize;z=x.cross(y).normalize;[x,z.cross(x).normalize,z]
+    end
+
+    # Horizontal planes: width along red, height along green. Upright planes:
+    # width horizontal, height upwards. u, v, normal are right handed.
+    def frame(normal)
+      x,_y,z=reference_axes
+      n=normal.normalize
+      u=n.dot(z).abs>0.9 ? x-scaled(n,x.dot(n)) : z.cross(n)
+      @normal=n;@u=u.normalize;@v=n.cross(@u).normalize
+    end
+
+    def scaled(vector,distance);Geom::Vector3d.new(vector.x*distance,vector.y*distance,vector.z*distance);end
+    def project(point);point+scaled(@normal,-(point-@origin).dot(@normal));end
+
+    # Snapped inferences (vertex, edge) are projected on the plane; free points
+    # use the view ray so the rectangle follows the cursor over other faces.
+    def plane_point(view,x,y)
+      return project(@input.position) if @input.valid? && @input.degrees_of_freedom<=1
+      ray=view.pickray(x,y)
+      # Plane seen edge-on: the ray hit would fly away, the inference does not.
+      hit=ray[1].normalize.dot(@normal).abs>0.02 ? Geom.intersect_line_plane(ray,[@origin,@normal]) : nil
+      hit || (@input.valid? ? project(@input.position) : nil)
+    end
+
+    def thickness_at(view,x,y)
+      if @input.valid? && @input.degrees_of_freedom==0
+        distance=(@input.position-@origin).dot(@normal)
+        return distance if distance.abs>=MIN
+      end
+      ray=view.pickray(x,y)
+      # Looking along the normal (plan view of a floor piece) the mouse cannot
+      # give a depth: keep the current value; typing or a snap still work.
+      return nil if ray[1].normalize.dot(@normal).abs>0.99
+      points=Geom.closest_points([@corner,@normal],ray)
+      return nil unless points
+      distance=(points[0]-@origin).dot(@normal)
+      distance.abs>=MIN ? distance : nil
+    end
+
+    # Positive local box [0,w]x[0,h]x[0,t] in a right-handed frame, whatever the
+    # direction of the mouse: never a mirrored instance.
+    def placement
+      sw=@width<0 ? -1 : 1;sh=@height<0 ? -1 : 1
+      x=scaled(@u,sw);y=scaled(@v,sh);z=x.cross(y)
+      depth=@thickness*sw*sh
+      origin=depth<0 ? @origin+scaled(z,depth) : @origin
+      {transformation:Geom::Transformation.axes(origin,x,y,z),size:[@width.abs,@height.abs,@thickness.abs]}
+    end
+
+    def create!
+      check_context!
+      check_size!(@width,'El ancho');check_size!(@height,'El alto');check_size!(@thickness,'El espesor')
+      geometry=placement;component=nil
+      operation(false) do
         group=@model.active_entities.add_group
-        world=Geom::Transformation.axes(@origin,@u,@v,@normal)
-        group.transformation=@model.edit_transform.inverse*world
-        face=group.entities.add_face([[0,0,0],[@width,0,0],[@width,@height,0],[0,@height,0]])
-        raise ExportError,'No se pudo dibujar el rectángulo.' unless face
-        face.reverse! if face.normal.z<0
-        face.pushpull(@thickness)
-        component=group.to_component;component.definition.name='Pieza';component.name='Pieza'
-        raise ExportError,'No se pudo confirmar el componente.' unless @model.commit_operation
-        started=false;@model.selection.clear;@model.selection.add(component)
-        reset
-        @on_created&.call(component)
+        build_box(group.entities,geometry[:size])
+        group.transformation=geometry[:transformation]
+        component=group.to_component
+        raise ExportError,'SketchUp no pudo convertir el dibujo en componente.' unless component&.valid?
+        component.definition.name=unique_name
+      end
+      finish(component)
+    end
+
+    # VCB right after creating: retype w;h, w;h;t or just t to correct the same
+    # piece. The change is a transparent operation: one Undo removes the piece.
+    def redo_last!(values)
+      last=@last;component=last[:component]
+      unless component.valid? && component.definition.instances.length==1
+        @last=nil
+        raise ExportError,'La última pieza ya no se puede corregir. Marcá una esquina para dibujar otra.'
+      end
+      width,height,thickness=values.length==1 ? [nil,nil,values[0]] : values
+      width=directed(width,last[:width],'el ancho');height=directed(height,last[:height],'el alto')
+      thickness=directed(thickness,last[:thickness],'el espesor')
+      check_size!(width,'El ancho');check_size!(height,'El alto');check_size!(thickness,'El espesor')
+      @origin,@u,@v,@normal=last.values_at(:origin,:u,:v,:normal)
+      @width,@height,@thickness=width,height,thickness
+      geometry=placement
+      begin
+        operation(true) do
+          entities=component.definition.entities
+          entities.clear!
+          build_box(entities,geometry[:size])
+          component.transformation=geometry[:transformation]
+        end
       rescue StandardError
-        @model.abort_operation if started
+        reset
         raise
       end
+      finish(component)
     end
-    def onKeyDown(key,_repeat,_flags,view)
-      return if @phase==2
-      normal={38=>[0,0,1],37=>[1,0,0],39=>[0,-1,0]}[key]
-      return unless normal
-      @locked_plane=Geom::Vector3d.new(*normal);frame(@locked_plane) if @origin
-      @width=@height=nil;view.invalidate
+
+    def operation(transparent)
+      raise ExportError,'SketchUp no pudo iniciar la operación.' unless @model.start_operation(OPERATION,true,false,transparent)
+      begin
+        yield
+        raise ExportError,'SketchUp no pudo confirmar la operación.' unless @model.commit_operation
+      rescue StandardError => error
+        @model.abort_operation
+        reason=error.is_a?(ExportError) ? error.message : 'SketchUp rechazó la geometría.'
+        raise ExportError,"No se pudo crear la pieza: #{reason} El modelo quedó como estaba."
+      end
     end
-    def onCancel(_reason,view);reset;view.invalidate;end
-    def deactivate(view);view.invalidate;end
-    def points
-      return [] unless @origin && @width && @height
-      base=[@origin,@origin.offset(@u,@width),@origin.offset(@u,@width).offset(@v,@height),@origin.offset(@v,@height)]
-      @phase==2 ? base+base.map { |p| p.offset(@normal,@thickness) } : base
+
+    # Isolated by construction: the geometry lives in a new group, never in the
+    # active entities, so it cannot merge with faces it touches.
+    def build_box(entities,size)
+      w,h,t=size
+      face=entities.add_face(Geom::Point3d.new(0,0,0),Geom::Point3d.new(w,0,0),Geom::Point3d.new(w,h,0),Geom::Point3d.new(0,h,0))
+      raise ExportError,'SketchUp no pudo dibujar el rectángulo.' unless face
+      face.reverse! if face.normal.z<0
+      face.pushpull(t)
+      raise ExportError,'El empuje no generó una pieza cerrada.' unless entities.grep(Sketchup::Face).length==6
     end
-    def draw(view)
-      @input.draw(view) if @input&.valid?
-      corners=points;return if corners.empty?
+
+    def unique_name
+      definitions=@model.definitions
+      if definitions.respond_to?(:unique_name)
+        name=begin
+          definitions.unique_name(NAME)
+        rescue StandardError
+          nil
+        end
+        return name if name.is_a?(String) && !name.empty? && !definitions[name]
+      end
+      return NAME unless definitions[NAME]
+      (1..9999).each { |index| candidate="#{NAME}##{index}";return candidate unless definitions[candidate] }
+      raise ExportError,'No hay un nombre libre para la pieza.'
+    end
+
+    def finish(component)
+      @last={component:component,origin:@origin,u:@u,v:@v,normal:@normal,width:@width,height:@height,thickness:@thickness}
+      @default_thickness=@thickness.abs
+      begin
+        @model.selection.clear;@model.selection.add(component)
+      rescue StandardError => error
+        warn("Planos Santo: no se pudo seleccionar la pieza dibujada (#{error.class}).")
+      end
+      reset
+      size=[@last[:width],@last[:height],@last[:thickness]].map { |value| Sketchup.format_length(value.abs) }.join(' × ')
+      status("Pieza «#{component.definition.name}» creada y seleccionada: #{size}. Escribí otras medidas para corregirla o marcá la próxima esquina. Esc sale.")
+    end
+
+    def status(message=nil)
+      @message=message
+      Sketchup.status_text=message || prompt
+      Sketchup.vcb_label=vcb_label
+      Sketchup.vcb_value=vcb_value
+    end
+
+    def prompt
+      case @phase
+      when :corner
+        plane=@locked ? "#{PLANES[@locked]}, fijado" : 'el de la cara bajo el cursor (o el suelo)'
+        "Dibujar pieza: marcá la primera esquina. Plano: #{plane}. Flechas: → lateral, ← frente, ↑ suelo, ↓ libre. Esc sale."
+      when :rectangle
+        'Marcá la esquina opuesta o escribí ancho;alto (ej. 600;400 o 60cm;40cm). Flechas cambian el plano. Esc vuelve a empezar.'
+      else
+        'Marcá el espesor con el mouse o escribilo (ej. 18 o 18mm). Negativo va hacia el otro lado. Esc vuelve a empezar.'
+      end
+    end
+
+    def vcb_label
+      {corner:@last ? 'Corregir' : 'Medidas',rectangle:'Ancho;alto',thickness:'Espesor'}.fetch(@phase)
+    end
+
+    def vcb_value
+      case @phase
+      when :rectangle then @width && @height ? [@width,@height].map { |value| Sketchup.format_length(value.abs) }.join(';') : ''
+      when :thickness then Sketchup.format_length(@thickness.abs)
+      else ''
+      end
+    end
+
+    def preview_lines
+      points=corners
+      return [] if points.empty?
       edges=[[0,1],[1,2],[2,3],[3,0]]
-      edges+=[[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]] if corners.length==8
-      view.drawing_color='DarkGreen';view.line_width=2;view.draw(GL_LINES,edges.flat_map { |a,b| [corners[a],corners[b]] })
-    end
-    def getExtents
-      box=Geom::BoundingBox.new;points.each { |point| box.add(point) };box
+      edges+=[[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]] if points.length==8
+      edges.flat_map { |a,b| [points[a],points[b]] }
     end
   end
 end

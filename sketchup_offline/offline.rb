@@ -147,17 +147,28 @@ module PlanosSanto
       Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1
     end
 
+    # «Dibujar pieza» only adds geometry in its own Undo operation, so an
+    # unsaved guide or analysis does not block it (as painting).
     def component_block_reason
-      return 'No hay un modelo abierto.' unless Sketchup.active_model
+      model=Sketchup.respond_to?(:active_model) ? Sketchup.active_model : nil
+      return 'Abrí un modelo de SketchUp antes de dibujar una pieza.' unless model
+      return 'Terminá o cancelá la vista previa de importación antes de dibujar.' if @skm_preview_active || @photo_preview_active
+      path=model.respond_to?(:active_path) ? model.active_path.to_a : []
+      return 'El grupo o componente abierto está bloqueado. Desbloquealo o salí de él para dibujar.' if path.any? { |entity| entity.respond_to?(:locked?) && entity.locked? }
       nil
+    end
+
+    def component_active?
+      @draw_tool&.active? == true
     end
 
     def create_component
       reason=component_block_reason
       raise ExportError,reason if reason
       stop_smart_tool(refresh:false)
-      tool=DrawComponentTool.new(Sketchup.active_model,on_created:lambda { |_component| model_watch_changed(['model']) })
-      Sketchup.active_model.select_tool(tool)
+      model=Sketchup.active_model
+      @draw_tool=DrawComponentTool.new(model)
+      model.select_tool(@draw_tool)
       {'opened'=>true,'tool'=>'draw_component'}
     end
 

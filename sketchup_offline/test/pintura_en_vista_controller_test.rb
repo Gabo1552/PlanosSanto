@@ -57,15 +57,23 @@ class PinturaEnVistaControllerTest < Minitest::Test
   end
   PREFS=['PlanosSanto','smart_paint_settings_v2'].freeze
 
-  def test_component_uses_the_native_dialog_and_rejects_empty_selection
-    @model.selection.clear
-    assert_raises(PlanosSanto::ExportError) { @controller.create_component }
-    @model.selection << @model.entities[0]
-    called=[]
-    Sketchup.stub(:send_action,->(action) { called << action;true }) do
-      assert_equal({'opened'=>true},@controller.create_component)
+  # 0.8.26: «Dibujar pieza» selects the drawing tool; no native dialog and no
+  # selection needed. A locked open container blocks it with a reason.
+  def test_component_selects_the_drawing_tool_without_dialog_or_selection
+    @model.selection.clear;tools=[];@model.define_singleton_method(:select_tool) { |tool| tools << tool }
+    Sketchup.stub(:send_action,->(_action) { flunk 'no native dialog' }) do
+      assert_equal({'opened'=>true,'tool'=>'draw_component'},@controller.create_component)
     end
-    assert_equal ['makeComponent:'],called
+    assert_instance_of PlanosSanto::DrawComponentTool,tools.last;refute @controller.component_active?
+    assert_nil @controller.component_block_reason
+    @model.active_path=[@model.entities[0]];@model.entities[0].locked_for_names=true
+    assert_match(/bloqueado/,@controller.component_block_reason)
+    assert_raises(PlanosSanto::ExportError) { @controller.create_component }
+    assert_equal 1,tools.length
+    Sketchup.vista_model=nil
+    assert_match(/Abrí un modelo/,@controller.component_block_reason)
+  ensure
+    @model.entities[0].locked_for_names=false;@model.active_path=nil
   end
   def setup
     @dir=Dir.mktmpdir;@old=ENV['PLANOS_SANTO_DATA_DIR'];ENV['PLANOS_SANTO_DATA_DIR']=@dir

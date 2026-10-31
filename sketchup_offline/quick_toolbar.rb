@@ -11,7 +11,7 @@ module PlanosSanto
       ['edge', 'Pintar canto', 'Pintar cantos en el modelo: elegí el canto en la tira de la vista o en la bandeja Materiales.'],
       ['remove_edge', 'Quitar canto', 'Restaurar la placa de una cara estrecha con alcance controlado.'],
       ['sample', 'Tomar material (cuentagotas)', 'Consultar el material de una cara sin modificar el modelo.'],
-      ['component', 'Dibujar componente', 'Dibujar una pieza: primera esquina, rectángulo y espesor. Medidas exactas en la casilla de SketchUp.'],
+      ['component', 'Dibujar pieza', 'Dibujar una pieza nueva: primera esquina, rectángulo y espesor. Medidas exactas en la casilla Medidas; flechas fijan el plano.'],
       ['furniture', 'Muebles', 'Revisar muebles, piezas y nombres antes de confirmar cambios.'],
       ['order', 'Maderera', 'Preparar y revisar pedidos; no exporta ni guarda automáticamente.'],
       ['guides', 'Planos', 'Configurar vistas, cotas y notas; exportar PDF requiere una acción adicional.']
@@ -53,7 +53,8 @@ module PlanosSanto
             if key=='component'
               reason=@controller.component_block_reason
               command.status_bar_text=reason || description
-              next reason ? (Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1) : unchecked
+              next Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1 if reason
+              next @controller.respond_to?(:component_active?) && @controller.component_active? ? (Object.const_defined?(:MF_CHECKED) ? Object.const_get(:MF_CHECKED) : 8) : unchecked
             end
             if in_view?(key)
               reason = @controller.paint_block_reason(key)
