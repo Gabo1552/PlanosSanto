@@ -43,9 +43,12 @@ function physical(p:Piece):Physical{
   return {piece:p,scales,mirrored:isMirrored(t),material:JSON.stringify([p.metadata?.material?.id??null,faces]),
     grain:axis===undefined?null:size[axis],rectangular:p.metadata?.rectangular??null,fill:box>0?Math.abs(volume)/box:0,skin:skin>0?area/skin:0};
 }
-function equivalent(a:Physical,b:Physical){
+/** A board that fills its whole box: its mirrored copy is the same board to cut. */
+const plainBoard=(a:Physical)=>Math.abs(a.fill-1)<=SHAPE_TOLERANCE&&Math.abs(a.skin-1)<=SHAPE_TOLERANCE;
+/** `anyHand`: the printed list (0.8.29) joins a plain board with its mirrored copy; name suggestions never do. */
+function equivalent(a:Physical,b:Physical,anyHand=false){
   const near=(x:number,y:number)=>Math.abs(x-y)<=PHYSICAL_TOLERANCE_MM;
-  if(a.mirrored!==b.mirrored||a.material!==b.material||a.rectangular!==b.rectangular)return false;
+  if((a.mirrored!==b.mirrored&&!(anyHand&&plainBoard(a)&&plainBoard(b)))||a.material!==b.material||a.rectangular!==b.rectangular)return false;
   if(!a.piece.dimensions.every((v,i)=>near(v,b.piece.dimensions[i])))return false;
   if((a.grain===null)!==(b.grain===null)||(a.grain!==null&&!near(a.grain,b.grain!)))return false;
   // Instances of one definition with the same scale share their mesh: equal shape by construction.
@@ -65,6 +68,30 @@ export function physicalGroups(f:Furniture,units:Piece[][]=f.pieces.map(p=>[p]))
     if(match)match.units.push(unit);else groups.push({key,units:[unit]});
   }
   return groups.map(g=>g.units);
+}
+/** The name a printed row shows, compared as printed: NFC, trimmed, inner spaces collapsed (case is kept). */
+export const printedName=(name:string)=>name.normalize('NFC').trim().replace(/\s+/g,' ');
+/**
+ * Rows of the printed A4 list (0.8.29), always grouped: `units` (the guide groups that already share an ID, see
+ * groupedPieces) join when they print the same name and are physically equal as physicalGroups defines it (measures
+ * ±0,5 mm, material of the piece and of its painted faces, length along the grain, shape), across definitions. Unlike
+ * the name suggestions, a plain board and its mirrored copy are the same row (a shaped piece keeps its hand).
+ * `key` adds what the sheet prints besides the model (the order assignment: board and edges per side, pending state):
+ * units with another key never join. Units keep their order; each row's first piece is its representative.
+ */
+export function sheetGroups(f:Furniture,key:(unit:Piece[])=>string=()=>'',units:Piece[][]=groupedPieces(f)):Piece[][][]{
+  const groups:{physical:Physical;name:string;key:string;units:Piece[][]}[]=[];
+  for(const unit of units){
+    const candidate={physical:physical(unit[0]),name:printedName(unit[0].name),key:key(unit)};
+    const match=groups.find(g=>g.name===candidate.name&&g.key===candidate.key&&equivalent(g.physical,candidate.physical,true));
+    if(match)match.units.push(unit);else groups.push({...candidate,units:[unit]});
+  }
+  return groups.map(g=>g.units);
+}
+/** Each piece id of the printed groups to the code of its row (the first piece of the group). */
+export function sheetCodeMap(f:Furniture,groups:readonly (readonly string[])[]):Map<string,string>{
+  const code=new Map(f.pieces.map(p=>[p.id,p.code]));
+  return new Map(groups.flatMap(group=>group.map(id=>[id,code.get(group[0])||id] as const)));
 }
 export function groupedPieces(f:Furniture):Piece[][]{
   return f.groupIdentical?identicalGroups(f):f.pieces.map(p=>[p]);

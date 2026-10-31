@@ -66,7 +66,7 @@ describe('Componentes iguales: identidad de fabricación compartida y anclas fí
   const bytes=await createOfflinePdf(p,await readFile('sketchup_offline/assets/DejaVuSans.ttf'),await readFile('sketchup_offline/assets/DejaVuSansMono.ttf'));
   const pdf=await PDFDocument.load(bytes);expect(pdf.getPages()).toHaveLength(1);expect(pdf.getPage(0).getWidth()*25.4/72).toBeCloseTo(297,6);expect(pdf.getPage(0).getHeight()*25.4/72).toBeCloseTo(210,6);
   const dir=await mkdtemp(join(tmpdir(),'planos-grupos-'));
-  try{const path=join(dir,'grupo.pdf');await writeFile(path,bytes);const text=execFileSync('pdftotext',['-raw',path,'-'],{encoding:'utf8'});const table=execFileSync('pdftotext',['-x','538','-y','147','-W','282','-H','405','-raw',path,'-'],{encoding:'utf8'});expect(text).not.toContain('P02');expect(table.match(/P01/g)).toHaveLength(1);expect(table.replace(/\s+/g,' ')).toContain('VF M01 PT');expect(table).toMatch(/\b2\b/);await writeFile('artifacts/componentes-iguales-064-SINTETICO-A4.pdf',bytes);}finally{await rm(dir,{recursive:true,force:true});}
+  try{const path=join(dir,'grupo.pdf');await writeFile(path,bytes);const text=execFileSync('pdftotext',['-raw',path,'-'],{encoding:'utf8'});const table=execFileSync('pdftotext',['-x','566','-y','70','-W','254','-H','484','-raw',path,'-'],{encoding:'utf8'});expect(text).not.toContain('P02');expect(table.match(/P01/g)).toHaveLength(1);expect(table.replace(/\s+/g,' ')).toContain('VF M01 PT');expect(table).toMatch(/\b2\b/);await writeFile('artifacts/componentes-iguales-064-SINTETICO-A4.pdf',bytes);}finally{await rm(dir,{recursive:true,force:true});}
  });
 });
 

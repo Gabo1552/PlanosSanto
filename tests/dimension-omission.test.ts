@@ -78,8 +78,10 @@ describe('Solapes de cotas resueltos solos',()=>{
     expect(Math.hypot(updated.label.center.x-target.x,updated.label.center.y-target.y)).toBeLessThan(Math.hypot(moved.label.center.x-target.x,moved.label.center.y-target.y));
   });
   it('sin ningún lugar libre la cota se imprime igual, marcada, con un aviso que no bloquea la hoja',async()=>{
-    // 17 piezas SINTÉTICAS con los IDs a la vista: una cota no tiene lugar libre en esta cámara.
-    const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.hideIds=false;f.presentation!.cameras={front:{yaw:-20,pitch:27}};
+    // 17 piezas SINTÉTICAS con los IDs a la vista y tres notas: una cota no tiene lugar libre en esta cámara.
+    // 0.8.29: las vistas son más grandes; sin notas todas las cotas encuentran lugar, por eso se agregan tres.
+    const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.hideIds=false;f.presentation!.cameras={front:{yaw:-20,pitch:45}};
+    f.notes=f.pieces.slice(0,3).map((piece,i)=>({id:`n${i}`,pieceId:piece.id,anchor:[9,100,100],position:[0,0],text:'Encolar'}));
     const {bytes,pages}=await createOfflinePdfPages(project,regular,mono);
     expect(bytes.length).toBeGreaterThan(0);
     expect(pages[0].notices?.join(' ')).toMatch(/^Vista exterior: Cotas sin lugar libre: P\d+ (largo|ancho): queda superpuesta.*Se imprimen igual/);
