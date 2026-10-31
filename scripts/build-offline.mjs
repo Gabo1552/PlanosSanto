@@ -6,12 +6,19 @@ import {spawnSync} from 'node:child_process';
 
 const root=resolve(import.meta.dirname,'..'),out=resolve(root,'sketchup_offline/build');
 const {version}=JSON.parse(await readFile(resolve(root,'sketchup_offline/version.json'),'utf8'));
+// 0.8.26: the HtmlDialog floor is SketchUp 2022, whose CEF is 88 (Ruby API docs,
+// UI::HtmlDialog: 2021.1 -> CEF 88, 2024.0 -> CEF 112, 2025.0 -> CEF 128). esbuild
+// lowers syntax and CSS to it; runtime APIs above it come from ui/polyfills.ts and
+// scripts/check-browser-floor.mjs fails on any other one.
+const BROWSER_TARGET='chrome88';
+const SKETCHUP_TARGET='SketchUp 2022-2026 Windows';
+const VALIDATION='PENDIENTE de ejecución y aceptación del operador en SketchUp 2026; SketchUp 2022 sin probar';
 await rm(out,{recursive:true,force:true});await mkdir(resolve(out,'planos_santo/ui'),{recursive:true});
 const bundle=await build({absWorkingDir:root,entryPoints:['sketchup_offline/ui/index.tsx'],outfile:resolve(out,'planos_santo/ui/app.js'),bundle:true,
-  platform:'browser',format:'iife',target:'chrome109',jsx:'automatic',minify:true,metafile:true,legalComments:'eof',
+  platform:'browser',format:'iife',target:BROWSER_TARGET,jsx:'automatic',minify:true,metafile:true,legalComments:'eof',
   define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64','.svg':'base64'}});
 const palette=await build({absWorkingDir:root,entryPoints:['sketchup_offline/ui/palette.tsx'],outfile:resolve(out,'planos_santo/ui/palette.js'),bundle:true,
-  platform:'browser',format:'iife',target:'chrome109',jsx:'automatic',minify:true,metafile:true,legalComments:'eof',
+  platform:'browser',format:'iife',target:BROWSER_TARGET,jsx:'automatic',minify:true,metafile:true,legalComments:'eof',
   define:{'process.env.NODE_ENV':'"production"'},loader:{'.ttf':'base64','.png':'base64','.svg':'base64'}});
 const copies={
   'planos_santo.rb':'sketchup_offline/planos_santo.rb',
@@ -39,6 +46,10 @@ const copies={
   'planos_santo/smart_paint_tool.rb':'sketchup_offline/smart_paint_tool.rb',
   'planos_santo/material_sample_tool.rb':'sketchup_offline/material_sample_tool.rb',
   'planos_santo/quick_toolbar.rb':'sketchup_offline/quick_toolbar.rb',
+  // 0.8.26: offline.rb requires draw_component_tool; grain and piece_grain go with it.
+  'planos_santo/draw_component_tool.rb':'sketchup_offline/draw_component_tool.rb',
+  'planos_santo/grain.rb':'sketchup_offline/grain.rb',
+  'planos_santo/piece_grain.rb':'sketchup_offline/piece_grain.rb',
   'planos_santo/model_watch.rb':'sketchup_offline/model_watch.rb',
   'planos_santo/bounded_zip.rb':'sketchup_offline/bounded_zip.rb',
   'planos_santo/skm_import.rb':'sketchup_offline/skm_import.rb',
@@ -95,9 +106,11 @@ const contents={};
 for(const path of [...Object.keys(copies),'planos_santo/ui/app.js','planos_santo/ui/app.css','planos_santo/ui/palette.js','planos_santo/ui/palette.css','planos_santo/THIRD_PARTY_LICENSES.txt'].sort()){
   contents[path]=createHash('sha256').update(await readFile(resolve(out,path))).digest('hex');
 }
-await writeFile(resolve(out,'planos_santo/manifest.json'),JSON.stringify({name:'Planos Santo',version,target:'SketchUp 2026 Windows',
-  validation:'PENDIENTE de ejecución y aceptación del operador en SketchUp 2026',pdf:'pdf-lib local vectorial',serverRequired:false,files:contents},null,2));
+await writeFile(resolve(out,'planos_santo/manifest.json'),JSON.stringify({name:'Planos Santo',version,target:SKETCHUP_TARGET,
+  browserTarget:BROWSER_TARGET,validation:VALIDATION,pdf:'pdf-lib local vectorial',serverRequired:false,files:contents},null,2));
 await mkdir(resolve(root,'artifacts'),{recursive:true});
 await writeFile(resolve(root,'artifacts/offline-bundle-inputs.json'),JSON.stringify({packages:[...packages].sort(),files:Object.keys(contents),entries:{editorInputs:Object.keys(bundle.metafile.inputs),paletteInputs:Object.keys(palette.metafile.inputs)}},null,2));
+// 0.8.26: the bundle must not use runtime APIs or CSS above BROWSER_TARGET.
+const floor=spawnSync(process.execPath,['scripts/check-browser-floor.mjs'],{cwd:root,stdio:'inherit'});if(floor.status!==0)process.exit(1);
 const result=spawnSync('python3',['scripts/package-offline-rbz.py'],{cwd:root,stdio:'inherit'});if(result.status!==0)process.exit(1);
 console.log(`Editor local compilado en ${relative(root,dirname(resolve(out,'planos_santo/ui/app.js')))}; sin dependencias de red en ejecución.`);

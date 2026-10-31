@@ -18,8 +18,12 @@
     "verify:real:workflow": "tsx scripts/verify-real-workflow.ts",
     "build:offline": "node scripts/build-offline.mjs",
     "test:offline:ruby": "node scripts/test-offline-ruby.mjs",
+    "test:offline:ruby27": "node scripts/fetch-ruby27.mjs && RUBY_BIN=node_modules/.cache/ruby-2.7/ruby27 node scripts/test-offline-ruby.mjs",
     "test:offline:ui": "playwright test --config playwright.offline.config.ts",
-    "verify:offline": "npm run build:offline && npm run test:offline:ruby && npm run test:offline:ui",
+    "check:ruby27": "node scripts/check-ruby27.mjs",
+    "check:browser-floor": "node scripts/check-browser-floor.mjs",
+    "test:chromium88": "node scripts/test-chromium88.mjs",
+    "verify:offline": "npm run build:offline && npm run check:ruby27 && npm run test:offline:ruby && npm run test:offline:ui",
     "verify:offline:real": "tsx scripts/verify-offline-real.ts",
     "preview:offline:real": "tsx scripts/preview-offline-real.ts"
   },

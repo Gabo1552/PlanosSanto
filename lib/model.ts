@@ -170,4 +170,9 @@ export function applyEdit(project: Project, input: unknown): Project {
 export function toEdit(p: Project): Edit {
   return { revision: p.revision, furniture: p.furniture.map(f => ({ id: f.id, explosion: f.explosion, zoom: f.zoom, pieces: f.pieces.map(p => ({ id: p.id, name: p.name })), groupIdentical:f.groupIdentical||false, hiddenDimensions:f.hiddenDimensions||[], presentation:f.presentation||{}, notes: f.notes })) };
 }
-export const mm = (n: number) => Number(n.toFixed(2)).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+// 0.8.26: thousands grouped by hand. The ICU of Chromium 88 (SketchUp 2022) does not
+// group four digits in es-AR (2750); current Chromium does (2.750). Same text in both.
+export const mm = (n: number) => {
+  const plain = Number(n.toFixed(2)).toLocaleString('es-AR', { maximumFractionDigits: 2, useGrouping: false });
+  return plain.replace(/^(-?)(\d+)/, (_all, sign: string, digits: string) => sign + digits.replace(/\B(?=(\d{3})+$)/g, '.'));
+};

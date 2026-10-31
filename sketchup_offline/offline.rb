@@ -226,7 +226,7 @@ module PlanosSanto
             remembered=smart_settings
             begin
               # Toolbar resume never installs: only an explicit palette choice does.
-              quick_paint_start(remembered.except('scope',*(action=='remove_edge' ? ['catalogId'] : [])).merge('mode'=>action),install:false) if action=='remove_edge' || remembered['catalogId']
+              quick_paint_start(remembered.reject { |key,_| ['scope',*(action=='remove_edge' ? ['catalogId'] : [])].include?(key) }.merge('mode'=>action),install:false) if action=='remove_edge' || remembered['catalogId']
             rescue ExportError => error
               intent['message']=error.message
             end
@@ -1280,6 +1280,9 @@ module PlanosSanto
       when 'diagnostic'
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
+          # 0.8.26: SketchUp 2022 support is untested; these show the real engine (CEF 88 expected in 2022).
+          'cefVersion' => (UI::HtmlDialog::CEF_VERSION.to_s if defined?(UI::HtmlDialog::CEF_VERSION)),
+          'chromeVersion' => (UI::HtmlDialog::CHROME_VERSION.to_s if defined?(UI::HtmlDialog::CHROME_VERSION)),
           'layoutModulePresent' => Object.const_defined?(:Layout), 'pdfEngine' => 'pdf-lib local; no requiere LayOut',
           'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'replyStats' => (@reply_stats || []).last(10), 'paintClicks' => smart_timing.summary }
       else
@@ -1457,7 +1460,7 @@ module PlanosSanto
     def paint_in_view_options(action)
       remembered=smart_settings
       if action=='remove_edge'
-        options,=smart_quick_options(remembered.except('scope','catalogId').merge('mode'=>'remove_edge'),install:false)
+        options,=smart_quick_options(remembered.reject { |key,_| %w[scope catalogId].include?(key) }.merge('mode'=>'remove_edge'),install:false) # Hash#except is Ruby 3.0; SketchUp 2022 has 2.7
         return options
       end
       data={'mode'=>action}

@@ -294,7 +294,8 @@ class DirectPaintTest < Minitest::Test
   def test_failed_mutation_does_not_broadcast_and_a_closing_window_does_not_fail_a_committed_change
     @controller.show;main=@controller.instance_variable_get(:@dialog)
     @controller.quick_action('sheet');other=palette;main.scripts.clear;other.scripts.clear
-    @controller.stub(:dispatch_action,lambda { |_action,_data| raise PlanosSanto::ExportError,'No se guardó' }) do
+    # *_args: on Ruby 2.7 Minitest's stub passes the empty data Hash as keywords.
+    @controller.stub(:dispatch_action,lambda { |*_args| raise PlanosSanto::ExportError,'No se guardó' }) do
       assert_raises(PlanosSanto::ExportError) { @controller.dispatch('catalog_save',{}) }
     end
     assert_empty main.scripts;assert_empty other.scripts

@@ -28,7 +28,9 @@ expected_files.update(f'planos_santo/cursors/paint-{key}{suffix}' for key in ('p
 assert len(files) == 92 and set(files) == expected_files
 assert all(not f.endswith(('.skp', '.jsonl')) for f in files)
 assert manifest['version'] == json.loads((root / 'sketchup_offline/version.json').read_text())['version']
-assert manifest['validation'] == 'PENDIENTE de ejecución y aceptación del operador en SketchUp 2026'
+# 0.8.26: still pending in 2026, and SketchUp 2022 is explicitly untested.
+assert manifest['validation'] == 'PENDIENTE de ejecución y aceptación del operador en SketchUp 2026; SketchUp 2022 sin probar'
+assert manifest['target'] == 'SketchUp 2022-2026 Windows' and manifest['browserTarget'] == 'chrome88'
 assert manifest['serverRequired'] is False
 target = root / f"artifacts/PlanosSanto-{manifest['version']}.rbz"
 # Include parent directories before their children for extractors that do not
