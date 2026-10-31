@@ -48,7 +48,7 @@ class CutlistTest < Minitest::Test
       'instances'=>@pieces.map { |p| {'path'=>p['id'].split('/'),'definition_id'=>p['definition'],'name'=>'','material_id'=>nil,'effective_material_id'=>p['base'],'visible'=>true,'world_transform'=>Geom::Transformation.new.to_a,'local_transform'=>Geom::Transformation.new.to_a,'axis_lengths_mm'=>p['dims'],'orientation'=>{'mirrored'=>false,'sheared'=>false,'singular'=>false}} }}
     R.from_diagnostic(diagnostic)
   end
-  def node(p);{'id'=>p['id'],'name'=>p['name'],'children'=>[],'mesh'=>{'vertices'=>[[0,0,0],p['dims']],'triangles'=>[]},'metadata'=>{'localBounds'=>{'min'=>[0,0,0],'max'=>p['dims']},'worldTransform'=>Geom::Transformation.new.to_a,'rectangular'=>true}};end
+  def node(p);{'id'=>p['id'],'name'=>p['name'],'children'=>[],'mesh'=>{'vertices'=>[[0,0,0],p['dims']],'triangles'=>[]},'metadata'=>{'localBounds'=>{'min'=>[0,0,0],'max'=>p['dims']},'worldTransform'=>Geom::Transformation.new.to_a,'rectangular'=>true}.merge(@grain || {})};end
   def document
     roots=@pieces.group_by { |p| p['id'].split('/').first }
     {'furniture'=>roots.map { |root,list| {'id'=>root,'name'=>"Mueble #{root}",'children'=>list.map { |p| node(p) }} }}
@@ -135,12 +135,17 @@ class CutlistTest < Minitest::Test
     assert_equal 'Sin material',result['sections'].last['name']
   end
 
-  def test_grain_follows_saved_order_axis
+  # 0.8.26 (cambio a propósito): la veta sale de la pieza (Grain, eje local en la metadata del escaneo), no del
+  # «grainAxis» u/v de un pedido guardado antes de 0.8.16. El largo es la medida a lo largo de la veta.
+  def test_grain_follows_the_piece_and_ignores_the_old_saved_u_v_axis
     piece('1/1',[700,450,18],name:'Puerta',base:'oak')
     row={'id'=>'1/1','materialId'=>@oak['id'],'axes'=>[0,1],'grainAxis'=>'v'}
     stored={'fingerprint'=>'huella','catalogRevision'=>@catalog['revision'],'rows'=>[row],'edgeLinks'=>[]}
-    assert_equal 'width',find(build(stored:stored),'Puerta')['grain']
-    assert_equal 'length',find(build(stored:stored.merge('rows'=>[row.merge('grainAxis'=>'u')])),'Puerta')['grain']
+    door=find(build(stored:stored),'Puerta')
+    assert_equal ['length',700.0,450.0,0,'auto'],door.values_at('grain','lengthMm','widthMm','grainAxis','grainSource'),'Pieza horizontal: el lado más largo'
+    @grain={'grainAxis'=>1,'grainSource'=>'manual','grainDirection'=>'horizontal'}
+    door=find(build(stored:stored),'Puerta')
+    assert_equal ['length',450.0,700.0,1,'manual'],door.values_at('grain','lengthMm','widthMm','grainAxis','grainSource'),'Veta girada en Piezas: largo y ancho se cambian'
   end
 
   # Listado de partes 0.8.18: tiras de canto por pieza y una sección por canto con sus totales.

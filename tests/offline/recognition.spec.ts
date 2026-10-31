@@ -40,13 +40,14 @@ test('piezas originalmente sin nombre: propuesta editable junto al dibujo, frent
  await showIds(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();await page.getByRole('button',{name:'Seleccionar P01',exact:true}).click();await page.getByLabel('Texto de la nota').fill('Alinear sin perder esta anotación');
  // Planos never edits names: its link opens the proposals in Muebles.
  await page.getByRole('button',{name:'Proponer nombres en Muebles',exact:true}).click();await expect(page.getByRole('navigation',{name:'Módulos de Planos Santo'}).getByRole('button',{name:'Muebles',exact:true})).toHaveAttribute('aria-current','page');
- const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await expect(dialog.locator('[aria-label^="Nombre sugerido"]')).toHaveCount(2);
+ // 0.8.26: el doble tiene dos piezas iguales en la misma posición; se desagrupan para revisarlas fila por fila.
+ const dialog=page.getByRole('dialog',{name:'Sugerencias de nombres',exact:true});await dialog.getByRole('checkbox',{name:'Agrupar piezas iguales en las sugerencias',exact:true}).uncheck();await expect(dialog.locator('[aria-label^="Nombre sugerido"]')).toHaveCount(2);
  // Punto 21: the group axes are the default; nothing asks to confirm them.
  await expect(dialog).not.toContainText('Falta confirmar vertical y frente');await expect(dialog.getByLabel('Confirmé frente y vertical en el dibujo',{exact:true})).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true})).toBeDisabled();
  await dialog.getByText('Ajustar ejes del mueble',{exact:true}).click();
  await dialog.getByLabel('Frente local',{exact:true}).selectOption('0,1');
  await dialog.getByLabel('Nombre sugerido P01',{exact:true}).fill('Estante corregido');await dialog.getByLabel('Nombre sugerido P02',{exact:true}).fill('Piso revisado');
- await dialog.getByRole('button',{name:'M01·P02 · ×1',exact:true}).click();await expect(dialog.locator('.diagram')).toBeVisible();await expect(dialog.locator('tr[data-current="true"]')).toContainText('P02');
+ await dialog.getByRole('button',{name:'M01·P02',exact:true}).click();await expect(dialog.locator('.diagram')).toBeVisible();await expect(dialog.locator('tr[data-current="true"]')).toContainText('P02');
  const chart=await dialog.locator('.diagram').boundingBox(),field=await dialog.getByLabel('Nombre sugerido P02',{exact:true}).boundingBox();expect(chart!.x+chart!.width).toBeLessThanOrEqual(field!.x);expect(field!.y).toBeLessThan(1100);
  await page.screenshot({path:info.outputPath('propuestas-nombres-SINTETICO.png'),fullPage:true});
  expect(await snapshot()).toEqual(before);expect(saves).toBe(0);

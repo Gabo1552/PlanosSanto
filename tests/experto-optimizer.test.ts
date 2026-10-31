@@ -107,9 +107,12 @@ describe('Experto validation, physical instances and catalogue dimensions',()=>{
   expect(result.errors).toEqual([]);expect(result.sheets.flatMap(s=>s.placements)).toHaveLength(1560);expect(result.sheets.length).toBeGreaterThanOrEqual(result.theoreticalMinimum);
   const again=performance.now(),repeated=packExperto(pieces,spec()),second=performance.now()-again;
   expect(repeated).toEqual(result);
-  // A generous CI budget detects accidental exponential work, not a native UI benchmark.
-  // The faster of the two identical runs filters GC pauses and a loaded CI host without loosening the budget.
-  expect(Math.min(first,second)).toBeLessThan(2000);
- });
+  // Accidental exponential work shows up in the number of plans, which does not depend on host load:
+  // the documented bound is 90 plans with rotation allowed (40 without). Wall time is only a coarse
+  // sanity check; a loaded CI host made the former 2 s budget fail on an unchanged engine.
+  expect(result.search?.candidates).toBeLessThanOrEqual(90);
+  expect(packExperto(pieces.map(p=>({...p,rotate:false})),spec()).search?.candidates).toBeLessThanOrEqual(40);
+  expect(Math.min(first,second)).toBeLessThan(8000);
+ },30000);
  it('has fixed provider settings and never applies a four-side trim',()=>expect(EXPERTO_SETTINGS).toMatchObject({kerfMm:4.4,trimMm:10,minSideMm:50,maxDepth:2}));
 });

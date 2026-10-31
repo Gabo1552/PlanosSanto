@@ -1,10 +1,10 @@
 # Planos Santo
 
-Extensión de SketchUp 2026 para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
+Extensión de SketchUp (2026; 2022 en preparación) para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.25:** [RBZ](dist/PlanosSanto-0.8.25-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.25-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.25-Validacion-Local.zip) · [qué cambió](docs/validacion-0825/CAMBIOS.md) · [validación local](docs/validacion-0825/VALIDACION_LOCAL.md). **Pendiente de validación real en SketchUp**: las pruebas automatizadas usan dobles de la API.
+**Candidata actual 0.8.26:** [RBZ](dist/PlanosSanto-0.8.26-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.26-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.26-Validacion-Local.zip) · [qué cambió](docs/validacion-0826/CAMBIOS.md) · [validación local](docs/validacion-0826/VALIDACION_LOCAL.md) · [SketchUp 2022](docs/validacion-0826/SKETCHUP_2022.md). **Pendiente de validación real en SketchUp 2026; SketchUp 2022 preparado pero sin probar.**
 
-La 0.8.25 simplifica la cabecera, reúne las herramientas secundarias en Materiales, incorpora Herrajes y permite abrir desde Piezas la optimización de ese material. Mejora la revisión de nombres y la navegación de placas. Pintar activa la herramienta nativa y la barra incorpora Crear componente. El A4 conserva su maquetación tras comparar el espacio y la legibilidad. Mantiene el motor de 0.8.24.
+La 0.8.26 agrega veta por pieza (textura, Piezas, TXT y optimización coherentes), la herramienta «Dibujar pieza», una cabecera compacta y sugerencias de nombres agrupadas, y prepara la extensión para SketchUp 2022 (Ruby 2.7, Chromium 88). Mantiene el motor Experto y las funciones de 0.8.25.
 
 **Auditoría del modo Experto:** [resultados actuales y límites](docs/validacion-0824/CAMBIOS.md). A/B/C ahora usan una placa; el caso real de 1244 piezas baja de 57 a 56. Tres pedidos siguen una placa por encima del proveedor; los pasos y metros industriales todavía difieren. [Diagnóstico histórico](docs/auditoria-experto-0822/MULTICASO.md).
 

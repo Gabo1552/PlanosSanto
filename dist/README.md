@@ -1,3 +1,15 @@
+# Entrega 0.8.26 — vetas, Dibujar pieza, cabecera compacta, nombres agrupados y preparación para SketchUp 2022, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.26-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. Antes de actualizar, cerrar SketchUp y respaldar `%LOCALAPPDATA%\PlanosSanto\`. Sobre la 0.8.25:
+- Veta por pieza (vertical en puertas y laterales; lado más largo en horizontales), editable con «Girar veta 90°» y coherente entre textura, Piezas, TXT y optimización.
+- «Dibujar pieza»: rectángulo y espesor con mouse o medidas exactas, un solo Deshacer.
+- Cabecera en una fila con estado y Opciones; sugerencias de nombres agrupadas con «×N».
+- Preparada para SketchUp 2022 (Ruby 2.7, Chromium 88): **no probada en SketchUp 2022**.
+
+Validar con `docs/validacion-0826/VALIDACION_LOCAL.md` y `docs/validacion-0826/SKETCHUP_2022.md`. Producción no aprobada.
+
+---
+
 # Entrega 0.8.25 — interfaz del taller, pendiente de validación nativa
 
 [Instalar candidata](PlanosSanto-0.8.25-candidata.rbz) · [SHA256](PlanosSanto-0.8.25-candidata.rbz.sha256) · [Paquete local](PlanosSanto-0.8.25-Validacion-Local.zip).
@@ -28,4 +40,4 @@ Cerrar todas las ventanas de SketchUp y reiniciar después de instalar. Validar 
 
 # Versiones anteriores
 
-Las candidatas 0.8.7 a 0.8.22 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.
+Las candidatas 0.8.7 a 0.8.24 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.

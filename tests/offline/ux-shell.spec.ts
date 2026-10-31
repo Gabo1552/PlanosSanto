@@ -1,3 +1,4 @@
+import {openOptions} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -90,7 +91,7 @@ test('confirmación integrada al descartar cambios: Escape conserva, el botón n
  await expect(confirm.getByRole('button',{name:'Seguir editando',exact:true})).toBeFocused();await page.keyboard.press('Control+s');expect(count('save')).toBe(0);
  await page.keyboard.press('Escape');await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();await expect(name).toHaveValue('Nombre a conservar');expect(count('scan')).toBe(scans);
  await reanalyze.click();await confirm.getByRole('button',{name:'Descartar y analizar',exact:true}).click();await expect.poll(()=>count('scan')).toBe(scans+1);await expect(confirm).toHaveCount(0);await expect(reanalyze).toBeFocused();
- held=new Promise(done=>{release=done;});await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
+ held=new Promise(done=>{release=done;});await openOptions(page);await page.getByRole('button',{name:'Ayuda: Atajos y diagnóstico',exact:true}).click();await page.getByRole('button',{name:'Ver diagnóstico',exact:true}).click();
  const busy=page.locator('.ux-busy');await expect(busy).toHaveAttribute('role','status');await expect(busy).toContainText('Comprobando instalación…');await expect(busy.locator('.ux-spinner')).toHaveCount(1);await expect(busy).toContainText(/· [23] s/,{timeout:4000});
  await expect(rail(page,'Muebles')).toBeDisabled();await expect(rail(page,'Muebles')).toHaveAttribute('title',/Esperá a que termine «Comprobando instalación»/);release();await expect(busy).toHaveCount(0);
 });

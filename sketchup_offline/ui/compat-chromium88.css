@@ -1,0 +1,17 @@
+/* 0.8.26 (SketchUp 2022, CEF 88): fallbacks for the rules that use :has(), which
+   Chromium only supports from 105. In Chromium 88 a :has() rule is dropped whole.
+   polyfills.ts adds the ps-has-* classes to labels only where :has() is
+   unsupported, so these rules never apply in SketchUp 2024-2026.
+   Keep each rule in step with its :has() original. */
+
+/* paint.css */
+.paint-panel label.ps-has-select,.paint-panel label.ps-has-non-checkbox{align-items:stretch;flex-direction:column}
+/* photo-material.css */
+.photo-duplicate>label.ps-has-radio{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;min-height:34px}
+.photo-duplicate>label.ps-has-select{display:block;font-size:13px;font-weight:700;margin-top:10px}
+/* style.css */
+.piece-grouping>label.ps-has-checked{color:#174c7b}
+.material-review-filters label.ps-has-direct-checkbox{display:flex;align-items:center;gap:8px}
+.workshop-form label.ps-has-direct-checkbox{display:flex;align-items:flex-start;gap:8px}
+/* ux-shell.css */
+.ux-shell .piece-grouping>label.ps-has-checked{color:#000028}

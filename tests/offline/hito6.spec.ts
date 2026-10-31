@@ -1,3 +1,4 @@
+import {openOptions} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -72,7 +73,7 @@ test('ARQ-06: la primera apertura pide ajustar al 80 % de la pantalla; Plegar y 
  await expect.poll(()=>count('window_fit')).toBe(1);
  const fit=calls.find(call=>call.action==='window_fit')!.data;
  expect(Number.isInteger(fit.screenWidth)&&Number.isInteger(fit.screenHeight)).toBe(true);expect(fit.screenWidth as number).toBeGreaterThan(320);
- const fold=page.getByRole('button',{name:'Plegar',exact:true});await fold.click();
+ await openOptions(page);const fold=page.getByRole('button',{name:'Plegar',exact:true});await fold.click();
  await expect.poll(()=>calls.filter(call=>call.action==='window_fold').map(call=>call.data.folded)).toEqual([true]);
  const unfold=page.getByRole('button',{name:'Desplegar',exact:true});await expect(unfold).toHaveAttribute('aria-pressed','true');
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-window-reset',{detail:{screen:true}})));

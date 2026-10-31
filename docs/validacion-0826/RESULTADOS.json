@@ -1,0 +1,64 @@
+{
+  "version": "0.8.26",
+  "date": "2026-10-31",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "f62e69ff785f8de90fbc15ce68a1d79b36c31c66d8055117cd99793e380c7ad0",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "browserFloorChromium88": {
+      "errors": 0,
+      "warnings": 14
+    },
+    "vitest": {
+      "tests": 566,
+      "passed": 566
+    },
+    "ruby33": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "interpreter": "2.7.0 (Ubuntu focal), no 2.7.2 de SketchUp 2022",
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": {
+      "files": 37,
+      "errors": 0,
+      "warnings": 8
+    },
+    "playwrightOfflineChromium141": {
+      "tests": 261,
+      "passed": 261
+    },
+    "playwrightOfflineChromium88": {
+      "tests": 261,
+      "passed": 251,
+      "failed": 10,
+      "notes": "9 por límites de Playwright 1.56 con Chromium 88 (mouse.move/Input.setInterceptDrags, waitForEvent download, clock.fastForward, zoom CSS); 1 intermitencia conocida del arnés ('write after end' en hito4-skm-typed) que pasa 3/3 sola"
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    },
+    "reviewers": [
+      "Ruby (vetas, Dibujar pieza, acción piece_grain): 12 correcciones aplicadas con pruebas; coordenadas del contexto abierto mantenidas según sketchup-api-stubs ModelObserver#onActivePathChanged"
+    ],
+    "privacyDiff": "PASS: sin .skp, .skm, pedidos, precios ni datos de clientes; capturas sintéticas"
+  },
+  "notes": [
+    "Todas las pruebas usan dobles de la API de SketchUp, Ruby y Chromium fuera de SketchUp: no equivalen a ejecución nativa en SketchUp 2026 ni 2022.",
+    "La prueba de rendimiento Experto ahora controla la cantidad de planes (90/40) y deja el reloj como control grueso de 8 s.",
+    "Primera validación nativa pendiente: Dibujar pieza dentro de un grupo abierto rotado (convención de coordenadas)."
+  ]
+}

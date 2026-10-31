@@ -110,16 +110,27 @@ module PlanosSanto
         end
         merged=row.merge(old.slice('include','excludeReason'))
         entry=baseline(stored,row['id'])
+        # 0.8.26: con veta, la base es el eje de la veta. Una orientación guardada (de antes, o con otra veta)
+        # que no lo respete sigue al modelo; los cantos y cortes editados a mano se pasan a la vista nueva.
+        grain=plan.dig('proposed',row['id'],'grainAxis')
+        regrain=grain.is_a?(Integer) && old['axes'].is_a?(Array) && old['axes'].length==2 && old['axes'][0]!=grain && [row['materialId'],'',nil].include?(old['materialId'])
         follows_orientation=true;edited=false
         PROPOSED.each do |group,fields|
           mine=entry ? !same_group?(old,entry['values'],group) : !blank_group?(old,group)
+          mine=false if group=='orientation' && regrain
           # Edges and explicit cuts are relative to the view: a hand-made orientation keeps them too.
           mine ||= %w[edges dimensions].include?(group) && !follows_orientation
           next unless mine
           fields.each { |key| merged[key]=JSON.parse(JSON.generate(old[key])) if old.key?(key) }
+          if regrain && group=='edges' && side_faces(old,false)
+            merged['edgeMap']=remap_edges(old,merged,old['edgeMap'],plan.dig('proposed',row['id'],'mirrored')==true)
+          elsif regrain && group=='dimensions' && old['dimensionRule']=='explicit_cut' && old['axes'].reverse==merged['axes']
+            merged['cutBase'],merged['cutHeight']=old['cutHeight'],old['cutBase']
+          end
           follows_orientation=false if group=='orientation'
           edited=true
         end
+        stats['regrained']=stats.fetch('regrained',0)+1 if regrain
         stats['kept']+=1 if edited || merged['include']!=row['include']
         merged
       end
@@ -205,6 +216,8 @@ module PlanosSanto
         stage=staged[row['id']];next unless stage
         row.merge!(patch(row,stage,ranking))
         plan['proposed'][row['id']]={'values'=>values(row),'mirrored'=>@geometry.fetch(row['id'])['mirrored']==true,'edgeBlockers'=>stage['blockers'],'notes'=>stage['notes']}
+        # 0.8.26: base que exige la veta; OrderProposal.merge no conserva una orientación vieja que la contradiga.
+        plan['proposed'][row['id']]['grainAxis']=stage['grainAxis'] if stage['grainAxis']
         results[row['id']]={'status'=>'proposed','notes'=>stage['notes'].map { |note| note['text'] }}
       end
       rows=plan['rows'].filter_map do |row|
@@ -278,7 +291,15 @@ module PlanosSanto
       notes << note('material','Sin placa pintada: pintá la pieza con una placa de la biblioteca o elegila acá.') if board.nil? && sheets.empty?
       thickness=thickness_axis(lengths,board,notes)
       u,v=([0,1,2]-[thickness]).sort_by { |i| [-lengths[i],i] }
-      notes << note('orientation','Largo igual al ancho: revisá qué lado es la base en la vista 2D.') if (lengths[u]-lengths[v]).abs<=TOLERANCE && board && board['grain']==true
+      # 0.8.26: con veta, la base (u) es el eje de la veta de la pieza (Grain: automático o elegido en Piezas),
+      # así el largo del TXT y de la optimización va en el sentido de la veta de la placa.
+      grain=grain_axis(g,board,thickness)
+      u,v=grain,([0,1,2]-[thickness,grain]).first if grain
+      if board && board['grain']==true
+        notes << note('orientation',"Veta: #{g['grainReview']}") if grain && g['grainReview']
+        notes << note('orientation','La veta de la pieza cae en el eje del espesor de la placa: revisá ejes y espesor; se tomó el lado más largo.') if g['grainAxis'].is_a?(Integer) && !grain
+        notes << note('orientation','Largo igual al ancho: revisá qué lado es la base en la vista 2D.') if !g['grainAxis'].is_a?(Integer) && (lengths[u]-lengths[v]).abs<=TOLERANCE
+      end
       notes << note('orientation','Instancia espejada en el modelo: revisá la cara vista en la vista 2D.') if g['mirrored']
       orientation={'axes'=>[u,v],'frontSign'=>[[0,1],[1,2],[2,0]].include?([u,v]) ? 1 : -1,'flipX'=>false,'flipY'=>false}
       observation=OclReader.projected_edges(report,row.merge(orientation),g)
@@ -300,7 +321,12 @@ module PlanosSanto
       blocked=skus.length>2
       blockers << "La pieza tiene #{skus.length} cantos distintos pintados (#{skus.map { |id| edge(id)['sku'].to_s.strip.empty? ? edge(id)['name'] : edge(id)['sku'] }.join(', ')}): el pedido admite como máximo 2 por pieza (principal y secundario). Asigná los cantos a mano o repintá la pieza." if blocked
       {'orientation'=>orientation,'board'=>board,'sides'=>blocked ? [0,0,0,0] : sides,'bindings'=>bindings.uniq,'blocked'=>blocked,
-       'lengths'=>[lengths[u],lengths[v]],'notes'=>notes,'blockers'=>blockers}
+       'lengths'=>[lengths[u],lengths[v]],'notes'=>notes,'blockers'=>blockers,'grainAxis'=>grain}
+    end
+    # Eje de la veta si la placa tiene veta y el eje es uno de los dos lados de la placa; si no, nil.
+    def grain_axis(g,board,thickness)
+      axis=g['grainAxis']
+      board && board['grain']==true && axis.is_a?(Integer) && axis!=thickness && axis.between?(0,2) ? axis : nil
     end
     # Eje del espesor: el único que mide lo que la placa. Sin placa o sin coincidencia, el más chico.
     def thickness_axis(lengths,board,notes)

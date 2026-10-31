@@ -3,10 +3,11 @@
 // Determinística: mismas piezas, mismas placas. Corre en la UI con las filas, la geometría y la biblioteca que manda Ruby:
 // se recalcula en vivo al cambiar disco, refilado o giro. Es una estimación: la maderera puede optimizar distinto.
 import {packExperto} from './expertoOptimizer';
-import {rotationBlock,rowDimensions} from './workshopRules';
+import {grainBaseBlock,rotationBlock,rowDimensions} from './workshopRules';
 import type {Catalog,CatalogItem,OrderPlan,OrderRow} from './WorkshopPanel';
 
-/** Pieza a ubicar: base a lo largo del largo de la placa (la veta), altura a lo ancho. */
+/** Pieza a ubicar: base a lo largo del largo de la placa (la veta), altura a lo ancho. Con veta, la base es la medida de la
+ * pieza a lo largo de SU veta (0.8.26, Grain): así la veta de la pieza corre con la de la placa y no se gira. */
 export type SheetPiece={id:string;detail:string;base:number;height:number;rotate:boolean};
 export type SheetSpec={lengthMm:number;widthMm:number;trimMm:number;kerfMm:number};
 /** Posición en mm sobre la placa entera (incluye el refilado): x a lo largo, y a lo ancho. */
@@ -126,9 +127,11 @@ export function optimizeBoards(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Ca
  const rows=new Map(plan.rows.map(row=>[row.id,row]));
  const materials=boards.map((group):MaterialOptimization|null=>{
   const board=catalog.items.find(item=>item.id===group.materialId&&item.kind==='sheet');if(!board)return null;
-  const pieces:SheetPiece[]=[];let unsized=0;
+  const pieces:SheetPiece[]=[],grainErrors:string[]=[];let unsized=0;
   for(const id of group.rowIds){const row=rows.get(id),geometry=plan.geometry[id],dims=row&&geometry?rowDimensions(row,geometry):null;
    if(!row||!dims||!(dims[0]>0)||!(dims[1]>0)){unsized++;continue;}
+   // Defensa: una base que no sigue la veta de la pieza no se ubica (Ruby tampoco deja salir su TXT).
+   const grain=grainBaseBlock(row,geometry,board);if(grain){unsized++;grainErrors.push(`${row.detail||id}: ${grain}`);continue;}
    pieces.push({id,detail:row.detail,base:dims[0],height:dims[1],rotate:canRotate(row,board,cut)});}
   const netM2=pieces.reduce((sum,p)=>sum+p.base*p.height,0)/1e6;
   // Mismas medidas (al décimo de mm) comparten letra; la leyenda va de la pieza más grande a la más chica.
@@ -144,7 +147,8 @@ export function optimizeBoards(plan:Pick<OrderPlan,'rows'|'geometry'>,catalog:Ca
   const boughtM2=result.sheets.length*board.lengthMm*board.widthMm/1e6;
   const layouts:LayoutGroup[]=[];result.sheets.forEach((layout,i)=>{const sign=signature(layout,keys),same=layouts.find(group=>signature(group.layout,keys)===sign);if(same)same.sheetNumbers.push(i+1);else layouts.push({sheetNumbers:[i+1],layout});});
   const placedNet=result.sheets.reduce((sum,s)=>sum+s.usedMm2,0)/1e6;
-  return {...base,errors:expertResult?.errors.map(e=>e.message),warnings:expertResult?.warnings,sawMetres:expertResult?.sawMetres,estimatedSawSteps:expertResult?.estimatedSawSteps,status:length<=0||width<=0?'no_usable':expert&&(unsized>0||!!expertResult?.errors.length)?'blocked':'ok',sheets:result.sheets,layouts,oversize:result.oversize.map(p=>({id:p.id,detail:p.detail,base:p.base,height:p.height})),boughtM2,utilization:boughtM2>0?placedNet/boughtM2:null};
+  const errors=[...grainErrors,...(expertResult?.errors.map(e=>e.message)??[])];
+  return {...base,errors:expertResult||errors.length?errors:undefined,warnings:expertResult?.warnings,sawMetres:expertResult?.sawMetres,estimatedSawSteps:expertResult?.estimatedSawSteps,status:length<=0||width<=0?'no_usable':expert&&(unsized>0||!!expertResult?.errors.length)?'blocked':'ok',sheets:result.sheets,layouts,oversize:result.oversize.map(p=>({id:p.id,detail:p.detail,base:p.base,height:p.height})),boughtM2,utilization:boughtM2>0?placedNet/boughtM2:null};
  }).filter((m):m is MaterialOptimization=>m!==null);
  return {materials,trimMm:cut.trimMm,kerfMm:cut.kerfMm,allowRotate:cut.allowRotate};
 }

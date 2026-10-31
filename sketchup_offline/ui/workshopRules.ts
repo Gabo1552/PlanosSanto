@@ -39,6 +39,12 @@ export function rowDimensions(row:Pick<OrderRow,'axes'|'dimensionRule'|'cutBase'
  if(row.dimensionRule==='explicit_cut')return row.cutBase&&row.cutHeight&&row.cutBase>0&&row.cutHeight>0?[row.cutBase,row.cutHeight]:null;
  return row.axes?[geometry.lengths[row.axes[0]],geometry.lengths[row.axes[1]]]:null;
 }
+/** 0.8.26 · Veta por pieza: largo = medida a lo largo de la veta. Con placa con veta, la base del TXT y de la optimización
+ * tiene que ser el eje de veta de la pieza (`grainAxis` de la geometría, Grain en Ruby). Motivo si no lo es, o null. */
+export function grainBaseBlock(row:Pick<OrderRow,'axes'>,geometry:Pick<Geometry,'lengths'>&{grainAxis?:number|null},board:Pick<CatalogItem,'grain'>|undefined):string|null{
+ if(board?.grain!==true||typeof geometry.grainAxis!=='number'||!row.axes)return null;
+ return row.axes[0]===geometry.grainAxis?null:'La base de la pieza no sigue su veta: volvé a abrir el pedido para que se proponga desde el modelo (la veta se elige en Piezas).';
+}
 /** Motivo por el que no se puede girar la pieza (rota 1), o null: solo placas sin veta y con cantos simétricos. */
 export function rotationBlock(row:Pick<OrderRow,'edgeMap'>,board:CatalogItem|undefined){
  if(board&&board.grain!==false)return board.grain?'La placa tiene veta: mantené la orientación (rota 0).':'La ficha de la placa no tiene la veta cargada: mantené la orientación (rota 0).';

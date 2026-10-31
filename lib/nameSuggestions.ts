@@ -1,6 +1,6 @@
 import {Box3,Matrix3,Matrix4,Triangle,Vector3} from 'three';
 import {bounds,type Furniture,type Piece,type Vec3} from './model';
-import {groupedPieces} from './pieceGroups';
+import {groupedPieces,physicalGroups} from './pieceGroups';
 import type {NamingReference} from './naming';
 export type NamingOrientation=NamingReference;
 export type NameSuggestion={ids:string[];code:string;previous:string;base:string;confidence:'high'|'review'|'unclassified';reason:string;position?:string;proposed?:string};
@@ -106,7 +106,14 @@ export function furnitureExterior(f:Furniture){
  const proposal=proposeOrientation(f);
  return {...exteriorFromOrientation(proposal.orientation,f.referenceTransform),saved:proposal.source==='guardado'};
 }
-export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includeNamed=false):NameSuggestion[]{
+/**
+ * Name proposals, one row per set of pieces that will share a name.
+ * groupEqual (0.8.26): physically equal pieces (see physicalGroups: measures ±0,5 mm, material, grain, mirror and shape,
+ * also across definitions) share a row only when they also get the same classification, carry the same saved correction
+ * and the same own name, and `separate` (manual edits of the open dialog, by piece id) does not keep them apart.
+ * Guide groups («Agrupar componentes iguales») are never split: their pieces share one name in the guide.
+ */
+export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includeNamed=false,groupEqual=false,separate:Record<string,string>={}):NameSuggestion[]{
  const mirrored=new Matrix4().fromArray(f.referenceTransform||new Matrix4().toArray()).determinant()<0;
  const up=unit(orientation.upAxis,orientation.upSign||1),front=unit(orientation.frontAxis,orientation.frontSign),right=new Vector3().crossVectors(up,front).normalize().multiplyScalar(mirrored?-1:1);
  const contexts=pieceContexts(f);
@@ -163,9 +170,19 @@ export function nameSuggestions(f:Furniture,orientation:NamingOrientation,includ
   }
   return result('Sin clasificar','unclassified','Pieza oblicua respecto a los ejes elegidos; no hay clasificación confiable.');
  }
- return groupedPieces(f).filter(group=>includeNamed||group.some(p=>!f.naming?.reviews?.some(r=>r.id===p.id)&&((p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name)===''||generic.test(p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name)))).map(group=>{
-  const proposals=group.map(classify),same=proposals.every(p=>p.base===proposals[0].base);
-  const proposal:NameSuggestion={ids:group.map(p=>p.id),code:group[0].code,previous:group[0].name,base:same?proposals[0].base:'Panel',confidence:same&&proposals.every(p=>p.confidence==='high')?'high':same?proposals[0].confidence:'review',reason:same?proposals[0].reason:'Componentes iguales en posiciones con funciones distintas; mantener nombre común requiere revisión.',position:[...new Set(proposals.map(p=>p.position))].join(' / ')};
+ const reviewed=(p:Piece)=>f.naming?.reviews?.find(r=>r.id===p.id),source=(p:Piece)=>p.metadata?.originalName??f.naming?.bases.find(b=>b.id===p.id)?.base??p.name;
+ const unnamed=(p:Piece)=>!reviewed(p)&&(source(p)===''||generic.test(source(p)));
+ const classes=new Map(f.pieces.map(p=>[p.id,classify(p)]));
+ const pieceKey=(p:Piece)=>JSON.stringify([classes.get(p.id)!.base,reviewed(p)?.base??'',unnamed(p)?'':source(p),separate[p.id]??'']);
+ const units=groupedPieces(f),rows=(groupEqual?physicalGroups(f,units):units.map(unit=>[unit])).flatMap(group=>{
+  const parts=new Map<string,Piece[]>();
+  for(const unit of group){const keys=new Set(unit.map(pieceKey)),key=keys.size===1?[...keys][0]:`unidad:${unit[0].id}`;parts.set(key,[...(parts.get(key)||[]),...unit]);}
+  return [...parts.values()];
+ });
+ const rank={high:0,review:1,unclassified:2} as const;
+ return rows.filter(group=>includeNamed||group.some(unnamed)).map(group=>{
+  const proposals=group.map(p=>classes.get(p.id)!),same=proposals.every(p=>p.base===proposals[0].base),worst=proposals.reduce((a,b)=>rank[b.confidence]>rank[a.confidence]?b:a);
+  const proposal:NameSuggestion={ids:group.map(p=>p.id),code:group[0].code,previous:group[0].name,base:same?proposals[0].base:'Panel',confidence:same?worst.confidence:'review',reason:same?worst.reason:'Piezas con ID compartido en la guía y funciones distintas: comparten nombre mientras «Agrupar componentes iguales» esté activo en la guía. Desactivalo para nombrarlas por separado.',position:[...new Set(proposals.map(p=>p.position))].join(' / ')};
   proposal.proposed=proposal.base;
   const source=group.map(p=>p.metadata?.definitionName||p.name).join(' ');
   const vocabulary=[{pattern:/\bLat\b/i,base:'Lat',roles:['Lateral']},{pattern:/\bPiso\b/i,base:'Piso',roles:['Piso']},{pattern:/\bList\b/i,base:'List',roles:['Listón']},{pattern:/\bFondo\b/i,base:'Fondo',roles:['Fondo']},{pattern:/\bEst\b/i,base:'Est',roles:['Estante']},{pattern:/\bPuerta\b/i,base:'Puerta',roles:['Puerta']},{pattern:/\bDel\s+Caj\b/i,base:'Del Caj',roles:['Frente cajón']},{pattern:/\bFte\b/i,base:'Fte',roles:['Frente cajón']},{pattern:/(?<![\p{L}\p{N}])Z[oó]calo(?![\p{L}\p{N}])/iu,base:'Zócalo',roles:['Zócalo']}].find(v=>v.pattern.test(source));

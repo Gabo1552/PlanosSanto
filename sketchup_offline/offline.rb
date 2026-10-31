@@ -23,6 +23,8 @@ require_relative 'photo_material'
 require_relative 'model_material_catalog'
 require_relative 'paint_materials'
 require_relative 'model_watch'
+require_relative 'draw_component_tool'
+require_relative 'piece_grain'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -146,18 +148,29 @@ module PlanosSanto
       Object.const_defined?(:MF_GRAYED) ? Object.const_get(:MF_GRAYED) : 1
     end
 
+    # «Dibujar pieza» only adds geometry in its own Undo operation, so an
+    # unsaved guide or analysis does not block it (as painting).
     def component_block_reason
-      return 'No hay un modelo abierto.' unless Sketchup.active_model
-      return 'Seleccioná las entidades que querés convertir en componente.' if Sketchup.active_model.selection.empty?
+      model=Sketchup.respond_to?(:active_model) ? Sketchup.active_model : nil
+      return 'Abrí un modelo de SketchUp antes de dibujar una pieza.' unless model
+      return 'Terminá o cancelá la vista previa de importación antes de dibujar.' if @skm_preview_active || @photo_preview_active
+      path=model.respond_to?(:active_path) ? model.active_path.to_a : []
+      return 'El grupo o componente abierto está bloqueado. Desbloquealo o salí de él para dibujar.' if path.any? { |entity| entity.respond_to?(:locked?) && entity.locked? }
       nil
+    end
+
+    def component_active?
+      @draw_tool&.active? == true
     end
 
     def create_component
       reason=component_block_reason
       raise ExportError,reason if reason
       stop_smart_tool(refresh:false)
-      raise ExportError,'SketchUp no pudo abrir Crear componente.' if Sketchup.send_action('makeComponent:')==false
-      {'opened'=>true}
+      model=Sketchup.active_model
+      @draw_tool=DrawComponentTool.new(model)
+      model.select_tool(@draw_tool)
+      {'opened'=>true,'tool'=>'draw_component'}
     end
 
     def paint_in_view(action,handling_request:false)
@@ -213,7 +226,7 @@ module PlanosSanto
             remembered=smart_settings
             begin
               # Toolbar resume never installs: only an explicit palette choice does.
-              quick_paint_start(remembered.except('scope',*(action=='remove_edge' ? ['catalogId'] : [])).merge('mode'=>action),install:false) if action=='remove_edge' || remembered['catalogId']
+              quick_paint_start(remembered.reject { |key,_| ['scope',*(action=='remove_edge' ? ['catalogId'] : [])].include?(key) }.merge('mode'=>action),install:false) if action=='remove_edge' || remembered['catalogId']
             rescue ExportError => error
               intent['message']=error.message
             end
@@ -918,6 +931,45 @@ module PlanosSanto
         raise ExportError,'CSV de piezas inválido.' unless text.is_a?(String) && text.bytesize.between?(1,Cutlist::CSV_MAX_BYTES)
         target=with_user_dialog { UI.savepanel('Exportar piezas CSV',nil,Cutlist.csv_file_name(data['modelName'])) }
         target ? Cutlist.write_csv(text,target) : {'cancelled'=>true}
+      when 'piece_grain'
+        # 0.8.26 «Girar veta 90°» / «Veta automática» de Piezas: una operación (Ctrl+Z) sobre todas las piezas
+        # de la fila. Mismos bloqueos que pintar en la vista: el pincel se detiene solo; la biblioteca o el pedido
+        # sin guardar, una importación abierta o un modelo que cambió desde el análisis frenan antes de escribir.
+        # Como al pintar, una guía sin guardar no frena: sus ediciones siguen en la ventana (mismos ids).
+        active!
+        stop_brush_for!(action)
+        raise ExportError,'Terminá o cancelá la vista previa de importación antes de cambiar la veta.' if @skm_preview_active || @photo_preview_active
+        raise ExportError,'Guardá los cambios de biblioteca o pedido antes de cambiar la veta.' if @workshop_dirty
+        raise ExportError,'Elegí piezas y un ajuste de veta.' unless data.is_a?(Hash) && data['ids'].is_a?(Array) && data['mode'].is_a?(String)
+        @session.check_current!
+        known=[];Exporter.each_node(@session.document['furniture']) { |node| known << node['id'] if node['mesh'] }
+        raise ExportError,'Esas piezas ya no están en Piezas: volvé a generar el listado.' unless (data['ids']-known).empty?
+        paths=@session.document['exporter']['selectionPaths']
+        directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+        result=PieceGrain.new(@model,catalog:CatalogStore.new(directory:directory)).change(data['ids'],data['mode'])
+        # El análisis se rehace con los mismos muebles para que Piezas, el pedido y las guías lean la veta nueva;
+        # el editor regenera sus guías solo (aviso de análisis desactualizado, como después de pintar).
+        # La operación ya se confirmó: desde acá ningún error vuelve como error (el modelo ya cambió); va a
+        # `warnings` y el aviso de análisis desactualizado sale siempre.
+        @naming=nil;@paint=nil
+        begin
+          session=NativeSession.new(@model);session.scan;session.generate(paths);@session=session
+        rescue StandardError => error
+          begin
+            @session=NativeSession.new(@model)
+          rescue StandardError
+            @session=nil
+          end
+          reason=error.is_a?(ExportError) ? error.message : "error interno (#{error.class}). Volvé a analizar en Muebles."
+          result['warnings'] << "La veta se guardó, pero el listado no se pudo actualizar: #{reason}"
+        ensure
+          begin
+            mark_stale('material')
+          rescue StandardError => error
+            result['warnings'] << "La veta se guardó, pero no se pudo avisar que el análisis quedó desactualizado (#{error.class}). Volvé a analizar en Muebles."
+          end
+        end
+        result.merge('stale'=>true)
       # --- Hito 4 · perfil de maderera y catálogo v2 (bloque aislado) ---
       when 'maderera_profiles_load','maderera_profile_save','maderera_profile_approve','maderera_profile_activate','catalog_presets','catalog_add_preset','catalog_variant','catalog_add_thickness','skm_commit_typed'
         active!
@@ -1240,6 +1292,9 @@ module PlanosSanto
       when 'diagnostic'
         { 'extensionVersion' => Release::VERSION, 'sketchupVersion' => Sketchup.version.to_s, 'rubyVersion' => RUBY_VERSION,
           'platform' => RUBY_PLATFORM, 'htmlDialog' => defined?(UI::HtmlDialog) != nil,
+          # 0.8.26: SketchUp 2022 support is untested; these show the real engine (CEF 88 expected in 2022).
+          'cefVersion' => (UI::HtmlDialog::CEF_VERSION.to_s if defined?(UI::HtmlDialog::CEF_VERSION)),
+          'chromeVersion' => (UI::HtmlDialog::CHROME_VERSION.to_s if defined?(UI::HtmlDialog::CHROME_VERSION)),
           'layoutModulePresent' => Object.const_defined?(:Layout), 'pdfEngine' => 'pdf-lib local; no requiere LayOut',
           'runtimeBridgeResponded' => true, 'manualMeasurementsVerified' => false, 'replyStats' => (@reply_stats || []).last(10), 'paintClicks' => smart_timing.summary }
       else
@@ -1417,7 +1472,7 @@ module PlanosSanto
     def paint_in_view_options(action)
       remembered=smart_settings
       if action=='remove_edge'
-        options,=smart_quick_options(remembered.except('scope','catalogId').merge('mode'=>'remove_edge'),install:false)
+        options,=smart_quick_options(remembered.reject { |key,_| %w[scope catalogId].include?(key) }.merge('mode'=>'remove_edge'),install:false) # Hash#except is Ruby 3.0; SketchUp 2022 has 2.7
         return options
       end
       data={'mode'=>action}

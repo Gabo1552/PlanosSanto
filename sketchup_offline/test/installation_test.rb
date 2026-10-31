@@ -26,7 +26,7 @@ class InstallationTest < Minitest::Test
   def assert_editor(result)
     assert_equal VERSION, result['version']
     assert_empty result['messages']
-    assert_equal ['Planos Santo','Materiales','Pintar placas y cantos','Pintar canto','Quitar canto','Tomar material (cuentagotas)','Crear componente','Muebles','Maderera','Planos'], result['commands']
+    assert_equal ['Planos Santo','Materiales','Pintar placas y cantos','Pintar canto','Quitar canto','Tomar material (cuentagotas)','Dibujar pieza','Muebles','Maderera','Planos'], result['commands']
     assert_includes result['menus'], 'Planos Santo'
     assert_includes result['menus'], 'Diagnóstico de integración (solo lectura)…'
     assert_equal [true], result['restored']
@@ -45,13 +45,13 @@ class InstallationTest < Minitest::Test
       import zipfile,sys,json,hashlib
       with zipfile.ZipFile(sys.argv[1]) as z:
         entries = [i.filename for i in z.infolist() if not i.is_dir()]
-        assert len(entries) == len(set(entries)) == 89
+        assert len(entries) == len(set(entries)) == 92
         manifest = json.loads(z.read('planos_santo/manifest.json'))
         assert manifest['version'] == sys.argv[2]
         assert set(entries) == set(manifest['files']) | {'planos_santo/manifest.json'}
         for name,digest in manifest['files'].items():
           assert hashlib.sha256(z.read(name)).hexdigest() == digest, name
-        for name in ('model_material_catalog.rb','material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','maderera_profile.rb','presets-taller.json'):
+        for name in ('model_material_catalog.rb','material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','grain.rb','piece_grain.rb','draw_component_tool.rb','maderera_profile.rb','presets-taller.json'):
           assert 'planos_santo/' + name in manifest['files'], name
         assert all(not p.lower().endswith(('.skp','.skm','.csv','.jsonl')) for p in entries)
         for action in ('component','sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'):
@@ -98,7 +98,7 @@ class InstallationTest < Minitest::Test
     assert_includes result['menus'], 'Planos Santo · Error de instalación'
   end
   def test_missing_native_material_payload_is_reported_before_editor_start
-    %w[material_resolver.rb material_library.rb native_paint.rb smart_paint.rb smart_paint_tool.rb material_sample_tool.rb quick_toolbar.rb bounded_zip.rb skm_import.rb piece_highlight_tool.rb model_watch.rb].each do |name|
+    %w[material_resolver.rb material_library.rb native_paint.rb smart_paint.rb smart_paint_tool.rb material_sample_tool.rb quick_toolbar.rb bounded_zip.rb skm_import.rb piece_highlight_tool.rb model_watch.rb grain.rb piece_grain.rb draw_component_tool.rb].each do |name|
       extract(VERSION)
       File.delete(File.join(@plugins, 'planos_santo', name))
       result = boot

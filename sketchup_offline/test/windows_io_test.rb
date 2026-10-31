@@ -8,7 +8,10 @@ require 'minitest/autorun'
 class WindowsIoTest < Minitest::Test
   SOURCES = Dir[File.expand_path('../*.rb', __dir__)].freeze
 
-  def lines_of(path) = File.read(path, encoding: 'UTF-8').lines
+  # No endless def: this suite also runs on Ruby 2.7 (SketchUp 2022).
+  def lines_of(path)
+    File.read(path, encoding: 'UTF-8').lines
+  end
 
   def test_every_file_opened_for_writing_is_binary
     offenders = SOURCES.flat_map do |path|
