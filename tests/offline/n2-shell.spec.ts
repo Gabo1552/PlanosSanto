@@ -1,4 +1,4 @@
-import {openMaterialTools} from './fixtures/modules';
+import {toggleOptions,openMaterialTools} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -110,7 +110,7 @@ test('? abre la ayuda con el foco en una casilla, pero no al escribir en un camp
 
 test('una advertencia no sobrevive al cambiar de sección con el riel',async({page},info)=>{
  await boot(page,info.outputDir);await generated(page);
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await page.getByText('Opciones de guardado',{exact:true}).click();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:'Guardar también el archivo SKP'}).uncheck();await toggleOptions(page);
  await page.getByRole('button',{name:'Guardar guía',exact:true}).click();const warning=page.locator('.ux-notice.warning');await expect(warning).toBeVisible();
  await rail(page,'Maderera').click();await expect(rail(page,'Maderera')).toHaveAttribute('aria-current','page');await expect(warning).toHaveCount(0);
  await rail(page,'Muebles').click();await expect(warning).toHaveCount(0);

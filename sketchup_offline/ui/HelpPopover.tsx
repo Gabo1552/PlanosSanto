@@ -1,8 +1,9 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-/** Nonmodal, explicit help. Portaled so sidebars and tables never clip the explanation. */
-export default function HelpPopover({title,children}:{title:string;children:ReactNode}){
+/** Nonmodal, explicit help. Portaled so sidebars and tables never clip the explanation.
+ *  `label` shows visible text next to the «?» (menus); the accessible name stays «Ayuda: title». */
+export default function HelpPopover({title,children,label}:{title:string;children:ReactNode;label?:string}){
   const id=useId(),trigger=useRef<HTMLButtonElement>(null),card=useRef<HTMLDivElement>(null);
   const [open,setOpen]=useState(false),[position,setPosition]=useState({left:12,top:12});
   function close(returnFocus=false){setOpen(false);if(returnFocus)trigger.current?.focus();}
@@ -21,5 +22,5 @@ export default function HelpPopover({title,children}:{title:string;children:Reac
     document.addEventListener('pointerdown',outside);document.addEventListener('keydown',key,true);
     return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',key,true);};
   },[open]);
-  return <span className="help-anchor"><button ref={trigger} type="button" className="help-trigger" aria-label={`Ayuda: ${title}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open?id:undefined} title={`Ver explicación: ${title}`} onClick={()=>setOpen(value=>!value)}>?</button>{open&&createPortal(<div ref={card} id={id} role="dialog" tabIndex={-1} aria-modal="false" aria-labelledby={`${id}-title`} className="help-popover" style={position}><div className="help-popover-heading"><strong id={`${id}-title`}>{title}</strong><button type="button" aria-label={`Cerrar ayuda: ${title}`} onClick={()=>close(true)}>×</button></div><div className="help-copy">{children}</div><small>Escape para cerrar</small></div>,document.body)}</span>;
+  return <span className="help-anchor"><button ref={trigger} type="button" className={label?'help-trigger help-trigger-labeled':'help-trigger'} aria-label={`Ayuda: ${title}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open?id:undefined} title={`Ver explicación: ${title}`} onClick={()=>setOpen(value=>!value)}>{label?<><span className="help-trigger-mark" aria-hidden="true">?</span><span>{label}</span></>:'?'}</button>{open&&createPortal(<div ref={card} id={id} role="dialog" tabIndex={-1} aria-modal="false" aria-labelledby={`${id}-title`} className="help-popover" style={position}><div className="help-popover-heading"><strong id={`${id}-title`}>{title}</strong><button type="button" aria-label={`Cerrar ayuda: ${title}`} onClick={()=>close(true)}>×</button></div><div className="help-copy">{children}</div><small>Escape para cerrar</small></div>,document.body)}</span>;
 }

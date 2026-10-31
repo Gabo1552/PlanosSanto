@@ -7,3 +7,5 @@
 @media(max-width:850px){.naming-dialog .naming-content{grid-template-columns:minmax(0,1fr);padding:14px}.naming-dialog .naming-preview{position:relative}.naming-dialog .naming-preview .diagram{min-height:200px;max-height:300px}.naming-dialog .naming-footer{padding:12px}.naming-footer>button:first-child{flex-basis:100%}.naming-dialog>header{padding:14px}.naming-dialog .material-review-table{max-width:100%}}
 
 .naming-dialog .naming-proposals>label input:not([type=checkbox]){display:block;width:100%;box-sizing:border-box;min-height:40px;border:1px solid #6c8074;border-radius:6px;padding:8px 10px;background:#fff;color:#242437}
+/* 0.8.26: grouped rows show how many equal pieces get the name, and which ones. */
+.naming-dialog .naming-count{display:inline-block;margin-left:2px;padding:0 7px;border-radius:999px;background:#000028;color:#fff;font-size:11px;font-weight:700;line-height:1.6;vertical-align:1px}.naming-dialog .naming-members{display:block;color:#53566A}

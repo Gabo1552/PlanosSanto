@@ -1,3 +1,4 @@
+import {toggleOptions} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -55,7 +56,7 @@ test('cinco piezas asimétricas: el TXT de la placa y la referencia de la A4 mar
   expect(partial.pending).toEqual([]);
   // F-DESP-B wiring: one row with a physical problem (thickness axis) prints «pendiente de pedido»; the others keep their order data.
   const reviewed=rows[4];reviewed.axes=[1,2];await send('order_save',{plan});
-  await page.keyboard.press('Alt+5');await page.locator('details.save-options summary').click();
+  await page.keyboard.press('Alt+5');await toggleOptions(page);
   await page.getByLabel('Incluir materiales y cantos del pedido revisado en el PDF').check();
   await expect(page.locator('.a4-order-pill')).toContainText('4 de 5 piezas');await expect(page.locator('.a4-order-pill')).toContainText('1 pendiente');
   // 0.8.20: the workshop does not use labels; Planos no longer shows their panel (labels.test.ts and the

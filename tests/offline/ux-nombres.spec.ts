@@ -1,3 +1,4 @@
+import {toggleOptions} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -38,7 +39,7 @@ test('lote: guardar la guía renombra todo en una operación, sin vista previa n
 
 test('lote: con Sincronizar nombres apagado, guardar conserva los nombres de SketchUp y sólo guarda la guía',async({page},info)=>{
  await boot(page,info.outputDir,'names');await page.getByLabel('Nombre P01',{exact:true}).fill('Lateral sólo en la guía');const before=await inspect();
- await page.getByText('Opciones de guardado',{exact:true}).click();await page.getByRole('checkbox',{name:'Sincronizar nombres de grupos y piezas en SketchUp',exact:true}).uncheck();await page.getByText('Opciones de guardado',{exact:true}).click();
+ await toggleOptions(page);await page.getByRole('checkbox',{name:'Sincronizar nombres de grupos y piezas en SketchUp',exact:true}).uncheck();await toggleOptions(page);
  await saveGuide(page);const after=await inspect();expect(after.names).toEqual(before.names);await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveValue('Lateral sólo en la guía');
  await expect(page.getByRole('table',{name:'Piezas del mueble'}).getByRole('note')).toHaveCount(0);
 });
@@ -54,6 +55,8 @@ test('sugerencias: foco útil, motivos pendientes, Enter avanza, Esc deshace la 
  // Punto 21: no «Confirmé frente y vertical»; the group axes are the default and focus goes to the first proposal.
  await expect(dialog.getByRole('checkbox',{name:'Confirmé frente y vertical en el dibujo',exact:true})).toHaveCount(0);await expect(dialog.getByLabel('Nombre sugerido P01',{exact:true})).toBeFocused();
  await expect(dialog).toContainText('Frente −Y · arriba +Z · tomado de los ejes del grupo.');
+ // 0.8.26: el doble tiene dos piezas iguales en la misma posición; se desagrupan para revisarlas fila por fila.
+ await dialog.getByRole('checkbox',{name:'Agrupar piezas iguales en las sugerencias',exact:true}).uncheck();
  const reasons=dialog.getByRole('list',{name:'Falta para confirmar'});await expect(reasons).not.toContainText('Confirmá frente');await expect(reasons).toContainText('Elegí al menos una propuesta.');
  await expect(confirm).toHaveAttribute('aria-describedby','naming-pending');await expect(confirm).toBeDisabled();
  const p01=dialog.getByLabel('Nombre sugerido P01',{exact:true}),p02=dialog.getByLabel('Nombre sugerido P02',{exact:true});
@@ -69,6 +72,8 @@ test('sugerencias: foco útil, motivos pendientes, Enter avanza, Esc deshace la 
 
 test('sugerencias: filtros por confianza, maestro de la tabla y Desmarcar todas sin perder selección oculta',async({page},info)=>{
  await boot(page,info.outputDir,'recognition');const dialog=await openProposals(page);
+ // 0.8.26: el doble tiene dos piezas iguales en la misma posición; se desagrupan para revisarlas fila por fila.
+ await dialog.getByRole('checkbox',{name:'Agrupar piezas iguales en las sugerencias',exact:true}).uncheck();
  const group=dialog.getByRole('group',{name:'Filtrar propuestas por confianza'}),all=group.getByRole('button',{name:/^Todas \(\d+\)$/});await expect(all).toHaveAttribute('aria-pressed','true');
  const master=dialog.getByRole('checkbox',{name:'Aplicar todas las propuestas visibles',exact:true});await master.check();await expect(dialog).toContainText('2 de 2 propuestas seleccionadas');
  for(const name of [/^Geométricas \(\d+\)$/,/^Revisar \(\d+\)$/,/^Sin clasificar \(\d+\)$/]){const button=group.getByRole('button',{name});await button.click();await expect(button).toHaveAttribute('aria-pressed','true');const rows=await dialog.locator('[data-suggestion-row]').count(),shown=Number((await button.textContent())!.match(/\((\d+)\)/)![1]);expect(rows).toBe(shown);}

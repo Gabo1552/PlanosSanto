@@ -1,3 +1,4 @@
+import {openOptions,toggleOptions,toMuebles,toPlanos} from './fixtures/modules';
 import {test,expect,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -6,7 +7,6 @@ import {resolve} from 'node:path';
 import {PDFDocument} from 'pdf-lib';
 import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {toMuebles,toPlanos} from './fixtures/modules';
 import {showIds} from './ids';
 
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
@@ -70,7 +70,7 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del di�
   await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
   expect(await page.locator('[data-piece]').first().getAttribute('points')).toBe(originalPoints);
   const originalMeasures=await page.locator('[data-dimension]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-mm')));
-  await page.getByText('Opciones de guardado',{exact:true}).click();
+  await toggleOptions(page);
   await page.getByRole('checkbox',{name:'Sincronizar nombres de grupos y piezas en SketchUp'}).uncheck();
   await toMuebles(page);await page.getByLabel('Nombre P01').fill('Costado de prueba offline');
   await toPlanos(page);await page.getByRole('button',{name:'Agregar nota',exact:true}).click();
@@ -141,10 +141,10 @@ test('ayudas con teclado, Escape, clic afuera y ubicación visible en ventana de
   const bounds=await popup.boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(0);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(1000);expect(bounds!.y+bounds!.height).toBeLessThanOrEqual(760);
   await page.screenshot({path:'artifacts/ayuda-despiece-1000px.png',fullPage:true});
   await page.keyboard.press('Escape');await expect(popup).toHaveCount(0);await expect(help).toBeFocused();
-  await page.getByRole('button',{name:'Ayuda: PDF para imprimir',exact:true}).click();
+  await openOptions(page);await page.getByRole('button',{name:'Ayuda: PDF para imprimir',exact:true}).click();
   await expect(page.getByRole('dialog',{name:'PDF para imprimir',exact:true})).toContainText('una hoja A4 horizontal por mueble');
   await page.locator('.guide-heading h2').click();await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button',{name:'Ayuda: Guardar guía',exact:true}).click();
+  await openOptions(page);await page.getByRole('button',{name:'Ayuda: Guardar guía',exact:true}).click();
   await page.getByRole('button',{name:'Cerrar ayuda: Guardar guía',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
   await toMuebles(page);await expect(input).toHaveValue(original);expect(calls).not.toContain('save');expect(calls).not.toContain('pdf');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
