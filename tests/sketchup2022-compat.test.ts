@@ -7,6 +7,7 @@ import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {build} from 'esbuild';
 import {scanJs,scanCss,checkBuild,targetOfBuild,FLOOR} from '../scripts/check-browser-floor.mjs';
+import {mm} from '../lib/model';
 
 const root=resolve(__dirname,'..');
 type Finding={level:string;what:string};
@@ -43,6 +44,12 @@ describe('escaneo del bundle contra Chromium 88',()=>{
   });
   test.skipIf(!existsSync(resolve(root,'sketchup_offline/build/planos_santo/ui/app.js')))('el bundle compilado no tiene errores de piso',async()=>{
     expect(errors(await checkBuild(root))).toEqual([]);
+  });
+});
+
+describe('medidas iguales con el ICU de Chromium 88',()=>{
+  test('mm agrupa miles sin depender de minimumGroupingDigits',()=>{
+    expect([mm(2750),mm(1830),mm(19.05),mm(999),mm(1234567.891),mm(-2750),mm(0)]).toEqual(['2.750','1.830','19,05','999','1.234.567,89','-2.750','0']);
   });
 });
 

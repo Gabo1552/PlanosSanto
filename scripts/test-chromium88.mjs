@@ -11,7 +11,10 @@
 // (88.0.4324.0, the M88 branch point) downloaded once into node_modules/.cache.
 // Playwright 1.56 calls Element.checkVisibility (Chromium 105) inside its own
 // injected script; for this run only, that call is guarded in node_modules and
-// restored afterwards. The app bundle is never touched.
+// restored afterwards. The app bundle is never touched. Specs that build their own
+// harness bundle get chrome88 + polyfills (scripts/chromium88-esbuild-preload.cjs).
+// Known Playwright 1.56 limits on Chromium 88, not app faults: mouse.move needs
+// Input.setInterceptDrags, page.clock and the "download" event do not work.
 import {spawnSync} from 'node:child_process';
 import {existsSync,mkdirSync,readFileSync,writeFileSync,copyFileSync,rmSync} from 'node:fs';
 import {resolve} from 'node:path';
@@ -52,7 +55,9 @@ let status=1;
 try{
   const args=process.argv.slice(2);
   const result=spawnSync('npx',['playwright','test','--config','playwright.offline.config.ts',...(args.length?args:['--reporter=line'])],
-    {cwd:root,stdio:'inherit',env:{...process.env,CHROMIUM_PATH:chrome,PLANOS_CHROMIUM88:'1'}});
+    {cwd:root,stdio:'inherit',env:{...process.env,CHROMIUM_PATH:chrome,PLANOS_CHROMIUM88:'1',
+      // Harness bundles built inside the specs also go to chrome88 with the polyfills.
+      NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require ${resolve(root,'scripts/chromium88-esbuild-preload.cjs')}`.trim()}});
   status=result.status??1;
 }finally{restore();}
 console.log(`Chromium 88: Playwright terminó con código ${status}. Esto es Chromium 88 suelto, no SketchUp 2022.`);

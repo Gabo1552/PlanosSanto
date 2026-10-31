@@ -58,7 +58,7 @@ module PlanosSanto
       {'widthPx'=>width,'heightPx'=>height,'format'=>format}
     end
     def load_image(path,expected:nil)
-      raise ExportError,'Esta instalación no permite decodificar imágenes con ImageRep. Revisá SketchUp2026.' unless defined?(Sketchup::ImageRep)
+      raise ExportError,'Esta instalación de SketchUp no tiene Sketchup::ImageRep (SketchUp 2018 o posterior) y no puede decodificar la foto.' unless defined?(Sketchup::ImageRep)
       # load_file has no documented return value (SketchUp 2026 answers nil after
       # a successful decode). Start with a new representation so a failed decode
       # cannot reuse pixels or dimensions from a previous image. Only true or nil
