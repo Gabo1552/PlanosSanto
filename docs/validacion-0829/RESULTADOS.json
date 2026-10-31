@@ -1,0 +1,44 @@
+{
+  "version": "0.8.29",
+  "date": "2026-10-31",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "05739724192a70c9b02606f3e1cbba609ed3212f901326ee5336719687b292bf",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "vitest": {
+      "tests": 576,
+      "passed": 576
+    },
+    "ruby33": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 263,
+      "passed": 263
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    },
+    "a4PixelCompare": "PASS"
+  },
+  "notes": [
+    "PDF reales generados y leídos con Poppler; pruebas con dobles de la API de SketchUp, no ejecución nativa."
+  ]
+}
