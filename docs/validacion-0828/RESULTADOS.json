@@ -1,0 +1,44 @@
+{
+  "version": "0.8.28",
+  "date": "2026-10-31",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "153aa4ec1dd6ebbec20250a65c6801348ac1886e3441d681f2959fdb6ea5990f",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "vitest": {
+      "tests": 566,
+      "passed": 566
+    },
+    "ruby33": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1152,
+      "assertions": 11203,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 263,
+      "passed": 263
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    },
+    "newTestFailsWithoutChange": true
+  },
+  "notes": [
+    "Cambio de UI acotado al diálogo de sugerencias; pruebas con dobles de la API de SketchUp, no ejecución nativa."
+  ]
+}

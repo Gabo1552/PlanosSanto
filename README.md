@@ -2,9 +2,9 @@
 
 Extensión de SketchUp (2026; 2022 en preparación) para el taller: pintura de placas y cantos, biblioteca de materiales, nombres de piezas, planos A4 de armado, listado de piezas y pedido optimizado a la maderera. Funciona entera dentro de SketchUp, sin servidor.
 
-**Candidata actual 0.8.27:** [RBZ](dist/PlanosSanto-0.8.27-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.27-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.27-Validacion-Local.zip) · [qué cambió](docs/validacion-0827/CAMBIOS.md) · [0.8.26](docs/validacion-0826/CAMBIOS.md) · [SketchUp 2022](docs/validacion-0826/SKETCHUP_2022.md). **Pendiente de validación real en SketchUp 2026; SketchUp 2022 preparado pero sin probar.**
+**Candidata actual 0.8.28:** [RBZ](dist/PlanosSanto-0.8.28-candidata.rbz) · [SHA256](dist/PlanosSanto-0.8.28-candidata.rbz.sha256) · [paquete de validación local](dist/PlanosSanto-0.8.28-Validacion-Local.zip) · [qué cambió](docs/validacion-0828/CAMBIOS.md) · [0.8.27](docs/validacion-0827/CAMBIOS.md) · [0.8.26](docs/validacion-0826/CAMBIOS.md) · [SketchUp 2022](docs/validacion-0826/SKETCHUP_2022.md). **Pendiente de validación real en SketchUp 2026; SketchUp 2022 preparado pero sin probar.**
 
-La 0.8.27 deja optimizar en Maderera sin guardar antes la guía. La 0.8.26 agrega veta por pieza (textura, Piezas, TXT y optimización coherentes), la herramienta «Dibujar pieza», una cabecera compacta y sugerencias de nombres agrupadas, y prepara la extensión para SketchUp 2022 (Ruby 2.7, Chromium 88). Mantiene el motor Experto y las funciones de 0.8.25.
+La 0.8.28 permite ocultar el frente en Sugerencias de nombres para elegir piezas del interior. La 0.8.27 deja optimizar en Maderera sin guardar antes la guía. La 0.8.26 agrega veta por pieza (textura, Piezas, TXT y optimización coherentes), la herramienta «Dibujar pieza», una cabecera compacta y sugerencias de nombres agrupadas, y prepara la extensión para SketchUp 2022 (Ruby 2.7, Chromium 88). Mantiene el motor Experto y las funciones de 0.8.25.
 
 **Auditoría del modo Experto:** [resultados actuales y límites](docs/validacion-0824/CAMBIOS.md). A/B/C ahora usan una placa; el caso real de 1244 piezas baja de 57 a 56. Tres pedidos siguen una placa por encima del proveedor; los pasos y metros industriales todavía difieren. [Diagnóstico histórico](docs/auditoria-experto-0822/MULTICASO.md).
 
