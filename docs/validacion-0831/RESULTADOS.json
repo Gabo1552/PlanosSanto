@@ -1,0 +1,50 @@
+{
+  "version": "0.8.31",
+  "date": "2026-11-06",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "30f1d64bbf60145bf45aee1cf5b2e5103e0653711d064e51a09cbc810b14c632",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "buildReproducible": "PASS",
+    "vitest": {
+      "tests": 603,
+      "passed": 603
+    },
+    "ruby33": {
+      "runs": 1169,
+      "assertions": 11431,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1169,
+      "assertions": 11431,
+      "failures": 0,
+      "errors": 0
+    },
+    "rubyExporter": {
+      "runs": 15,
+      "assertions": 76,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 264,
+      "passed": 264
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    }
+  },
+  "notes": [
+    "Pruebas con dobles de la API de SketchUp, no ejecución nativa. Cotas totales y materiales del proyecto sin validar en SketchUp real."
+  ]
+}
