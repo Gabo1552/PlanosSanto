@@ -45,7 +45,7 @@ npx playwright test --config playwright.offline.config.ts   # UI offline con el 
 npx next build && npx playwright test                      # web
 ```
 
-La skill `planos-santo-verificacion` (`.claude/skills/`) describe el ciclo completo. Cada versión sube `sketchup_offline/version.json`, la lista de versiones de `lib/model.ts` y el verificador de `docs/validacion-0811/`.
+La skill `planos-santo-verificacion` (`.claude/skills/`) describe el ciclo de verificación. La skill `release` (`/release X.Y.Z [directo|espera]`) saca una versión: `scripts/release/bump-version.mjs` sube la versión en sus cuatro lugares, `scripts/release/bateria.sh` corre la batería completa y `scripts/release/preparar.py` arma el RBZ reproducible, `RESULTADOS.json`, el paquete y la limpieza de `dist/`.
 
 ### Grafo del código (graphify)
 
