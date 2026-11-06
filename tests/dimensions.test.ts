@@ -4,9 +4,12 @@ import {createDemo,demoDocument} from '../lib/demo';
 import {importDocument,mm,type Furniture} from '../lib/model';
 import {makeScene} from '../lib/scene';
 import {dimensionChoices,dimensionText,dimensionGroups,segmentHitsRect} from '../lib/dimensions';
+import {pieceDimensionsOnly} from './helpers/cotas';
 
-function check(f:Furniture){
-  const scene=makeScene(f);
+// 0.8.31: piece cotas are hidden by default. These checks are about the piece cotas, so each scene turns them all on
+// (and the totals off) on a copy: the furniture under test stays untouched.
+function check(source:Furniture){
+  const f={...source,dimensionDisplay:pieceDimensionsOnly(source)},scene=makeScene(f);
   expect(scene.warnings).toEqual([]);expect(scene.labels).toHaveLength(f.pieces.length);
   // One cota per size and per equal measure in the same direction: every other one is named in `shared` with the same text.
   for(const c of dimensionChoices(f)){

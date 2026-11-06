@@ -55,7 +55,8 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del di�
   // Muebles only names pieces; cotas, views and notes live in Planos A4.
   await expect(page.locator('[data-dimension]')).toHaveCount(0);await expect(page.getByRole('button',{name:'Agregar nota',exact:true})).toHaveCount(0);
   await toPlanos(page);
-  await expect(page.locator('[data-dimension]')).toHaveCount(2);
+  // 0.8.31: by default the plan draws only the alto, ancho and profundidad of the furniture.
+  await expect(page.locator('[data-dimension]')).toHaveCount(3);await expect(page.locator('[data-dimension][data-total]')).toHaveCount(3);
   await expect(page.locator('[data-dimension][data-role=espesor]')).toHaveCount(0);
   await expect(page.locator('tbody tr')).toHaveCount(2);
   // IDs are hidden by default in the A4 and therefore in the viewer; the guide can show them.
@@ -89,7 +90,7 @@ test('assets empaquetados sin red: Ruby valida nombres/notas, reapertura del di�
   await toPlanos(page);await page.getByRole('button',{name:'P01 Alinear antes de fijar',exact:true}).click();
   await expect(page.getByLabel('Texto de la nota')).toHaveValue('Alinear antes de fijar');
   await expect(page.getByRole('slider',{name:'Zoom',exact:true})).toHaveValue('0.8');
-  await expect(page.locator('[data-dimension]')).toHaveCount(2);
+  await expect(page.locator('[data-dimension]')).toHaveCount(3);
   expect(await page.locator('[data-dimension]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-mm')))).toEqual(originalMeasures);
   await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();
   await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
@@ -161,32 +162,43 @@ test('al cambiar muebles se regeneran las guías solas y Escape cancela el ancla
   await expect(page.getByRole('button',{name:'Exportar PDF A4',exact:true})).toBeEnabled();
 });
 
-test('cotas: ocultar una, guardar/reabrir y PDF sin esa cota; restaurar con teclado y lista',async({page},info)=>{
+// 0.8.31: the totals of the furniture are drawn by default and the piece cotas start hidden. Before, this test hid
+// P01 largo from «all shown»; now it turns P01 largo on and one total off, the same save/reopen/PDF/keyboard path.
+test('cotas: totales por defecto; activar una de pieza y ocultar una total, guardar/reabrir y PDF; restaurar con teclado y lista',async({page},info)=>{
   await boot(page,info.outputDir);
   await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await toPlanos(page);
-  await expect(page.locator('[data-dimension]')).toHaveCount(2);
+  await expect(page.locator('[data-dimension]')).toHaveCount(3);await expect(page.locator('[data-dimension][data-piece]')).toHaveCount(0);
   const table=await page.locator('tbody').innerText();
   await page.locator('.dimension-controls>summary').click();
-  await page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true}).uncheck();
-  await expect(page.locator('[data-dimension]')).toHaveCount(1);
-  await expect(page.locator('[data-dimension][data-role=largo]')).toHaveCount(0);
+  await expect(page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true})).not.toBeChecked();
+  await page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true}).check();
+  await expect(page.locator('[data-dimension]')).toHaveCount(4);await expect(page.locator('[data-dimension][data-role=largo]')).toHaveCount(1);
+  await page.getByRole('checkbox',{name:'Mostrar cota total profundidad',exact:true}).uncheck();
+  await expect(page.locator('[data-dimension]')).toHaveCount(3);await expect(page.locator('[data-dimension][data-total=profundidad]')).toHaveCount(0);
   expect(await page.locator('tbody').innerText()).toBe(table);
-  await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.locator('[data-dimension]')).toHaveCount(1);
+  // Two views: the totals go once, in the exterior; the interior keeps the piece cota turned on.
+  await page.getByRole('button',{name:'Ver interior',exact:true}).click();await expect(page.locator('[data-dimension]')).toHaveCount(1);await expect(page.locator('[data-dimension][data-role=largo]')).toHaveCount(1);
+  await page.getByRole('button',{name:'Ver exterior',exact:true}).click();
   await page.getByRole('button',{name:'Guardar guía',exact:true}).click();await expect(page.getByText('Falta guardar el archivo .skp',{exact:false})).toBeVisible();
   await page.reload();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();await toPlanos(page);
-  await expect(page.locator('[data-dimension]')).toHaveCount(1);expect(await page.locator('tbody').innerText()).toBe(table);
+  await expect(page.locator('[data-dimension]')).toHaveCount(3);await expect(page.locator('[data-dimension][data-total=profundidad]')).toHaveCount(0);expect(await page.locator('tbody').innerText()).toBe(table);
   await page.getByRole('button',{name:'Exportar PDF A4',exact:true}).click();await expect(page.getByText('PDF A4 guardado:',{exact:false})).toBeVisible();
   const pdfPath=resolve(info.outputDir,'PlanosSanto-A4.pdf');
   const drawing=execFileSync('pdftotext',['-f','1','-l','1','-x','22','-y','70','-W','262','-H','458','-raw',pdfPath,'-'],{encoding:'utf8'});
-  expect(drawing).toMatch(/406,4\s+mm/);expect(drawing).not.toMatch(/609,6\s+mm/);expect(drawing).toContain('1 OCULTA');
+  expect(drawing).toMatch(/609,6\s+mm/);expect(drawing).toMatch(/alto\s+\d/);expect(drawing).toMatch(/ancho\s+\d/);expect(drawing).not.toContain('profundidad');
+  expect(drawing).toContain('2 TOTALES');expect(drawing).toContain('1 DE PIEZA');
   const tablePdf=execFileSync('pdftotext',['-f','1','-l','1','-x','566','-y','70','-W','254','-H','484','-raw',pdfPath,'-'],{encoding:'utf8'});
-  expect(tablePdf).toContain('609,6');expect(tablePdf).toContain('P01');expect(tablePdf).toContain('P02');
+  expect(tablePdf).toContain('609,6');expect(tablePdf).toContain('406,4');expect(tablePdf).toContain('P01');expect(tablePdf).toContain('P02');
   await page.locator('.dimension-controls>summary').click();
-  await expect(page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true})).not.toBeChecked();
+  await expect(page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true})).toBeChecked();
+  await expect(page.getByRole('checkbox',{name:'Mostrar cota total profundidad',exact:true})).not.toBeChecked();
   await page.screenshot({path:'artifacts/cota-oculta-complemento-SINTETICO.png',fullPage:true});
-  await page.getByRole('button',{name:'Mostrar todas las cotas',exact:true}).click();await expect(page.locator('[data-dimension]')).toHaveCount(2);
-  await page.getByRole('button',{name:/Ocultar cota P01 largo:/}).focus();await page.keyboard.press('Enter');await expect(page.locator('[data-dimension]')).toHaveCount(1);
-  await page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true}).check();await expect(page.locator('[data-dimension]')).toHaveCount(2);
+  await page.getByRole('button',{name:'Mostrar todas las cotas',exact:true}).click();
+  await expect(page.locator('[data-dimension][data-total]')).toHaveCount(3);const all=await page.locator('[data-dimension]').count();expect(all).toBeGreaterThan(4);
+  await page.getByRole('button',{name:/Ocultar cota P01 largo:/}).focus();await page.keyboard.press('Enter');await expect(page.locator('[data-dimension]')).toHaveCount(all-1);
+  await page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true}).check();await expect(page.locator('[data-dimension]')).toHaveCount(all);
+  await page.getByRole('button',{name:/Ocultar cota total alto:/}).focus();await page.keyboard.press('Enter');await expect(page.locator('[data-dimension]')).toHaveCount(all-1);
+  await page.getByRole('button',{name:'Solo medidas totales',exact:true}).click();await expect(page.locator('[data-dimension]')).toHaveCount(3);
   expect(await page.locator('tbody').innerText()).toBe(table);
 });
 

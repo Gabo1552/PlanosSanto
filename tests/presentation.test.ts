@@ -5,13 +5,15 @@ import {makeScene,pickAnchor,cameraBasis} from '../lib/scene';
 import {applyEdit,toEdit} from '../lib/model';
 import {defaultCamera} from '../lib/presentation';
 import {withNaming,moduleFromName} from '../lib/naming';
-import {shiftDimension} from '../components/ViewAdjustments';
+import {shiftDimension,shiftDimensionRef} from '../components/ViewAdjustments';
 import {editsFor,mergeGuide,type Guide} from '../sketchup_offline/ui/guide';
 import {createOfflinePdf} from '../sketchup_offline/ui/pdf';
 import {readFile,mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
+import {pieceDimensionsOnly} from './helpers/cotas';
+import {dimensionRef,type PieceRole} from '../lib/dimensions';
 
 describe('Rotación, cotas e identificación persistentes',()=>{
   it('las cámaras son independientes, ortonormales y permiten seleccionar con ancla local sin tocar medidas',()=>{
@@ -29,9 +31,10 @@ describe('Rotación, cotas e identificación persistentes',()=>{
     expect(JSON.stringify(f.pieces)).toBe(geometry);
   });
   it('mueve las cotas manteniendo anclas geométricas, valor y líneas conectadas; guarda también por vista',()=>{
-    const f=createDemo().furniture[0];f.pieces=[f.pieces[0]];f.presentation={hideIds:true};
+    // 0.8.31: this checks moving a piece cota, hidden by default: its cotas are turned on and the totals off.
+    const f=createDemo().furniture[0];f.pieces=[f.pieces[0]];f.presentation={hideIds:true};f.dimensionDisplay=pieceDimensionsOnly(f);
     const before=makeScene(f,{layout:'sheet'}),d=before.dimensions[0];
-    f.presentation=shiftDimension(f,'front',d.pieceId,d.role,[8,6],[460,640]);
+    f.presentation=shiftDimension(f,'front',d.pieceId,d.role as PieceRole,[8,6],[460,640]);
     const after=makeScene(f,{layout:'sheet'}),moved=after.dimensions.find(n=>n.role===d.role)!;
     expect(moved.label.center.x-d.label.center.x).toBeCloseTo(8,8);expect(moved.label.center.y-d.label.center.y).toBeCloseTo(6,8);
     expect(moved.localStart).toEqual(d.localStart);expect(moved.localEnd).toEqual(d.localEnd);expect(moved.valueMm).toBe(d.valueMm);
@@ -101,7 +104,9 @@ describe('Rotación, cotas e identificación persistentes',()=>{
   it('el PDF A4 usa rotación y cotas guardadas, oculta IDs del dibujo y conserva todas las filas',async()=>{
     const p=createDemo();p.furniture=[p.furniture[0]];const f=p.furniture[0];f.pieces=[f.pieces[0]];
     f.presentation={hideIds:true,cameras:{front:{yaw:20,pitch:35},back:{yaw:-15,pitch:40}}};
-    const d=makeScene(f,{layout:'sheet'}).dimensions[0];f.presentation=shiftDimension(f,'front',d.pieceId,d.role,[4,2],[460,640]);
+    // 0.8.31: by default the first cota is a total of the furniture; moving it is stored in dimensionDisplay.
+    const d=makeScene(f,{layout:'sheet'}).dimensions[0];expect(d.total).toBe('alto');Object.assign(f,shiftDimensionRef(f,'front',dimensionRef(d),[4,2],[460,640]));
+    expect(f.dimensionDisplay?.totalOffsets).toEqual([{total:'alto',view:'front',offset:[4/460,2/640]}]);
     expect(makeScene(f,{layout:'sheet'}).labels).toEqual([]);
     const dir=await mkdtemp(join(tmpdir(),'planos-presentation-'));
     try{

@@ -50,7 +50,27 @@ export type Note = z.infer<typeof noteSchema>;
 export const hiddenDimensionSchema=z.object({pieceId:z.string().min(1).max(1000),role:z.enum(['largo','ancho'])}).strict();
 export const hiddenDimensionsSchema=z.array(hiddenDimensionSchema).max(1000).refine(rows=>new Set(rows.map(r=>JSON.stringify([r.pieceId,r.role]))).size===rows.length,'Cotas ocultas duplicadas.');
 export type HiddenDimension=z.infer<typeof hiddenDimensionSchema>;
-export type Furniture = { referenceTransform?:number[]; groupIdentical?:boolean; groupName?:string; id: string; name: string; pieces: Piece[]; notes: Note[]; hiddenDimensions?:HiddenDimension[]; presentation?:Presentation; naming?:PieceNaming; explosion: number; zoom: number };
+/**
+ * 0.8.31: which cotas a plan draws. By default only the three totals of the furniture (alto, ancho, profundidad) and
+ * no cota of a piece. `shownPieces`: piece cotas turned on by hand (same refs as hiddenDimensions, one per group of
+ * equal pieces). `hiddenTotals`: totals turned off. `totalOffsets`: totals moved by hand, as dimensionOffsets.
+ * Empty lists are never stored (guide_store.rb drops them), so a guide that keeps the default has no such field and
+ * still opens in older versions. hiddenDimensions (before 0.8.31) is kept as stored and no longer decides anything.
+ */
+export const TOTAL_DIMENSIONS=['alto','ancho','profundidad'] as const;
+export type TotalDimension=typeof TOTAL_DIMENSIONS[number];
+const totalOffsetSchema=z.object({total:z.enum(TOTAL_DIMENSIONS),view:z.enum(['front','back']),offset:z.tuple([number.min(-1).max(1),number.min(-1).max(1)])}).strict();
+export const dimensionDisplaySchema=z.object({
+  shownPieces:z.array(hiddenDimensionSchema).max(1000).refine(rows=>new Set(rows.map(r=>JSON.stringify([r.pieceId,r.role]))).size===rows.length,'Cotas mostradas duplicadas.').optional(),
+  hiddenTotals:z.array(z.enum(TOTAL_DIMENSIONS)).max(3).refine(rows=>new Set(rows).size===rows.length,'Cotas totales ocultas duplicadas.').optional(),
+  totalOffsets:z.array(totalOffsetSchema).max(6).refine(rows=>new Set(rows.map(r=>JSON.stringify([r.total,r.view]))).size===rows.length,'Cotas totales movidas duplicadas.').optional(),
+}).strict();
+export type DimensionDisplay=z.infer<typeof dimensionDisplaySchema>;
+/** Same shape guide_store.rb stores: empty lists dropped, fixed key order (the editor compares guides as JSON). */
+export function normalizeDimensionDisplay(d:DimensionDisplay|undefined):DimensionDisplay{
+  return {...(d?.shownPieces?.length?{shownPieces:d.shownPieces}:{}),...(d?.hiddenTotals?.length?{hiddenTotals:d.hiddenTotals}:{}),...(d?.totalOffsets?.length?{totalOffsets:d.totalOffsets}:{})};
+}
+export type Furniture = { referenceTransform?:number[]; groupIdentical?:boolean; groupName?:string; id: string; name: string; pieces: Piece[]; notes: Note[]; hiddenDimensions?:HiddenDimension[]; dimensionDisplay?:DimensionDisplay; presentation?:Presentation; naming?:PieceNaming; explosion: number; zoom: number };
 export type Project = { id: string; name: string; source: 'demo' | 'skp' | 'sketchup-ruby'; createdAt: string; updatedAt: string; revision: number; furniture: Furniture[]; importedDocument?:RawDocument };
 export const editSchema = z.object({
   revision: z.number().int().nonnegative(),
@@ -58,7 +78,7 @@ export const editSchema = z.object({
     id: z.string(), explosion: number.min(0).max(1), zoom: number.min(0.35).max(1.4),
     pieces: z.array(z.object({ id: z.string(), name: z.string().trim().min(1).max(80) })).max(500),
     notes: z.array(noteSchema).max(40),
-    hiddenDimensions:hiddenDimensionsSchema.optional(),presentation:presentationSchema.optional(),groupIdentical:z.boolean().optional(),
+    hiddenDimensions:hiddenDimensionsSchema.optional(),dimensionDisplay:dimensionDisplaySchema.optional(),presentation:presentationSchema.optional(),groupIdentical:z.boolean().optional(),
   })).max(MAX_FURNITURE),
 }).strict();
 export type Edit = z.infer<typeof editSchema>;
@@ -154,6 +174,11 @@ export function applyEdit(project: Project, input: unknown): Project {
       if(patch.hiddenDimensions.some(ref=>!f.pieces.some(p=>p.id===ref.pieceId)))throw new Error('Una cota oculta apunta a una pieza desconocida.');
       f.hiddenDimensions=patch.hiddenDimensions;
     }
+    if(patch.dimensionDisplay!==undefined){
+      if(patch.dimensionDisplay.shownPieces?.some(ref=>!f.pieces.some(p=>p.id===ref.pieceId)))throw new Error('Una cota mostrada apunta a una pieza desconocida.');
+      const display=normalizeDimensionDisplay(patch.dimensionDisplay);
+      if(Object.keys(display).length)f.dimensionDisplay=display;else delete f.dimensionDisplay;
+    }
     if(patch.presentation!==undefined){
       if(patch.presentation.guide?.hiddenPieceIds.some(id=>!f.pieces.some(p=>p.id===id)))throw new Error('Una pieza oculta apunta a una ruta de instancia desconocida.');
       if(patch.presentation.dimensionOffsets?.some(ref=>!f.pieces.some(p=>p.id===ref.pieceId)))throw new Error('Una cota movida apunta a una pieza desconocida.');
@@ -170,7 +195,7 @@ export function applyEdit(project: Project, input: unknown): Project {
   return result;
 }
 export function toEdit(p: Project): Edit {
-  return { revision: p.revision, furniture: p.furniture.map(f => ({ id: f.id, explosion: f.explosion, zoom: f.zoom, pieces: f.pieces.map(p => ({ id: p.id, name: p.name })), groupIdentical:f.groupIdentical||false, hiddenDimensions:f.hiddenDimensions||[], presentation:f.presentation||{}, notes: f.notes })) };
+  return { revision: p.revision, furniture: p.furniture.map(f => ({ id: f.id, explosion: f.explosion, zoom: f.zoom, pieces: f.pieces.map(p => ({ id: p.id, name: p.name })), groupIdentical:f.groupIdentical||false, hiddenDimensions:f.hiddenDimensions||[], ...(f.dimensionDisplay?{dimensionDisplay:normalizeDimensionDisplay(f.dimensionDisplay)}:{}), presentation:f.presentation||{}, notes: f.notes })) };
 }
 // 0.8.26: thousands grouped by hand. The ICU of Chromium 88 (SketchUp 2022) does not
 // group four digits in es-AR (2750); current Chromium does (2.750). Same text in both.

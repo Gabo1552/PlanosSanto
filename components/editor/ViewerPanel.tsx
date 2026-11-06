@@ -1,4 +1,4 @@
-import ViewAdjustments,{shiftDimension,orbitCamera} from '../ViewAdjustments';
+import ViewAdjustments,{shiftDimensionRef,orbitCamera} from '../ViewAdjustments';
 import Diagram from '../Diagram';
 import DimensionControls from '../DimensionControls';
 import GuideViews,{ensureGuide} from '../../sketchup_offline/ui/GuideViews';
@@ -24,12 +24,12 @@ export default function ViewerPanel({furniture:f,preview,view,tool,pieceId,draft
       <button className="text-button" disabled={locked} onClick={()=>onEdit(f=>{f.zoom=1;f.presentation={...f.presentation,cameras:undefined};})}>Restablecer vista</button>
     </div>
     {reanchor&&<div className="anchor-hint" role="status">Hacé clic sobre la pieza para ubicar la punta de la flecha (Esc para cancelar). <button className="text-button" onClick={onCancelReanchor}>Cancelar</button></div>}
-    <ViewAdjustments furniture={f} view={view} mode={tool} onMode={onTool} disabled={locked} onChange={presentation=>onEdit(f=>{f.presentation=presentation;})}/>
-    <DimensionControls furniture={f} disabled={locked} onChange={refs=>onEdit(f=>{f.hiddenDimensions=refs;})}/>
+    <ViewAdjustments furniture={f} view={view} mode={tool} onMode={onTool} disabled={locked} onChange={presentation=>onEdit(f=>{f.presentation=presentation;})} onDimensionDisplay={display=>onEdit(f=>{f.dimensionDisplay=display;})}/>
+    <DimensionControls furniture={f} disabled={locked} onChange={display=>onEdit(f=>{f.dimensionDisplay=display;})}/>
     <Diagram furniture={preview} layout={tool==='dimensions'?'sheet':'editor'} view={view} selected={pieceId} onPick={onPick} onNote={onNote}
       onOrbit={tool==='orbit'&&!drafting?delta=>onEdit(f=>{f.presentation=orbitCamera(f,view,delta);}):undefined}
-      onMoveDimension={tool==='dimensions'&&!drafting?(id,role,delta)=>onEdit(f=>{f.presentation=shiftDimension(f,view,id,role,delta,[sheetView(f).width,sheetView(f).height]);}):undefined}
-      onHideDimension={tool==='select'&&!drafting?(id,role)=>onEdit(f=>{f.hiddenDimensions=setDimensionVisible(f,id,role,false);}):undefined}
+      onMoveDimension={tool==='dimensions'&&!drafting?(ref,delta)=>onEdit(f=>{Object.assign(f,shiftDimensionRef(f,view,ref,delta,[sheetView(f).width,sheetView(f).height]));}):undefined}
+      onHideDimension={tool==='select'&&!drafting?ref=>onEdit(f=>{f.dimensionDisplay=setDimensionVisible(f,ref,false);}):undefined}
       onMove={drafting?undefined:(id,position)=>onEdit(f=>{f.notes.find(n=>n.id===id)!.position=position;})}/>
     <GuideViews furniture={f} view={view} selectedId={pieceId} draftHidden={draftHidden} disabled={busy} onChange={next=>onEdit(f=>{Object.assign(f,next);})} onSelect={onSelect} onView={onView} onDraft={onDraft}
       onApply={()=>{if(draftHidden!==null)onEdit(f=>{f.presentation={...f.presentation,guide:{...ensureGuide(f).presentation!.guide!,hiddenPieceIds:draftHidden}};});onCancelDraft();}} onCancel={onCancelDraft}/>

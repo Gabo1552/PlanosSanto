@@ -156,6 +156,53 @@ class GuideStoreCoverageTest < Minitest::Test
     f=edit;f['hiddenDimensions']=[{'pieceId'=>'1/11','role'=>'largo'}]*2;refuse_save([f],/repetidas/)
     f=edit;f['hiddenDimensions']='todas';refuse_save([f],/inválido/)
   end
+  # --- Cotas (0.8.31): totales por defecto, cotas de pieza mostradas a mano --------------------------
+  # Campos que acepta la lectura de versiones anteriores a 0.8.31 (keys! de GuideStore#read hasta 0.8.30).
+  PRE_0831_FURNITURE_KEYS=%w[id explosion zoom pieces notes hiddenDimensions presentation naming groupIdentical].freeze
+  def display;{'shownPieces'=>[{'pieceId'=>'1/11','role'=>'largo'}],'hiddenTotals'=>['profundidad'],'totalOffsets'=>[{'total'=>'ancho','view'=>'front','offset'=>[0.05,-0.02]}]};end
+  def test_dimension_display_is_stored_normalized_and_read_back
+    f=edit;f['hiddenDimensions']=[{'pieceId'=>'1/13/12','role'=>'ancho'}];f['dimensionDisplay']=display.merge('hiddenTotals'=>[])
+    saved=@store.save(@document,[f],0)['furniture'][0]
+    assert_equal({'shownPieces'=>display['shownPieces'],'totalOffsets'=>display['totalOffsets']},saved['dimensionDisplay'],'Las listas vacías no se guardan')
+    assert_equal [{'pieceId'=>'1/13/12','role'=>'ancho'}],saved['hiddenDimensions'],'hiddenDimensions queda como estaba'
+    assert_equal saved,@store.read['furniture'][0]
+    f=edit;f['hiddenDimensions']=saved['hiddenDimensions'];f['dimensionDisplay']={'shownPieces'=>[],'hiddenTotals'=>[],'totalOffsets'=>[]}
+    cleared=@store.save(@document,[f],1)['furniture'][0]
+    refute cleared.key?('dimensionDisplay'),'Volver al default borra el campo: la guía sigue abriendo en versiones anteriores'
+    assert_empty cleared.keys-PRE_0831_FURNITURE_KEYS
+    assert_equal [{'pieceId'=>'1/13/12','role'=>'ancho'}],cleared['hiddenDimensions']
+  end
+  def test_old_guide_without_dimension_display_reads_and_saves_without_gaining_fields
+    old=edit;old['hiddenDimensions']=[{'pieceId'=>'1/11','role'=>'largo'}];stored(guide([old]))
+    assert_equal old,@store.read['furniture'][0],'Una guía anterior abre igual'
+    saved=@store.save(@document,[old],3)['furniture'][0]
+    refute saved.key?('dimensionDisplay');assert_equal [{'pieceId'=>'1/11','role'=>'largo'}],saved['hiddenDimensions']
+    assert_empty saved.keys-PRE_0831_FURNITURE_KEYS
+  end
+  def test_dimension_display_omitted_in_an_edit_keeps_the_stored_one_without_deleted_pieces
+    f=edit;f['dimensionDisplay']={'shownPieces'=>[{'pieceId'=>'1/11','role'=>'largo'},{'pieceId'=>'1/13/12','role'=>'ancho'}],'hiddenTotals'=>['alto']}
+    @store.save(@document,[f],0)
+    assert_equal f['dimensionDisplay'],@store.save(@document,[edit],1)['furniture'][0]['dimensionDisplay']
+    @model.entities[0].entities.delete_at(0);@session.scan;@document=@session.generate(['1'])['document']
+    f=edit;f['pieces']=[{'id'=>'1/13/12','name'=>'Base','code'=>'P02'}]
+    assert_equal({'shownPieces'=>[{'pieceId'=>'1/13/12','role'=>'ancho'}],'hiddenTotals'=>['alto']},@store.save(@document,[f],2)['furniture'][0]['dimensionDisplay'])
+    f=edit;f['pieces']=[{'id'=>'1/13/12','name'=>'Base','code'=>'P02'}];f['dimensionDisplay']={'shownPieces'=>[{'pieceId'=>'1/11','role'=>'largo'}]}
+    refuse_save([f],/Cota mostrada desconocida/)
+  end
+  def test_dimension_display_validation_on_save_and_read
+    [->(d){d['otro']=true},->(d){d['shownPieces'][0]['role']='espesor'},->(d){d['shownPieces'][0]['pieceId']='1/99'},->(d){d['shownPieces']*=2},
+     ->(d){d['shownPieces']='todas'},->(d){d['shownPieces'][0]['extra']=1},->(d){d['hiddenTotals']=['espesor']},->(d){d['hiddenTotals']=%w[alto alto]},
+     ->(d){d['hiddenTotals']=%w[alto ancho profundidad alto]},->(d){d['hiddenTotals']='alto'},->(d){d['totalOffsets'][0]['view']='top'},
+     ->(d){d['totalOffsets'][0]['total']='largo'},->(d){d['totalOffsets'][0]['offset']=[2,0]},->(d){d['totalOffsets'][0]['offset']=[0.1]},
+     ->(d){d['totalOffsets']*=2},->(d){d['totalOffsets'][0]['pieceId']='1/11'}].each do |change|
+      d=Marshal.load(Marshal.dump(display));change.call(d)
+      f=edit;f['dimensionDisplay']=d;refute_nil refuse_save([f])
+      f=edit;f['dimensionDisplay']=d;stored(guide([f]));refute_nil refuse_read(//)
+      @model.attributes.clear
+    end
+    f=edit;f['dimensionDisplay']=[];refuse_save([f],/cotas del mueble/)
+    f=edit;f['dimensionDisplay']=display;stored(guide([f]));assert_equal display,@store.read['furniture'][0]['dimensionDisplay']
+  end
   def test_naming_reference_reviews_module_and_bases
     naming={'moduleCode'=>'M01','bases'=>[{'id'=>'1/11','base'=>'Lateral'},{'id'=>'1/13/12','base'=>'Base'}],
             'reference'=>{'upAxis'=>2,'frontAxis'=>1,'frontSign'=>-1,'confirmed'=>true,'upSign'=>1},

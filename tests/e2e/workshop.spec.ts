@@ -72,7 +72,9 @@ test('edita piezas/notas, conserva anclas, reabre y exporta dos hojas A4 legible
   await expect(page.locator('.sheet')).toHaveCount(2);
   await expect(page.locator('.sheet').first().locator('.diagram')).toHaveCount(2);
   await expect(page.locator('.sheet').first().locator('[data-label]')).toHaveCount(12);
-  expect(await page.locator('.sheet').first().locator('[data-view=back] [data-dimension]').count()).toBeGreaterThan(0);
+  // 0.8.31: the three totals print once, in the exterior; piece cotas are hidden by default, so the interior has none.
+  await expect(page.locator('.sheet').first().locator('[data-view=front] [data-total]')).toHaveCount(3);
+  await expect(page.locator('.sheet').first().locator('[data-view=back] [data-dimension]')).toHaveCount(0);
   await expect(page.locator('.sheet').first()).toContainText('Costado marcado – prueba');
   await expect(page.locator('.sheet').first().locator('.print-instructions')).toContainText('tarugos');
   const textMetrics=await page.locator('[data-note-marker] text').evaluateAll(nodes=>nodes.map(n=>{const el=n as SVGGraphicsElement,m=el.getScreenCTM()!;return {size:parseFloat(getComputedStyle(n).fontSize)*Math.hypot(m.a,m.b)*72/96,bounds:el.getBBox().width};}));

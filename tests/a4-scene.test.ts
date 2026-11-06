@@ -4,6 +4,7 @@ import {applyEdit,toEdit} from '../lib/model';
 import {makeScene,guideViews,sheetView,layoutWarnings} from '../lib/scene';
 import {presentationSchema} from '../lib/presentation';
 import {sheetEntries} from '../lib/sheet';
+import {pieceDimensionsOnly} from './helpers/cotas';
 function guide(){const f=createDemo().furniture[0];f.presentation={guide:{mode:'both',hiddenPieceIds:[],sharedCamera:true,observations:''}};return f;}
 describe('Guías A4 configurables: representación separada de geometría',()=>{
  it('ensambla ambas vistas y preserva transforms, medidas y despiece legado',()=>{
@@ -16,7 +17,9 @@ describe('Guías A4 configurables: representación separada de geometría',()=>{
   f.presentation!.guide!.mode='exterior';expect(guideViews(f)).toEqual(['front']);
  });
  it('oculta una ruta física anidada sin ocultar otra instancia de igual definición ni quitar filas',()=>{
-  const f=guide(),left=f.pieces[0],right=f.pieces[1];expect(left.definition).toBe(right.definition);f.presentation!.guide!.hiddenPieceIds=[left.id];const before=JSON.stringify(f);
+  // 0.8.31: piece cotas are hidden by default; they are turned on to check that a hidden piece loses its cotas.
+  const f=guide(),left=f.pieces[0],right=f.pieces[1];expect(left.definition).toBe(right.definition);f.presentation!.guide!.hiddenPieceIds=[left.id];f.dimensionDisplay=pieceDimensionsOnly(f);const before=JSON.stringify(f);
+  expect(makeScene(f,{view:'front'}).dimensions.some(d=>d.pieceId===left.id)).toBe(true);
   expect(makeScene(f,{view:'front'}).faces.some(face=>face.pieceId===left.id)).toBe(true);
   const interior=makeScene(f,{view:'back'});expect(interior.faces.some(face=>face.pieceId===left.id)).toBe(false);expect(interior.faces.some(face=>face.pieceId===right.id)).toBe(true);expect(interior.labels.some(label=>label.pieceId===left.id)).toBe(false);expect(interior.dimensions.some(d=>d.pieceId===left.id)).toBe(false);
   expect(f.pieces).toHaveLength(6);expect(JSON.stringify(f)).toBe(before);f.presentation!.guide!.hiddenPieceIds=[];expect(makeScene(f,{view:'back'}).faces.some(face=>face.pieceId===left.id)).toBe(true);
