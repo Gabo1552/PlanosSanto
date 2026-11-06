@@ -1,11 +1,13 @@
 import {describe,expect,it} from 'vitest';
 import {createA4Demo} from '../lib/a4Demo';
-import {dimensionChoices,dimensionKey,dimensionMarkHitsRect,dimensionText,segmentHitsRect,type Dimension,type DimensionSegment,type Rect} from '../lib/dimensions';
+import {dimensionChoices,dimensionKey,dimensionMarkHitsRect,dimensionText,segmentHitsRect,type Dimension,type DimensionSegment,type PieceRole,type Rect} from '../lib/dimensions';
+import {allDimensions,pieceDimensionsOnly} from './helpers/cotas';
 import {makeScene,sheetView} from '../lib/scene';
 
 // Public, synthetic geometry only: this fixture is not the operator's BM17 SKP.
+// 0.8.31: piece cotas are hidden by default; these layout checks turn every one on, next to the three totals.
 function furniture(yaw=-2,pitch=10,zoom=.7){
- const f=createA4Demo().furniture[0];f.zoom=zoom;f.presentation!.cameras={front:{yaw,pitch}};return f;
+ const f=createA4Demo().furniture[0];f.zoom=zoom;f.presentation!.cameras={front:{yaw,pitch}};f.dimensionDisplay=allDimensions(f);return f;
 }
 function assertMarksRemainVisible(dimensions:Dimension[]){
  for(const dimension of dimensions)for(const other of dimensions){
@@ -63,7 +65,9 @@ describe('Cotas: máscaras de texto conservan marcas completas',()=>{
  });
  // 0.8.19: la composición que antes no admitía todas las cotas entra al acotar una vez las medidas iguales.
  it('acota una composición densa sin perder medidas ni cambiar geometría',()=>{
-  const f=furniture(-20,27,.7),before=JSON.stringify(f),choices=dimensionChoices(f).filter(c=>c.visible);
+  // 0.8.31: the same composition as before, all piece cotas and no totals (with the three totals it no longer fits free).
+  const f=furniture(-20,27,.7);f.dimensionDisplay=pieceDimensionsOnly(f);
+  const before=JSON.stringify(f),choices=dimensionChoices(f).filter(c=>c.visible);
   const scene=makeScene(f,{view:'front',layout:'sheet'});
   expect(scene.warnings).toEqual([]);
   assertMarksRemainVisible(scene.dimensions);
@@ -73,10 +77,10 @@ describe('Cotas: máscaras de texto conservan marcas completas',()=>{
  it('corre sola una cota movida sobre la marca de otra, sin bloquear la exportación',()=>{
   const f=furniture(),scene=makeScene(f,{view:'front',layout:'sheet'});
   expect(scene.warnings).toEqual([]);
-  const moved=scene.dimensions[0],other=scene.dimensions.find(d=>d!==moved&&d.segments.some(s=>s.kind==='tick'))!;
+  const moved=scene.dimensions.find(d=>!d.total)!,other=scene.dimensions.find(d=>d!==moved&&d.segments.some(s=>s.kind==='tick'))!;
   const tick=other.segments.find(s=>s.kind==='tick')!,{width,height}=sheetView(f);
   const target={x:(tick.a.x+tick.b.x)/2,y:(tick.a.y+tick.b.y)/2};
-  f.presentation!.dimensionOffsets=[{pieceId:moved.pieceId,role:moved.role,view:'front',offset:[(target.x-moved.label.center.x)/width,(target.y-moved.label.center.y)/height]}];
+  f.presentation!.dimensionOffsets=[{pieceId:moved.pieceId,role:moved.role as PieceRole,view:'front',offset:[(target.x-moved.label.center.x)/width,(target.y-moved.label.center.y)/height]}];
   const before=JSON.stringify(f),changed=makeScene(f,{view:'front',layout:'sheet'});
   const updated=changed.dimensions.find(d=>d.pieceId===moved.pieceId&&d.role===moved.role)!;
   expect(changed.warnings).toEqual([]);

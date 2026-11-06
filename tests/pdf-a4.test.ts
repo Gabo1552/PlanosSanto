@@ -9,6 +9,7 @@ import {createDemo,box} from '../lib/demo';
 import {createA4Demo} from '../lib/a4Demo';
 import {editSchema} from '../lib/model';
 import type {Project} from '../lib/model';
+import {allDimensions} from './helpers/cotas';
 const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf');
 const mono=readFileSync('sketchup_offline/assets/DejaVuSansMono.ttf');
 function sample(mode:'exterior'|'interior'|'both'='both'){
@@ -58,8 +59,10 @@ describe('Guía offline A4 horizontal sin páginas adicionales',()=>{
  });
  it('resuelve el bajo mesada SINTÉTICO de 17 piezas en dos vistas con cotas completas e IDs agrupados',async()=>{
   const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.cameras={front:{yaw:-30,pitch:45}};f.presentation!.hideIds=false;
+  // 0.8.31: «cotas completas» means every piece cota turned on (hidden by default) next to the totals.
+  f.dimensionDisplay=allDimensions(f);
   expect(f.pieces).toHaveLength(17);const original=JSON.stringify(project);
-  expect(editSchema.safeParse({revision:project.revision,furniture:[{id:f.id,explosion:f.explosion,zoom:f.zoom,pieces:f.pieces.map(p=>({id:p.id,name:p.name})),notes:f.notes,presentation:f.presentation}]}).success).toBe(true);
+  expect(editSchema.safeParse({revision:project.revision,furniture:[{id:f.id,explosion:f.explosion,zoom:f.zoom,pieces:f.pieces.map(p=>({id:p.id,name:p.name})),notes:f.notes,dimensionDisplay:f.dimensionDisplay,presentation:f.presentation}]}).success).toBe(true);
   const {text}=await exportPage(project);
   expect(text).toContain('DEMOSTRACIÓN SINTÉTICA');expect(text).toContain('17 piezas');expect(text).toContain('VISTA EXTERIOR');expect(text).toContain('VISTA INTERIOR');expect(text).toContain('P09 ×6');expect(text).toContain('P11 ×3');expect(text.match(/1200/g)!.length).toBeGreaterThanOrEqual(3);expect(text).toContain('520 m');expect(text.match(/Observaciones de armado:/g)).toHaveLength(1);expect(JSON.stringify(project)).toBe(original);
  });

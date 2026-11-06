@@ -45,7 +45,8 @@ test('axe: editor moviendo cotas y editando la visibilidad interior',async({page
   await openDemo(page);
   await page.getByText('Rotar vista, mover cotas y mostrar IDs',{exact:true}).click();
   await page.getByRole('button',{name:'Mover cotas',exact:true}).click();
-  await expect(page.getByRole('button',{name:/^Mover cota P/}).first()).toBeVisible();
+  // 0.8.31: by default only the totals are drawn (and movable).
+  await expect(page.getByRole('button',{name:/^Mover cota total /}).first()).toBeVisible();
   await audit(page,'Editor · mover cotas');
   await page.getByText(/^Piezas visibles en la vista interior/).click();
   await page.getByRole('button',{name:'Editar visibilidad interior',exact:true}).click();

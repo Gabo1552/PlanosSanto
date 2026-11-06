@@ -1,25 +1,28 @@
 import {describe,it,expect} from 'vitest';
 import {createDemo,demoDocument} from '../lib/demo';
-import {applyEdit,toEdit} from '../lib/model';
+import {applyEdit,toEdit,TOTAL_DIMENSIONS} from '../lib/model';
+import {pieceDimensionsOnly} from './helpers/cotas';
 import {dimensionChoices,setDimensionVisible,dimensionCaption} from '../lib/dimensions';
 import {makeScene} from '../lib/scene';
 import {editsFor,mergeGuide,type Guide} from '../sketchup_offline/ui/guide';
 
 describe('Visibilidad de cotas guardada sin alterar las medidas',()=>{
   it('oculta una cota compartida en ambas cámaras y PDF, y restaura por grupo sin afectar otra medida',()=>{
-    const f=createDemo().furniture[0],original=JSON.stringify(f.pieces),count=makeScene(f).dimensions.length;
-    f.hiddenDimensions=setDimensionVisible(f,f.pieces[1].id,'largo',false);
+    // 0.8.31: piece cotas start hidden; this test is about them, so it turns them all on (totals off) first.
+    const f=createDemo().furniture[0],original=JSON.stringify(f.pieces);f.dimensionDisplay=pieceDimensionsOnly(f);
+    const count=makeScene(f).dimensions.length,shown=dimensionChoices(f).length;
+    f.dimensionDisplay=setDimensionVisible(f,{pieceId:f.pieces[1].id,role:'largo'},false);
     for(const options of [{},{view:'back' as const},{layout:'sheet' as const}]){
       // The lateral's 700 also stood for the back panel (same height, same direction): that one is drawn now.
       const scene=makeScene(f,options);expect(scene.dimensions).toHaveLength(count);expect(scene.warnings).toEqual([]);
       expect(scene.dimensions.filter(d=>d.pieceId===f.pieces[0].id).map(d=>d.role)).toEqual(['ancho']);
       expect(scene.dimensions.find(d=>d.valueMm===700)!.pieceId).not.toMatch(/lateral/);
     }
-    expect(dimensionCaption(f)).toContain('1 OCULTA');
+    expect(dimensionCaption(f)).toBe(`COTAS EN mm · ${shown-1} DE PIEZA`);
     // Stable references remain effective if another equal-size instance becomes representative.
     [f.pieces[0].code,f.pieces[1].code]=[f.pieces[1].code,f.pieces[0].code];
     expect(dimensionChoices(f).find(c=>c.code==='P01'&&c.role==='largo')!.visible).toBe(false);
-    f.hiddenDimensions=setDimensionVisible(f,f.pieces[1].id,'largo',true);expect(makeScene(f).dimensions).toHaveLength(count);
+    f.dimensionDisplay=setDimensionVisible(f,{pieceId:f.pieces[1].id,role:'largo'},true);expect(makeScene(f).dimensions).toHaveLength(count);
     [f.pieces[0].code,f.pieces[1].code]=[f.pieces[1].code,f.pieces[0].code];expect(JSON.stringify(f.pieces)).toBe(original);
   });
   it('guarda selecciones válidas, conserva preferencias con clientes anteriores y rechaza referencias adulteradas',()=>{
@@ -36,7 +39,9 @@ describe('Visibilidad de cotas guardada sin alterar las medidas',()=>{
     g.furniture[0].hiddenDimensions=[{pieceId:p.furniture[0].pieces[0].id,role:'largo'}];
     const merged=mergeGuide(demoDocument,JSON.parse(JSON.stringify(g)));expect(editsFor(merged.project,{})[0].hiddenDimensions).toEqual(g.furniture[0].hiddenDimensions);
     const removed=structuredClone(demoDocument);removed.furniture[0].children.shift();expect(mergeGuide(removed,g).project.furniture[0].hiddenDimensions).toEqual([]);
-    const f=p.furniture[0];f.hiddenDimensions=dimensionChoices(f).map(c=>({pieceId:c.pieceId,role:c.role}));
-    expect(makeScene(f).dimensions).toEqual([]);expect(makeScene(f).warnings).toEqual([]);expect(dimensionCaption(f)).toContain('MEDIDAS EN LA TABLA');
+    // 0.8.31: hiding everything is hiding the three totals (piece cotas are already hidden by default).
+    const f=p.furniture[0];for(const total of TOTAL_DIMENSIONS)f.dimensionDisplay=setDimensionVisible(f,{total},false);
+    expect(f.dimensionDisplay).toEqual({hiddenTotals:['alto','ancho','profundidad']});
+    expect(makeScene(f).dimensions).toEqual([]);expect(makeScene(f).warnings).toEqual([]);expect(dimensionCaption(f)).toBe('COTAS OCULTAS · MEDIDAS EN LA TABLA');
   });
 });

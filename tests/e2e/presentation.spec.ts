@@ -10,6 +10,8 @@ test('web guarda rotación, IDs ocultos y cota movida; recarga y exporta las mis
  await page.getByRole('checkbox',{name:'Mostrar IDs en el dibujo'}).uncheck();
  await expect(page.locator('[data-label]')).toHaveCount(0);
  await page.getByRole('button',{name:'Mover cotas',exact:true}).click();
+ // 0.8.31: piece cotas start hidden; the drawing shows the totals, and a moved piece cota is still a dimensionOffset.
+ await page.locator('.dimension-controls>summary').click();await page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true}).check();
  const dimension=page.getByRole('button',{name:/^Mover cota P/}).first();await dimension.focus();await dimension.press('ArrowDown');
  await page.getByRole('button',{name:'Guardar ahora',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Guardado'})).toBeVisible();
  const id=new URL(page.url()).searchParams.get('proyecto')!;

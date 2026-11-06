@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const args = process.argv.slice(2);
 const rootFlag = args.indexOf('--root');
 const root = rootFlag >= 0 ? resolve(args[rootFlag + 1]) : resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const next = args.find((a, i) => !a.startsWith('--') && i !== rootFlag + 1);
+const next = args.find((a, i) => !a.startsWith('--') && (rootFlag < 0 || i !== rootFlag + 1));
 const SEMVER = /^\d+\.\d+\.\d+$/;
 if (!next || !SEMVER.test(next)) { console.error('Uso: bump-version.mjs <X.Y.Z> [--root <dir>]'); process.exit(2); }
 

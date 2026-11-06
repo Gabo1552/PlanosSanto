@@ -94,6 +94,7 @@ module PlanosSanto
       return unless @model && Sketchup.active_model.equal?(@model) && !@context_invalid
       # MATERIALES-12: native browser edits refresh both palettes (cheap reread).
       notify_material_library_changed('model_watch') if kinds.include?('materials')
+      notify_material_library_changed('project_materials') if kinds.include?('model') && project_materials_changed_outside?
       check_analysis if kinds.include?('model') || kinds.include?('materials')
     end
 
@@ -716,7 +717,39 @@ module PlanosSanto
       end
       status.merge('materials'=>native['materials'],'assetRevision'=>native['assetRevision'],'visuals'=>native['visuals'],
         'ambiguous'=>native['ambiguous'],'autoLink'=>linked,'standardThicknessesMm'=>CatalogStore.default_thicknesses_all,
-        'standardWidthsMm'=>CatalogStore.default_widths_all)
+        'standardWidthsMm'=>CatalogStore.default_widths_all,'projectMaterials'=>project_materials_payload(status['catalog']))
+    end
+
+    # 0.8.31: fichas elegidas para ESTE SKP (atributo propio del modelo). The UI
+    # adds the library materials already bound in the model by itself.
+    def project_materials
+      ProjectMaterials.new(@model)
+    end
+
+    def project_materials_payload(catalog)
+      ids=(catalog.is_a?(Hash) && catalog['items'].is_a?(Array) ? catalog['items'] : []).filter_map { |item| item['id'] if item.is_a?(Hash) }
+      remember_project_materials_attribute
+      project_materials.payload(ids)
+    end
+
+    def project_materials_attribute
+      @model.respond_to?(:get_attribute) ? @model.get_attribute(ProjectMaterials::DICTIONARY,ProjectMaterials::KEY) : nil
+    rescue StandardError
+      nil
+    end
+
+    def remember_project_materials_attribute
+      @project_materials_seen=[project_materials_attribute]
+    end
+
+    # SketchUp's Undo/Redo of «Materiales del proyecto» happens outside handle():
+    # both windows reread their list. A cheap read of one attribute, no walk.
+    def project_materials_changed_outside?
+      return false unless @project_materials_seen
+      current=project_materials_attribute
+      return false if @project_materials_seen==[current]
+      @project_materials_seen=[current]
+      true
     end
 
     # 0.8.17: loading the library resolves the ficha ↔ model material links by
@@ -759,7 +792,8 @@ module PlanosSanto
     MATERIAL_LIBRARY_MUTATIONS=%w[catalog_save catalog_add catalog_import catalog_import_model
       catalog_bind catalog_install skm_commit skm_install material_photo_create
       material_photo_install smart_assign_color smart_material_prepare smart_quick_start
-      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync material_link_resolve material_model_commit].freeze
+      material_duplicate material_archive material_package_commit material_texture_apply material_ocl_sync material_link_resolve material_model_commit
+      project_materials_set].freeze
     def dispatch(action, data)
       result=dispatch_action(action,data)
       if MATERIAL_LIBRARY_MUTATIONS.include?(action) && result.is_a?(Hash) && result['cancelled']!=true && result['noChanges']!=true
@@ -1115,9 +1149,24 @@ module PlanosSanto
         directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
         catalog=CatalogStore.new(directory:directory)
         visuals=MaterialLibrary.new(@model,catalog:catalog,directory:directory).status
-        {'catalog'=>without_archived(catalog.read,visuals),'visuals'=>visuals,
-         'paintStates'=>paint_materials.states,
+        full=catalog.read
+        {'catalog'=>without_archived(full,visuals),'visuals'=>visuals,
+         'paintStates'=>paint_materials.states,'projectMaterials'=>project_materials_payload(full),
          'settings'=>smart_settings,'toolState'=>smart_view_state,'thumbnails'=>material_thumbnails}
+      when 'project_materials'
+        active!
+        directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+        {'projectMaterials'=>project_materials_payload(CatalogStore.new(directory:directory).read)}
+      when 'project_materials_set'
+        # One named, undoable operation on this SKP only. It never paints, never
+        # installs and never touches the guide, so the brush keeps running.
+        active!
+        raise ExportError,'Datos de materiales del proyecto inválidos.' unless data.is_a?(Hash) && (data.keys-%w[add remove]).empty?
+        directory=ENV['PLANOS_SANTO_DATA_DIR'] || CatalogStore.default_directory
+        ids=(CatalogStore.new(directory:directory).read['items'] || []).filter_map { |item| item['id'] if item.is_a?(Hash) }
+        result=project_materials.change(add:data['add'],remove:data['remove'],existing:ids)
+        remember_project_materials_attribute
+        result
       when 'smart_material_prepare'
         # Advanced palette: install/verify the chosen material without starting a Tool.
         active!;clean_for_paint!
@@ -1520,7 +1569,9 @@ module PlanosSanto
         {'catalogId'=>item['id'],'materialUuid'=>ready ? state['materialUuid'].to_s : '','name'=>item['name'].to_s,
          'color'=>rgb.is_a?(Array) && rgb.length==3 ? rgb.map { |value| value.to_i.clamp(0,255) } : nil,'state'=>state['state']}
       end
-      rows.sort_by { |row| [row['state']=='ready' ? 0 : 1,row['name'].downcase] }
+      # 0.8.31: the project's fichas first (saved list; ready ones are bound, so in the project too).
+      project=project_materials.read(nil)['ids']
+      rows.sort_by { |row| [row['state']=='ready' || project.include?(row['catalogId']) ? 0 : 1,row['state']=='ready' ? 0 : 1,row['name'].downcase] }
     rescue StandardError => error
       warn("Planos Santo: no se pudieron leer las muestras de la vista: #{error.class}")
       []

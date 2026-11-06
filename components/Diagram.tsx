@@ -5,7 +5,7 @@ import { makeScene, pickAnchor, type Face, type Point, type View } from '@/lib/s
 import { bounds, type Furniture, type Piece, type Vec3 } from '@/lib/model';
 import { sheetCaption } from '@/lib/sheet';
 import DimensionLayer from './DimensionLayer';
-import {dimensionCaption,type Dimension} from '@/lib/dimensions';
+import {dimensionCaption,type DimensionRef} from '@/lib/dimensions';
 import {groupedPieces} from '@/lib/pieceGroups';
 import {diagramViewport} from '@/lib/diagramViewport';
 
@@ -28,7 +28,7 @@ function pieceRuns(faces:Face[]):Face[][]{
   for(const face of faces){const last=runs[runs.length-1];if(last&&last[0].pieceId===face.pieceId)last.push(face);else runs.push([face]);}
   return runs;
 }
-type Props={ fit?:boolean; highlight?:boolean; pickFaces?:boolean; caption?:boolean; furniture:Furniture; view?:View; layout?:'editor'|'sheet'; selected?:string; print?:boolean; paper?:boolean; scene?:ReturnType<typeof makeScene>; onOrbit?:(delta:[number,number])=>void; onMoveDimension?:(pieceId:string,role:Dimension['role'],delta:[number,number])=>void; onHideDimension?:(pieceId:string,role:Dimension['role'])=>void; onPick?:(pieceId:string,anchor:Vec3)=>void; onMove?:(noteId:string,position:[number,number])=>void; onNote?:(id:string)=>void };
+type Props={ fit?:boolean; highlight?:boolean; pickFaces?:boolean; caption?:boolean; furniture:Furniture; view?:View; layout?:'editor'|'sheet'; selected?:string; print?:boolean; paper?:boolean; scene?:ReturnType<typeof makeScene>; onOrbit?:(delta:[number,number])=>void; onMoveDimension?:(ref:DimensionRef,delta:[number,number])=>void; onHideDimension?:(ref:DimensionRef)=>void; onPick?:(pieceId:string,anchor:Vec3)=>void; onMove?:(noteId:string,position:[number,number])=>void; onNote?:(id:string)=>void };
 export default function Diagram({furniture:f,view='front',layout='editor',selected,print=false,paper=false,scene:suppliedScene,onPick,onMove,onNote,onHideDimension,onMoveDimension,onOrbit,fit=false,highlight=false,pickFaces=true,caption=true}:Props) {
   const scene=useMemo(()=>suppliedScene||makeScene(f,{view,layout}),[f,suppliedScene,view,layout]);
   const groups=useMemo(()=>groupedPieces(f),[f]);
