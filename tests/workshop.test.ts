@@ -8,6 +8,7 @@ import {presentationSchema} from '../lib/presentation';
 import {orderProjection} from '../lib/orderPreview';
 import {catalogComplete,catalogMissing,completeness,edgeTotals,formatMetres,materialLabel,plural} from '../sketchup_offline/ui/workshopRules';
 import type {Catalog,CatalogItem,Geometry,OrderPlan,OrderRow} from '../sketchup_offline/ui/WorkshopPanel';
+import {allDimensions} from './helpers/cotas';
 describe('Sugerencias auditables de nombres',()=>{
  it('se abstiene sin frente confirmado y no cambia nombres ni geometría',()=>{
   const f=createDemo().furniture[0],before=JSON.stringify(f),suggestions=nameSuggestions(f,{upAxis:2,frontAxis:1,frontSign:-1,confirmed:false},true);
@@ -45,11 +46,14 @@ describe('Vista de corte 2D por ejes y cara',()=>{
 
 describe('Plano compacto optativo para muebles densos',()=>{
  it('conserva geometría, medidas y todas las instancias, con referencias de tipo en la trasera',()=>{
-  let f=createDemo().furniture[0];f.groupIdentical=true;f=synchronizeGroupedNames(f);f.presentation={compact:true};const before=JSON.stringify(f);
+  // 0.8.31: the compact list of cotas with every piece cota turned on (hidden by default) and the totals.
+  let f=createDemo().furniture[0];f.groupIdentical=true;f=synchronizeGroupedNames(f);f.presentation={compact:true};f.dimensionDisplay=allDimensions(f);const before=JSON.stringify(f);
   const front=makeScene(f,{layout:'sheet'}),back=makeScene(f,{layout:'sheet',view:'back'});
   expect(front.labels).toHaveLength(0);expect(back.labels).toHaveLength(pieceRows(f).length);expect(back.labels.some(l=>l.quantity===2)).toBe(true);
   expect(new Set(front.faces.map(face=>face.pieceId)).size).toBe(f.pieces.length);expect(front.dimensions.length).toBeGreaterThan(0);
   for(const d of front.dimensions){expect(d.text).toContain(d.code);expect(d.text).toContain(d.role);expect(d.text).toContain('mm');}
+  expect(front.dimensions.filter(d=>d.total).map(d=>d.text.split(' ').slice(0,2).join(' '))).toEqual(['alto total','ancho total','profundidad total']);
+  expect(front.dimensions.filter(d=>!d.total).every(d=>/^P\d+ /.test(d.text))).toBe(true);
   expect(layoutWarnings(f)).toEqual([]);expect(JSON.stringify(f)).toBe(before);expect(presentationSchema.parse(f.presentation)).toEqual({compact:true});
  });
  it('agrupa advertencias repetidas manteniendo todos los códigos y notas, sin omitirlas',()=>{

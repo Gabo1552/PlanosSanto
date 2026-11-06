@@ -11,7 +11,7 @@ const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?
 let saveRequests:unknown[],saveReplies:Reply[],actions:Map<string,string>;
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,errors:string[];
 type Reply={version:1;id:string;result:unknown;error:string|null};
-type Snapshot={definitionGuids:string[];simulatedSaves:number;names:Record<string,string>;definitions:string[];operations:unknown[][];geometryHash:string;guide:{workCode?:string;revision:number;furniture:{groupIdentical?:boolean;presentation?:{hideIds?:boolean;cameras?:{front?:{yaw:number;pitch:number};back?:{yaw:number;pitch:number}};dimensionOffsets?:{offset:[number,number]}[]};pieces:{id:string;code:string;name:string}[];notes:unknown[]}[]}};
+type Snapshot={definitionGuids:string[];simulatedSaves:number;names:Record<string,string>;definitions:string[];operations:unknown[][];geometryHash:string;guide:{workCode?:string;revision:number;furniture:{groupIdentical?:boolean;presentation?:{hideIds?:boolean;cameras?:{front?:{yaw:number;pitch:number};back?:{yaw:number;pitch:number}};dimensionOffsets?:{pieceId:string;offset:[number,number]}[]};dimensionDisplay?:{shownPieces?:{pieceId:string;role:string}[]};pieces:{id:string;code:string;name:string}[];notes:unknown[]}[]}};
 async function send(action:string,data:unknown={}){
  const msg={version:1,id:randomUUID(),action,data};return raw(JSON.stringify(msg));
 }
@@ -128,6 +128,8 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  // IDs start hidden in the A4 (0.8.19): showing and hiding them again saves the explicit choice.
  await expect(page.locator('[data-label]')).toHaveCount(0);await page.getByRole('checkbox',{name:'Mostrar IDs en el dibujo'}).check();await expect(page.locator('[data-label]')).not.toHaveCount(0);
  await page.getByRole('checkbox',{name:'Mostrar IDs en el dibujo'}).uncheck();await expect(page.locator('[data-label]')).toHaveCount(0);
+ // 0.8.31: piece cotas start hidden (the drawing shows the totals); this one is turned on to move it.
+ await page.locator('.dimension-controls>summary').click();await page.getByRole('checkbox',{name:'Mostrar cota P01 largo',exact:true}).check();
  await page.getByRole('button',{name:'Mover cotas',exact:true}).click();await expect(page.locator('.diagram')).toHaveAttribute('data-layout','sheet');
  const dimension=page.getByRole('button',{name:/^Mover cota P01 largo:/});await dimension.focus();await page.keyboard.press('ArrowDown');
  const beforeDrag=await dimension.boundingBox();await page.mouse.move(beforeDrag!.x+beforeDrag!.width/2,beforeDrag!.y+beforeDrag!.height/2);await page.mouse.down();await page.mouse.move(beforeDrag!.x+beforeDrag!.width/2+7,beforeDrag!.y+beforeDrag!.height/2+2,{steps:2});await page.mouse.up();
@@ -139,6 +141,7 @@ test('obra/módulo/tabla sincronizan instancias; rotación, ID y cota se guardan
  expect(saved.operations.filter(op=>op[0]==='start')).toHaveLength(1);expect(saved.guide.workCode).toBe('VF');
  expect(saved.guide.furniture[0].presentation?.hideIds).toBe(true);expect(saved.guide.furniture[0].presentation?.cameras?.front?.yaw).toBeCloseTo(yaw,5);
  expect(saved.guide.furniture[0].presentation?.dimensionOffsets?.[0].offset[1]).toBeGreaterThan(0);
+ expect(saved.guide.furniture[0].dimensionDisplay).toEqual({shownPieces:[{pieceId:saved.guide.furniture[0].presentation?.dimensionOffsets?.[0].pieceId,role:'largo'}]});
  await page.reload();await page.getByRole('button',{name:'Generar guías (2)',exact:true}).click();
  await expect(page.getByLabel('Abreviatura de la obra')).toHaveValue('VF');await expect(page.getByLabel('Nombre P01',{exact:true})).toHaveValue('Lateral');
  // Muebles always locates pieces by ID; the saved «sin IDs» applies to Planos and the A4.

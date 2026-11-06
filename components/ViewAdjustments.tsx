@@ -1,18 +1,25 @@
-import type {Furniture} from '../lib/model';
+import {normalizeDimensionDisplay,type Furniture} from '../lib/model';
 import {type CameraAngles} from '../lib/presentation';
 import {viewCamera,withViewCamera} from '../lib/scene';
-import {moveDimension,dimensionChoices,type Dimension} from '../lib/dimensions';
-export function shiftDimension(f:Furniture,view:'front'|'back',pieceId:string,role:Dimension['role'],delta:[number,number],size:[number,number]=[960,580]){
+import {moveDimension,moveTotalDimension,dimensionChoices,type DimensionRef,type PieceRole} from '../lib/dimensions';
+export function shiftDimension(f:Furniture,view:'front'|'back',pieceId:string,role:PieceRole,delta:[number,number],size:[number,number]=[960,580]){
   const choice=dimensionChoices(f).find(c=>c.role===role&&c.pieceIds.includes(pieceId));
   const previous=f.presentation?.dimensionOffsets?.find(r=>r.view===view&&r.role===role&&choice?.pieceIds.includes(r.pieceId))?.offset||[0,0];
   return {...f.presentation,dimensionOffsets:moveDimension(f,pieceId,role,view,[previous[0]+delta[0]/size[0],previous[1]+delta[1]/size[1]])};
+}
+/** Moves any cota by `delta` sheet pixels: a piece cota changes presentation, a total changes dimensionDisplay. */
+export function shiftDimensionRef(f:Furniture,view:'front'|'back',ref:DimensionRef,delta:[number,number],size:[number,number]=[960,580]):Pick<Furniture,'presentation'|'dimensionDisplay'>{
+  if(!('total' in ref))return {presentation:shiftDimension(f,view,ref.pieceId,ref.role,delta,size),dimensionDisplay:f.dimensionDisplay};
+  const previous=f.dimensionDisplay?.totalOffsets?.find(r=>r.view===view&&r.total===ref.total)?.offset||[0,0];
+  return {presentation:f.presentation,dimensionDisplay:moveTotalDimension(f,ref.total,view,[previous[0]+delta[0]/size[0],previous[1]+delta[1]/size[1]])};
 }
 export function orbitCamera(f:Furniture,view:'front'|'back',delta:[number,number]){
   const key=f.presentation?.guide?.sharedCamera?'front':view,camera=viewCamera(f,key);
   return withViewCamera(f,key,{yaw:((camera.yaw+delta[0]*.4+540)%360)-180,pitch:Math.max(10,Math.min(80,camera.pitch-delta[1]*.3))});
 }
 /** `idsHiddenByDefault`: the A4 guide hides piece IDs unless the furniture saved an explicit choice. */
-export default function ViewAdjustments({furniture:f,view,disabled,mode,onMode,onChange,showTools=true,idsHiddenByDefault=false}:{furniture:Furniture;view:'front'|'back';disabled?:boolean;mode:'select'|'orbit'|'dimensions';onMode:(mode:'select'|'orbit'|'dimensions')=>void;onChange:(p:NonNullable<Furniture['presentation']>)=>void;showTools?:boolean;idsHiddenByDefault?:boolean}){
+/** `onDimensionDisplay`: «Restablecer cotas de esta vista» also puts the moved totals back (0.8.31). */
+export default function ViewAdjustments({furniture:f,view,disabled,mode,onMode,onChange,onDimensionDisplay,showTools=true,idsHiddenByDefault=false}:{furniture:Furniture;view:'front'|'back';disabled?:boolean;mode:'select'|'orbit'|'dimensions';onMode:(mode:'select'|'orbit'|'dimensions')=>void;onChange:(p:NonNullable<Furniture['presentation']>)=>void;onDimensionDisplay?:(d:NonNullable<Furniture['dimensionDisplay']>)=>void;showTools?:boolean;idsHiddenByDefault?:boolean}){
   const guide=f.presentation?.guide,shared=!!guide?.sharedCamera,key=shared?'front':view;
   // A shared guide shows the exterior angles; the interior follows from the opposite side.
   const angles=viewCamera(f,key);
@@ -25,6 +32,6 @@ export default function ViewAdjustments({furniture:f,view,disabled,mode,onMode,o
     <label><input type="checkbox" aria-label="Mostrar IDs en el dibujo" disabled={disabled} checked={!(f.presentation?.hideIds??idsHiddenByDefault)} onChange={e=>onChange({...f.presentation,hideIds:!e.target.checked})}/> Mostrar IDs en el dibujo</label>
     {!guide&&<label><input type="checkbox" aria-label="Plano compacto por tipos" disabled={disabled} checked={f.presentation?.compact||false} onChange={e=>onChange({...f.presentation,compact:e.target.checked})}/> Plano compacto por tipos: IDs por tipo y cantidad en la trasera; cotas por referencia bajo la delantera. Usar con componentes iguales agrupados.</label>}
     <button disabled={disabled} onClick={()=>onChange({...f.presentation,cameras:{...f.presentation?.cameras,[key]:undefined,...(shared?{back:undefined}:{})}})}>Restablecer rotación de esta vista</button>
-    <button disabled={disabled} onClick={()=>onChange({...f.presentation,dimensionOffsets:(f.presentation?.dimensionOffsets||[]).filter(r=>r.view!==view)})}>Restablecer cotas de esta vista</button>
+    <button disabled={disabled} onClick={()=>{onChange({...f.presentation,dimensionOffsets:(f.presentation?.dimensionOffsets||[]).filter(r=>r.view!==view)});if(onDimensionDisplay&&f.dimensionDisplay?.totalOffsets?.some(r=>r.view===view))onDimensionDisplay(normalizeDimensionDisplay({...f.dimensionDisplay,totalOffsets:f.dimensionDisplay.totalOffsets.filter(r=>r.view!==view)}));}}>Restablecer cotas de esta vista</button>
   </div></details>;
 }
