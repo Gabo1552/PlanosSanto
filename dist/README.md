@@ -1,3 +1,16 @@
+# Entrega 0.8.33 — pintura solo con los materiales elegidos y giro al marcar el frente, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.33-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
+
+Sobre la 0.8.32:
+
+- **Pintura:** la barra y la paleta muestran solo los materiales elegidos para el SKP en Materiales.
+- **Frente:** en Sugerencias de nombres se puede girar el dibujo para marcar un frente que quedó atrás.
+
+Validar con `docs/validacion-0833/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.32). Producción no aprobada; SketchUp 2022 sin probar.
+
+---
+
 # Entrega 0.8.32 — frentes de cajón con veta vertical sin aviso, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.32-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
