@@ -539,6 +539,7 @@ class PinturaEnVistaToolTest < Minitest::Test
   def swatches_for(mode)
     item=mode=='edge' ? @edge : @sheet;b=binding_of(item)
     ready={'catalogId'=>b['catalogId'],'materialUuid'=>b['uuid'],'name'=>item.display_name,'color'=>[1,2,3],'state'=>'ready'}
+    return [NUEVA.merge('project'=>true)] if @project_only && mode=='sheet'
     mode=='edge' ? [ready] : [ready,NUEVA]
   end
   def build_vista(options)
@@ -603,6 +604,13 @@ class PinturaEnVistaToolTest < Minitest::Test
     @tool.onMouseMove(0,*center(:cell,2),@view)
     assert_match(/Roble nuevo\. Clic para usarlo \(se instala en el modelo\); no pinta\./,@events.last['message'])
     assert_equal 2,@events.last['recents'].length,'status still reports only the recents'
+  end
+
+  # 0.8.33: with the SKP's chosen materials (rows flagged 'project'), a recent outside them leaves the strip.
+  def test_strip_keeps_only_project_materials_when_the_skp_chose_them
+    @project_only=true
+    build_vista(tool_options('sheet'))
+    assert_equal [NUEVA['catalogId']],@tool.instance_variable_get(:@strip_rows).map { |row| row['catalogId'] }
   end
 
   def test_clicking_an_installable_swatch_asks_the_controller_to_install_it_and_never_paints

@@ -1030,6 +1030,12 @@ module PlanosSanto
     def refresh_swatches!
       return unless in_view?
       list=@swatches_source.call(material_mode)
+      # 0.8.33: rows flagged 'project' are the SKP's chosen materials: then a recent outside them goes too.
+      rows=list.is_a?(Array) ? list.select { |row| row.is_a?(Hash) } : []
+      if rows.any? { |row| row['project'] }
+        allowed=rows.map { |row| row['catalogId'] }
+        @strip_rows.select! { |row| allowed.include?(row['catalogId']) }
+      end
       seen=@strip_rows.map { |row| row['catalogId'] }
       (list.is_a?(Array) ? list : []).each do |row|
         break if @strip_rows.length>=SWATCH_LIMIT

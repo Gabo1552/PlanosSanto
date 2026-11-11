@@ -5,7 +5,7 @@ import './material-library.css';
 import {SkmBatchKind,SkmRowKind} from './SkmTypedImport';
 import {initialKinds,typedKinds} from './maderaRules';
 import PhotoMaterialPanel,{TextureAdjustPanel,type PhotoMaterialResult,type PhotoMaterialTarget,type TextureApplyResult} from './PhotoMaterialPanel';
-import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,foldOpen,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,projectIds,splitProject,type ProjectMaterials,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
+import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,foldOpen,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,projectIds,projectIsFallback,splitProject,type ProjectMaterials,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
 import {catalogComplete,catalogMissing} from './workshopRules';
 
 type Suggestions={kind?:string;thicknessMm?:number|null;verified?:boolean};
@@ -483,14 +483,17 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
  }
  // 0.8.31: «Usar en este proyecto». One named operation in this SKP (Ctrl+Z undoes it); the library does not change.
  async function toggleProject(item:CatalogItem){
-  const adding=!project?.has(item.id);
+  const adding=!project?.has(item.id),fallback=projectIsFallback(library?.projectMaterials);
   // Keep «Biblioteca del taller» as the user sees it while marking several in a row.
   setLibraryOpen(previous=>previous??foldOpen(projectCount>0,'',null));
-  const result=await request<{projectMaterials?:ProjectMaterials;changed?:number}>('project_materials_set',adding?{add:[item.id]}:{remove:[item.id]});
+  // 0.8.33: nothing chosen yet, the project is what the model already uses. Removing one of those keeps the
+  // rest as the chosen list; adding starts the list with this one only (painting then shows just the chosen).
+  const change=adding?{add:[item.id]}:fallback?{add:[...(project||[])].filter(id=>id!==item.id)}:{remove:[item.id]};
+  const result=await request<{projectMaterials?:ProjectMaterials;changed?:number}>('project_materials_set',change);
   const next=result?.projectMaterials;
   if(next&&Array.isArray(next.ids))setLibrary(previous=>previous&&{...previous,projectMaterials:next});
   pendingFocus.current={card:item.id};setSelectedId(item.id);setGridFocus(item.id);
-  setNotice(adding?`«${item.name}» se usa en este proyecto: aparece al pintar este SKP. Ctrl+Z en SketchUp lo deshace.`:`«${item.name}» ya no está en este proyecto. Sigue en la biblioteca del taller.`);
+  setNotice(adding?`«${item.name}» se usa en este proyecto: al pintar este SKP aparecen solo los materiales elegidos. Ctrl+Z en SketchUp lo deshace.`:`«${item.name}» ya no está en este proyecto. Sigue en la biblioteca del taller.`);
  }
  async function applyFicha(updated:FichaItem,color?:[number,number,number]){
   if(!library)return;
@@ -550,7 +553,7 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
     <span className="material-tile-meta">{summary(item)}{!complete&&<span className="material-tile-flag incomplete" title={`Para pedidos falta: ${catalogMissing(item).join(', ')}`}> · Incompleta</span>}{inModel&&<span className="material-tile-flag model"> · En el modelo</span>}{isArchived&&<span className="material-tile-flag"> · Archivada</span>}</span>
     <span className="material-tile-actions">
      {(info.issues.length>0||info.photoMissing)&&<span className="material-tile-issue" role="img" aria-label={info.photoMissing?'Faltan archivos de la foto':info.issues.join(' ')} title={info.photoMissing?'Faltan archivos de la foto':info.issues.join(' ')}><Icon name="warning"/></span>}
-     {project&&(()=>{const inProject=project.has(item.id);return <button type="button" className="material-project-toggle material-icon-button" disabled={blocked||inModel} aria-pressed={inProject} aria-label={`Usar ${item.name} en este proyecto`} title={inModel?'Ya está cargado en este modelo: queda en el proyecto':inProject?'Quitar de este proyecto':'Usar en este proyecto'} onClick={()=>void run(inProject?'Quitando del proyecto…':'Sumando al proyecto…',()=>toggleProject(item))}><Icon name="project" className={inProject?'filled':''}/></button>;})()}
+     {project&&(()=>{const inProject=project.has(item.id);return <button type="button" className="material-project-toggle material-icon-button" disabled={blocked} aria-pressed={inProject} aria-label={`Usar ${item.name} en este proyecto`} title={inProject?'Quitar de este proyecto':'Usar en este proyecto'} onClick={()=>void run(inProject?'Quitando del proyecto…':'Sumando al proyecto…',()=>toggleProject(item))}><Icon name="project" className={inProject?'filled':''}/></button>;})()}
      <button type="button" className="material-star material-icon-button" disabled={blocked} aria-label={`${item.favorite?'Quitar favorito':'Marcar favorito'} ${item.name}`} aria-pressed={item.favorite} title={item.favorite?'Quitar de favoritos':'Añadir a favoritos'} onClick={()=>void run('Guardando favorito…',()=>favorite(item))}><Icon name="star" className={item.favorite?'filled':''}/></button>
      <button type="button" className="material-icon-button" disabled={blocked} aria-label={`Editar ficha ${item.name}`} title="Editar ficha" onClick={()=>openFicha(item.id)}><Icon name="pencil"/></button>
     </span>
