@@ -61,3 +61,29 @@ test('ocultar el frente deja ver y tocar el interior; las puertas siguen en la l
  await dialog.getByRole('button',{name:'Confirmar y guardar nombres',exact:true}).click();await expect(dialog).toHaveCount(0);
  await expect.poll(async()=>{const n=await names();return [n['17'],n['18']].every(name=>/Puerta/.test(name||''));}).toBe(true);
 });
+
+// 0.8.33 · «Girar 90°» y «Rotar con el mouse» giran solo el dibujo del diálogo, para marcar un frente que quedó atrás.
+test('girar el dibujo para ver el otro lado no cambia el frente ni los planos; «Vista inicial» lo devuelve',async({page},info)=>{
+ const dialog=await boot(page,info.outputDir);
+ const shape=()=>dialog.locator('svg.diagram polygon[data-piece]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('points')).join('|'));
+ const status=dialog.locator('.naming-front-status');
+ const before=await shape(),front=await status.textContent();
+ await dialog.getByRole('button',{name:'Girar 90°',exact:true}).click();
+ const turned=await shape();expect(turned).not.toBe(before);
+ await dialog.getByRole('button',{name:'Girar 90°',exact:true}).click();
+ expect(await shape()).not.toBe(turned);
+ await expect(status).toHaveText(front!);
+ // Arrastrar con «Rotar con el mouse» también gira, y apaga «Marcar frente».
+ const orbit=dialog.getByRole('button',{name:'Rotar con el mouse',exact:true});
+ await dialog.getByRole('button',{name:'Marcar frente en el dibujo',exact:true}).click();
+ await orbit.click();await expect(orbit).toHaveAttribute('aria-pressed','true');
+ await expect(dialog.getByRole('button',{name:'Marcar frente en el dibujo',exact:true})).toHaveAttribute('aria-pressed','false');
+ const dragged=await shape(),box=(await dialog.locator('svg.diagram').boundingBox())!;
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+120,box.y+box.height/2,{steps:6});await page.mouse.up();
+ expect(await shape()).not.toBe(dragged);
+ await dialog.getByRole('button',{name:'Vista inicial',exact:true}).click();
+ expect(await shape()).toBe(before);
+ await expect(orbit).toHaveAttribute('aria-pressed','false');
+ const {violations}=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).include('.naming-dialog').analyze();
+ expect(violations.map(v=>`${v.impact} ${v.id}`)).toEqual([]);
+});

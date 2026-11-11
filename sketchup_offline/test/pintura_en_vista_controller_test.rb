@@ -186,6 +186,16 @@ class PinturaEnVistaControllerTest < Minitest::Test
     assert_equal ['canto'],with_tool { tool.args[:swatches].call('edge') }.map { |row| row['catalogId'] }
   end
 
+  # 0.8.33: chosen project materials are the only swatches; the other mode keeps the library if none chosen.
+  def test_swatches_show_only_the_project_materials_once_chosen
+    paint('sheet')
+    @model.set_attribute(PlanosSanto::ProjectMaterials::DICTIONARY,PlanosSanto::ProjectMaterials::KEY,JSON.generate('schema'=>1,'ids'=>%w[nueva]))
+    assert_equal %w[nueva],with_tool { tool.args[:swatches].call('sheet') }.map { |row| row['catalogId'] },'solo la elegida, aunque placa ya esté cargada en el modelo'
+    assert_equal ['canto'],with_tool { tool.args[:swatches].call('edge') }.map { |row| row['catalogId'] },'ningún canto elegido: el modo canto sigue mostrando la biblioteca'
+    @model.set_attribute(PlanosSanto::ProjectMaterials::DICTIONARY,PlanosSanto::ProjectMaterials::KEY,JSON.generate('schema'=>1,'ids'=>%w[placa fantasma]))
+    assert_equal %w[placa],with_tool { tool.args[:swatches].call('sheet') }.map { |row| row['catalogId'] },'un id que ya no está en la biblioteca se ignora'
+  end
+
   def test_choosing_an_installable_swatch_installs_it_without_a_window_and_remembers_it
     paint('sheet')
     options=with_tool { tool.args[:pick_material].call('nueva','sheet') }

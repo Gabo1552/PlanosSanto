@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {boundIds,foldOpen,paletteSections,projectIds,splitProject} from '../sketchup_offline/ui/materialLibraryModel';
+import {boundIds,foldOpen,paletteSections,projectIds,projectIsFallback,splitProject} from '../sketchup_offline/ui/materialLibraryModel';
 
 // 0.8.31: «Materiales del proyecto». Pure logic shared by Materiales and the paint palette.
 const rows=(...ids:string[])=>ids.map(id=>({id}));
@@ -7,12 +7,22 @@ const ids=(list:{id:string}[])=>list.map(row=>row.id);
 const natives=[{binding:{catalogId:'pintado'}},{binding:null},{},{binding:{catalogId:''}}];
 
 describe('Materiales del proyecto: qué cuenta como del proyecto',()=>{
- it('suma la lista guardada y lo ya pintado en el modelo, sin duplicar',()=>{
+ it('0.8.33: con lista elegida, el proyecto es SOLO la lista (lo ya cargado en el modelo no se suma)',()=>{
+  expect([...projectIds({ids:['elegido']},natives)!]).toEqual(['elegido']);
   expect([...projectIds({ids:['elegido','pintado']},natives)!].sort()).toEqual(['elegido','pintado']);
   expect([...boundIds(natives)]).toEqual(['pintado']);
+  expect(projectIsFallback({ids:['elegido']})).toBe(false);
  });
- it('un SKP viejo (lista vacía) igual tiene los materiales que ya usa',()=>{
+ it('un SKP que nunca eligió (lista vacía) usa los materiales que ya tiene cargados',()=>{
   expect([...projectIds({ids:[]},natives)!]).toEqual(['pintado']);
+  expect(projectIsFallback({ids:[]})).toBe(true);
+  expect(projectIsFallback(undefined)).toBe(false);
+ });
+ it('aunque toda la biblioteca esté cargada en el modelo, la paleta muestra solo lo elegido',()=>{
+  const everything=['a','b','c','d'].map(catalogId=>({binding:{catalogId}}));
+  const project=projectIds({ids:['b']},everything);
+  const sections=paletteSections(rows('a','b','c','d'),rows('a','b','c','d'),project,'');
+  expect(ids(sections.main)).toEqual(['b']);expect(ids(sections.folded)).toEqual(['a','c','d']);
  });
  it('sin lista del backend (versión anterior) no hay proyecto: null',()=>{
   expect(projectIds(undefined,natives)).toBeNull();

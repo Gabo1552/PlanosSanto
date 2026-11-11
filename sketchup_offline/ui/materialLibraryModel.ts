@@ -197,13 +197,18 @@ export function boundIds(materials:readonly BoundMaterial[]|undefined):Set<strin
  for(const material of materials||[]){const id=material?.binding?.catalogId;if(typeof id==='string'&&id)ids.add(id);}
  return ids;
 }
-/** The project = the saved list plus what is already in the model. null when the backend has no project list. */
+/**
+ * The project (0.8.33): the saved list when it has any id, and nothing else, so painting shows only what was
+ * chosen. A SKP that never chose falls back to the fichas already bound in the model. null when the backend has
+ * no project list.
+ */
 export function projectIds(saved:ProjectMaterials|null|undefined,materials:readonly BoundMaterial[]|undefined):Set<string>|null{
  if(!saved||!Array.isArray(saved.ids))return null;
- const ids=boundIds(materials);
- for(const id of saved.ids)if(typeof id==='string'&&id)ids.add(id);
- return ids;
+ const chosen=new Set(saved.ids.filter((id):id is string=>typeof id==='string'&&!!id));
+ return chosen.size?chosen:boundIds(materials);
 }
+/** True while the project is only the fallback (nothing chosen yet in this SKP). */
+export function projectIsFallback(saved:ProjectMaterials|null|undefined){return !!saved&&Array.isArray(saved.ids)&&!saved.ids.some(id=>typeof id==='string'&&!!id);}
 /** Order-preserving split: the project's first, the rest of the library apart. */
 export function splitProject<T extends {id:string}>(items:readonly T[],project:ReadonlySet<string>|null):{project:T[];others:T[]}{
  if(!project)return {project:[],others:[...items]};

@@ -1569,12 +1569,20 @@ module PlanosSanto
         {'catalogId'=>item['id'],'materialUuid'=>ready ? state['materialUuid'].to_s : '','name'=>item['name'].to_s,
          'color'=>rgb.is_a?(Array) && rgb.length==3 ? rgb.map { |value| value.to_i.clamp(0,255) } : nil,'state'=>state['state']}
       end
-      # 0.8.31: the project's fichas first (saved list; ready ones are bound, so in the project too).
-      project=project_materials.read(nil)['ids']
-      rows.sort_by { |row| [row['state']=='ready' || project.include?(row['catalogId']) ? 0 : 1,row['state']=='ready' ? 0 : 1,row['name'].downcase] }
+      # 0.8.33: once the SKP has chosen its materials, the strip shows ONLY those of this mode. A SKP that never
+      # chose, or a project with none of this mode, keeps the whole library (the strip is the only chooser here).
+      project=project_swatch_ids(catalog)
+      mine=project.empty? ? [] : rows.select { |row| project.include?(row['catalogId']) }
+      (mine.empty? ? rows : mine.map { |row| row.merge('project'=>true) }).sort_by { |row| [row['state']=='ready' ? 0 : 1,row['name'].downcase] }
     rescue StandardError => error
       warn("Planos Santo: no se pudieron leer las muestras de la vista: #{error.class}")
       []
+    end
+
+    # The fichas chosen for this SKP in Materiales (validated against the library); [] when none.
+    def project_swatch_ids(catalog)
+      existing=(catalog['items'] || []).filter_map { |item| item.is_a?(Hash) && item['id'] }
+      project_materials.read(existing)['ids']
     end
 
     # A swatch click is the explicit choice: installs in this model when needed
