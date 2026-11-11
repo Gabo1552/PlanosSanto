@@ -22,7 +22,6 @@ module PlanosSanto
     VERTICAL=0.999
     FLAT=0.017
     SQUARE='Largo igual al ancho: la veta no tiene un lado más largo que seguir. Confirmala o girala en Piezas.'.freeze
-    WIDE='Pieza vertical más ancha que alta (frente de cajón, zócalo): la veta va vertical, siguiendo la altura del mueble. Si la querés horizontal, girala en Piezas.'.freeze
     OBLIQUE='Pieza inclinada respecto de la vertical del modelo: no se sabe si es vertical u horizontal. Revisá la veta en Piezas.'.freeze
     TILTED='El mueble está acostado o girado fuera de la vertical del modelo: la veta automática toma la vertical del modelo. Revisala en Piezas.'.freeze
 
@@ -50,9 +49,10 @@ module PlanosSanto
       return nil unless axes.all? { |i| lengths[i]-lengths[thin]>0.01 }
       cos=axes.to_h { |i| [i,vertical_cos(matrix,i)] }
       vertical=axes.max_by { |i| [cos[i],lengths[i],-i] };longest=axes.max_by { |i| [lengths[i],-i] }
-      other=(axes-[vertical]).first
       auto,review=if cos[vertical]>=VERTICAL
-                    [vertical,lengths[vertical]+TOLERANCE<lengths[other] ? WIDE : nil]
+                    # 0.8.32: confirmado con el taller: los frentes de cajón (y toda pieza vertical, aunque sea más
+                    # ancha que alta) llevan la veta vertical. Ya no queda aviso para revisar.
+                    [vertical,nil]
                   elsif axes.all? { |i| cos[i]<=FLAT }
                     [longest,(lengths[axes[0]]-lengths[axes[1]]).abs<=TOLERANCE ? SQUARE : nil]
                   else
