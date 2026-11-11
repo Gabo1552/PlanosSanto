@@ -1,6 +1,6 @@
 import {explodedOffsets} from './explosion';
 import { Matrix4, Ray, Vector3 } from 'three';
-import { bounds, type Furniture, type Mesh, type Note, type Piece, type Vec3 } from './model';
+import { bounds, TOTAL_DIMENSIONS, type Furniture, type Mesh, type Note, type Piece, type TotalDimension, type Vec3 } from './model';
 import {defaultCamera,type CameraAngles,type Presentation} from './presentation';
 import type {NamingReference} from './naming';
 import {exteriorFromOrientation,proposeOrientation} from './nameSuggestions';
@@ -127,6 +127,29 @@ export function interiorHidden(f:Furniture):string[]{
 export function interiorCovered(f:Furniture):string[]{
   const stored=f.presentation?.guide?.hiddenPieceIds||[],front=frontPieceIds(f);
   return stored.length&&!front.some(id=>stored.includes(id))?front:[];
+}
+/**
+ * Box of the whole assembled furniture in its front frame (0.8.31, cotas totales): alto along the front's vertical,
+ * profundidad along its exterior normal, ancho across. Every piece counts, also those hidden in the interior view
+ * and whatever the explosion, because it is the size of the furniture. The extents come from the local vertices
+ * through each piece's transform (millimetres), never from the drawing; a rotated piece counts by its real corners.
+ */
+export type Envelope={axes:Record<TotalDimension,Vector3>;min:Record<TotalDimension,number>;max:Record<TotalDimension,number>;size:Record<TotalDimension,number>};
+const envelopeCache=new WeakMap<object,{marked:NamingReference|undefined;reference:Furniture['referenceTransform'];envelope:Envelope|undefined}>();
+export function furnitureEnvelope(f:Furniture):Envelope|undefined{
+  const hit=envelopeCache.get(f.pieces);
+  if(hit&&hit.marked===f.naming?.reference&&hit.reference===f.referenceTransform)return hit.envelope;
+  let envelope:Envelope|undefined;
+  if(f.pieces.length){
+    const front=furnitureFront(f),up=new Vector3(...front.up.world).normalize(),out=new Vector3(...front.exterior.world);
+    out.addScaledVector(up,-out.dot(up)).normalize();
+    const axes={alto:up,ancho:new Vector3().crossVectors(up,out).normalize(),profundidad:out};
+    const min={alto:Infinity,ancho:Infinity,profundidad:Infinity},max={alto:-Infinity,ancho:-Infinity,profundidad:-Infinity};
+    for(const p of f.pieces)for(const v of prepared(p).world)for(const role of TOTAL_DIMENSIONS){const d=v.dot(axes[role]);if(d<min[role])min[role]=d;if(d>max[role])max[role]=d;}
+    envelope={axes,min,max,size:{alto:max.alto-min.alto,ancho:max.ancho-min.ancho,profundidad:max.profundidad-min.profundidad}};
+  }
+  envelopeCache.set(f.pieces,{marked:f.naming?.reference,reference:f.referenceTransform,envelope});
+  return envelope;
 }
 export const SHEET_VIEW={width:320,height:450,widthMm:86,topMm:42,xMm:[8,99]} as const;
 /** front/back are stable storage keys: exterior/interior in configurable guides. */
@@ -348,7 +371,11 @@ export function makeScene(f: Furniture,options:SceneOptions={}) {
     if(a.x<8 || a.y<8 || a.x+a.w>width-8 || a.y+a.h>height-8) warnings.push('Una nota queda fuera de la vista. Movela hacia adentro.');
     if(notes.slice(i+1).some(b=>overlaps(a,b.rect,0))) warnings.push('Hay notas superpuestas. Separalas antes de imprimir.');
   }
-  const dimensionLayout=options.dimensions===false||(sheet&&view==='back'&&!guide)?{dimensions:[],warnings:[]}:makeDimensions(visibleFurniture,anchor,[...notes.map(n=>n.rect),...labels],notes.map(n=>({a:{x:n.rect.x+(n.marker?12:0),y:n.rect.y+(n.marker?12:20)},b:n.target,kind:'leader'})),notes.map(n=>n.rect),{width,height},view);
+  // Totals measure the assembled furniture: they are drawn on its box without explosion or hand offsets, once per
+  // sheet (in the exterior view, or in the interior when it is the only view printed).
+  const envelope=view==='front'||!guideViews(f).includes('front')?furnitureEnvelope(f):undefined;
+  const totals=envelope&&{envelope,project:(p:Vec3)=>project(new Vector3(...p))};
+  const dimensionLayout=options.dimensions===false||(sheet&&view==='back'&&!guide)?{dimensions:[],warnings:[]}:makeDimensions(visibleFurniture,anchor,[...notes.map(n=>n.rect),...labels],notes.map(n=>({a:{x:n.rect.x+(n.marker?12:0),y:n.rect.y+(n.marker?12:20)},b:n.target,kind:'leader'})),notes.map(n=>n.rect),{width,height},view,totals);
   warnings.push(...dimensionLayout.warnings);
   return {view,width,height,sheet,origin,camera:{right,forward,up},faces,edges,labels,notes,dimensions:dimensionLayout.dimensions,warnings:[...new Set(warnings)],anchor,transforms,scale,cx,cy,offsets};
 }

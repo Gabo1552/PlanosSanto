@@ -208,3 +208,14 @@
 .material-import-preview>footer button{flex:none}
 @media(max-width:700px){.visual-material-library{padding:16px}.material-library-heading{margin:-16px -16px 0;padding:14px 16px;flex-direction:column}.material-library-main-actions{justify-content:flex-start}.material-tiles{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
 .material-native-entry{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:14px 0;padding:14px;border:1px solid #d9dce5;border-radius:8px;background:#f0f1f7;color:#000028}.material-native-entry p{margin:5px 0 0;font-size:13px;color:#53566a}.material-native-entry button{min-height:44px}.material-native-context{padding:12px 20px;background:#f0f1f7;color:#242437;border-bottom:1px solid #d9dce5;font-size:13px;line-height:1.5}.material-native-context p{margin:5px 0}.material-native-context ul{margin:6px 0;padding-left:20px}.material-native-context strong{color:#000028}
+/* 0.8.31: materiales del proyecto. «En este proyecto» arriba; el resto de la biblioteca del taller, plegable. */
+.material-project-block,.material-workshop-block{display:grid;gap:14px;min-width:0}
+.material-project-block{padding:12px 14px 14px;border:1px solid #c9d3cb;border-radius:8px;background:#f4f7f4}
+.visual-material-library .material-block-title{display:flex;align-items:center;gap:9px;font-size:19px;font-weight:600;margin:0}
+.visual-material-library .material-fold-toggle{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:4px 10px 4px 6px;font:inherit;font-weight:600;background:transparent;border:1px solid transparent;border-radius:6px;color:var(--material-ink)}
+.visual-material-library .material-fold-toggle:hover:not(:disabled){border-color:var(--material-line);background:#fff}
+.visual-material-library .material-fold-toggle:disabled{opacity:1;cursor:default}
+.material-workshop-list{display:grid;gap:18px;min-width:0}
+.material-project-empty{margin:0;font-size:14px;color:var(--material-muted)}
+.material-project-empty .material-icon{width:15px;height:15px;vertical-align:-2px}
+.visual-material-library .material-project-toggle[aria-pressed=true]{color:var(--material-accent)}

@@ -5,7 +5,7 @@ import './material-library.css';
 import {SkmBatchKind,SkmRowKind} from './SkmTypedImport';
 import {initialKinds,typedKinds} from './maderaRules';
 import PhotoMaterialPanel,{TextureAdjustPanel,type PhotoMaterialResult,type PhotoMaterialTarget,type TextureApplyResult} from './PhotoMaterialPanel';
-import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
+import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,foldOpen,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,projectIds,splitProject,type ProjectMaterials,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
 import {catalogComplete,catalogMissing} from './workshopRules';
 
 type Suggestions={kind?:string;thicknessMm?:number|null;verified?:boolean};
@@ -13,7 +13,7 @@ export type SkmLibraryRow={catalogId:string;sha256?:string;assetHash?:string;nam
 type NativeMaterial={id:string;name:string;color?:number[]|null;hasTexture?:boolean;binding?:{catalogId:string;kind:string;uuid:string}|null;issues?:string[]};
 /** 0.8.17: a model material whose ficha cannot be chosen automatically (same name twice, or another OpenCutList type). */
 export type LinkAmbiguity={materialId:string;name:string;reason:'name'|'ocl_type';message:string;candidates:{catalogId:string;name:string;kind:string;thicknessMm:number|null}[]};
-export type VisualLibrary={catalog:Catalog;rows:SkmLibraryRow[];materials?:NativeMaterial[];visuals?:{catalogId:string;available:boolean;designReady:boolean}[];assetRevision?:number;ambiguous?:LinkAmbiguity[];autoLink?:{changed?:number};standardThicknessesMm?:StandardThicknesses;standardWidthsMm?:{edge:number[]}};
+export type VisualLibrary={catalog:Catalog;rows:SkmLibraryRow[];materials?:NativeMaterial[];visuals?:{catalogId:string;available:boolean;designReady:boolean}[];assetRevision?:number;ambiguous?:LinkAmbiguity[];autoLink?:{changed?:number};standardThicknessesMm?:StandardThicknesses;standardWidthsMm?:{edge:number[]};projectMaterials?:ProjectMaterials};
 export type SkmPreviewRow={id:string;sha256:string;hash?:string;name:string;sourceName:string;bytes:number;thumbnail?:string|null;suggestions?:Suggestions;warnings:string[];status:'new'|'duplicate'|'conflict'};
 export type SkmPreview={token:string;revision:number;rows:SkmPreviewRow[]};
 type PreviewResult=SkmPreview|{cancelled:true};
@@ -55,6 +55,7 @@ const iconPaths:Record<string,ReactNode>={
  refresh:<><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.6h-3.6M6.5 20.5v-3.6h3.6"/></>,
  plus:<path d="M12 5v14M5 12h14"/>,
  minus:<path d="M5 12h14"/>,
+ project:<path d="M7 3.8h10v16.4l-5-3.6-5 3.6z"/>,
  more:<><circle cx="12" cy="5.5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="18.5" r="1.2"/></>,
  close:<path d="m6 6 12 12M18 6 6 18"/>,
  search:<><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></>,
@@ -286,6 +287,8 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
  const [archivedIds,setArchivedIds]=useState<string[]>([]),[statesRevision,setStatesRevision]=useState<number>(),[oclResult,setOclResult]=useState<OclPlan>(),[textureId,setTextureId]=useState('');
  const [packagePreview,setPackagePreview]=useState<PackagePreview>(),[packageRows,setPackageRows]=useState<string[]>([]),[packageRenames,setPackageRenames]=useState<Record<string,string>>({}),[gridFocus,setGridFocus]=useState('');
  const [modelPreview,setModelPreview]=useState<ModelFichaPreview>();
+ // 0.8.31: «Biblioteca del taller» plegada (null = criterio por defecto: plegada si el proyecto ya tiene materiales).
+ const [libraryOpen,setLibraryOpen]=useState<boolean|null>(null),[projectRevision,setProjectRevision]=useState(0),appliedProject=useRef(0);
  const nativeRequest=useRef('');
  const nativeButtons=useRef(new Map<string,HTMLButtonElement>());
  const [ficha,setFicha]=useState<Ficha>(),[fichaDirty,setFichaDirty]=useState(false),[fichaKey,setFichaKey]=useState(0);
@@ -306,6 +309,17 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
  useEffect(()=>{onDirtyChange?.(modal||!!busy||photoOpen||(!!ficha&&fichaDirty));return()=>{onDirtyChange?.(false);};},[modal,busy,photoOpen,ficha,fichaDirty,onDirtyChange]);
  useEffect(()=>{if(lastRefresh.current===refreshKey||modal||busy||photoOpen||(ficha&&fichaDirty))return;lastRefresh.current=refreshKey;void run('Actualizando fichas…',async()=>{await load();},true);},[refreshKey,modal,busy,photoOpen,ficha,fichaDirty,run,load]);
  useEffect(()=>{if(preview)previewPanel.current?.focus();},[preview]);
+ // The paint palette (adds what you paint) and SketchUp's Undo change the list too: reread only it.
+ useEffect(()=>{
+  const changed=(event:Event)=>{const action=(event as CustomEvent<{action?:string}>).detail?.action;if(action==='project_materials_set'||action==='project_materials')setProjectRevision(value=>value+1);};
+  window.addEventListener('planos-santo-material-library-changed',changed);return()=>window.removeEventListener('planos-santo-material-library-changed',changed);
+ },[]);
+ useEffect(()=>{
+  if(!library?.projectMaterials||busy||projectRevision<=appliedProject.current)return;
+  let cancelled=false;const revision=projectRevision;
+  const timer=setTimeout(()=>{void request<{projectMaterials?:ProjectMaterials}>('project_materials').then(result=>{if(cancelled)return;appliedProject.current=revision;const next=result?.projectMaterials;if(next&&Array.isArray(next.ids))setLibrary(previous=>previous&&{...previous,projectMaterials:next});}).catch(()=>{});},60);
+  return()=>{cancelled=true;clearTimeout(timer);};
+ },[projectRevision,busy,library?.projectMaterials]);
  useEffect(()=>{if(packagePreview)packagePanel.current?.focus();},[packagePreview]);
  useEffect(()=>{
   if(busy||modal||photoOpen||ficha||!pendingFocus.current)return;
@@ -341,8 +355,15 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
  const modelCatalogIds=useMemo(()=>new Set(nativeMaterials.flatMap(material=>material.binding?.catalogId?[material.binding.catalogId]:[])),[nativeMaterials]);
  const scoped=useMemo(()=>library?.catalog.items.filter(item=>scope!=='model'||modelCatalogIds.has(item.id))||[],[library,scope,modelCatalogIds]);
  const filtered=useMemo(()=>filterItems(scoped,{filter,query,archived,favorites}),[scoped,filter,query,archived,favorites]);
- const groups=useMemo(()=>groupItems(filtered),[filtered]);
- const ordered=useMemo(()=>groups.flatMap(group=>group.items),[groups]);
+ // 0.8.31: materiales del proyecto (lista del SKP + lo ya cargado en el modelo). Sin lista del backend, no hay división.
+ const project=useMemo(()=>projectIds(library?.projectMaterials,nativeMaterials),[library?.projectMaterials,nativeMaterials]);
+ const splitting=!!project&&scope==='workshop'&&filter!=='archived'&&filtered.length>0;
+ const projectCount=useMemo(()=>project?(library?.catalog.items||[]).filter(item=>project.has(item.id)&&!archived.has(item.id)).length:0,[project,library,archived]);
+ const split=useMemo(()=>splitProject(filtered,splitting?project:null),[filtered,splitting,project]);
+ const workshopOpen=foldOpen(projectCount>0,query,libraryOpen);
+ const groups=useMemo(()=>groupItems(splitting?split.others:filtered),[splitting,split,filtered]);
+ const projectGroups=useMemo(()=>groupItems(split.project),[split]);
+ const ordered=useMemo(()=>[...projectGroups.flatMap(group=>group.items),...(!splitting||workshopOpen?groups.flatMap(group=>group.items):[])],[projectGroups,groups,splitting,workshopOpen]);
  const counts=useMemo(()=>filterCounts(scoped,archived),[scoped,archived]);
  // Materials of the model without a ficha in this library (unbound, or bound to a ficha of another library).
  const nativeOnly=scope==='model'&&['all','other','review'].includes(filter)&&!favorites?nativeMaterials.filter(material=>!(material.binding?.catalogId&&catalogIds.has(material.binding.catalogId))&&searchText(material.name).includes(searchText(query.trim()))):[];
@@ -460,6 +481,17 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
   await request('catalog_save',{revision:library.catalog.revision,items:library.catalog.items.map(row=>row.id===item.id?{...row,favorite:!row.favorite}:row)});
   await load();onChanged?.();
  }
+ // 0.8.31: «Usar en este proyecto». One named operation in this SKP (Ctrl+Z undoes it); the library does not change.
+ async function toggleProject(item:CatalogItem){
+  const adding=!project?.has(item.id);
+  // Keep «Biblioteca del taller» as the user sees it while marking several in a row.
+  setLibraryOpen(previous=>previous??foldOpen(projectCount>0,'',null));
+  const result=await request<{projectMaterials?:ProjectMaterials;changed?:number}>('project_materials_set',adding?{add:[item.id]}:{remove:[item.id]});
+  const next=result?.projectMaterials;
+  if(next&&Array.isArray(next.ids))setLibrary(previous=>previous&&{...previous,projectMaterials:next});
+  pendingFocus.current={card:item.id};setSelectedId(item.id);setGridFocus(item.id);
+  setNotice(adding?`«${item.name}» se usa en este proyecto: aparece al pintar este SKP. Ctrl+Z en SketchUp lo deshace.`:`«${item.name}» ya no está en este proyecto. Sigue en la biblioteca del taller.`);
+ }
  async function applyFicha(updated:FichaItem,color?:[number,number,number]){
   if(!library)return;
   const saved=await request<{catalog:Catalog}>('catalog_save',{revision:library.catalog.revision,items:library.catalog.items.map(row=>row.id===updated.id?{...updated,updatedAt:new Date().toISOString()}:row)});
@@ -518,12 +550,18 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
     <span className="material-tile-meta">{summary(item)}{!complete&&<span className="material-tile-flag incomplete" title={`Para pedidos falta: ${catalogMissing(item).join(', ')}`}> · Incompleta</span>}{inModel&&<span className="material-tile-flag model"> · En el modelo</span>}{isArchived&&<span className="material-tile-flag"> · Archivada</span>}</span>
     <span className="material-tile-actions">
      {(info.issues.length>0||info.photoMissing)&&<span className="material-tile-issue" role="img" aria-label={info.photoMissing?'Faltan archivos de la foto':info.issues.join(' ')} title={info.photoMissing?'Faltan archivos de la foto':info.issues.join(' ')}><Icon name="warning"/></span>}
+     {project&&(()=>{const inProject=project.has(item.id);return <button type="button" className="material-project-toggle material-icon-button" disabled={blocked||inModel} aria-pressed={inProject} aria-label={`Usar ${item.name} en este proyecto`} title={inModel?'Ya está cargado en este modelo: queda en el proyecto':inProject?'Quitar de este proyecto':'Usar en este proyecto'} onClick={()=>void run(inProject?'Quitando del proyecto…':'Sumando al proyecto…',()=>toggleProject(item))}><Icon name="project" className={inProject?'filled':''}/></button>;})()}
      <button type="button" className="material-star material-icon-button" disabled={blocked} aria-label={`${item.favorite?'Quitar favorito':'Marcar favorito'} ${item.name}`} aria-pressed={item.favorite} title={item.favorite?'Quitar de favoritos':'Añadir a favoritos'} onClick={()=>void run('Guardando favorito…',()=>favorite(item))}><Icon name="star" className={item.favorite?'filled':''}/></button>
      <button type="button" className="material-icon-button" disabled={blocked} aria-label={`Editar ficha ${item.name}`} title="Editar ficha" onClick={()=>openFicha(item.id)}><Icon name="pencil"/></button>
     </span>
    </div>
   </article>;
  };
+ // Inside «En este proyecto» / «Biblioteca del taller» the kind groups are one level down (h3).
+ const groupSection=(group:{key:GroupKey;label:string;items:CatalogItem[]},prefix:string)=>{const Heading=splitting?'h3':'h2';return <section key={`${prefix}${group.key}`} className="material-group" aria-labelledby={`material-group-${prefix}${group.key}`}>
+  <Heading id={`material-group-${prefix}${group.key}`} className="material-group-title"><span className={`material-group-icon kind-${groupIcon[group.key]}`}><Icon name={groupIcon[group.key]}/></span>{group.label}<span className="material-group-count">{group.items.length}</span></Heading>
+  <div className="material-tiles">{group.items.map(item=>card(item as FichaItem))}</div>
+ </section>;};
  return <section className="visual-material-library" aria-labelledby="materials-library-title" aria-busy={!!busy}>
   <header className="material-library-heading">
    <div><h1 id="materials-library-title">Materiales del taller</h1><p>Placas, cantos y herrajes disponibles en todos tus proyectos. Se vinculan solos con los materiales del modelo.</p></div>
@@ -550,10 +588,16 @@ export default function MaterialLibraryPanel({onEdit,onPaint,onClose,onChanged,o
   <nav className="material-library-filters" aria-label="Filtrar biblioteca">{filterLabels.map(([value,label])=><button type="button" key={value} aria-describedby={library?`material-filter-count-${value}`:undefined} aria-pressed={filter===value} title={`${label}: ${counts[value]}`} onClick={()=>setFilter(value)}>{label}{library&&<span aria-hidden="true">{counts[value]}</span>}</button>)}{library&&filterLabels.map(([value])=><span key={value} id={`material-filter-count-${value}`} className="sr-only">{counts[value]} {counts[value]===1?'material':'materiales'}</span>)}<span className="material-library-count" role="status">{filtered.length+nativeOnly.length} materiales</span></nav>
   {filter==='archived'&&<p className="material-library-context">Fichas archivadas: no aparecen en la biblioteca activa ni en los paquetes exportados. Sus archivos y vínculos se conservan.</p>}{scope==='model'&&<p className="material-library-context">Materiales ya cargados en el modelo abierto. Importar a la biblioteca del taller no los carga ni los pinta aquí.</p>}
   <div ref={grid} className="material-library-grid" role="group" aria-label="Materiales visuales del taller" onKeyDown={gridKey}>
-   {groups.map(group=><section key={group.key} className="material-group" aria-labelledby={`material-group-${group.key}`}>
-    <h2 id={`material-group-${group.key}`} className="material-group-title"><span className={`material-group-icon kind-${groupIcon[group.key]}`}><Icon name={groupIcon[group.key]}/></span>{group.label}<span className="material-group-count">{group.items.length}</span></h2>
-    <div className="material-tiles">{group.items.map(item=>card(item as FichaItem))}</div>
-   </section>)}
+   {splitting&&<section className="material-project-block" aria-labelledby="material-project-title">
+    <h2 id="material-project-title" className="material-block-title"><span className="material-group-icon kind-model"><Icon name="project"/></span>En este proyecto<span className="material-group-count">{split.project.length}</span></h2>
+    {projectCount===0?<p className="material-project-empty">Todavía no elegiste materiales para este SKP. Marcá <Icon name="project"/> «Usar en este proyecto» en los que vas a usar: al pintar aparecen solo esos y el resto queda a mano, plegado.</p>
+     :!split.project.length?<p className="material-project-empty">Ningún material del proyecto coincide con la búsqueda o los filtros.</p>
+     :projectGroups.map(group=>groupSection(group,'project-'))}
+   </section>}
+   {splitting?<section className="material-workshop-block" aria-labelledby="material-workshop-title">
+    <h2 id="material-workshop-title" className="material-block-title"><button type="button" className="material-fold-toggle" aria-expanded={workshopOpen} aria-controls={workshopOpen?'material-workshop-list':undefined} disabled={!!query.trim()} onClick={()=>setLibraryOpen(!workshopOpen)}><span aria-hidden="true">{workshopOpen?'▾':'▸'}</span>Biblioteca del taller<span className="material-group-count">{split.others.length}</span></button></h2>
+    {workshopOpen&&<div id="material-workshop-list" className="material-workshop-list">{groups.map(group=>groupSection(group,''))}</div>}
+   </section>:groups.map(group=>groupSection(group,''))}
    {nativeOnly.length>0&&<section className="material-group" aria-labelledby="material-group-native"><h2 id="material-group-native" className="material-group-title"><span className="material-group-icon kind-model"><Icon name="model"/></span>En el modelo, sin ficha<span className="material-group-count">{nativeOnly.length}</span></h2>
     <div className="material-tiles">{nativeOnly.map(material=>{const pending=ambiguous.find(entry=>entry.materialId===material.id);return <article className="material-tile native-only" key={`native-${material.id}`} aria-label={`Material del modelo ${material.name}`}>
      <div className="material-tile-visual" style={nativeColor(material.color)?{backgroundColor:nativeColor(material.color)}:undefined}><span className="material-tile-name">{material.name}</span></div>

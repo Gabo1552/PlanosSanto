@@ -184,3 +184,47 @@ export const linkName=(value:string)=>value.normalize('NFC').trim().replace(/^\[
 export function nameCollision(items:{id:string;name:string}[],id:string|undefined,name:string){const key=linkName(name);return !!key&&items.some(item=>item.id!==id&&linkName(item.name)===key);}
 export const hexColor=(color?:number[]|null)=>color?.length===3&&color.every(value=>Number.isInteger(value)&&value>=0&&value<=255)?`#${color.map(value=>value.toString(16).padStart(2,'0')).join('')}`:null;
 export function rgbFromHex(hex:string):[number,number,number]|null{const match=/^#?([0-9a-f]{6})$/i.exec(hex.trim());if(!match)return null;const value=parseInt(match[1],16);return [(value>>16)&255,(value>>8)&255,value&255];}
+
+// --- 0.8.31: materiales del proyecto ----------------------------------------
+// La biblioteca es del taller; cada SKP guarda (en un atributo propio del modelo)
+// la lista corta de fichas con las que trabaja. Ruby la manda ya validada contra la
+// biblioteca. Un backend viejo no la manda: entonces no hay división y se ve todo.
+export type ProjectMaterials={schema?:number;ids:string[];status?:string};
+type BoundMaterial={binding?:{catalogId?:string}|null};
+/** Library fichas already in this SKP (a model material bound to them): they count as the project's even if never chosen. */
+export function boundIds(materials:readonly BoundMaterial[]|undefined):Set<string>{
+ const ids=new Set<string>();
+ for(const material of materials||[]){const id=material?.binding?.catalogId;if(typeof id==='string'&&id)ids.add(id);}
+ return ids;
+}
+/** The project = the saved list plus what is already in the model. null when the backend has no project list. */
+export function projectIds(saved:ProjectMaterials|null|undefined,materials:readonly BoundMaterial[]|undefined):Set<string>|null{
+ if(!saved||!Array.isArray(saved.ids))return null;
+ const ids=boundIds(materials);
+ for(const id of saved.ids)if(typeof id==='string'&&id)ids.add(id);
+ return ids;
+}
+/** Order-preserving split: the project's first, the rest of the library apart. */
+export function splitProject<T extends {id:string}>(items:readonly T[],project:ReadonlySet<string>|null):{project:T[];others:T[]}{
+ if(!project)return {project:[],others:[...items]};
+ return {project:items.filter(item=>project.has(item.id)),others:items.filter(item=>!project.has(item.id))};
+}
+/** A folded block opens by itself while searching, and by default when the project has nothing yet; otherwise the user's choice (folded). */
+export function foldOpen(hasProject:boolean,query:string,userOpen?:boolean|null){return query.trim()!==''||(userOpen??!hasProject);}
+export type PaletteSections<T>={enabled:boolean;main:T[];folded:T[];marked:Set<string>;invite:boolean};
+/**
+ * What the paint palette lists. `visible`: the materials of the mode after search/favorites/archived;
+ * `candidates`: the same without search/favorites (decides whether the project has any of this kind).
+ * - no project list (older backend): everything, as before;
+ * - the project has none of this kind: the whole library, with a line inviting to choose;
+ * - searching: the project's first, then the other matches marked;
+ * - otherwise: only the project's; the rest goes folded in «Otros de la biblioteca».
+ */
+export function paletteSections<T extends {id:string}>(visible:readonly T[],candidates:readonly T[],project:ReadonlySet<string>|null,query:string):PaletteSections<T>{
+ if(!project)return {enabled:false,main:[...visible],folded:[],marked:new Set(),invite:false};
+ const {project:mine,others}=splitProject(visible,project);
+ if(!candidates.some(item=>project.has(item.id)))return {enabled:true,main:[...visible],folded:[],marked:new Set(),invite:true};
+ const marked=new Set(others.map(item=>item.id));
+ if(query.trim())return {enabled:true,main:[...mine,...others],folded:[],marked,invite:false};
+ return {enabled:true,main:mine,folded:others,marked,invite:false};
+}

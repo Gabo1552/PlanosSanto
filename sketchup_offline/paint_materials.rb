@@ -184,4 +184,109 @@ module PlanosSanto
         'installed' => true, 'message' => "«#{item['name']}» se instaló en este modelo. Hacé clic en las piezas para pintar." }
     end
   end
+
+  # 0.8.31: «Materiales del proyecto». The library is global (one per taller);
+  # each SKP keeps the short list of fichas it works with, so the paint palette
+  # shows those first and the rest of the library stays folded. Stored in the
+  # MODEL, in its own dictionary (never in the guide, nor in OpenCutList keys).
+  # Only catalog ids are written: no names, prices, paths or textures.
+  class ProjectMaterials
+    DICTIONARY = 'PlanosSantoProject'
+    KEY = 'materials_v1'
+    SCHEMA = 1
+    MAX_IDS = 500
+    MAX_BYTES = 64 * 1024
+    ID_PATTERN = /\A[0-9A-Za-z_-]{1,64}\z/.freeze
+    OPERATION = 'Materiales del proyecto Planos Santo'
+
+    def self.id?(value)
+      value.is_a?(String) && value.match?(ID_PATTERN)
+    end
+
+    def initialize(model)
+      @model = model
+    end
+
+    # {'ids'=>[...], 'status'=>'empty'|'valid'|'damaged'|'newer'}. Never raises:
+    # a damaged attribute reads as an empty list (the palette keeps working).
+    # `existing` (catalog ids) drops fichas that are no longer in the library.
+    def read(existing = nil)
+      raw = @model.respond_to?(:get_attribute) ? @model.get_attribute(DICTIONARY, KEY) : nil
+      return { 'ids' => [], 'status' => 'empty' } if raw.nil?
+      data = parse(raw)
+      return { 'ids' => [], 'status' => data } if data.is_a?(String)
+      ids = data['ids'].select { |id| self.class.id?(id) }.uniq.first(MAX_IDS)
+      ids &= existing.to_a if existing
+      { 'ids' => ids, 'status' => 'valid' }
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo leer la lista de materiales del proyecto: #{error.class}")
+      { 'ids' => [], 'status' => 'damaged' }
+    end
+
+    def payload(existing)
+      result = read(existing)
+      { 'schema' => SCHEMA, 'ids' => result['ids'], 'status' => result['status'] }
+    end
+
+    # Adds/removes catalog ids as ONE named SketchUp operation (Ctrl+Z undoes
+    # it). Added ids must exist in the library; ids that left the library are
+    # dropped on every write. Returns {'projectMaterials'=>..., 'changed'=>n}.
+    def change(add:, remove:, existing:)
+      add = id_list!(add, 'agregar')
+      remove = id_list!(remove, 'quitar')
+      existing = existing.to_a
+      missing = add - existing
+      raise ExportError, 'Ese material ya no está en la biblioteca del taller. Actualizá la lista y volvé a elegirlo.' unless missing.empty?
+      current = read(nil)
+      raise ExportError, 'Este SKP guarda los materiales del proyecto con una versión más nueva de Planos Santo. No se modificó la lista.' if current['status'] == 'newer'
+      before = current['ids'] & existing
+      after = (before - remove + add).uniq
+      raise ExportError, "Un proyecto admite hasta #{MAX_IDS} materiales." if after.length > MAX_IDS
+      changed = (after - before).length + (before - after).length
+      stored_ids = current['ids']
+      if changed.zero? && stored_ids == before
+        return { 'projectMaterials' => payload(existing), 'changed' => 0, 'noChanges' => true }
+      end
+      write(after)
+      { 'projectMaterials' => payload(existing), 'changed' => changed }
+    end
+
+    private
+
+    def parse(raw)
+      return 'damaged' unless raw.is_a?(String) && raw.bytesize <= MAX_BYTES
+      data = JSON.parse(raw)
+      return 'damaged' unless data.is_a?(Hash)
+      return 'newer' if data['schema'].is_a?(Integer) && data['schema'] > SCHEMA
+      return 'damaged' unless data['schema'] == SCHEMA && data['ids'].is_a?(Array) && data['ids'].length <= MAX_IDS
+      data
+    rescue JSON::ParserError
+      'damaged'
+    end
+
+    def id_list!(value, verb)
+      value = [] if value.nil?
+      unless value.is_a?(Array) && value.length <= MAX_IDS && value.all? { |id| self.class.id?(id) }
+        raise ExportError, "Lista de materiales para #{verb} inválida."
+      end
+      value.uniq
+    end
+
+    def write(ids)
+      json = JSON.generate({ 'schema' => SCHEMA, 'ids' => ids })
+      raise ExportError, 'La lista de materiales del proyecto es demasiado grande.' if json.bytesize > MAX_BYTES
+      started = false
+      begin
+        raise ExportError, 'No se pudo iniciar el cambio de materiales del proyecto.' unless @model.start_operation(OPERATION, true)
+        started = true
+        @model.set_attribute(DICTIONARY, KEY, json)
+        raise ExportError, 'No se pudo confirmar el cambio de materiales del proyecto.' unless @model.commit_operation
+        started = false
+      rescue StandardError
+        @model.abort_operation if started
+        raise
+      end
+      ids
+    end
+  end
 end

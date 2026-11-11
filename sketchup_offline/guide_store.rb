@@ -26,7 +26,7 @@ module PlanosSanto
       raise ExportError, 'La selección guardada es incompatible.' unless guide['selection'].all? { |id| id.is_a?(String) && id.length.between?(1,1000) }
       validate_work_code!(guide['workCode']) if guide.key?('workCode')
       guide['furniture'].each do |f|
-        keys!(f, %w[id explosion zoom pieces notes], %w[hiddenDimensions presentation naming groupIdentical], context: 'mueble de la guía')
+        keys!(f, %w[id explosion zoom pieces notes], %w[hiddenDimensions dimensionDisplay presentation naming groupIdentical], context: 'mueble de la guía')
         text!(f['id'], 1000); finite!(f['explosion'], 0, 1); finite!(f['zoom'], 0.35, 1.4)
         raise ExportError, 'Listado guardado incompatible.' unless f['pieces'].is_a?(Array) && f['pieces'].length <= 500 && f['notes'].is_a?(Array) && f['notes'].length <= 40
         f['pieces'].each do |p|
@@ -35,6 +35,7 @@ module PlanosSanto
         end
         raise ExportError, 'Piezas o códigos guardados repetidos.' unless f['pieces'].map { |p| p['id'] }.uniq.length == f['pieces'].length && f['pieces'].map { |p| p['code'] }.uniq.length == f['pieces'].length
         validate_hidden_dimensions!(f['hiddenDimensions'], f['pieces'].map { |p| p['id'] }) if f.key?('hiddenDimensions')
+        validate_dimension_display!(f['dimensionDisplay'], f['pieces'].map { |p| p['id'] }) if f.key?('dimensionDisplay')
         validate_options!(f, f['pieces'].map { |p| p['id'] })
         f['notes'].each { |n| validate_note_format!(n) }
         raise ExportError, 'Notas guardadas repetidas.' unless f['notes'].map { |n| n['id'] }.uniq.length == f['notes'].length
@@ -92,6 +93,46 @@ module PlanosSanto
         raise ExportError, 'Cota oculta desconocida.' unless %w[largo ancho].include?(ref['role']) && piece_ids.include?(ref['pieceId'])
       end
       raise ExportError, 'Hay cotas ocultas repetidas.' unless refs.map { |ref| [ref['pieceId'],ref['role']] }.uniq.length == refs.length
+    end
+
+    TOTAL_DIMENSIONS = %w[alto ancho profundidad].freeze
+
+    # 0.8.31: cotas against the default of the plans (the three totals shown, every piece cota hidden).
+    # shownPieces: piece cotas turned on (refs as hiddenDimensions); hiddenTotals: totals turned off;
+    # totalOffsets: totals moved by hand, as presentation.dimensionOffsets.
+    def validate_dimension_display!(value, piece_ids)
+      keys!(value, [], %w[shownPieces hiddenTotals totalOffsets], context: 'cotas del mueble')
+      if value.key?('shownPieces')
+        refs = value['shownPieces']
+        raise ExportError, 'Listado de cotas mostradas inválido.' unless refs.is_a?(Array) && refs.length <= 1000
+        refs.each do |ref|
+          keys!(ref, %w[pieceId role], context: 'cota mostrada'); text!(ref['pieceId'], 1000)
+          raise ExportError, 'Cota mostrada desconocida.' unless %w[largo ancho].include?(ref['role']) && piece_ids.include?(ref['pieceId'])
+        end
+        raise ExportError, 'Hay cotas mostradas repetidas.' unless refs.map { |ref| [ref['pieceId'],ref['role']] }.uniq.length == refs.length
+      end
+      if value.key?('hiddenTotals')
+        totals = value['hiddenTotals']
+        raise ExportError, 'Listado de cotas totales ocultas inválido.' unless totals.is_a?(Array) && totals.length <= TOTAL_DIMENSIONS.length && totals.all? { |t| TOTAL_DIMENSIONS.include?(t) }
+        raise ExportError, 'Hay cotas totales ocultas repetidas.' unless totals.uniq.length == totals.length
+      end
+      if value.key?('totalOffsets')
+        rows = value['totalOffsets']
+        raise ExportError, 'Listado de posiciones de cotas totales inválido.' unless rows.is_a?(Array) && rows.length <= TOTAL_DIMENSIONS.length * 2
+        rows.each do |r|
+          keys!(r, %w[total view offset], context: 'posición de cota total')
+          raise ExportError, 'Cota total movida desconocida.' unless TOTAL_DIMENSIONS.include?(r['total']) && %w[front back].include?(r['view'])
+          raise ExportError, 'Posición de cota total inválida.' unless r['offset'].is_a?(Array) && r['offset'].length == 2
+          r['offset'].each { |n| finite!(n, -1, 1) }
+        end
+        raise ExportError, 'Cotas totales movidas duplicadas.' unless rows.map { |r| r.values_at('total','view') }.uniq.length == rows.length
+      end
+    end
+
+    # Same shape the editor sends (lib/model.ts normalizeDimensionDisplay): empty lists dropped; nil when nothing is left.
+    def normalize_dimension_display(value)
+      kept = value.reject { |_key, list| list.empty? }
+      kept.empty? ? nil : kept
     end
 
     def validate_work_code!(value)
@@ -174,8 +215,9 @@ module PlanosSanto
       index = document['furniture'].to_h { |root| [root['id'], root] }
       raise ExportError, 'Listado de muebles inconsistente.' unless edits.map { |f| f.is_a?(Hash) && f['id'] }.sort == index.keys.sort
       hidden_by_furniture = {}
+      display_by_furniture = {}
       edits.each do |f|
-        keys!(f, %w[id explosion zoom pieces notes], %w[hiddenDimensions presentation naming groupName groupIdentical renumber], context: 'mueble de la guía')
+        keys!(f, %w[id explosion zoom pieces notes], %w[hiddenDimensions dimensionDisplay presentation naming groupName groupIdentical renumber], context: 'mueble de la guía')
         text!(f['groupName'],80) if f.key?('groupName')
         raise ExportError, 'Renumeración inválida.' if f.key?('renumber') && f['renumber'] != true
         finite!(f['explosion'], 0, 1); finite!(f['zoom'], 0.35, 1.4)
@@ -187,6 +229,15 @@ module PlanosSanto
           hidden_by_furniture[f['id']] = f['hiddenDimensions']
         elsif previous && previous.key?('hiddenDimensions')
           hidden_by_furniture[f['id']] = previous['hiddenDimensions'].select { |ref| pieces.key?(ref['pieceId']) }
+        end
+        # 0.8.31: an edit without dimensionDisplay keeps the stored one (minus deleted pieces), as hiddenDimensions.
+        if f.key?('dimensionDisplay')
+          validate_dimension_display!(f['dimensionDisplay'], pieces.keys)
+          display_by_furniture[f['id']] = normalize_dimension_display(f['dimensionDisplay'])
+        elsif previous && previous.key?('dimensionDisplay')
+          kept = JSON.parse(JSON.generate(previous['dimensionDisplay']))
+          kept['shownPieces']&.select! { |ref| pieces.key?(ref['pieceId']) }
+          display_by_furniture[f['id']] = normalize_dimension_display(kept)
         end
         validate_options!(f, pieces.keys)
         previous_pieces = (previous || {}).fetch('pieces', []).to_h { |p| [p['id'], p] }
@@ -227,6 +278,12 @@ module PlanosSanto
         f.delete('groupName') # One-shot model rename intent; the model remains the source of group names.
         f.delete('renumber') # One-shot permission to change saved codes; never stored.
         f['hiddenDimensions'] = hidden_by_furniture[f['id']] if hidden_by_furniture.key?(f['id'])
+        if display_by_furniture.key?(f['id'])
+          # Empty lists are never stored: a guide with the default cotas has no dimensionDisplay and still opens in
+          # versions before 0.8.31 (they reject unknown fields without overwriting).
+          display = display_by_furniture[f['id']]
+          if display then f['dimensionDisplay'] = display else f.delete('dimensionDisplay') end
+        end
         prior=old['furniture'].find { |row| row['id']==f['id'] }
         # The store owns the code history: a changed code keeps the one it replaced (already printed labels),
         # an unchanged one keeps its stored history, and client values are ignored.

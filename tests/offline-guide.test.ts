@@ -9,6 +9,7 @@ import {makeScene} from '../lib/scene';
 import {createDemo,demoDocument} from '../lib/demo';
 import {editsFor,mergeGuide,guideIssues,guideNotices,type Guide} from '../sketchup_offline/ui/guide';
 import {createOfflinePdf,createOfflinePdfPages} from '../sketchup_offline/ui/pdf';
+import {pieceDimensionsOnly} from './helpers/cotas';
 
 function savedGuide():Guide{return {version:1,revision:1,selection:['modulo','mesa'],furniture:editsFor(createDemo(),{})};}
 describe('Guías locales; fixtures sintéticos, sin ejecutar SketchUp',()=>{
@@ -72,6 +73,9 @@ describe('Guías locales; fixtures sintéticos, sin ejecutar SketchUp',()=>{
     const project=createDemo();project.furniture=project.furniture.slice(0,1);
     const f=project.furniture[0],template=f.pieces[2];
     f.pieces=Array.from({length:30},(_,i)=>({...template,id:`shelf-${i}`,name:`Estante ${i+1}`,code:`P${String(i+1).padStart(2,'0')}`,transform:new Matrix4().makeTranslation(0,0,i*60).toArray()}));
+    // 0.8.31: by default only the three totals; with the piece cotas on, the 30 equal shelves share two cotas.
+    expect(makeScene(f).dimensions.map(d=>d.total)).toEqual(['alto','ancho','profundidad']);
+    f.dimensionDisplay=pieceDimensionsOnly(f);
     const scene=makeScene(f);expect(scene.labels).toHaveLength(30);expect(scene.dimensions).toHaveLength(2);expect(scene.warnings).toEqual([]);
     const {pages}=await createOfflinePdfPages(project,await readFile('sketchup_offline/assets/DejaVuSans.ttf'),await readFile('sketchup_offline/assets/DejaVuSansMono.ttf'));
     expect(pages[0].label).toBe('1a');expect(pages.slice(1).every((p,i)=>p.label===`1${String.fromCharCode(98+i)}`)).toBe(true);expect(pages.length).toBeGreaterThan(1);expect(pages[0].fit?.detail).toMatch(/^Necesita/);

@@ -5,13 +5,15 @@ import {createA4Demo} from '../lib/a4Demo';
 import {createDemo} from '../lib/demo';
 import {makeScene} from '../lib/scene';
 import {segmentHitsRect} from '../lib/dimensions';
+import {allDimensions,pieceDimensionsOnly} from './helpers/cotas';
 import {createOfflinePdf} from '../sketchup_offline/ui/pdf';
 
 describe('Texto de cotas protegido de los líderes del plano',()=>{
  // Before 0.8.19 this camera had the P06 leader crossing the P07 «760 mm» text. Equal measures are now drawn once and
  // the freed room keeps leaders off cota texts; the paint order below still protects them when they do cross.
  it('una escena sintética densa ya no cruza líderes de ID sobre textos de cota',()=>{
-  const f=createA4Demo().furniture[0];f.zoom=1;f.presentation!.cameras={front:{yaw:-2,pitch:10}};
+  // 0.8.31: the dense case of before, all its piece cotas on and the totals off (exactly the composition checked then).
+  const f=createA4Demo().furniture[0];f.zoom=1;f.presentation!.cameras={front:{yaw:-2,pitch:10}};f.dimensionDisplay=pieceDimensionsOnly(f);
   const scene=makeScene(f,{view:'front',layout:'sheet'});
   expect(scene.warnings).toEqual([]);
   expect(scene.labels.length).toBeGreaterThan(0);
@@ -19,6 +21,8 @@ describe('Texto de cotas protegido de los líderes del plano',()=>{
  });
  it.each(['17 piezas','nota con flecha'])('genera un PDF real y protege las cotas en ambas vistas: %s',async scenario=>{
   const project=scenario==='17 piezas'?createA4Demo():createDemo();project.furniture=[project.furniture[0]];const f=project.furniture[0];
+  // 0.8.31: piece cotas start hidden; this check needs their texts, so it turns them all on with the totals.
+  f.dimensionDisplay=allDimensions(f);
   // IDs are hidden by default on the sheet; these scenarios choose to print them.
   if(scenario==='17 piezas'){f.zoom=1;f.presentation!.cameras={front:{yaw:-30,pitch:45}};f.presentation!.hideIds=false;}
   else{f.presentation={hideIds:false,guide:{mode:'both',hiddenPieceIds:[],sharedCamera:true,observations:'Verificar escuadra.'}};f.notes=[{id:'occlusion-note',pieceId:f.pieces[1].id,anchor:[9,200,350],position:[500,100],text:'Atornillar desde adentro.'}];}

@@ -3,6 +3,7 @@ import {Matrix4,Vector3} from 'three';
 import {createDemo,demoDocument} from '../lib/demo';
 import {importDocument} from '../lib/model';
 import {cameraBasis,makeScene,pickAnchor} from '../lib/scene';
+import {pieceDimensionsOnly} from './helpers/cotas';
 
 describe('Dos axonometrías de la misma geometría',()=>{
   it('gira 180 grados alrededor de Z y muestra otras caras sin espejar ni mutar el mueble',()=>{
@@ -32,6 +33,8 @@ describe('Dos axonometrías de la misma geometría',()=>{
   it('imprime ambos juegos de códigos y referencias, con cotas una sola vez y notas sin perder anclas',()=>{
     const f=createDemo().furniture[0];
     f.notes=[{id:crypto.randomUUID(),pieceId:f.pieces[0].id,anchor:[18,200,350],position:[718,32],text:'Unión desde el dorso'}];
+    // 0.8.31: piece cotas are hidden by default; this checks them, so they are turned on and the totals off.
+    f.dimensionDisplay=pieceDimensionsOnly(f);
     const snapshot=JSON.stringify(f),front=makeScene(f,{layout:'sheet'}),back=makeScene(f,{layout:'sheet',view:'back'});
     expect(front.warnings).toEqual([]);expect(back.warnings).toEqual([]);
     // 8 cotas by size; 3 repeat a measure in the same direction (450 depth, 700 height, 764 width): drawn once.

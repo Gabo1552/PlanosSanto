@@ -7,7 +7,8 @@ import {box} from '../lib/demo';
 import {createA4Demo} from '../lib/a4Demo';
 import {identity,importDocument,type Furniture,type RawDocument,type RawNode} from '../lib/model';
 import {makeScene,sheetView} from '../lib/scene';
-import {dimensionChoices,dimensionMarkHitsRect,dimensionText,isDimensionNotice,setDimensionVisible,type Dimension} from '../lib/dimensions';
+import {dimensionChoices,dimensionMarkHitsRect,dimensionRef,dimensionText,isDimensionNotice,setDimensionVisible,type Dimension,type PieceRole} from '../lib/dimensions';
+import {pieceDimensionsOnly} from './helpers/cotas';
 import {a4Furniture,a4ViewScene,composeA4,createOfflinePdfPages,metricFont} from '../sketchup_offline/ui/pdf';
 
 const regular=readFileSync('sketchup_offline/assets/DejaVuSans.ttf'),mono=readFileSync('sketchup_offline/assets/DejaVuSansMono.ttf');
@@ -20,6 +21,8 @@ export function banco(piso=1164):Furniture{
   ]}]};
   const f=importDocument(doc,'demo').furniture[0];
   f.presentation={guide:{mode:'both',hiddenPieceIds:[],sharedCamera:true,observations:''}};
+  // 0.8.31: these tests check the omission and layout of piece cotas, hidden by default: turned on, totals off.
+  f.dimensionDisplay=pieceDimensionsOnly(f);
   return f;
 }
 const direction=(f:Furniture,d:Dimension)=>{const piece=f.pieces.find(p=>p.id===d.pieceId)!,m=new Matrix4().fromArray(piece.transform);return new Vector3(...d.localEnd).applyMatrix4(m).sub(new Vector3(...d.localStart).applyMatrix4(m)).normalize();};
@@ -58,7 +61,7 @@ describe('Cotas iguales: una sola por medida y dirección',()=>{
   });
   it('ocultar la cota que representa a otras deja ver la equivalente',()=>{
     const f=banco(),scene=makeScene(f,{layout:'sheet'}),depth=scene.dimensions.find(d=>d.valueMm===450&&d.shared?.length)!;
-    f.hiddenDimensions=setDimensionVisible(f,depth.pieceId,depth.role,false);
+    f.dimensionDisplay=setDimensionVisible(f,dimensionRef(depth),false);
     const after=makeScene(f,{layout:'sheet'});
     expect(after.dimensions.some(d=>d.pieceId===depth.pieceId&&d.role===depth.role)).toBe(false);
     expect(after.dimensions.filter(d=>d.valueMm===450)).toHaveLength(2);
@@ -70,7 +73,7 @@ describe('Solapes de cotas resueltos solos',()=>{
     const f=banco(),scene=makeScene(f,{layout:'sheet'}),{width,height}=sheetView(f);
     const moved=scene.dimensions[0],other=scene.dimensions.find(d=>d!==moved&&d.segments.some(s=>s.kind==='tick'))!;
     const tick=other.segments.find(s=>s.kind==='tick')!,target={x:(tick.a.x+tick.b.x)/2,y:(tick.a.y+tick.b.y)/2};
-    f.presentation!.dimensionOffsets=[{pieceId:moved.pieceId,role:moved.role,view:'front',offset:[(target.x-moved.label.center.x)/width,(target.y-moved.label.center.y)/height]}];
+    f.presentation!.dimensionOffsets=[{pieceId:moved.pieceId,role:moved.role as PieceRole,view:'front',offset:[(target.x-moved.label.center.x)/width,(target.y-moved.label.center.y)/height]}];
     const changed=makeScene(f,{layout:'sheet'}),updated=changed.dimensions.find(d=>d.pieceId===moved.pieceId&&d.role===moved.role)!;
     expect(changed.warnings).toEqual([]);
     for(const d of changed.dimensions)for(const o of changed.dimensions)if(d!==o)for(const s of d.segments)expect(dimensionMarkHitsRect(s,o.label.rect,1)).toBe(false);
@@ -80,7 +83,7 @@ describe('Solapes de cotas resueltos solos',()=>{
   it('sin ningún lugar libre la cota se imprime igual, marcada, con un aviso que no bloquea la hoja',async()=>{
     // 17 piezas SINTÉTICAS con los IDs a la vista y tres notas: una cota no tiene lugar libre en esta cámara.
     // 0.8.29: las vistas son más grandes; sin notas todas las cotas encuentran lugar, por eso se agregan tres.
-    const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.hideIds=false;f.presentation!.cameras={front:{yaw:-20,pitch:45}};
+    const project=createA4Demo(),f=project.furniture[0];f.zoom=1;f.presentation!.hideIds=false;f.presentation!.cameras={front:{yaw:-20,pitch:45}};f.dimensionDisplay=pieceDimensionsOnly(f);
     f.notes=f.pieces.slice(0,3).map((piece,i)=>({id:`n${i}`,pieceId:piece.id,anchor:[9,100,100],position:[0,0],text:'Encolar'}));
     const {bytes,pages}=await createOfflinePdfPages(project,regular,mono);
     expect(bytes.length).toBeGreaterThan(0);

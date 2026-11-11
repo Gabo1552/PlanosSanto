@@ -1,10 +1,12 @@
 import {withNaming,moduleFromName} from '../../lib/naming';
 import type {PieceNaming} from '../../lib/naming';
 import type {Presentation} from '../../lib/presentation';
-import { importDocument, type Furniture, type Note, type Project, type HiddenDimension, type RawDocument } from '../../lib/model';
+import { importDocument, normalizeDimensionDisplay, type DimensionDisplay, type Furniture, type Note, type Project, type HiddenDimension, type RawDocument } from '../../lib/model';
 
 export type GuideFurniture = {
-  groupIdentical?:boolean;groupName?:string;id:string; explosion:number; zoom:number; hiddenDimensions?:HiddenDimension[];presentation?:Presentation;naming?:PieceNaming;
+  groupIdentical?:boolean;groupName?:string;id:string; explosion:number; zoom:number; hiddenDimensions?:HiddenDimension[];
+  // 0.8.31: cotas shown/hidden against the default (totals on, pieces off). Never stored empty; absent means default.
+  dimensionDisplay?:DimensionDisplay;presentation?:Presentation;naming?:PieceNaming;
   pieces:{id:string;name:string;code:string;previousCode?:string}[]; notes:Note[];
   // One-shot permission to change saved codes (DESPIECE-01); guide_store.rb keeps previousCode and never stores it.
   renumber?:true;
@@ -43,6 +45,8 @@ export function mergeGuide(document:RawDocument,guide:Guide):LocalGuide {
     if(furniture.presentation?.dimensionOffsets)furniture.presentation.dimensionOffsets=furniture.presentation.dimensionOffsets.filter(ref=>furniture.pieces.some(p=>p.id===ref.pieceId));
     furniture.naming=structuredClone(previous.naming);
     furniture.hiddenDimensions=structuredClone((previous.hiddenDimensions||[]).filter(ref=>furniture.pieces.some(p=>p.id===ref.pieceId)));
+    // Kept defined once stored, so that turning every choice back to the default sends an explicit (empty) value.
+    if(previous.dimensionDisplay)furniture.dimensionDisplay=normalizeDimensionDisplay({...structuredClone(previous.dimensionDisplay),shownPieces:previous.dimensionDisplay.shownPieces?.filter(ref=>furniture.pieces.some(p=>p.id===ref.pieceId))});
     furniture.explosion=previous.explosion;furniture.zoom=previous.zoom;
     const codes=new Set(previous.pieces.map(p=>p.code));
     let next=Math.max(0,...previous.pieces.map(p=>Number(p.code.slice(1))||0))+1;
@@ -69,7 +73,7 @@ export function mergeGuide(document:RawDocument,guide:Guide):LocalGuide {
 }
 
 export function editsFor(project:Project,orphans:Record<string,Note[]>,renumbered?:ReadonlySet<string>):GuideFurniture[]{
-  return project.furniture.map(f=>({...(renumbered?.has(f.id)?{renumber:true as const}:{}),id:f.id,groupName:f.groupName,groupIdentical:f.groupIdentical||false,explosion:f.explosion,zoom:f.zoom,presentation:withoutLocalOptions(f.presentation||{}),naming:f.naming,hiddenDimensions:f.hiddenDimensions||[],
+  return project.furniture.map(f=>({...(renumbered?.has(f.id)?{renumber:true as const}:{}),id:f.id,groupName:f.groupName,groupIdentical:f.groupIdentical||false,explosion:f.explosion,zoom:f.zoom,presentation:withoutLocalOptions(f.presentation||{}),naming:f.naming,hiddenDimensions:f.hiddenDimensions||[],...(f.dimensionDisplay?{dimensionDisplay:normalizeDimensionDisplay(f.dimensionDisplay)}:{}),
     pieces:f.pieces.map(p=>({id:p.id,name:p.name,code:p.code})),notes:[...f.notes,...(orphans[f.id]||[])]}));
 }
 

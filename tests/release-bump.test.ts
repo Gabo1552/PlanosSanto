@@ -32,6 +32,12 @@ describe('bump-version',()=>{
   expect(read(root,FILES[3]).split(`'${next}'`)).toHaveLength(4);
   expect(read(root,FILES[3])).not.toContain(`'${current}'`);
  });
+ it('works without --root, from the script location (the normal use)',()=>{
+  const root=copy();
+  cpSync('scripts/release/bump-version.mjs',join(root,'scripts/release/bump-version.mjs'),{recursive:true});
+  execFileSync('node',[join(root,'scripts/release/bump-version.mjs'),next],{encoding:'utf8',stdio:'pipe'});
+  expect(JSON.parse(read(root,FILES[0])).version).toBe(next);
+ });
  it('rejects a version that is not newer',()=>{
   const root=copy();
   expect(bump(root,current).code).toBe(2);
