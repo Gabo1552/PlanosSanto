@@ -1,3 +1,13 @@
+# Entrega 0.8.32 — frentes de cajón con veta vertical sin aviso, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.32-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
+
+Sobre la 0.8.31: el taller confirmó la veta vertical en los frentes de cajón, así que se saca el aviso «revisar» de las piezas verticales más anchas que altas.
+
+Validar con `docs/validacion-0832/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.31). Producción no aprobada; SketchUp 2022 sin probar.
+
+---
+
 # Entrega 0.8.31 — cotas totales del mueble y materiales del proyecto, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.31-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. Sobre la 0.8.30, hay dos cambios:
