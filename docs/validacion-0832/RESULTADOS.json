@@ -1,0 +1,50 @@
+{
+  "version": "0.8.32",
+  "date": "2026-11-11",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "7c918b3146c5ec7ff9c5c9a400dbcf3458106593c646ca962dda8f6f695dfe8d",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "buildReproducible": "PASS",
+    "vitest": {
+      "tests": 603,
+      "passed": 603
+    },
+    "ruby33": {
+      "runs": 1169,
+      "assertions": 11431,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1169,
+      "assertions": 11431,
+      "failures": 0,
+      "errors": 0
+    },
+    "rubyExporter": {
+      "runs": 15,
+      "assertions": 76,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 264,
+      "passed": 264
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    }
+  },
+  "notes": [
+    "Pruebas con dobles de la API de SketchUp, no ejecución nativa."
+  ]
+}
