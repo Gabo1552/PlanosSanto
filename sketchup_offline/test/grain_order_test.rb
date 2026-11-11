@@ -109,12 +109,12 @@ class GrainOrderTest < Minitest::Test
     assert_equal [2,0],row(plan,'1/1')['axes']
   end
   def test_review_note_and_row_blockers_reach_pieces
-    piece('1/1',[600,18,150],name:'Frente de cajón',grain:AUTO.merge('grainReview'=>PlanosSanto::Grain::WIDE))
+    piece('1/1',[600,18,150],name:'Frente de cajón',grain:AUTO.merge('grainReview'=>PlanosSanto::Grain::SQUARE))
     piece('1/2',[600,18,2000],name:'Curva',grain:AUTO,rectangular:false)
     result=cutlist(check:->(ids) { ids==['1/1'] ? 'La pieza o un contenedor está bloqueado.' : nil })
     drawer=result['pieces'].find { |p| p['name']=='Frente de cajón' }
-    assert_equal [150.0,600.0,PlanosSanto::Grain::WIDE],drawer.values_at('lengthMm','widthMm','grainReview')
-    assert drawer['notes'].any? { |n| n.start_with?('Veta: Pieza vertical más ancha') },'El aviso también va a las notas del pedido'
+    assert_equal [150.0,600.0,PlanosSanto::Grain::SQUARE],drawer.values_at('lengthMm','widthMm','grainReview')
+    assert drawer['notes'].any? { |n| n.start_with?('Veta: Largo igual al ancho') },'El aviso también va a las notas del pedido'
     assert_equal 'La pieza o un contenedor está bloqueado.',drawer['grainBlock']
     assert_equal 'Pieza no rectangular: la veta no se puede orientar.',result['pieces'].find { |p| p['name']=='Curva' }['grainBlock']
   end

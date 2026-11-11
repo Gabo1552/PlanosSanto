@@ -52,7 +52,7 @@ class PieceGrainTest < Minitest::Test
     assert_equal [2,'vertical',nil],info('1/14').values_at('axis','direction','review'),'Fondo: vertical'
     drawer=info('1/15')
     assert_equal [2,'vertical'],drawer.values_at('axis','direction'),'Frente de cajón: pieza vertical, la veta sigue la altura (criterio confirmado)'
-    assert_equal G::WIDE,drawer['review'],'…pero más ancha que alta: queda el aviso para confirmarla'
+    assert_nil drawer['review'],'Más ancha que alta, sin aviso: el taller confirmó la veta vertical en frentes de cajón (0.8.32)'
     assert_equal 'auto',drawer['source']
   end
   def test_ambiguous_cases_are_flagged_not_guessed
