@@ -38,14 +38,14 @@ test('biblioteca v4: alta desde valor sugerido y variante de espesor; la ficha d
  const quick=panel.getByRole('group',{name:'Alta rápida desde valores sugeridos'});await expect(quick).toContainText('Con medidas sugeridas; completá el SKU.');
  await quick.getByLabel('Valor sugerido').selectOption('melamina-2750');await quick.getByLabel('Nombre (opcional)').fill('Melamina blanca');
  await quick.getByRole('button',{name:'Crear sugerido',exact:true}).click();
- await expect(panel.getByRole('status')).toContainText('Material «Melamina blanca» creado con valores sugeridos. Completá su SKU');
+ await expect(panel.getByRole('status')).toContainText('Material «Melamina blanca» creado con valores sugeridos y SKU MELAMINA-BLANCA.');
  // La placa sugerida vale para todos sus espesores: no trae «el» espesor.
  await expect(page.getByLabel('Nombre de material de biblioteca')).toHaveValue('Melamina blanca');await expect(page.getByLabel('Espesor de biblioteca')).toHaveValue('');
- await expect(panel.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);await expect(panel.locator('#workshop-item-complete')).toContainText('Falta: SKU, veta');
+ await expect(panel.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);await expect(panel.locator('#workshop-item-complete')).toContainText('Falta: veta.');// 0.8.34: el SKU se arma solo con el nombre
  await expect(panel.getByRole('note')).toHaveText('Valores precargados desde valores sugeridos del taller: largo y ancho. Corregilos si no coinciden con el producto.');
  const details=panel.locator('details.catalog-v2-variant');await details.locator('summary').click();
  await details.getByLabel('Espesor de la variante (mm)').fill('15');await details.getByRole('button',{name:'Crear variante',exact:true}).click();
- await expect(panel.getByRole('status')).toContainText(/Variante «.+15 mm» creada sin SKU ni precio/);
+ await expect(panel.getByRole('status')).toContainText(/Variante «.+15 mm» creada con SKU MELAMINA-BLANCA-15MM y sin precio/);
  await expect(panel).toContainText('Variante de espesor de «Melamina blanca».');
  await expect(panel.getByRole('note')).toContainText('ficha de origen de la variante');
  await page.getByLabel('SKU de biblioteca').fill('MB-15');await page.getByLabel('Veta de biblioteca').selectOption('false');

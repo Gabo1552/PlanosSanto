@@ -384,7 +384,8 @@ test('biblioteca global: importar, revisar, guardar, reabrir y exportar sin toca
  await openMaterialTool(page,'Compatibilidades y variantes');
  await page.getByRole('button',{name:'Importar JSON…',exact:true}).click();
  await page.getByRole('dialog',{name:'Biblioteca del taller'}).getByRole('button',{name:/Placa prueba E2E/}).click();
- await expect(page.locator('#workshop-item-complete')).toContainText('Falta: SKU, largo, ancho, veta');await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);// biblioteca v4: la placa ya trae sus espesores estándar
+ await expect(page.locator('#workshop-item-complete')).toContainText('Falta: largo, ancho, veta.');// 0.8.34: el SKU se arma solo con el nombre
+ await expect(page.getByRole('checkbox',{name:/aprobad/})).toHaveCount(0);// biblioteca v4: la placa ya trae sus espesores estándar
  await page.getByLabel('SKU de biblioteca').fill('PL-E2E');await page.getByLabel('Proveedor de biblioteca').fill('Proveedor sintético');
  await page.getByLabel('Espesor de biblioteca').fill('19.05');await page.getByLabel('Ancho de biblioteca').fill('2000');await page.getByLabel('Largo de biblioteca').fill('3000');
  await page.getByLabel('Veta de biblioteca').selectOption('false');await expect(page.locator('#workshop-item-complete')).toHaveText('Ficha completa: se puede usar para la maderera.');
