@@ -113,7 +113,8 @@ module PlanosSanto
       row
     end
     def self.same_import_values?(left,right)
-      left=normalize_row(left);right=normalize_row(right)
+      # 0.8.34: compared as they will be stored (an automatic SKU follows the incoming name and thicknesses).
+      left=with_auto_sku(normalize_row(left));right=with_auto_sku(normalize_row(right))
       IMPORT_FIELDS.all? { |key| left[key]==right[key] }
     end
     def self.valid_list?(list);list.is_a?(Array) && list.all? { |value| measure?(value) };end
@@ -244,14 +245,22 @@ module PlanosSanto
       suffix="-#{joined}MM"
       base.empty? ? '' : "#{base[0,160-suffix.length]}#{suffix}"
     end
-    # An empty SKU gets the automatic one; an automatic one follows a new name or thickness.
-    # A SKU typed by hand (not the automatic one of the stored ficha) is never touched.
-    def self.with_auto_sku(row,previous)
-      return row unless row.is_a?(Hash) && row['name'].is_a?(String)
+    # Provenance of a generated SKU: `observed.autoSku` holds the SKU the extension wrote. The value alone
+    # never decides it (a SKU typed before 0.8.34 may look automatic). `observed` is a free hash for every
+    # library schema, so older versions keep reading the file.
+    def self.auto_sku?(row)
+      row.is_a?(Hash) && row['observed'].is_a?(Hash) && row['observed']['autoSku'].is_a?(String) && !row['sku'].to_s.strip.empty? && row['observed']['autoSku']==row['sku']
+    end
+    # An empty SKU gets the automatic one; an automatic one follows a new name or thickness. A SKU typed
+    # by hand (empty marker, or a marker that no longer matches) is never touched and loses the marker.
+    def self.with_auto_sku(row)
+      return row unless row.is_a?(Hash) && row['name'].is_a?(String) && row['observed'].is_a?(Hash)
       sku=row['sku'].to_s.strip;wanted=auto_sku(row)
-      return row.merge('sku'=>wanted) if sku.empty? && !wanted.empty?
-      return row unless previous.is_a?(Hash) && previous['sku'].to_s.strip==sku && sku==auto_sku(previous) && sku!=wanted && !wanted.empty?
-      row.merge('sku'=>wanted)
+      if sku.empty? || auto_sku?(row)
+        return row if wanted.empty? || (sku==wanted && row['observed']['autoSku']==wanted)
+        return row.merge('sku'=>wanted,'observed'=>row['observed'].merge('autoSku'=>wanted))
+      end
+      row['observed'].key?('autoSku') ? row.merge('observed'=>row['observed'].reject { |key,_| key=='autoSku' }) : row
     end
     # Ficha completa (0.8.16): the data an order needs, computed, never ticked by hand.
     # Placa: SKU, al menos un espesor, largo, ancho y veta definida. Canto: al menos un ancho.
@@ -391,8 +400,7 @@ module PlanosSanto
           result['items']=result['items'].map { |row| row.is_a?(Hash) && row['approved']==true && !self.class.legacy_approved?(row) ? row.merge('approved'=>false) : row }
           # A window of 0.8.16-0.8.19 sends v2/v3 records: upgraded here, never rejected. A single thickness or width always joins its list.
           result['items']=result['items'].map { |row| self.class.upgrade_row(row) }
-          before=(current['items'] || []).select { |row| row.is_a?(Hash) }.to_h { |row| [row['id'],row] }
-          result['items']=result['items'].map { |row| self.class.with_auto_sku(row,row.is_a?(Hash) ? before[row['id']] : nil) }
+          result['items']=result['items'].map { |row| self.class.with_auto_sku(row) }
         end
         validate(result);bytes=JSON.pretty_generate(result)
         raise ExportError,'La biblioteca supera 8 MiB.' if bytes.bytesize>MAX_BYTES

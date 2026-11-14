@@ -101,19 +101,19 @@ export const formatMm=(value:number|null|undefined)=>value===null||value===undef
 type Price=NonNullable<CatalogItem['price']>;
 export type PriceDraft={amount:string;currency:string;unit:string;date:string;source:string};
 /** `chosen`: only an edge (and the other kinds) has one thickness; a sheet never does. `widths`: an edge's standard widths. */
-export type FichaDraft={name:string;kind:string;sku:string;supplier:string;notes:string;thicknesses:string[];chosen:number|null;widths:string[];widthMm:string;lengthMm:string;grain:''|'true'|'false';price:PriceDraft};
+export type FichaDraft={name:string;kind:string;sku:string;skuAuto:boolean;supplier:string;notes:string;thicknesses:string[];chosen:number|null;widths:string[];widthMm:string;lengthMm:string;grain:''|'true'|'false';price:PriceDraft};
 export type DraftErrors=Partial<Record<'name'|'thicknesses'|'widths'|'widthMm'|'lengthMm'|'price',string>>&{rows?:Record<number,string>;widthRows?:Record<number,string>};
 const today=()=>new Date().toISOString().slice(0,10);
 export function emptyPrice(kind:string):PriceDraft{return {amount:'',currency:'ARS',unit:kind==='hardware'?'unidad':kind==='edge'?'metro':'placa',date:today(),source:'Carga manual'};}
 export function draftFromItem(item:FichaItem,defaults:StandardThicknesses=DEFAULT_THICKNESSES):FichaDraft{
  const list=standardThicknesses(item,defaults);
- return {name:item.name,kind:item.kind,sku:item.sku,supplier:item.supplier,notes:item.notes||'',thicknesses:list.map(formatMeasure),
+ return {name:item.name,kind:item.kind,sku:item.sku,skuAuto:isAutoSku(item),supplier:item.supplier,notes:item.notes||'',thicknesses:list.map(formatMeasure),
   chosen:item.kind!=='sheet'&&validMeasure(item.thicknessMm)?list.findIndex(value=>value===round3(item.thicknessMm as number)):null,
   widths:standardWidths(item,defaults).map(formatMeasure),widthMm:item.kind==='edge'?'':formatMeasure(item.widthMm),lengthMm:formatMeasure(item.lengthMm),grain:item.grain===null?'':item.grain?'true':'false',
   price:item.price?{amount:formatMeasure(item.price.amount),currency:item.price.currency,unit:item.price.unit,date:item.price.date,source:item.price.source}:emptyPrice(item.kind)};
 }
 export function newDraft(kind:string,defaults:StandardThicknesses=DEFAULT_THICKNESSES):FichaDraft{
- return {name:'',kind,sku:'',supplier:'',notes:'',thicknesses:defaultThicknesses(kind,defaults).map(formatMeasure),chosen:null,widths:defaultWidths(kind,defaults).map(formatMeasure),widthMm:'',lengthMm:'',grain:'',price:emptyPrice(kind)};
+ return {name:'',kind,sku:'',skuAuto:true,supplier:'',notes:'',thicknesses:defaultThicknesses(kind,defaults).map(formatMeasure),chosen:null,widths:defaultWidths(kind,defaults).map(formatMeasure),widthMm:'',lengthMm:'',grain:'',price:emptyPrice(kind)};
 }
 /** Changing the type brings that type's standard lists when the ficha still had empty or untouched default lists. A sheet never keeps a chosen thickness. */
 export function changeKind(draft:FichaDraft,kind:string,defaults:StandardThicknesses=DEFAULT_THICKNESSES):FichaDraft{
@@ -170,11 +170,15 @@ export function draftAutoSku(draft:FichaDraft):string{
  const chosen=draft.kind!=='sheet'&&draft.chosen!==null?values[draft.chosen]??null:null;
  return autoSku(draft.name.trim(),skuThicknesses(draft.kind,values,chosen));
 }
-/** Form update: a SKU that is empty or still the automatic one follows the name and thicknesses; a typed one stays. */
+/** The ficha's SKU was generated, not typed: marked in its provenance (`observed.autoSku`), never inferred from the value. */
+export function isAutoSku(item:{sku:string;observed?:Record<string,unknown>}):boolean{
+ return !item.sku.trim()||(item.observed?.autoSku===item.sku);
+}
+/** Form update: an automatic SKU follows the name and thicknesses; typing one makes it the user's, clearing it gives it back. */
 export function withAutoSku(previous:FichaDraft,next:FichaDraft):FichaDraft{
- if(next.sku!==previous.sku)return next;
- if(previous.sku.trim()&&previous.sku!==draftAutoSku(previous))return next;
- return {...next,sku:draftAutoSku(next)};
+ if(next.sku!==previous.sku)return {...next,skuAuto:!next.sku.trim()};
+ if(!previous.skuAuto)return next;
+ return {...next,sku:draftAutoSku(next),skuAuto:true};
 }
 /** Validates the draft and returns the ficha to save. Missing order data never blocks: it only shows as «ficha incompleta». */
 export function applyDraft(item:FichaItem,draft:FichaDraft):{item?:FichaItem;errors:DraftErrors}{
@@ -201,7 +205,9 @@ export function applyDraft(item:FichaItem,draft:FichaDraft):{item?:FichaItem;err
  const sorted=(list:(number|null)[])=>[...new Set(list.filter((value):value is number=>value!==null))].sort((a,b)=>a-b);
  const chosen=sheet||draft.chosen===null?null:values[draft.chosen]??null;
  if(widthList.values.filter(value=>value!==null).length>MAX_THICKNESSES)return {errors:{...errors,widths:`Hasta ${MAX_THICKNESSES} anchos estándar.`}};
- return {errors,item:{...item,name,kind:draft.kind,sku:draft.sku.trim()||autoSku(name,skuThicknesses(draft.kind,values,chosen)),supplier:draft.supplier.trim(),notes:draft.notes.trim(),thicknessesMm:sorted(values),thicknessMm:chosen,
+ const generated=autoSku(name,skuThicknesses(draft.kind,values,chosen)),automatic=draft.skuAuto||!draft.sku.trim(),sku=automatic?generated:draft.sku.trim();
+ const {autoSku:_previous,...observed}=(item.observed||{}) as Record<string,unknown>;void _previous;
+ return {errors,item:{...item,name,kind:draft.kind,sku,observed:automatic&&sku?{...observed,autoSku:sku}:observed,supplier:draft.supplier.trim(),notes:draft.notes.trim(),thicknessesMm:sorted(values),thicknessMm:chosen,
   widthsMm:sorted(widthList.values),widthMm,lengthMm,grain:sheet?(draft.grain===''?null:draft.grain==='true'):item.grain,price}};
 }
 /** True when the draft differs from what the ficha would show untouched. */

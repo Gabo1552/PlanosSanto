@@ -24,14 +24,24 @@ Base: 0.8.33 (`c3f1a97`). Estado: **pendiente de validación real; producción n
   - El SKU sigue al nombre y al espesor mientras sea el automático.
   - Vacío, muestra el automático como sugerencia.
   - **Un SKU escrito a mano no se toca nunca.**
+- **Cómo se sabe que es automático:** el SKU que arma la extensión queda marcado en la procedencia de la ficha (`observed.autoSku`). No se deduce del valor, porque un SKU escrito antes de esta versión puede coincidir con la fórmula. Las versiones anteriores leen esa marca sin problema.
 - **Biblioteca:**
   - Al guardar, un SKU vacío se completa solo.
   - Uno automático se actualiza si cambian el nombre o el espesor.
   - Vale para todas las fichas, también las que se crean solas.
 - **Vínculos con el modelo:**
   - El SKU forma parte de la huella que vincula un material pintado con su ficha.
-  - El SKU automático cuenta como vacío en esa huella, así llenarlo o renombrar la ficha no deja desactualizados los materiales ya pintados.
-  - Un SKU escrito a mano sigue contando.
+  - El SKU automático, el marcado, cuenta como vacío en esa huella, así llenarlo o renombrar la ficha no deja desactualizados los materiales ya pintados.
+  - Un SKU escrito a mano, incluido cualquiera anterior a esta versión, sigue contando igual que antes.
+
+## Revisión de Codex (PR #33)
+
+Dos observaciones reales, corregidas con la marca de procedencia, cada una con su prueba:
+
+1. **Rename:** un SKU escrito a mano antes de 0.8.34 con la forma del automático (`MELAMINA-BLANCA-18MM`) se tomaba por automático y cambiaba al renombrar la ficha. Ahora no cambia.
+2. **Vínculo:** ese mismo SKU cambiaba la huella del vínculo apenas se actualizaba la extensión. Ahora la huella queda idéntica a la de antes.
+
+La importación de bibliotecas compara las fichas con el SKU automático aplicado, así reimportar no duplica fichas.
 
 ## Pruebas
 

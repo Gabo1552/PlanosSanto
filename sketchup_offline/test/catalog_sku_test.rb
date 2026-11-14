@@ -5,6 +5,7 @@ require 'json'
 require_relative '../../sketchup/planos_santo/exporter'
 require_relative '../catalog_store'
 require_relative '../material_resolver'
+require 'digest'
 
 # 0.8.34: el SKU se arma solo con el nombre y el espesor, igual que autoSku (tests/auto-sku.test.ts).
 class CatalogSkuTest < Minitest::Test
@@ -59,5 +60,33 @@ class CatalogSkuTest < Minitest::Test
     assert PlanosSanto::MaterialResolver.fingerprint_current?(renamed,before),'renombrar tampoco'
     typed=renamed.merge('sku'=>'MB-PROPIO')
     refute PlanosSanto::MaterialResolver.fingerprint_current?(typed,before),'un SKU escrito a mano sigue contando como dato comercial'
+  end
+
+  # Codex (PR #33): a SKU typed before 0.8.34 that happens to look automatic is still the user's.
+  def test_an_old_typed_sku_that_looks_automatic_never_follows_a_rename
+    old=item('Melamina Blanca','sheet','thicknessesMm'=>[18],'sku'=>'MELAMINA-BLANCA-18MM')
+    saved=@store.save([old],0)['items'].first
+    refute Store.auto_sku?(saved),'sin marca de procedencia: es del usuario'
+    renamed=@store.save([saved.merge('name'=>'Melamina Blanca Mate','thicknessesMm'=>[15])],1)['items'].first
+    assert_equal 'MELAMINA-BLANCA-18MM',renamed['sku']
+  end
+
+  # Codex (PR #33): the binding fingerprint of such a ficha is exactly the pre-0.8.34 one.
+  def test_an_old_typed_sku_keeps_the_pre_0834_binding_fingerprint
+    old=item('Melamina Blanca','sheet','thicknessesMm'=>[18],'sku'=>'MELAMINA-BLANCA-18MM')
+    fields=PlanosSanto::MaterialResolver::FINGERPRINT_FIELDS
+    legacy=Digest::SHA256.hexdigest(JSON.generate(fields.to_h { |key| [key,key=='compatibleIds' ? old[key].sort : old[key]] }.sort.to_h))
+    assert_equal legacy,PlanosSanto::MaterialResolver.item_fingerprint(old)
+    saved=@store.save([old],0)['items'].first
+    assert PlanosSanto::MaterialResolver.fingerprint_current?(saved,legacy),'actualizar a 0.8.34 no desactualiza el vínculo'
+  end
+
+  def test_the_mark_lives_in_the_provenance_and_goes_away_when_typed
+    saved=@store.save([item('Melamina Blanca','sheet','thicknessesMm'=>[18])],0)['items'].first
+    assert_equal 'MELAMINA-BLANCA-18MM',saved['observed']['autoSku']
+    typed=@store.save([saved.merge('sku'=>'MB-PROPIO')],1)['items'].first
+    refute typed['observed'].key?('autoSku')
+    cleared=@store.save([typed.merge('sku'=>'')],2)['items'].first
+    assert_equal ['MELAMINA-BLANCA-18MM','MELAMINA-BLANCA-18MM'],[cleared['sku'],cleared['observed']['autoSku']],'vaciarlo devuelve el automático'
   end
 end

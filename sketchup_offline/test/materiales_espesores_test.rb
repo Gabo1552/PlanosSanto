@@ -54,7 +54,7 @@ class MaterialesEspesoresTest < Minitest::Test
     # Idempotente: releer y volver a guardar no cambia nada ni genera otra copia de premigración.
     again=@store.read
     # 0.8.34: guardar completa los SKU vacíos (PLACA-SIN-ELEGIR, PERFIL-9MM); nada más cambia.
-    assert_equal data['items'].map { |row| Store.with_auto_sku(row,nil) },again['items']
+    assert_equal data['items'].map { |row| Store.with_auto_sku(row) },again['items']
     assert_equal again['items'],again['items'].map { |row| Store.upgrade_row(row) }
     @store.save(again['items'],6)
     assert_equal 1,backups.count { |path| File.basename(path).include?('premigracion') }

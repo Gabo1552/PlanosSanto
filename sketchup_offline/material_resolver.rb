@@ -19,9 +19,10 @@ module PlanosSanto
     def self.item_fingerprint(item)
       raise ArgumentError, 'Ítem comercial inválido.' unless item.is_a?(Hash)
       value = FINGERPRINT_FIELDS.to_h { |key| [key, item[key]] }
-      # 0.8.34: the automatic SKU (CatalogStore.auto_sku) is not commercial identity: it counts as empty, so
-      # filling it on save or renaming the ficha never makes a model binding stale. A SKU typed by hand still counts.
-      value['sku'] = '' if value['sku'].is_a?(String) && !value['sku'].strip.empty? && value['sku'].strip == CatalogStore.auto_sku(item)
+      # 0.8.34: a SKU the extension generated (marked in observed.autoSku) is not commercial identity: it counts
+      # as empty, so filling it on save or renaming the ficha never makes a model binding stale. A SKU typed by
+      # hand, including any written before 0.8.34, still counts exactly as before.
+      value['sku'] = '' if CatalogStore.auto_sku?(item)
       value['compatibleIds'] = value['compatibleIds'].sort if value['compatibleIds'].is_a?(Array)
       photo=item['observed'].is_a?(Hash) && item['observed']['photo']
       value['photoSource']={'schema'=>photo['schema'],'sourceHash'=>photo['sourceHash'],'textureScale'=>photo['textureScale']} if photo.is_a?(Hash)
