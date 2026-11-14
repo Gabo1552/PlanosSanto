@@ -139,7 +139,8 @@ class MaterialPolicyTest < Minitest::Test
     order=PlanosSanto::SupplierOrder.new({'furniture'=>[]},'test',@data)
     error=assert_raises(PlanosSanto::ExportError) { order.material(@item['id'],'sheet') }
     # Biblioteca v4: la placa trae sus espesores estándar, así que el espesor ya no falta.
-    assert_match(/incompleta: falta SKU, largo, ancho, veta/,error.message,'Lista para diseño no alcanza para pedir: la ficha dice qué le falta')
+    # 0.8.34: el SKU automático ya no falta.
+    assert_match(/incompleta: falta largo, ancho, veta/,error.message,'Lista para diseño no alcanza para pedir: la ficha dice qué le falta')
     assert_empty @model.operations
   end
   def test_stale_photo_native_binding_blocks_paint_even_when_same_catalog_id_is_used

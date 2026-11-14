@@ -113,7 +113,8 @@ module PlanosSanto
       row
     end
     def self.same_import_values?(left,right)
-      left=normalize_row(left);right=normalize_row(right)
+      # 0.8.34: compared as they will be stored (an automatic SKU follows the incoming name and thicknesses).
+      left=with_auto_sku(normalize_row(left));right=with_auto_sku(normalize_row(right))
       IMPORT_FIELDS.all? { |key| left[key]==right[key] }
     end
     def self.valid_list?(list);list.is_a?(Array) && list.all? { |value| measure?(value) };end
@@ -227,6 +228,39 @@ module PlanosSanto
       raise ExportError,"Anchos estándar inválidos (hasta #{MAX_THICKNESSES} medidas positivas, sin repetir)." unless list.is_a?(Array) && list.length<=MAX_THICKNESSES && list.all? { |value| self.class.measure?(value) } && list.uniq.length==list.length
       raise ExportError,'Una placa no tiene un único espesor: sus espesores van en la lista.' if row['kind']=='sheet' && !row['thicknessMm'].nil?
       raise ExportError,'El ancho de un canto va en su lista de anchos estándar.' if row['kind']=='edge' && !row['widthMm'].nil?
+    end
+    # 0.8.34: SKU automático «NOMBRE-18MM» (sin acentos, mayúsculas, guiones), el mismo cálculo que
+    # autoSku en materialLibraryModel.ts. Con un solo espesor (el elegido de un canto, o la única medida
+    # de la ficha) se suma al nombre; con varios queda el nombre: cada línea del pedido lleva su espesor.
+    def self.auto_sku(row)
+      return '' unless row.is_a?(Hash)
+      base=row['name'].to_s.unicode_normalize(:nfd).gsub(/\p{Mn}/,'').upcase.gsub(/[^A-Z0-9]+/,'-').gsub(/\A-+|-+\z/,'')
+      chosen=row['thicknessMm']
+      values=row['kind']!='sheet' && measure?(chosen) ? [chosen] : thicknesses_of(row)
+      values=values.map { |value| clean_measure(value) }.uniq.sort
+      return base[0,160] unless values.length==1
+      joined=values.first.to_s;token=joined.tr('.','-')
+      tail=["-#{token}-MM","-#{token}MM","-#{token}"].find { |candidate| base.end_with?(candidate) }
+      base=base[0,base.length-tail.length] if tail
+      suffix="-#{joined}MM"
+      base.empty? ? '' : "#{base[0,160-suffix.length]}#{suffix}"
+    end
+    # Provenance of a generated SKU: `observed.autoSku` holds the SKU the extension wrote. The value alone
+    # never decides it (a SKU typed before 0.8.34 may look automatic). `observed` is a free hash for every
+    # library schema, so older versions keep reading the file.
+    def self.auto_sku?(row)
+      row.is_a?(Hash) && row['observed'].is_a?(Hash) && row['observed']['autoSku'].is_a?(String) && !row['sku'].to_s.strip.empty? && row['observed']['autoSku']==row['sku']
+    end
+    # An empty SKU gets the automatic one; an automatic one follows a new name or thickness. A SKU typed
+    # by hand (empty marker, or a marker that no longer matches) is never touched and loses the marker.
+    def self.with_auto_sku(row)
+      return row unless row.is_a?(Hash) && row['name'].is_a?(String) && row['observed'].is_a?(Hash)
+      sku=row['sku'].to_s.strip;wanted=auto_sku(row)
+      if sku.empty? || auto_sku?(row)
+        return row if wanted.empty? || (sku==wanted && row['observed']['autoSku']==wanted)
+        return row.merge('sku'=>wanted,'observed'=>row['observed'].merge('autoSku'=>wanted))
+      end
+      row['observed'].key?('autoSku') ? row.merge('observed'=>row['observed'].reject { |key,_| key=='autoSku' }) : row
     end
     # Ficha completa (0.8.16): the data an order needs, computed, never ticked by hand.
     # Placa: SKU, al menos un espesor, largo, ancho y veta definida. Canto: al menos un ancho.
@@ -366,6 +400,7 @@ module PlanosSanto
           result['items']=result['items'].map { |row| row.is_a?(Hash) && row['approved']==true && !self.class.legacy_approved?(row) ? row.merge('approved'=>false) : row }
           # A window of 0.8.16-0.8.19 sends v2/v3 records: upgraded here, never rejected. A single thickness or width always joins its list.
           result['items']=result['items'].map { |row| self.class.upgrade_row(row) }
+          result['items']=result['items'].map { |row| self.class.with_auto_sku(row) }
         end
         validate(result);bytes=JSON.pretty_generate(result)
         raise ExportError,'La biblioteca supera 8 MiB.' if bytes.bytesize>MAX_BYTES

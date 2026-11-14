@@ -1,3 +1,16 @@
+# Entrega 0.8.34 — SKU automático con el nombre y el espesor, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.34-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
+
+Sobre la 0.8.33, el SKU de cada ficha se arma solo con el nombre y el espesor (por ejemplo `MELAMINA-BLANCA-18MM`):
+
+- Si la placa tiene varios espesores, el SKU queda con el nombre solo.
+- Un SKU escrito a mano no se toca.
+
+Validar con `docs/validacion-0834/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.33). Producción no aprobada; SketchUp 2022 sin probar.
+
+---
+
 # Entrega 0.8.33 — pintura solo con los materiales elegidos y giro al marcar el frente, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.33-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
@@ -11,16 +24,6 @@ Validar con `docs/validacion-0833/VALIDACION_LOCAL.md` (más los pasos de 0.8.26
 
 ---
 
-# Entrega 0.8.32 — frentes de cajón con veta vertical sin aviso, PENDIENTE DE VALIDACIÓN REAL
-
-Instalar `PlanosSanto-0.8.32-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
-
-Sobre la 0.8.31: el taller confirmó la veta vertical en los frentes de cajón, así que se saca el aviso «revisar» de las piezas verticales más anchas que altas.
-
-Validar con `docs/validacion-0832/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.31). Producción no aprobada; SketchUp 2022 sin probar.
-
----
-
 # Versiones anteriores
 
-Las candidatas 0.8.7 a 0.8.31 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.
+Las candidatas 0.8.7 a 0.8.32 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.

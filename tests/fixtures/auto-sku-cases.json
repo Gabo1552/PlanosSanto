@@ -1,0 +1,11 @@
+{"cases":[
+ {"name":"Melamina Blanca","kind":"sheet","thicknessesMm":[18],"thicknessMm":null,"sku":"MELAMINA-BLANCA-18MM"},
+ {"name":"Melamina Blanca","kind":"sheet","thicknessesMm":[3,5,12,15,18,25],"thicknessMm":null,"sku":"MELAMINA-BLANCA"},
+ {"name":"Melamina Blanca 18 mm","kind":"sheet","thicknessesMm":[18],"thicknessMm":null,"sku":"MELAMINA-BLANCA-18MM"},
+ {"name":"Roble Ñandú  natural","kind":"sheet","thicknessesMm":[15],"thicknessMm":null,"sku":"ROBLE-NANDU-NATURAL-15MM"},
+ {"name":"Canto PVC blanco","kind":"edge","thicknessesMm":[0.45,2],"thicknessMm":0.45,"sku":"CANTO-PVC-BLANCO-0.45MM"},
+ {"name":"Canto PVC blanco 0,45 mm","kind":"edge","thicknessesMm":[0.45,2],"thicknessMm":0.45,"sku":"CANTO-PVC-BLANCO-0.45MM"},
+ {"name":"Canto PVC blanco","kind":"edge","thicknessesMm":[0.45,2],"thicknessMm":null,"sku":"CANTO-PVC-BLANCO"},
+ {"name":"Bisagra cazoleta 35","kind":"hardware","thicknessesMm":[],"thicknessMm":null,"sku":"BISAGRA-CAZOLETA-35"},
+ {"name":"  ","kind":"sheet","thicknessesMm":[18],"thicknessMm":null,"sku":""}
+]}
