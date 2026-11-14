@@ -1,3 +1,16 @@
+# Entrega 0.8.34 — SKU automático con el nombre y el espesor, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.34-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
+
+Sobre la 0.8.33, el SKU de cada ficha se arma solo con el nombre y el espesor (por ejemplo `MELAMINA-BLANCA-18MM`):
+
+- Si la placa tiene varios espesores, el SKU queda con el nombre solo.
+- Un SKU escrito a mano no se toca.
+
+Validar con `docs/validacion-0834/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.33). Producción no aprobada; SketchUp 2022 sin probar.
+
+---
+
 # Entrega 0.8.33 — pintura solo con los materiales elegidos y giro al marcar el frente, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.33-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
