@@ -114,7 +114,7 @@ describe('Aplicar la ficha',()=>{
   expect(Object.values(chosenEmpty.errors.rows!)).toContain('Escribí el espesor elegido.');
  });
  it('arma la ficha completa de una placa y de un canto',()=>{
-  const sheet=applyDraft(item(),{...draftFromItem(item()),sku:' MB18 ',supplier:'Maderera',notes:'Lista oct.',lengthMm:'2750',widthMm:'1830',grain:'false',price:{amount:'95000',currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}}).item!;
+  const sheet=applyDraft(item(),{...draftFromItem(item()),sku:' MB18 ',skuAuto:false,supplier:'Maderera',notes:'Lista oct.',lengthMm:'2750',widthMm:'1830',grain:'false',price:{amount:'95000',currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}}).item!;
   expect(sheet).toMatchObject({sku:'MB18',supplier:'Maderera',notes:'Lista oct.',thicknessMm:null,thicknessesMm:[3,5,12,15,18,25],widthsMm:[],lengthMm:2750,widthMm:1830,grain:false,price:{amount:95000,currency:'ARS',unit:'placa',date:'2026-10-01',source:'Lista'}});
   const edgeBase=item({kind:'edge',lengthMm:999,grain:true});
   const edge=applyDraft(edgeBase,chooseThickness(draftFromItem(edgeBase),0)).item!;
