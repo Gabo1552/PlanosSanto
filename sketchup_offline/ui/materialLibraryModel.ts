@@ -145,6 +145,37 @@ function measureList(texts:string[],what:string,chosen:number|null){
  values.forEach((value,index)=>{if(value!==null&&values.findIndex(other=>other===value)!==index)rows[index]=`Ese ${what} ya está en la lista.`;});
  return {values,rows};
 }
+// --- 0.8.34: SKU automático --------------------------------------------------
+// «Melamina Blanca» de 18 mm → MELAMINA-BLANCA-18MM. Con varios espesores (la lista estándar de una placa) queda
+// solo el nombre, MELAMINA-BLANCA: cada línea del pedido ya lleva su espesor. Sin acentos, en mayúsculas y con
+// guiones. El mismo cálculo que CatalogStore.auto_sku (Ruby): el backend completa el SKU vacío al guardar y lo
+// mantiene al día mientras no se haya cambiado a mano.
+const skuMeasure=(value:number)=>String(Math.round(value*1000)/1000);
+export function autoSku(name:string,thicknesses:readonly number[]):string{
+ let base=name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+ const values=[...new Set(thicknesses.filter(value=>Number.isFinite(value)&&value>0).map(value=>Math.round(value*1000)/1000))].sort((a,b)=>a-b);
+ if(values.length!==1)return base.slice(0,160);
+ const joined=skuMeasure(values[0]),token=joined.replace(/\./g,'-');
+ for(const tail of [`-${token}-MM`,`-${token}MM`,`-${token}`])if(base.endsWith(tail)){base=base.slice(0,-tail.length);break;}
+ const suffix=`-${joined}MM`;
+ return base?`${base.slice(0,160-suffix.length)}${suffix}`:'';
+}
+/** The thicknesses a SKU names: all of a sheet's; the chosen one of an edge or other kind, else its list. */
+export function skuThicknesses(kind:string,list:readonly (number|null)[],chosen:number|null):number[]{
+ const values=list.filter((value):value is number=>typeof value==='number');
+ return kind!=='sheet'&&chosen!==null?[chosen]:values;
+}
+export function draftAutoSku(draft:FichaDraft):string{
+ const values=draft.thicknesses.map(text=>{const value=parseMeasure(text);return value===null||Number.isNaN(value)?null:value;});
+ const chosen=draft.kind!=='sheet'&&draft.chosen!==null?values[draft.chosen]??null:null;
+ return autoSku(draft.name.trim(),skuThicknesses(draft.kind,values,chosen));
+}
+/** Form update: a SKU that is empty or still the automatic one follows the name and thicknesses; a typed one stays. */
+export function withAutoSku(previous:FichaDraft,next:FichaDraft):FichaDraft{
+ if(next.sku!==previous.sku)return next;
+ if(previous.sku.trim()&&previous.sku!==draftAutoSku(previous))return next;
+ return {...next,sku:draftAutoSku(next)};
+}
 /** Validates the draft and returns the ficha to save. Missing order data never blocks: it only shows as «ficha incompleta». */
 export function applyDraft(item:FichaItem,draft:FichaDraft):{item?:FichaItem;errors:DraftErrors}{
  const errors:DraftErrors={};
@@ -170,7 +201,7 @@ export function applyDraft(item:FichaItem,draft:FichaDraft):{item?:FichaItem;err
  const sorted=(list:(number|null)[])=>[...new Set(list.filter((value):value is number=>value!==null))].sort((a,b)=>a-b);
  const chosen=sheet||draft.chosen===null?null:values[draft.chosen]??null;
  if(widthList.values.filter(value=>value!==null).length>MAX_THICKNESSES)return {errors:{...errors,widths:`Hasta ${MAX_THICKNESSES} anchos estándar.`}};
- return {errors,item:{...item,name,kind:draft.kind,sku:draft.sku.trim(),supplier:draft.supplier.trim(),notes:draft.notes.trim(),thicknessesMm:sorted(values),thicknessMm:chosen,
+ return {errors,item:{...item,name,kind:draft.kind,sku:draft.sku.trim()||autoSku(name,skuThicknesses(draft.kind,values,chosen)),supplier:draft.supplier.trim(),notes:draft.notes.trim(),thicknessesMm:sorted(values),thicknessMm:chosen,
   widthsMm:sorted(widthList.values),widthMm,lengthMm,grain:sheet?(draft.grain===''?null:draft.grain==='true'):item.grain,price}};
 }
 /** True when the draft differs from what the ficha would show untouched. */

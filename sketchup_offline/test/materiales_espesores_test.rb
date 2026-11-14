@@ -53,11 +53,12 @@ class MaterialesEspesoresTest < Minitest::Test
     assert_nil @store.migration
     # Idempotente: releer y volver a guardar no cambia nada ni genera otra copia de premigración.
     again=@store.read
-    assert_equal data['items'],again['items']
+    # 0.8.34: guardar completa los SKU vacíos (PLACA-SIN-ELEGIR, PERFIL-9MM); nada más cambia.
+    assert_equal data['items'].map { |row| Store.with_auto_sku(row,nil) },again['items']
     assert_equal again['items'],again['items'].map { |row| Store.upgrade_row(row) }
     @store.save(again['items'],6)
     assert_equal 1,backups.count { |path| File.basename(path).include?('premigracion') }
-    assert_equal data['items'],@store.read['items']
+    assert_equal again['items'],@store.read['items']
   end
 
   def test_a_sheet_has_no_single_thickness_and_any_listed_one_is_valid

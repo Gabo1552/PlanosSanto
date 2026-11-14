@@ -131,7 +131,9 @@ class MaterialLibraryTest < Minitest::Test
     installed=@library.install({'catalogId'=>item['id'],'revision'=>2,'confirmed'=>true})
     material=@model.materials.find { |m| m.entityID.to_s==installed['materialId'] }
     assert_equal item['id'],PlanosSanto::MaterialResolver.read_binding(material)['catalogId']
-    refute @catalog.read['items'].first['approved'];assert_empty @catalog.read['items'].first['sku']
+    refute @catalog.read['items'].first['approved']
+    # 0.8.34: el SKU se arma solo con el nombre (la placa tiene la lista estándar de espesores).
+    assert_equal 'SKM-DISENO-QA',@catalog.read['items'].first['sku']
     other=LibraryFixture::Model.new
     library=PlanosSanto::MaterialLibrary.new(other,catalog:@catalog,directory:@directory)
     loaded=library.install({'catalogId'=>item['id'],'revision'=>2,'confirmed'=>true})
@@ -223,7 +225,8 @@ class MaterialLibraryTest < Minitest::Test
     assert_equal @sheet['id'],binding['catalogId'];assert_equal 1,@model.starts
     # 0.8.16: «lista para maderera» es la ficha completa; la casilla aprobada ya no cuenta.
     assert_equal PlanosSanto::CatalogStore.complete?(@catalog.read['items'][0]),@library.status['materials'][0]['supplierReady']
-    catalog=@catalog.read;catalog['items'][0]['sku']='';@catalog.save(catalog['items'],catalog['revision'])
+    # 0.8.34: un SKU vacío se completa solo al guardar; sacar el largo sigue dejando la ficha incompleta.
+    catalog=@catalog.read;catalog['items'][0]['lengthMm']=nil;@catalog.save(catalog['items'],catalog['revision'])
     refute @library.status['materials'][0]['supplierReady']
   end
 

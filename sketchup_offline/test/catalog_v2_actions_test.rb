@@ -35,7 +35,8 @@ class CatalogV2ActionsTest < Minitest::Test
     item=library['catalog']['items'].first
     assert_equal ['sheet',nil,[3,5,12,15,18,25],2750,1830,false],item.values_at('kind','thicknessMm','thicknessesMm','lengthMm','widthMm','approved')
     assert_equal({'source'=>'preset','fields'=>%w[lengthMm widthMm],'presetId'=>'melamina-2750'},item['suggested'])
-    assert_equal '',item['sku'],'El SKU nunca se sugiere.'
+    # 0.8.34: el SKU no se sugiere (no está en «suggested»): se arma solo con el nombre de la ficha.
+    assert_equal 'MELAMINA-BLANCA',item['sku']
     edge=dispatch('catalog_add_preset',{'presetId'=>'canto-2','revision'=>1})['catalog']['items'].last
     assert_equal ['Canto 2 mm','edge',2,[0.45,2],nil,[22,45]],edge.values_at('name','kind','thicknessMm','thicknessesMm','widthMm','widthsMm')
     assert_raises(PlanosSanto::ExportError) { dispatch('catalog_add_preset',{'presetId'=>'canto-2','revision'=>2}) } # nombre repetido
@@ -51,7 +52,7 @@ class CatalogV2ActionsTest < Minitest::Test
     store.save([edge,sheet],0)
     # Biblioteca v4: la variante de una placa es una ficha propia (SKU propio) de ese único espesor.
     variant=dispatch('catalog_variant',{'id'=>sheet['id'],'thicknessMm'=>15,'revision'=>1})['catalog']['items'].last
-    assert_equal ['Melamina blanca 15 mm',nil,[15],1830,2750,false,[edge['id']],sheet['id'],'',nil,false],
+    assert_equal ['Melamina blanca 15 mm',nil,[15],1830,2750,false,[edge['id']],sheet['id'],'MELAMINA-BLANCA-15MM',nil,false],
       variant.values_at('name','thicknessMm','thicknessesMm','widthMm','lengthMm','grain','compatibleIds','variantOf','sku','price','approved')
     assert_equal 'variant',variant['suggested']['source']
     second=dispatch('catalog_variant',{'id'=>variant['id'],'thicknessMm'=>25,'revision'=>2})['catalog']['items'].last

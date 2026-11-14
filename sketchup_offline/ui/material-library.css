@@ -131,6 +131,7 @@
 .material-properties-body{overflow:auto;min-height:0;flex:1;padding:16px 18px}
 .material-form{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:10px 14px;align-items:start}
 .material-form>label,.material-form-label{text-align:right;font-weight:700;padding-top:8px;font-size:13px}
+.material-field-stack{display:grid;gap:4px;min-width:0}.material-field-help{margin:0;font-size:12px;color:var(--material-muted)}
 .material-field-error{color:#a12a12!important;font-size:12px!important;margin:4px 0 0!important}
 .material-field-hint{color:var(--material-muted);font-size:12px!important;margin:4px 0 0!important}
 .material-field-hint.warning{color:#7a4a0c}
