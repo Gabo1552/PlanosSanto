@@ -1,0 +1,113 @@
+{
+  "schema": "planos-santo.obra.v1",
+  "version": "0.8.35",
+  "modelo": "Cocina SINTÉTICA",
+  "exportado": "2026-11-23T12:00:00.000Z",
+  "unidades": "mm",
+  "muebles": [
+    {
+      "id": "101",
+      "nombre": "M01 Bajo mesada",
+      "codigo": "M01",
+      "medidas": {
+        "alto": 720,
+        "ancho": 600,
+        "profundidad": 563
+      },
+      "piezas": [
+        {
+          "id": "101/1",
+          "codigo": "M01·A",
+          "nombre": "Lateral",
+          "material": {
+            "nombre": "Melamina Blanca 18",
+            "sku": "MEL-18",
+            "color": "#f0eee6"
+          },
+          "medidas": [720, 560, 18],
+          "caja": {
+            "min": [0, 0, 0],
+            "max": [18, 560, 720]
+          },
+          "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 100, 1]
+        },
+        {
+          "id": "101/2",
+          "codigo": "M01·B",
+          "nombre": "Lateral",
+          "material": {
+            "nombre": "Melamina Blanca 18",
+            "sku": "MEL-18",
+            "color": "#f0eee6"
+          },
+          "medidas": [720, 560, 18],
+          "caja": {
+            "min": [0, 0, 0],
+            "max": [18, 560, 720]
+          },
+          "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 582, 0, 100, 1]
+        },
+        {
+          "id": "101/3",
+          "codigo": "M01·C",
+          "nombre": "Piso",
+          "material": {
+            "nombre": "Melamina Blanca 18",
+            "sku": "MEL-18",
+            "color": "#f0eee6"
+          },
+          "medidas": [564, 560, 18],
+          "caja": {
+            "min": [0, 0, 0],
+            "max": [564, 560, 18]
+          },
+          "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 18, 0, 100, 1]
+        },
+        {
+          "id": "101/4",
+          "codigo": "",
+          "nombre": "Fondo",
+          "material": {
+            "nombre": "Fibro pintado",
+            "sku": null,
+            "color": null
+          },
+          "medidas": [720, 564, 3],
+          "caja": {
+            "min": [0, 0, 0],
+            "max": [564, 720, 3]
+          },
+          "transform": [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 18, 563, 100, 1]
+        }
+      ]
+    },
+    {
+      "id": "202",
+      "nombre": "Alacena",
+      "codigo": "",
+      "medidas": {
+        "alto": 700,
+        "ancho": 400,
+        "profundidad": 18
+      },
+      "piezas": [
+        {
+          "id": "202/1",
+          "codigo": "",
+          "nombre": "Puerta",
+          "material": {
+            "nombre": "Sin material",
+            "sku": null,
+            "color": null
+          },
+          "medidas": [700, 400, 18],
+          "caja": {
+            "min": [0, 0, 0],
+            "max": [400, 18, 700]
+          },
+          "transform": [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 2000, 0, 1500, 1]
+        }
+      ]
+    }
+  ]
+}

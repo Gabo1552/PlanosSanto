@@ -4,6 +4,9 @@ import HelpPopover from './HelpPopover';
 import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainCell,grainNote,grainNotice,
   highlightNotice,nextFocus,parseOptions,rowLetter,sectionTitle,stripDesignation,summaryRows,
   type CutlistData,type CutlistEdgeSection,type CutlistHighlight,type CutlistOptions,type CutlistPiece,type CutlistSection,type SummaryKind,type SummaryRow} from './cutlistModel';
+import {buildObra,obraNameIssues} from './obra';
+import type {Furniture} from '../../lib/model';
+import release from '../version.json';
 import './cutlist.css';
 
 // Pestaña «Piezas»: listado de partes de los muebles generados. Arriba, un resumen por material (placas,
@@ -33,11 +36,16 @@ export type CutlistViewProps={
   addThickness?:(catalogId:string,thicknessMm:number)=>Promise<unknown>;
   /** 0.8.26: «Girar veta 90°» y «Veta automática» de una fila (todas sus piezas); por defecto la acción Ruby `piece_grain`. */
   changeGrain?:(ids:string[],mode:PieceGrainMode)=>Promise<PieceGrainResult>;
+  /** 0.8.35 «Paquete de obra»: los muebles generados (matriz mundo y caja de cada pieza). Sin ellos el botón queda inactivo. */
+  obraFurniture?:Furniture[];
+  /** Guardado del paquete; por defecto la acción Ruby `obra_json` (compara con el modelo y abre el diálogo). */
+  saveObra?:(json:string,modelName:string)=>Promise<{path?:string;cancelled?:boolean}>;
 };
 
 const defaultLoad=()=>request<CutlistData>('cutlist');
 const defaultAddThickness=(id:string,thicknessMm:number)=>request('catalog_add_thickness',{id,thicknessMm});
 const defaultSave=(csv:string,modelName:string)=>request<{path?:string;cancelled?:boolean}>('cutlist_csv',{csv,modelName});
+const defaultSaveObra=(json:string,modelName:string)=>request<{path?:string;cancelled?:boolean}>('obra_json',{json,modelName});
 const defaultHighlight=(pieceIds:string[],focus:number|null)=>request<{highlight?:CutlistHighlight}>('piece_highlight',{pieceIds,...(focus==null?{}:{focus}),frame:true})
   .then(result=>{if(!result?.highlight)throw new Error('Respuesta de resaltado incompatible: actualizá la extensión.');return result.highlight;});
 const defaultRestore=()=>request<{restored?:boolean}>('piece_highlight_restore');
@@ -113,7 +121,7 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain,obraFurniture,saveObra=defaultSaveObra}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
@@ -297,6 +305,18 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     finally{setExporting(false);}
   }
 
+  // Paquete de obra: todas las piezas de todos los muebles generados (no solo lo que se ve), para App Santo.
+  async function exportObra(){
+    if(!data||!obraFurniture)return;
+    setExporting(true);setNotice('');setError('');
+    try{
+      const obra=buildObra({version:release.version,exportedAt:new Date().toISOString(),data,furniture:obraFurniture});
+      const result=await saveObra(JSON.stringify(obra),data.modelName);
+      if(!result?.cancelled)setNotice([`Paquete de obra guardado${result?.path?` en ${result.path}`:''}.`,...obraNameIssues(obra)].join(' '));
+    }catch(value){setError(value instanceof Error?value.message:String(value));}
+    finally{setExporting(false);}
+  }
+
   if(!ready)return <section className="cutlist cutlist-empty" aria-labelledby={`${uid}-title`}><span className="eyebrow">LISTADO DE PIEZAS</span><h2 id={`${uid}-title`}>Primero generá las guías en Muebles</h2><p>El listado se arma con los muebles generados: material, espesor, medidas y cantos de cada pieza.</p>{onGoToFurniture&&<button type="button" className="primary" onClick={onGoToFurniture}>Ir a Muebles</button>}</section>;
 
   const sigmaCell=(row:SummaryRow,column:'length'|'area'|'volume')=>{
@@ -313,6 +333,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
         <button type="button" className="cutlist-generate" disabled={loading} title="Volver a leer las piezas del modelo" onClick={()=>void refresh()}><Icon name="refresh"/>Generar</button>
         <button type="button" disabled={!data} title="Imprimir el listado que se ve" onClick={print}><Icon name="print"/>Imprimir</button>
         <button type="button" disabled={!data||exporting} title="Guardar un CSV con las piezas que se ven" onClick={()=>void exportCsv()}><Icon name="export"/>Exportar</button>
+        <button type="button" disabled={!data||!obraFurniture?.length||exporting} title="Guardar el paquete de obra (JSON) para el visor 3D de App Santo: todos los muebles generados" onClick={()=>void exportObra()}><Icon name="export"/>Paquete de obra</button>
         {canRestore&&!lookVisible&&restoreButton}
         <span className="cutlist-options-anchor"><button ref={optionsTrigger} type="button" aria-expanded={showOptions} aria-controls={`${uid}-options`} onClick={()=>setShowOptions(value=>!value)}><Icon name="options"/>Opciones</button>
           <div ref={optionsPanel} id={`${uid}-options`} className="cutlist-options" role="group" aria-label="Opciones del listado" tabIndex={-1} hidden={!showOptions}>
@@ -322,7 +343,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <p className="cutlist-options-unit"><span>Unidad</span> Milímetro (mm)</p>
             <button type="button" onClick={()=>setOptions({...DEFAULT_OPTIONS})}>Restablecer</button>
           </div></span>
-        <HelpPopover title="Listado de piezas"><p>Arriba, el resumen por material: placas (cantidad de piezas, metros, m² y m³ netos), cantos (tiras, metros y m²) y lo que no tiene tipo («?»). Los avisos en rojo dicen qué le falta a la ficha.</p><p>Clic en una fila del resumen para ir a la sección de ese material; la flecha de la sección vuelve al resumen.</p><p>Debajo, una sección por material. Clic en una pieza o tira: SketchUp la selecciona, la encuadra y la marca con un contorno rojo. Si la fila tiene varias piezas iguales se muestran todas; otro clic (o ← →) las recorre de a una. «Volver a la vista anterior» deja la cámara como estaba. «~» marca medidas aproximadas (pieza no rectangular o canto sin ancho en la ficha).</p><p>Imprimir y Exportar toman lo que se ve: filtros y secciones ocultas con el ojo quedan afuera.</p></HelpPopover>
+        <HelpPopover title="Listado de piezas"><p>Arriba, el resumen por material: placas (cantidad de piezas, metros, m² y m³ netos), cantos (tiras, metros y m²) y lo que no tiene tipo («?»). Los avisos en rojo dicen qué le falta a la ficha.</p><p>Clic en una fila del resumen para ir a la sección de ese material; la flecha de la sección vuelve al resumen.</p><p>Debajo, una sección por material. Clic en una pieza o tira: SketchUp la selecciona, la encuadra y la marca con un contorno rojo. Si la fila tiene varias piezas iguales se muestran todas; otro clic (o ← →) las recorre de a una. «Volver a la vista anterior» deja la cámara como estaba. «~» marca medidas aproximadas (pieza no rectangular o canto sin ancho en la ficha).</p><p>Imprimir y Exportar toman lo que se ve: filtros y secciones ocultas con el ojo quedan afuera.</p><p>«Paquete de obra» guarda un JSON con todos los muebles generados (piezas, material y ubicación) para ver el avance de obra en 3D en App Santo. Los nombres de mueble son los mismos del CSV.</p></HelpPopover>
       </div>
     </header>
     <div className="cutlist-doc-tabs"><span className="cutlist-doc-tab"><strong>{data?.modelName||'Modelo'}</strong><span>Milímetro</span></span></div>

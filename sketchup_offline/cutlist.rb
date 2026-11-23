@@ -261,10 +261,11 @@ module PlanosSanto
                    entry['edges'].map { |edge| [edge['status'],edge['catalogId'],edge['observedIds']] },entry['grain'],entry['rectangular'],entry['grainAxis'],entry['grainSource'],entry['grainReview']]
         found=groups[signature]
         if found
-          found['ids'] << entry['id'];found['quantity']+=1;found['codes'] |= [entry['code']] unless entry['code'].empty?
+          found['ids'] << entry['id'];found['idCodes'] << entry['code'];found['quantity']+=1;found['codes'] |= [entry['code']] unless entry['code'].empty?
           found['notes'] |= entry['notes']
         else
-          groups[signature]=entry.merge('codes'=>entry['code'].empty? ? [] : [entry['code']])
+          # idCodes (0.8.35): código de cada pieza física alineado con ids, para el paquete de obra.
+          groups[signature]=entry.merge('codes'=>entry['code'].empty? ? [] : [entry['code']],'idCodes'=>[entry['code']])
         end
       end
       groups.values.each do |entry|

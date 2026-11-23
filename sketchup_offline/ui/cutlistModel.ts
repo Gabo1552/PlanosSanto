@@ -15,7 +15,8 @@ export type CutlistGrain='length'|'width'|'none'|null;
 export type CutlistGrainInfo={grainAxis?:number|null;grainSource?:'auto'|'manual'|null;grainDirection?:'vertical'|'horizontal'|null;grainReview?:string|null;grainBlock?:string|null};
 /** `thicknessMm`: espesor real de la pieza (eje menor), el que separa las secciones y usa la maderera; `thicknessInList`: si está
  * entre los de la ficha (null sin ficha de placa). */
-export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];name:string;furnitureId:string;furnitureName:string;quantity:number;
+/** `idCodes` (0.8.35): código de cada pieza física, alineado con `ids` ('' sin código); falta en respuestas de Ruby anteriores. */
+export type CutlistPiece={id:string;ids:string[];code:string;codes:string[];idCodes?:string[];name:string;furnitureId:string;furnitureName:string;quantity:number;
   lengthMm:number;widthMm:number;thicknessMm:number;thicknessInList?:boolean|null;rectangular:boolean;mirrored:boolean;material:CutlistMaterial|null;sectionKey:string;edges:CutlistEdge[];strips:CutlistStrip[];grain:CutlistGrain;notes:string[]}&CutlistGrainInfo;
 export type SheetTotals={pieces:number;lengthM:number;areaM2:number;volumeM3:number};
 export type EdgeTotals={strips:number;lengthM:number;areaM2:number;volumeM3:number|null};
