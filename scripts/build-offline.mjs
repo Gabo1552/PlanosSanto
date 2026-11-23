@@ -29,6 +29,7 @@ const copies={
   'planos_santo/ocl_reader.rb':'sketchup_offline/ocl_reader.rb',
   'planos_santo/order_references.rb':'sketchup_offline/order_references.rb',
   'planos_santo/cutlist.rb':'sketchup_offline/cutlist.rb',
+  'planos_santo/obra_package.rb':'sketchup_offline/obra_package.rb',
   // 0.8.26: veta por pieza (criterio y acción de Piezas) y la herramienta de dibujo que offline.rb ya requiere.
   'planos_santo/grain.rb':'sketchup_offline/grain.rb',
   'planos_santo/piece_grain.rb':'sketchup_offline/piece_grain.rb',

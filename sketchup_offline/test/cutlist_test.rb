@@ -99,6 +99,8 @@ class CutlistTest < Minitest::Test
     assert_equal [700.0,450.0,18.0],first.values_at('lengthMm','widthMm','thicknessMm')
     assert_equal white['key'],first['sectionKey']
     other=laterals.find { |p| p['furnitureId']=='2' };assert_equal 1,other['quantity'];assert_equal '',other['code'],'Sin módulo no se inventa un código'
+    # 0.8.35 (paquete de obra): el código de cada pieza física, alineado con `ids`.
+    assert_equal ['M01·P01','M01·P02'],first['idCodes'];assert_equal [''],other['idCodes']
     assert_equal 'none',first['grain'],'La ficha define placa sin veta'
     assert_equal 'length',find(result,'Tapa roble')['grain'],'Placa con veta: a lo largo por defecto'
     refute result['pieces'].any? { |p| p.key?('definitionId') }

@@ -11,6 +11,7 @@ require_relative 'ocl_reader'
 require_relative 'workshop'
 require_relative 'order_references'
 require_relative 'cutlist'
+require_relative 'obra_package'
 require_relative 'material_library'
 require_relative 'native_paint'
 require_relative 'smart_paint'
@@ -969,6 +970,16 @@ module PlanosSanto
         raise ExportError,'CSV de piezas inválido.' unless text.is_a?(String) && text.bytesize.between?(1,Cutlist::CSV_MAX_BYTES)
         target=with_user_dialog { UI.savepanel('Exportar piezas CSV',nil,Cutlist.csv_file_name(data['modelName'])) }
         target ? Cutlist.write_csv(text,target) : {'cancelled'=>true}
+      when 'obra_json'
+        # 0.8.35 «Paquete de obra» de Piezas para App Santo: la UI arma el JSON; acá se compara con los muebles
+        # generados vigentes (antes de abrir el diálogo) y se escribe. Solo lectura del modelo.
+        active!
+        raise ExportError,'Primero generá las guías en Muebles.' unless @session&.document
+        @session.check_current!
+        text=data.fetch('json')
+        PlanosSanto::ObraPackage.check(text,@session.document)
+        target=with_user_dialog { UI.savepanel('Exportar paquete de obra (JSON)',nil,PlanosSanto::ObraPackage.file_name(data['modelName'])) }
+        target ? PlanosSanto::ObraPackage.write(text,target,@session.document) : {'cancelled'=>true}
       when 'piece_grain'
         # 0.8.26 «Girar veta 90°» / «Veta automática» de Piezas: una operación (Ctrl+Z) sobre todas las piezas
         # de la fila. Mismos bloqueos que pintar en la vista: el pincel se detiene solo; la biblioteca o el pedido

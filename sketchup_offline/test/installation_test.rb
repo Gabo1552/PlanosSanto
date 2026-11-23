@@ -51,7 +51,7 @@ class InstallationTest < Minitest::Test
         assert set(entries) == set(manifest['files']) | {'planos_santo/manifest.json'}
         for name,digest in manifest['files'].items():
           assert hashlib.sha256(z.read(name)).hexdigest() == digest, name
-        for name in ('model_material_catalog.rb','material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','grain.rb','piece_grain.rb','draw_component_tool.rb','maderera_profile.rb','presets-taller.json'):
+        for name in ('model_material_catalog.rb','material_resolver.rb','material_library.rb','native_paint.rb','smart_paint.rb','smart_paint_tool.rb','material_sample_tool.rb','quick_toolbar.rb','bounded_zip.rb','skm_import.rb','piece_highlight_tool.rb','paint_materials.rb','ocl_attributes.rb','model_watch.rb','order_proposal.rb','order_references.rb','cutlist.rb','obra_package.rb','grain.rb','piece_grain.rb','draw_component_tool.rb','maderera_profile.rb','presets-taller.json'):
           assert 'planos_santo/' + name in manifest['files'], name
         assert all(not p.lower().endswith(('.skp','.skm','.csv','.jsonl')) for p in entries)
         for action in ('component','sheet','edge','remove_edge','sample','furniture','order','guides','materials','main'):
@@ -98,7 +98,7 @@ class InstallationTest < Minitest::Test
     assert_includes result['menus'], 'Planos Santo · Error de instalación'
   end
   def test_missing_native_material_payload_is_reported_before_editor_start
-    %w[material_resolver.rb material_library.rb native_paint.rb smart_paint.rb smart_paint_tool.rb material_sample_tool.rb quick_toolbar.rb bounded_zip.rb skm_import.rb piece_highlight_tool.rb model_watch.rb grain.rb piece_grain.rb draw_component_tool.rb].each do |name|
+    %w[material_resolver.rb material_library.rb native_paint.rb smart_paint.rb smart_paint_tool.rb material_sample_tool.rb quick_toolbar.rb bounded_zip.rb skm_import.rb piece_highlight_tool.rb model_watch.rb grain.rb piece_grain.rb draw_component_tool.rb obra_package.rb].each do |name|
       extract(VERSION)
       File.delete(File.join(@plugins, 'planos_santo', name))
       result = boot
