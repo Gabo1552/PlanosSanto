@@ -2,7 +2,6 @@
 // ya tiene la ventana: el listado de Piezas (nombres de mueble y de pieza, códigos y material, igual que el CSV)
 // y los muebles generados (matriz mundo y caja local de cada pieza, medidas totales como en las cotas del A4).
 // Solo lectura: no pide nada a SketchUp; Ruby después lo compara con el modelo vigente y lo escribe.
-import {Vector3} from 'three';
 import {bounds,type Furniture} from '../../lib/model';
 import {moduleFromName} from '../../lib/naming';
 import {OBRA_SCHEMA,obraSchema,type Obra,type ObraPieza} from '../../lib/obra';
@@ -49,11 +48,11 @@ export function buildObra({version,exportedAt,data,furniture}:ObraInput):Obra{
 }
 
 /** Alto, ancho y profundidad del mueble armado, los mismos de las cotas totales del A4 (lib/scene furnitureEnvelope). */
+// Un mueble generado siempre tiene piezas (lib/model lo exige), así que la envolvente siempre existe.
 function totals(f:Furniture){
   const size=furnitureEnvelope(f)?.size;
-  if(size)return {alto:round(size.alto,1),ancho:round(size.ancho,1),profundidad:round(size.profundidad,1)};
-  const box=f.pieces.reduce((all,p)=>all.union(bounds(p.mesh)),bounds(f.pieces[0].mesh)).getSize(new Vector3());
-  return {alto:round(box.z,1),ancho:round(box.x,1),profundidad:round(box.y,1)};
+  if(!size)throw new Error(`El mueble «${f.name}» no tiene piezas con geometría.`);
+  return {alto:round(size.alto,1),ancho:round(size.ancho,1),profundidad:round(size.profundidad,1)};
 }
 
 /** App Santo empareja los módulos por nombre: dos muebles con el mismo nombre no se pueden distinguir. */

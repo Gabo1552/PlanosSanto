@@ -21,7 +21,7 @@ const text=(max:number)=>z.string().max(max);
 const transform=z.array(number).length(16)
   .refine(m=>Math.abs(m[3])+Math.abs(m[7])+Math.abs(m[11])<1e-8&&Math.abs(m[15]-1)<1e-8,'Transformación no afín.');
 const caja=z.object({min:vec3,max:vec3}).strict().refine(b=>b.min.every((v,i)=>v<=b.max[i]),'Caja con mínimo mayor que el máximo.');
-const material=z.object({nombre:text(200).min(1),sku:text(100).nullable(),color:z.string().regex(/^#[0-9a-f]{6}$/).nullable()}).strict();
+const material=z.object({nombre:text(200).min(1),sku:text(160).nullable(),color:z.string().regex(/^#[0-9a-f]{6}$/).nullable()}).strict();
 const pieza=z.object({
   id:text(1000).min(1),codigo:text(40),nombre:text(200),material,
   medidas:z.tuple([positive,positive,positive]),caja,transform,

@@ -124,6 +124,11 @@ describe('Paquete de obra: nombre del mueble igual al CSV de Piezas',()=>{
 });
 
 describe('Paquete de obra: esquema',()=>{
+  it('acepta SKU de hasta 160 caracteres, como la biblioteca y el SKU automático (0.8.35)',()=>{
+    const obra=build(),withSku=(sku:string)=>({...obra,muebles:obra.muebles.map((m,i)=>i?m:{...m,piezas:m.piezas.map((p,j)=>j?p:{...p,material:{...p.material,sku}})})});
+    expect(()=>parseObra(withSku('A'.repeat(160)))).not.toThrow();
+    expect(()=>parseObra(withSku('A'.repeat(161)))).toThrow();
+  });
   it('valida el ejemplo de docs, generado por esta prueba (WRITE_OBRA_EXAMPLE=1 lo regenera)',()=>{
     const obra=build();
     expect(parseObra(JSON.parse(JSON.stringify(obra)))).toEqual(obra);

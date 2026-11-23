@@ -69,7 +69,7 @@ Archivo que exporta Planos Santo (desde 0.8.35) para que **App Santo** muestre e
 | `codigo` | texto (≤ 40) | Código módulo·pieza del CSV (`"M01·A"`); `""` si la guía no tiene códigos. |
 | `nombre` | texto | Columna «Designación» del CSV. |
 | `material.nombre` | texto | Ficha de la biblioteca o material pintado; `"Sin material"` si no tiene. |
-| `material.sku` | texto o `null` | SKU de la ficha. `null` si el material no tiene ficha. |
+| `material.sku` | texto (≤ 160) o `null` | SKU de la ficha (desde 0.8.34 se arma solo con el nombre y el espesor, por ejemplo `MELAMINA-BLANCA-18MM`). `null` si el material no tiene ficha. |
 | `material.color` | `"#rrggbb"` o `null` | Color de muestra. `null` si no se conoce: usar un gris neutro. |
 | `medidas` | `[largo, ancho, espesor]` mm | Las mismas L, A y E del CSV (medidas de corte). |
 | `caja` | `{min, max}` mm | Límites de la pieza **en sus ejes locales**. No siempre empieza en 0. |
