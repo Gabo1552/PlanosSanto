@@ -10,6 +10,6 @@ export function chromiumPath():string|undefined{
   try{if(existsSync(chromium.executablePath()))return undefined;}catch{}
   const root=process.env.PLAYWRIGHT_BROWSERS_PATH;if(!root||!existsSync(root))return undefined;
   const found=readdirSync(root).filter(d=>/^chromium-\d+$/.test(d)).sort((a,b)=>Number(b.split('-')[1])-Number(a.split('-')[1]))
-    .map(d=>join(root,d,'chrome-linux','chrome')).find(p=>existsSync(p));
+    .flatMap(d=>['chrome-linux','chrome-linux64'].map(folder=>join(root,d,folder,'chrome'))).find(p=>existsSync(p));
   return found;
 }

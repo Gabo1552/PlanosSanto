@@ -33,6 +33,8 @@ Si el usuario no dijo el modo, proponé uno con el motivo en una línea. Ante la
    - saca de `dist/` todo lo que no sean las dos últimas versiones (y su entrada en `dist/README.md`);
    - actualiza la línea «Candidata actual» de `README.md`.
    
+   Si la versión agrega o saca un archivo del RBZ (un `.rb` nuevo), pasá `--archivos N` con la cantidad del manifiesto (sin contarse a sí mismo): el `empaquetar.py` copiado de la versión anterior trae la cantidad vieja.
+
    A mano queda una sola cosa: la frase de `README.md` que empieza «La X.Y.Z …» (sumarla delante de la anterior).
 7. **Commit y push** de la entrega: `git add -A docs/validacion-XXYY dist README.md`, commit «Candidata X.Y.Z: RBZ, paquete de validación y documentación» y `git push -u origin <rama>`.
 8. **PR** con las herramientas de GitHub: crearlo como borrador, con qué cambia, las pruebas (conteos de `RESULTADOS.json`), el SHA del RBZ y «Pendiente de validación en SketchUp real». Después pasarlo a listo.

@@ -97,6 +97,7 @@ def main() -> None:
     ap.add_argument('--logs', type=Path, default=ROOT / 'artifacts/bateria')
     ap.add_argument('--nota', action='append', default=[])
     ap.add_argument('--check', action='append', default=[], help='chequeo extra clave=VALOR')
+    ap.add_argument('--archivos', type=int, help='archivos del manifiesto del RBZ, si la versión agrega o saca alguno')
     a = ap.parse_args()
     version = a.version
     if json.loads((ROOT / 'sketchup_offline/version.json').read_text())['version'] != version:
@@ -144,7 +145,12 @@ def main() -> None:
     packer = (docs_dir(prev) / 'empaquetar.py').read_text()
     if prev not in packer or prev_doc not in packer:
         die(f'{prev_doc}/empaquetar.py no tiene la versión {prev}')
-    (target / 'empaquetar.py').write_text(packer.replace(prev_doc, new_doc).replace(prev, version))
+    packer = packer.replace(prev_doc, new_doc).replace(prev, version)
+    if a.archivos is not None:
+        packer, count = re.subn(r"len\(manifest\['files'\]\) == \d+", f"len(manifest['files']) == {a.archivos}", packer)
+        if count != 1:
+            die('empaquetar.py no tiene la cantidad de archivos del manifiesto para ajustar')
+    (target / 'empaquetar.py').write_text(packer)
     subprocess.run([sys.executable, '-I', str(target / 'empaquetar.py')], cwd=ROOT, check=True)
 
     keep = {version, prev}

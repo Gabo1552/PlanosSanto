@@ -1,3 +1,9 @@
+# Entrega 0.8.35 — paquete de obra para App Santo, PENDIENTE DE VALIDACIÓN REAL
+
+Instalar `PlanosSanto-0.8.35-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. Sobre la 0.8.34: en Piezas, «Paquete de obra» guarda un JSON con todos los muebles y piezas (ubicación, medidas y material) para el visor 3D de avance de obra de App Santo. El contrato está en `docs/integracion-app-santo/OBRA_JSON.md`. Validar con `docs/validacion-0835/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.34). Producción no aprobada; SketchUp 2022 sin probar.
+
+---
+
 # Entrega 0.8.34 — SKU automático con el nombre y el espesor, PENDIENTE DE VALIDACIÓN REAL
 
 Instalar `PlanosSanto-0.8.34-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
@@ -11,19 +17,6 @@ Validar con `docs/validacion-0834/VALIDACION_LOCAL.md` (más los pasos de 0.8.26
 
 ---
 
-# Entrega 0.8.33 — pintura solo con los materiales elegidos y giro al marcar el frente, PENDIENTE DE VALIDACIÓN REAL
-
-Instalar `PlanosSanto-0.8.33-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`.
-
-Sobre la 0.8.32:
-
-- **Pintura:** la barra y la paleta muestran solo los materiales elegidos para el SKP en Materiales.
-- **Frente:** en Sugerencias de nombres se puede girar el dibujo para marcar un frente que quedó atrás.
-
-Validar con `docs/validacion-0833/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.32). Producción no aprobada; SketchUp 2022 sin probar.
-
----
-
 # Versiones anteriores
 
-Las candidatas 0.8.7 a 0.8.32 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.
+Las candidatas 0.8.7 a 0.8.33 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.
