@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {Matrix4,Vector3} from 'three';
-import {writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
 import {box} from '../lib/demo';
 import {importDocument,MAX_FURNITURE,type Furniture,type Mesh,type RawDocument,type RawNode} from '../lib/model';
 import {OBRA_SCHEMA,obraSchema,parseObra,type Obra} from '../lib/obra';
@@ -24,7 +24,7 @@ function project():Furniture[]{
   ]};
   return importDocument(doc,'sketchup-ruby').furniture.map(f=>({...f,naming:{moduleCode:f.name.startsWith('M01')?'M01':'',bases:[],reference}}));
 }
-const material={source:'catalog',catalogId:'mel',name:'Melamina Blanca 18',sku:'MEL-18'};
+const material={source:'catalog' as const,catalogId:'mel',name:'Melamina Blanca 18',sku:'MEL-18'};
 function cutPiece(ids:string[],extra:Partial<CutlistPiece>):CutlistPiece{
   return {id:ids[0],ids,code:'',codes:[],name:'Pieza',furnitureId:'101',furnitureName:'M01 Bajo mesada',quantity:ids.length,lengthMm:720,widthMm:560,thicknessMm:18,rectangular:true,mirrored:false,
     material,sectionKey:'catalog:mel|18.0',edges:[],strips:[],grain:'none',notes:[],...extra};
@@ -40,6 +40,7 @@ function data():CutlistData{
             cutPiece(['101/4'],{name:'Fondo',lengthMm:720,widthMm:564,thicknessMm:3,material:{source:'model',observedId:'fibro',name:'Fibro pintado'},sectionKey:'model:fibro|3.0'}),
             cutPiece(['202/1'],{name:'Puerta',furnitureId:'202',furnitureName:'Alacena',lengthMm:700,widthMm:400,material:null,sectionKey:'none|18.0'})]};
 }
+const EXAMPLE='docs/integracion-app-santo/ejemplo.obra.json';
 const build=(over:Partial<Parameters<typeof buildObra>[0]>={})=>buildObra({version:'0.8.35',exportedAt:'2026-11-23T12:00:00.000Z',data:data(),furniture:project(),...over});
 
 describe('Paquete de obra: armado',()=>{
@@ -91,7 +92,7 @@ describe('Paquete de obra: armado',()=>{
     expect(()=>build({data:foreign})).toThrow(/volvé a generar/);
   });
   it('sin códigos por pieza (Ruby anterior) usa el de la fila solo si la fila es de una pieza',()=>{
-    const old=data();old.pieces=old.pieces.map(({idCodes:_drop,...piece})=>piece);
+    const old=data();old.pieces=old.pieces.map(piece=>{const copy={...piece};delete copy.idCodes;return copy;});
     const [bajo]=build({data:old}).muebles;
     expect(bajo.piezas.map(p=>p.codigo)).toEqual(['','','M01·C','']);
   });
@@ -123,10 +124,15 @@ describe('Paquete de obra: nombre del mueble igual al CSV de Piezas',()=>{
 });
 
 describe('Paquete de obra: esquema',()=>{
-  it('valida el ejemplo y lo deja en docs como ejemplo real del contrato',()=>{
+  it('valida el ejemplo de docs, generado por esta prueba (WRITE_OBRA_EXAMPLE=1 lo regenera)',()=>{
     const obra=build();
     expect(parseObra(JSON.parse(JSON.stringify(obra)))).toEqual(obra);
-    if(process.env.WRITE_OBRA_EXAMPLE)writeFileSync('docs/integracion-app-santo/ejemplo.obra.json',JSON.stringify(obra,null,2)+'\n');
+    // Arrays de números en una línea para que el ejemplo se lea; el archivo real va compacto (JSON.stringify sin sangría).
+    const pretty=JSON.stringify(obra,null,2).replace(/\[[-\d\s,.e]+\]/g,list=>list.replace(/\s+/g,'').replace(/,/g,', '))+'\n';
+    if(process.env.WRITE_OBRA_EXAMPLE)writeFileSync(EXAMPLE,pretty);
+    const stored=readFileSync(EXAMPLE,'utf8');
+    expect(parseObra(JSON.parse(stored))).toEqual(obra);
+    expect(stored).toBe(pretty);
   });
   it('rechaza esquema ajeno, unidades, matrices no afines, cajas invertidas, colores y duplicados',()=>{
     const ok=build(),bad=(change:(o:Obra)=>void)=>{const copy=structuredClone(ok);change(copy);return obraSchema.safeParse(copy).success;};

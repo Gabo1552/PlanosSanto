@@ -2,6 +2,7 @@ import {test,expect,type Locator,type Page} from '@playwright/test';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {readFile,mkdir} from 'node:fs/promises';
+import {parseObra} from '../../lib/obra';
 import {resolve} from 'node:path';
 import {existsSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
@@ -22,7 +23,7 @@ async function boot(page:Page,folder:string,mode='materials-cutlist'){
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  const reply=await native(raw);replies.set(msg.id,reply);if(['piece_highlight','piece_highlight_restore','cutlist','cutlist_csv'].includes(action))replies.set(action,reply);return reply;
+  const reply=await native(raw);replies.set(msg.id,reply);if(['piece_highlight','piece_highlight_restore','cutlist','cutlist_csv','obra_json'].includes(action))replies.set(action,reply);return reply;
  });
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};window.__prints=[];window.print=function(){window.__prints.push(document.body.className);};'});
  page.on('pageerror',error=>errors.push(error.message));
@@ -325,4 +326,32 @@ test('Piezas: el resumen lleva a cada sección y una fila de varias piezas se ve
  await audit('Pieza borrada');
  expect(calls.some(call=>['save','order_save','names_apply','catalog_save','paint_apply'].includes(call.action))).toBe(false);
  expect(found).toEqual([]);
+});
+
+test('Piezas: el paquete de obra lleva todos los muebles con los mismos nombres que el CSV',async({page},info)=>{
+ // 0.8.35: el JSON para el visor 3D de App Santo, armado por la UI y escrito por el controlador Ruby real (dobles de la API).
+ await boot(page,info.outputDir,'materials-cutlist-pair');
+ const {view}=await openPieces(page);
+ const before=calls.filter(call=>!['cutlist','obra_json','cutlist_csv','ui_ready','ui_loading','quick_action_ack'].includes(call.action)).length;
+ await view.getByRole('button',{name:'Exportar',exact:true}).click();
+ await expect.poll(()=>replies.has('cutlist_csv')?replies.get('cutlist_csv')!.error:'pendiente').toBeNull();
+ await view.getByRole('button',{name:'Paquete de obra',exact:true}).click();
+ await expect.poll(()=>replies.has('obra_json')?replies.get('obra_json')!.error:'pendiente').toBeNull();
+ const saved=replies.get('obra_json')!.result as {path:string;bytes:number};
+ await expect(view.locator('.cutlist-notice')).toHaveText(`Paquete de obra guardado en ${saved.path}.`);
+ expect(saved.path).toBe(resolve(info.outputDir,'Modelo sintético de nombres.obra.json'));
+ const obra=parseObra(JSON.parse(await readFile(saved.path,'utf8')));
+ expect(obra.muebles.map(m=>m.nombre)).toEqual(['Bajo Mesada','Otro mueble']);
+ expect(obra.muebles.flatMap(m=>m.piezas).length).toBeGreaterThan(2);
+ // Mismo modelo, mismo listado: cada fila de placa del CSV cae en el mueble del mismo nombre, con su cantidad de piezas.
+ const csv=(await readFile((replies.get('cutlist_csv')!.result as {path:string}).path)).subarray(3).toString('utf8').split('\r\n').slice(1,-1).map(line=>line.split(';'));
+ const plates=csv.filter(row=>row[0]==='Placa');expect(plates.length).toBeGreaterThan(0);
+ for(const [,,,,designation,mueble,,quantity] of plates){
+  const found=obra.muebles.find(m=>m.nombre===mueble);
+  expect(found,`«${mueble}» del CSV no está en el paquete`).toBeDefined();
+  expect(found!.piezas.filter(p=>p.nombre===designation)).toHaveLength(Number(quantity));
+ }
+ expect(new Set(csv.map(row=>row[5]))).toEqual(new Set(obra.muebles.map(m=>m.nombre)));
+ // Solo lectura: exportar no pidió ninguna acción que escriba el modelo.
+ expect(calls.filter(call=>!['cutlist','obra_json','cutlist_csv','ui_ready','ui_loading','quick_action_ack'].includes(call.action)).length).toBe(before);
 });
