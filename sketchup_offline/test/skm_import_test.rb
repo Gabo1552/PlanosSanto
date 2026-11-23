@@ -65,7 +65,8 @@ class SkmImportTest < Minitest::Test
     item=result['catalog']['items'].first
     assert_equal 'unknown',item['kind'];refute item['approved']
     %w[thicknessMm widthMm lengthMm grain price].each { |key| assert_nil item[key] }
-    assert_empty item['sku'];assert_empty item['supplier'];assert_empty item['compatibleIds']
+    # 0.8.34: el SKU sale solo del nombre (no es un dato técnico adivinado); proveedor y compatibles siguen vacíos.
+    assert_equal PlanosSanto::CatalogStore.auto_sku(item),item['sku'];assert_empty item['supplier'];assert_empty item['compatibleIds']
     assert_equal 'edge',item.dig('observed','skm','suggestions','kind')
     assert_nil item.dig('observed','skm','internalPath')
     assert_equal 1,result['imported'];assert_equal 1,result['catalog']['revision']
@@ -139,7 +140,7 @@ class SkmImportTest < Minitest::Test
     @catalog.save([item],1)
     path=@service.asset_path(item['id']);assert File.file?(path)
     refute @catalog.read['items'].first['approved']
-    assert_empty @catalog.read['items'].first['sku']
+    assert_equal 'PLACA-QA',@catalog.read['items'].first['sku'],'0.8.34: SKU automático con el nombre'
     assert PlanosSanto::MaterialPolicy.paintable?(@catalog.read['items'].first,directory:@directory)
     File.binwrite(path,'changed');assert_raises(PlanosSanto::ExportError) { @service.asset_path(item['id']) }
     refute @service.status['rows'].first['available']

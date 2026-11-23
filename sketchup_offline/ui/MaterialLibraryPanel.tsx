@@ -5,7 +5,7 @@ import './material-library.css';
 import {SkmBatchKind,SkmRowKind} from './SkmTypedImport';
 import {initialKinds,typedKinds} from './maderaRules';
 import PhotoMaterialPanel,{TextureAdjustPanel,type PhotoMaterialResult,type PhotoMaterialTarget,type TextureApplyResult} from './PhotoMaterialPanel';
-import {addThickness,addWidth,applyDraft,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,foldOpen,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,projectIds,projectIsFallback,splitProject,type ProjectMaterials,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
+import {addThickness,addWidth,applyDraft,draftAutoSku,withAutoSku,changeKind,chooseThickness,copyName,DEFAULT_THICKNESSES,DEFAULT_WIDTHS,draftChanged,draftFromItem,filterCounts,filterItems,foldOpen,formatMm,groupItems,hexColor,kindLabels,nameCollision,newDraft,projectIds,projectIsFallback,splitProject,type ProjectMaterials,removeThickness,removeWidth,rgbFromHex,searchText,setThickness,setWidth,standardThicknesses,thicknessSummary,type DraftErrors,type FichaDraft,type FichaItem,type GroupKey,type LibraryFilter,type StandardThicknesses} from './materialLibraryModel';
 import {catalogComplete,catalogMissing} from './workshopRules';
 
 type Suggestions={kind?:string;thicknessMm?:number|null;verified?:boolean};
@@ -126,7 +126,7 @@ function MaterialProperties(props:PropertiesProps){
  const hasVisual=!!info&&(info.bound.length>0||info.photoAvailable||safeImage(info.thumbnail)||info.canInstall);
  const colorEditable=!creating&&['sheet','edge'].includes(draft.kind)&&!hasVisual&&!readyForDesign(base as CatalogItem);
  const title=props.nativeSource?`Crear ficha desde «${base?.name||''}»`:creating?'Nueva ficha de material':`Propiedades del material «${base?.name||''}»`;
- function update(next:FichaDraft){setDraft(next);if(Object.keys(errors).length)setErrors({});}
+ function update(next:FichaDraft){setDraft(previous=>withAutoSku(previous,next));if(Object.keys(errors).length)setErrors({});}
  function submit(){
   if(props.nativeSource&&!['sheet','edge','hardware'].includes(draft.kind)){setNativeKindError(true);setTab('general');requestAnimationFrame(()=>document.getElementById('material-field-kind')?.focus());return;}
   const target=base||({id:'',name:'',kind:draft.kind,sku:'',supplier:'',thicknessMm:null,widthMm:null,lengthMm:null,grain:null,compatibleIds:[],price:null,favorite:false,approved:false,updatedAt:'',sourceHash:'',observed:{}} as FichaItem);
@@ -170,7 +170,8 @@ function MaterialProperties(props:PropertiesProps){
       <label htmlFor="material-field-notes">Descripción</label>
       <textarea id="material-field-notes" value={draft.notes} maxLength={500} rows={2} disabled={disabled} onChange={event=>update({...draft,notes:event.target.value})}/>
       <label htmlFor="material-field-sku">SKU</label>
-      <input id="material-field-sku" value={draft.sku} maxLength={160} disabled={disabled} onChange={event=>update({...draft,sku:event.target.value})}/>
+      <div className="material-field-stack"><input id="material-field-sku" aria-describedby="material-field-sku-help" value={draft.sku} placeholder={draftAutoSku(draft)||undefined} maxLength={160} disabled={disabled} onChange={event=>update({...draft,sku:event.target.value})}/>
+      <p id="material-field-sku-help" className="material-field-help">Se arma solo con el nombre y el espesor. Si lo cambiás a mano, queda el tuyo.</p></div>
       <label htmlFor="material-field-supplier">Proveedor</label>
       <input id="material-field-supplier" value={draft.supplier} maxLength={160} disabled={disabled} onChange={event=>update({...draft,supplier:event.target.value})}/>
       <label htmlFor="material-field-kind">Tipo</label>

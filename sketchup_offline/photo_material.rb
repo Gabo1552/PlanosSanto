@@ -321,6 +321,8 @@ module PlanosSanto
             # supplier, format, grain, edges, price and approval are preserved.
             item['id']=old['id']
             %w[sku supplier thicknessMm widthMm lengthMm grain compatibleIds price favorite approved].each { |key| item[key]=old[key] }
+            # 0.8.34: an automatic SKU stays automatic (its mark lives in the provenance).
+            item['observed']=item['observed'].merge('autoSku'=>old['observed']['autoSku']) if CatalogStore.auto_sku?(old)
           end
           item['thicknessMm']=data['thicknessMm'] unless data['thicknessMm'].nil?
           # Library v4: a sheet's thickness joins its list (and an edge's single width, its widths).
