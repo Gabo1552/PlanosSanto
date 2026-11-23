@@ -71,7 +71,7 @@ module PlanosSanto
       nodes={}
       Exporter.each_node([root]) { |node| nodes[node['id']]=node if node['mesh'] }
       ids=piezas.map { |p| p['id'] }
-      raise ExportError,STALE unless ids.uniq.length==ids.length && ids.sort==nodes.keys.sort
+      raise ExportError,STALE unless ids.all? { |id| id.is_a?(String) } && ids.uniq.length==ids.length && ids.sort==nodes.keys.sort
       piezas.each do |pieza|
         transform=pieza['transform']
         raise ExportError,"#{pieza['id']}: ubicación inválida." unless matrix?(transform) && box?(pieza['caja'])

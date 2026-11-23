@@ -74,6 +74,7 @@ class ObraPackageTest < Minitest::Test
     assert_match(/volvé a generar/,error(with { |d| d['muebles'][0]['piezas'].pop }))
     assert_match(/volvé a generar/,error(with { |d| d['muebles'][0]['piezas'] << piece('101/9',IDENTITY) }),'El grupo sin geometría propia no es pieza')
     assert_match(/volvé a generar/,error(with { |d| d['muebles'][1]['piezas'][0]['id']='101/2' }))
+    assert_match(/volvé a generar/,error(with { |d| d['muebles'][0]['piezas'][0]['id']=1 }),'Ids de otro tipo: el mismo aviso, no un error de Ruby')
     assert_match(/se movió/,error(with { |d| d['muebles'][1]['piezas'][0]['transform']=at(2000,0,1500.5) }))
     assert_match(/inválida/,error(with { |d| d['muebles'][1]['piezas'][0]['transform']=at(1,2,3).first(15) }))
     assert_match(/inválida/,error(with { |d| d['muebles'][1]['piezas'][0]['caja']={'min'=>[0,0,0],'max'=>[1,'x',1]} }))
