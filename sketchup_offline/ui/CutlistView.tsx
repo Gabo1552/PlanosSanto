@@ -4,7 +4,7 @@ import HelpPopover from './HelpPopover';
 import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,filterPieces,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainCell,grainNote,grainNotice,
   highlightNotice,nextFocus,parseOptions,rowLetter,sectionTitle,stripDesignation,summaryRows,
   type CutlistData,type CutlistEdgeSection,type CutlistHighlight,type CutlistOptions,type CutlistPiece,type CutlistSection,type SummaryKind,type SummaryRow} from './cutlistModel';
-import {HARDWARE_RULES,computeHardware,hardwareRole,sourceText,type HardwareCatalogItem,type HardwareLine} from './hardwareModel';
+import {HARDWARE_RULES,activeCatalog,computeHardware,hardwareRole,sourceText,type HardwareCatalogItem,type HardwareLine} from './hardwareModel';
 import {buildObra,obraNameIssues} from './obra';
 import type {Furniture} from '../../lib/model';
 import release from '../version.json';
@@ -52,7 +52,12 @@ const defaultSaveObra=(json:string,modelName:string)=>request<{path?:string;canc
 const defaultHighlight=(pieceIds:string[],focus:number|null)=>request<{highlight?:CutlistHighlight}>('piece_highlight',{pieceIds,...(focus==null?{}:{focus}),frame:true})
   .then(result=>{if(!result?.highlight)throw new Error('Respuesta de resaltado incompatible: actualizá la extensión.');return result.highlight;});
 const defaultRestore=()=>request<{restored?:boolean}>('piece_highlight_restore');
-const defaultLoadCatalog=()=>request<{catalog?:{items?:HardwareCatalogItem[]}}>('catalog_load').then(result=>Array.isArray(result?.catalog?.items)?result.catalog.items:[]);
+// Las fichas archivadas se guardan aparte (`material_extras`) y `catalog_load` las trae: se sacan antes de emparejar.
+const defaultLoadCatalog=async()=>{
+  const [library,extras]=await Promise.all([request<{catalog?:{items?:HardwareCatalogItem[]}}>('catalog_load'),request<{archivedIds?:unknown}>('material_extras').catch(()=>undefined)]);
+  const archived=Array.isArray(extras?.archivedIds)?extras.archivedIds.filter((id):id is string=>typeof id==='string'):[];
+  return activeCatalog(Array.isArray(library?.catalog?.items)?library.catalog.items:[],archived);
+};
 /** Clic que cayó en un control propio de la fila (botones, panel de la pieza): no es un clic «en la fila». */
 const onControl=(event:{target:EventTarget|null})=>event.target instanceof Element&&!!event.target.closest('button,a,input,select,.cutlist-look');
 /** Alto de lo que la ventana deja fijo arriba al hacer scroll (barra de avisos), para no tapar la sección. */

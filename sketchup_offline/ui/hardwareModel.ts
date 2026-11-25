@@ -63,6 +63,8 @@ const NAMES:Record<HardwareKind,(length:number|null)=>string>={
   runner:length=>length?`Par de correderas ${length} mm`:'Par de correderas (largo a definir)',
   handle:()=>'Tirador',
 };
+/** Fichas que pueden nombrar herrajes: las de la biblioteca menos las archivadas (que `catalog_load` también trae). */
+export const activeCatalog=(items:HardwareCatalogItem[],archivedIds:readonly string[]=[])=>{const archived=new Set(archivedIds);return items.filter(item=>!archived.has(item.id));};
 /** Ficha de herraje de la biblioteca: por palabra del nombre (y largo en correderas). Con varias, la favorita. */
 export function matchFicha(items:HardwareCatalogItem[],kind:HardwareKind,lengthMm:number|null):{ficha:HardwareFicha|null;warning:string|null}{
   const words={hinge:/bisagra/,runner:/corredera/,handle:/tirador|manija/}[kind];

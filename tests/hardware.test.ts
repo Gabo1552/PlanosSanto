@@ -5,7 +5,7 @@ import {importDocument,type Furniture,type Mesh,type RawDocument,type RawNode} f
 import {parseObra} from '../lib/obra';
 import {buildObra} from '../sketchup_offline/ui/obra';
 import {cutlistCsv,type CutlistData,type CutlistPiece} from '../sketchup_offline/ui/cutlistModel';
-import {computeHardware,hardwareRole,hingeCount,matchFicha,runnerLength,sourceText,type HardwareCatalogItem} from '../sketchup_offline/ui/hardwareModel';
+import {activeCatalog,computeHardware,hardwareRole,hingeCount,matchFicha,runnerLength,sourceText,type HardwareCatalogItem} from '../sketchup_offline/ui/hardwareModel';
 
 // Herrajes calculados por nombre (0.8.36). Muebles SINTÉTICOS: un bajo mesada de 600 × 560 × 720 con dos cajones
 // (frente «Fte» y delantera «Del Caj») y un placard con una puerta de 2100 y otra acostada (rebatible).
@@ -96,6 +96,12 @@ describe('Herrajes: fichas de la biblioteca',()=>{
     expect(matchFicha(catalog,'runner',350)).toEqual({ficha:null,warning:'Sin ficha en la biblioteca'});
     expect(matchFicha(catalog,'handle',null).ficha?.id).toBe('t2');
     expect(matchFicha(catalog.map(i=>({...i,favorite:false})),'handle',null)).toEqual({ficha:null,warning:'2 fichas posibles: marcá una como favorita'});
+  });
+  it('una ficha archivada no nombra herrajes ni crea ambigüedad con la activa',()=>{
+    const withArchived=[...catalog,item('bis-vieja','Bisagra cazoleta vieja')];
+    expect(matchFicha(withArchived,'hinge',null).ficha).toBeNull();
+    expect(matchFicha(activeCatalog(withArchived,['bis-vieja']),'hinge',null).ficha?.id).toBe('bis');
+    expect(activeCatalog(withArchived).length).toBe(withArchived.length);
   });
   it('el CSV suma una fila por herraje de cada pieza, con la ficha y el aviso',()=>{
     const {lines}=computeHardware(data(),project(),catalog);

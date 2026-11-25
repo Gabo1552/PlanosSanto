@@ -19,7 +19,7 @@ Paso 1 de herrajes: **lista calculada, sin dibujar nada en el modelo.** Cada pie
 
 - **Cómo reconoce la pieza:** por el nombre, con o sin obra y módulo delante («AB M01 Puerta»). «Lateral cajón» y «Fondo cajón» no suman. Si el mueble tiene «Fte», la «Del Caj» se toma como la delantera de la caja y no suma; sin «Fte», la «Del Caj» cuenta como frente.
 - **Medidas:** el alto de la puerta y la profundidad del mueble salen del mueble generado, con el frente confirmado (las mismas cotas totales del A4).
-- **Fichas de la biblioteca:** el nombre y el SKU salen de la ficha de herraje cuyo nombre diga «bisagra», «corredera» con su largo (en el nombre o en el largo de la ficha), o «tirador»/«manija». Si hay varias posibles se usa la favorita. Sin ficha, queda el nombre genérico con el aviso «Sin ficha en la biblioteca».
+- **Fichas de la biblioteca:** el nombre y el SKU salen de la ficha de herraje cuyo nombre diga «bisagra», «corredera» con su largo (en el nombre o en el largo de la ficha), o «tirador»/«manija». Si hay varias posibles se usa la favorita. Las fichas archivadas no cuentan. Sin ficha, queda el nombre genérico con el aviso «Sin ficha en la biblioteca».
 - **Piezas:** nueva sección «Herrajes según el nombre de las piezas», debajo del resumen, con la cantidad, las piezas que los llevan, los avisos y el lápiz para editar la ficha. Sigue al filtro de mueble (la búsqueda no la filtra).
 - **CSV:** una fila «Herraje» por herraje de cada pieza (ficha, designación, mueble, códigos, cantidad y largo de corredera).
 - **Paquete de obra:** cada mueble lleva `herrajes` (nombre, SKU, cantidad, unidad `u` o `par`, largo y piezas). Es un campo opcional: no cambia el esquema `planos-santo.obra.v1`. Documentado en `docs/integracion-app-santo/OBRA_JSON.md`.
@@ -27,9 +27,15 @@ Paso 1 de herrajes: **lista calculada, sin dibujar nada en el modelo.** Cada pie
 
 ## Pruebas nuevas
 
-- `tests/hardware.test.ts` (11): reconocimiento por nombre, tabla de bisagras en los bordes (900, 901, 1500, 2000, 2001), largo de corredera, puerta medida en el mueble, puerta rebatible, «Fte» y «Del Caj», sin muebles generados, mueble poco profundo, fichas (palabra, largo, favorita, varias, otro tipo), filas del CSV y herrajes del paquete de obra (incluye rechazar un herraje de una pieza de otro mueble y aceptar paquetes de 0.8.35 sin herrajes).
-- `tests/offline/piezas.spec.ts`: una pieza llamada Puerta en el controlador Ruby real con dobles de la API muestra bisagras con la ficha creada en la biblioteca y el tirador sin ficha, pasa axe, se va al elegir el otro mueble, y aparece en el CSV y en el paquete de obra.
+- `tests/hardware.test.ts` (12): reconocimiento por nombre, tabla de bisagras en los bordes (900, 901, 1500, 2000, 2001), largo de corredera, puerta medida en el mueble, puerta rebatible, «Fte» y «Del Caj», sin muebles generados, mueble poco profundo, fichas (palabra, largo, favorita, varias, otro tipo, archivadas), filas del CSV y herrajes del paquete de obra (incluye rechazar un herraje de una pieza de otro mueble y aceptar paquetes de 0.8.35 sin herrajes).
+- `tests/offline/piezas.spec.ts`: una pieza llamada Puerta en el controlador Ruby real con dobles de la API muestra bisagras con la ficha creada en la biblioteca (otra bisagra archivada no la vuelve ambigua) y el tirador sin ficha, pasa axe, se va al elegir el otro mueble, y aparece en el CSV y en el paquete de obra.
 - `docs/integracion-app-santo/ejemplo.obra.json` regenerado por la prueba.
+
+## Revisión antes de entregar
+
+| Punto | Estado |
+|---|---|
+| `catalog_load` también trae las fichas archivadas (se guardan aparte): una archivada podía nombrar el herraje o volverlo ambiguo (Codex) | Corregido: se sacan con `material_extras`; prueba unitaria y de interfaz que fallan sin la corrección |
 
 ## Qué se conserva
 

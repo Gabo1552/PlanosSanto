@@ -360,7 +360,11 @@ test('Piezas: una pieza llamada Puerta suma bisagras y tirador, con la ficha de 
  // 0.8.36: herrajes calculados por nombre. La ficha de bisagra se crea en la biblioteca real (dobles de la API); el tirador no tiene ficha.
  await boot(page,info.outputDir,'materials-cutlist-hardware');
  const library=await send('catalog_load') as {catalog:{revision:number}};
- await send('catalog_add',{revision:library.catalog.revision,item:{name:'Bisagra cazoleta codo 0',kind:'hardware'}});
+ const added=await send('catalog_add',{revision:library.catalog.revision,item:{name:'Bisagra cazoleta codo 0',kind:'hardware'}}) as {catalog:{revision:number}};
+ // Una segunda bisagra archivada no se usa ni vuelve ambigua la activa (catalog_load trae las archivadas).
+ const old=await send('catalog_add',{revision:added.catalog.revision,item:{name:'Bisagra vieja',kind:'hardware'}}) as {catalog:{revision:number;items:{id:string;name:string}[]}};
+ const extras=await send('material_extras') as {statesRevision:number};
+ await send('material_archive',{catalogIds:[old.catalog.items.find(i=>i.name==='Bisagra vieja')!.id],archived:true,revision:old.catalog.revision,statesRevision:extras.statesRevision,confirmed:true});
  const {view}=await openPieces(page);
  const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
  await expect(section).toBeVisible();
