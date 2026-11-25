@@ -1,0 +1,50 @@
+{
+  "version": "0.8.37",
+  "date": "2026-11-25",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "4e6b75a58f499a3fa194fee78c505820b53ed56a30f1695ddb16d2167dccb840",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "buildReproducible": "PASS",
+    "vitest": {
+      "tests": 646,
+      "passed": 646
+    },
+    "ruby33": {
+      "runs": 1197,
+      "assertions": 11643,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1197,
+      "assertions": 11643,
+      "failures": 0,
+      "errors": 0
+    },
+    "rubyExporter": {
+      "runs": 15,
+      "assertions": 76,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 268,
+      "passed": 268
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    }
+  },
+  "notes": [
+    "Pruebas con dobles de la API de SketchUp, no ejecución nativa. Esta versión escribe en el modelo (herrajes en 3D): validar sobre copias."
+  ]
+}
