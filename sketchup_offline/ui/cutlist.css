@@ -84,6 +84,7 @@
 .cutlist-type svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
 .cutlist-type.is-sheet{background:var(--cl-sheet)}
 .cutlist-type.is-edge{background:var(--cl-edge)}
+.cutlist-type.is-hardware{background:var(--cl-other)}
 .cutlist-type.is-unknown{color:#6b736f;font-size:17px;font-weight:700}
 
 /* Secciones por material: barra de título con borde izquierdo de color por tipo */
@@ -161,3 +162,10 @@
   body.cutlist-printing .cutlist-group,body.cutlist-printing .cutlist-summary tr{break-inside:avoid}
   body.cutlist-printing .cutlist :is(.cutlist-type,.cutlist-dot,.cutlist-warn,.is-hatched){print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }
+
+/* Herrajes calculados por nombre (0.8.36). */
+.cutlist-hardware{margin-top:12px}
+.cutlist-hardware-sources{font-size:12px;color:var(--cl-muted)}
+.cutlist-hardware-notes{margin:6px 0 0;padding:0;list-style:none;font-size:12px}
+.cutlist-hardware-notes li{display:flex;gap:6px;align-items:flex-start;margin:2px 0;color:var(--cl-warn-ink)}
+.cutlist-hardware-table .cutlist-warn{margin-left:6px}

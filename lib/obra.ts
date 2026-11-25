@@ -26,10 +26,16 @@ const pieza=z.object({
   id:text(1000).min(1),codigo:text(40),nombre:text(200),material,
   medidas:z.tuple([positive,positive,positive]),caja,transform,
 }).strict();
+/** 0.8.36: herrajes calculados por el nombre de las piezas (Puerta, Frente cajón). `piezas`: ids de las piezas que los llevan. */
+const herraje=z.object({
+  nombre:text(200).min(1),sku:text(160).nullable(),cantidad:z.number().int().positive().max(100000),unidad:z.enum(['u','par']),
+  largo:positive.nullable(),piezas:z.array(text(1000).min(1)).min(1),
+}).strict();
 const mueble=z.object({
   id:text(1000).min(1),nombre:text(120).min(1),codigo:text(10),
   medidas:z.object({alto:number.nonnegative(),ancho:number.nonnegative(),profundidad:number.nonnegative()}).strict(),
   piezas:z.array(pieza).min(1).max(OBRA_MAX_PIECES),
+  herrajes:z.array(herraje).max(50).optional(),
 }).strict();
 export const obraSchema=z.object({
   schema:z.literal(OBRA_SCHEMA),version:z.string().regex(/^\d+\.\d+\.\d+$/),modelo:text(200),exportado:z.iso.datetime(),unidades:z.literal('mm'),
@@ -43,9 +49,12 @@ export const obraSchema=z.object({
       if(pieces.has(p.id))ctx.addIssue({code:'custom',message:`Pieza repetida: ${p.id}.`});
       pieces.add(p.id);
     }
+    const own=new Set(m.piezas.map(p=>p.id));
+    for(const h of m.herrajes||[])for(const id of h.piezas)if(!own.has(id))ctx.addIssue({code:'custom',message:`Herraje de una pieza ajena al mueble: ${id}.`});
   }
 });
 export type Obra=z.infer<typeof obraSchema>;
 export type ObraMueble=Obra['muebles'][number];
 export type ObraPieza=ObraMueble['piezas'][number];
+export type ObraHerraje=NonNullable<ObraMueble['herrajes']>[number];
 export const parseObra=(raw:unknown):Obra=>obraSchema.parse(raw);

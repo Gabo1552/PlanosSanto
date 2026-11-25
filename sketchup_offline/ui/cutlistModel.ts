@@ -183,8 +183,10 @@ function csvCell(value:string|number|null|undefined):string{
   return /[;"\r\n]/.test(text)?`"${text.replace(/"/g,'""')}"`:text;
 }
 export const CSV_HEADER=['Tipo','Material','Espesor material (mm)','No.','Designación','Mueble','Código','Cant.','L (mm)','A (mm)','E (mm)','Aproximada','Aviso de la ficha'];
-/** CSV de lo que se ve: una fila por pieza de cada placa y una por tira de cada canto. */
-export function cutlistCsv(sections:CutlistSection[],edges:CutlistEdgeSection[]):string{
+/** Herraje calculado (hardwareModel.ts), sin depender de ese módulo: lo que necesita el CSV. */
+export type CsvHardwareLine={name:string;lengthMm:number|null;ficha:{name:string}|null;warning:string|null;sources:{piece:CutlistPiece;quantity:number}[]};
+/** CSV de lo que se ve: una fila por pieza de cada placa, una por tira de cada canto y (0.8.36) una por herraje de cada pieza. */
+export function cutlistCsv(sections:CutlistSection[],edges:CutlistEdgeSection[],hardware:CsvHardwareLine[]=[]):string{
   const lines:(string|number|null)[][]=[CSV_HEADER];
   const sheets=[...sections.filter(s=>s.info.kind==='sheet'),...sections.filter(s=>s.info.kind!=='sheet')];
   for(const {info,pieces} of sheets){const warning=missingLabels(info.missing).join(', ');
@@ -193,6 +195,8 @@ export function cutlistCsv(sections:CutlistSection[],edges:CutlistEdgeSection[])
   for(const {info,rows} of edges){const warning=missingLabels(info.missing).join(', ');
     for(const {letter,piece,strip} of rows)lines.push(['Canto',info.name,info.thicknessMm,letter,stripDesignation(piece,strip),piece.furnitureName,codeText(piece,99),piece.quantity,
       strip.lengthMm,strip.widthMm,info.thicknessMm,strip.approximate||strip.widthApprox?'Sí':'No',warning]);}
+  for(const line of hardware)line.sources.forEach(({piece,quantity},index)=>lines.push(['Herraje',line.ficha?.name||line.name,null,rowLetter(index),`${line.name} – ${piece.name}`,piece.furnitureName,codeText(piece,99),quantity,
+    line.lengthMm,null,null,'No',line.warning||'']));
   return lines.map(line=>line.map(csvCell).join(';')).join('\r\n')+'\r\n';
 }
 
