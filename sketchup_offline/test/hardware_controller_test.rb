@@ -46,11 +46,40 @@ class HardwareControllerTest < Minitest::Test
     assert_equal before,@model.operations.length,'Validar y quitar sin nada colocado no abren operaciones'
   end
 
+  def hardware_group(id=99)
+    group=Sketchup::Group.new(id,'Herrajes · Bajo Mesada',Sketchup::Definition.new('Herrajes',"hardware-#{id}",[]))
+    group.set_attribute('PlanosSantoHerrajes','role','group');group.set_attribute('PlanosSantoHerrajes','furnitureId','1')
+    group
+  end
+
+  def test_the_analysis_fingerprint_ignores_hardware_groups_so_undo_or_redo_does_not_make_the_guide_stale
+    before=PlanosSanto::ModelWatch.fingerprint(@model)
+    @model.entities << hardware_group
+    assert_equal before,PlanosSanto::ModelWatch.fingerprint(@model)
+    # Un grupo cualquiera sí cambia la huella.
+    @model.entities << Sketchup::Group.new(98,'Otro',Sketchup::Definition.new('Otro','other-98',[]))
+    refute_equal before,PlanosSanto::ModelWatch.fingerprint(@model)
+  end
+
+  def test_undo_or_redo_in_sketchup_publishes_the_new_hardware_status_once
+    dispatch('scan')
+    scripts=[];dialog=Object.new;dialog.define_singleton_method(:execute_script) { |script| scripts << script }
+    @controller.instance_variable_set(:@dialog,dialog)
+    assert_equal({'status'=>[]},dispatch('hardware_status'))
+    @controller.send(:model_watch_changed,['model'])
+    assert_empty scripts.grep(/hardware-changed/),'Sin cambios no avisa'
+    @model.entities << hardware_group
+    @controller.send(:model_watch_changed,['model'])
+    events=scripts.grep(/planos-santo-hardware-changed/)
+    assert_equal 1,events.length
+    assert_includes events[0],'furnitureId'
+    @controller.send(:model_watch_changed,['model'])
+    assert_equal 1,scripts.grep(/planos-santo-hardware-changed/).length,'El mismo estado no se vuelve a avisar'
+  end
+
   def test_the_analysis_skips_a_hardware_group_at_the_root
     roots=dispatch('scan')['tree']['roots'].map { |root| root['id'] }
-    hardware=Sketchup::Group.new(99,'Herrajes · Bajo Mesada',Sketchup::Definition.new('Herrajes','hardware-synthetic',[]))
-    hardware.set_attribute('PlanosSantoHerrajes','role','group')
-    @model.entities << hardware
+    @model.entities << hardware_group
     assert_equal roots,dispatch('scan')['tree']['roots'].map { |root| root['id'] }
   end
 end

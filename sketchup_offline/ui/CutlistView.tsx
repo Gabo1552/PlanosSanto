@@ -174,10 +174,21 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     let live=true;
     // Sin biblioteca los herrajes salen igual, con el nombre genérico y el aviso «Sin ficha».
     loadCatalog().then(items=>{if(live)setCatalog(items);},()=>{});
-    // Lo ya colocado trae el lado de cada puerta; lo que se eligió en esta sesión manda.
+    return()=>{live=false;};
+  },[needsHardware,data,loadCatalog]);
+  // Lo ya colocado, aunque ya no queden puertas ni cajones con nombre (para poder quitarlo). Trae el lado de cada
+  // puerta; lo que se eligió en esta sesión manda.
+  useEffect(()=>{
+    if(!data)return;
+    let live=true;
     hardwareStatus().then(status=>{if(!live)return;setPlaced(status);setSides(old=>({...Object.assign({},...status.map(row=>row.sides)),...old}));},()=>{});
     return()=>{live=false;};
-  },[needsHardware,data,loadCatalog,hardwareStatus]);
+  },[data,hardwareStatus]);
+  // Deshacer o Rehacer en SketchUp: Ruby avisa el estado nuevo.
+  useEffect(()=>{
+    const changed=(event:Event)=>{const status=(event as CustomEvent<{status?:HardwareStatus[]}>).detail?.status;if(Array.isArray(status))setPlaced(status);};
+    window.addEventListener('planos-santo-hardware-changed',changed);return()=>window.removeEventListener('planos-santo-hardware-changed',changed);
+  },[]);
   useEffect(()=>{try{localStorage.setItem(OPTIONS_KEY,JSON.stringify(options));}catch{/* almacenamiento bloqueado: las opciones duran esta sesión */}},[options]);
   useEffect(()=>{
     if(!showOptions)return;
@@ -452,17 +463,17 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
           </tr>;})}</tbody>
       </table>}
       <span id={`${uid}-summary-hint`} className="sr-only">Lleva a la sección con el detalle de este material.</span>
-      {hardware.lines.length>0&&<section className="cutlist-group is-hardware cutlist-hardware" aria-labelledby={`${uid}-hardware`}>
+      {(hardware.lines.length>0||placedHere.length>0)&&<section className="cutlist-group is-hardware cutlist-hardware" aria-labelledby={`${uid}-hardware`}>
         <div className="cutlist-group-bar">
           <TypeIcon kind="hardware"/>
           <h3 id={`${uid}-hardware`} className="cutlist-group-title">Herrajes según el nombre de las piezas</h3>
-          <span className="cutlist-group-count">{plural(hardware.lines.length,'herraje','herrajes')}</span>
+          {hardware.lines.length>0&&<span className="cutlist-group-count">{plural(hardware.lines.length,'herraje','herrajes')}</span>}
           <HelpPopover title="Herrajes calculados"><p>Se calculan con el nombre de cada pieza: «Puerta» lleva bisagras y tirador; «Frente cajón» (o «Fte») lleva un par de correderas y tirador. No se dibujan en el modelo.</p>
             <p>Bisagras según el alto de la puerta en el mueble: {HARDWARE_RULES.hinges.map(rule=>rule.upTo===Infinity?`más alto, ${rule.count}`:`hasta ${formatMm(rule.upTo)} mm, ${rule.count}`).join('; ')}.</p>
             <p>Correderas: el largo más grande ({HARDWARE_RULES.runnerLengthsMm.map(formatMm).join(', ')} mm) que entra en la profundidad del mueble menos {formatMm(HARDWARE_RULES.runnerMarginMm)} mm.</p>
             <p>El nombre de la ficha sale de la biblioteca: un herraje cuyo nombre diga «bisagra», «corredera» con su largo, o «tirador»/«manija». Con varias fichas posibles se usa la favorita.</p></HelpPopover>
         </div>
-        <div className="cutlist-table-wrap"><table className="cutlist-table cutlist-hardware-table">
+        <div className="cutlist-table-wrap">{hardware.lines.length>0&&<table className="cutlist-table cutlist-hardware-table">
           <caption className="sr-only">Herrajes calculados</caption>
           <thead><tr><th scope="col" className="no">No.</th><th scope="col">Herraje</th><th scope="col" className="qty">Cant.</th><th scope="col">Lo llevan</th></tr></thead>
           <tbody>{hardware.lines.map((line,index)=><tr key={line.key} data-hardware={line.key}>
@@ -473,9 +484,10 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <td className="num qty">{line.unit==='par'?plural(line.quantity,'par','pares'):formatMm(line.quantity)}</td>
             <td className="cutlist-hardware-sources">{line.sources.map(sourceText).join(' · ')}</td>
           </tr>)}</tbody>
-        </table>
+        </table>}
+        {!hardware.lines.length&&<p className="cutlist-hardware-placed">Ninguna pieza se llama Puerta ni Frente cajón, pero quedan herrajes dibujados en el modelo.</p>}
         {hardware.notes.length>0&&<div role="note" aria-label="Avisos de herrajes"><ul className="cutlist-hardware-notes">{hardware.notes.map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}
-        {plans.length>0&&<div className="cutlist-hardware-model">
+        {(plans.length>0||placedHere.length>0)&&<div className="cutlist-hardware-model">
           <h4>Herrajes en el modelo</h4>
           <p role="status" className="cutlist-hardware-placed">{placedHere.length?`Colocados: ${plural(placedHere.reduce((sum,row)=>sum+row.hinges,0),'bisagra','bisagras')} y ${plural(placedHere.reduce((sum,row)=>sum+row.runners,0),'corredera','correderas')} en ${plural(placedHere.length,'mueble','muebles')}.`:'Todavía no hay herrajes dibujados en el modelo.'}</p>
           {doors.length>0&&<fieldset className="cutlist-hinge-sides"><legend>Lado de las bisagras (codo 0)</legend>

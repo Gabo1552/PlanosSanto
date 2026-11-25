@@ -15,6 +15,7 @@ module PlanosSanto
     NAMES_DICTIONARY = 'PlanosSantoNombres'
     PIECE_KEY = 'piece_v1'
     GUIDE_DICTIONARY = 'PlanosSanto'
+    HARDWARE_DICTIONARY = 'PlanosSantoHerrajes'
     GUIDE_KEY = 'guide_v1'
 
     class ModelObserver
@@ -156,6 +157,8 @@ module PlanosSanto
           state[:overflow] = true
           break
         end
+        # 0.8.37: los herrajes de la extensión (grupo propio en la raíz) no son parte del análisis, como en el exportador.
+        next if depth.zero? && hardware_group?(e)
         if container?(e)
           out << instance_key(e, depth, state)
         elsif face?(e)
@@ -227,6 +230,10 @@ module PlanosSanto
       group?(e) || (defined?(Sketchup::ComponentInstance) && e.is_a?(Sketchup::ComponentInstance))
     end
 
+    def self.hardware_group?(e)
+      group?(e) && e.respond_to?(:get_attribute) && e.get_attribute(HARDWARE_DICTIONARY, 'role') == 'group'
+    end
+
     def self.group?(e)
       defined?(Sketchup::Group) && e.is_a?(Sketchup::Group)
     end
@@ -235,7 +242,7 @@ module PlanosSanto
       (defined?(Sketchup::Face) && e.is_a?(Sketchup::Face)) || (e.respond_to?(:material) && e.respond_to?(:back_material))
     end
 
-    private_class_method :walk, :instance_key, :definition_key, :face_key, :material_key, :round, :container?, :group?, :face?
+    private_class_method :walk, :instance_key, :definition_key, :face_key, :material_key, :round, :container?, :hardware_group?, :group?, :face?
 
     private
 

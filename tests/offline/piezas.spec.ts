@@ -429,3 +429,19 @@ test('Piezas: herrajes en 3D, lado de las bisagras y colocar o quitar en el mode
  expect(removed).toEqual([sent[0].id]);
  await expect(section.getByRole('button',{name:'Quitar del modelo'})).toBeDisabled();
 });
+
+test('Piezas: herrajes dibujados sin puertas ni cajones con nombre se pueden quitar, y Deshacer en SketchUp actualiza el estado',async({page},info)=>{
+ // 0.8.37: el modelo de esta prueba no tiene piezas llamadas Puerta ni Fte; el estado (lo dibujado antes) lo responde la prueba.
+ await boot(page,info.outputDir,'materials-cutlist');
+ fake.hardware_status=()=>({status:[{furnitureId:'1',furnitureName:'Bajo Mesada',hinges:4,runners:0,sides:{}}]});
+ const {view}=await openPieces(page);
+ const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
+ await expect(section.getByText('Ninguna pieza se llama Puerta ni Frente cajón, pero quedan herrajes dibujados en el modelo.')).toBeVisible();
+ await expect(section.getByText('Colocados: 4 bisagras y 0 correderas en 1 mueble.')).toBeVisible();
+ await expect(section.getByRole('button',{name:'Volver a colocar en el modelo'})).toBeDisabled();
+ await expect(section.getByRole('button',{name:'Quitar del modelo'})).toBeEnabled();
+ expect(await axe(page,'herrajes sin nombres')).toEqual([]);
+ // Ctrl+Z en SketchUp: Ruby avisa que ya no hay herrajes y la sección se va.
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-hardware-changed',{detail:{status:[]}})));
+ await expect(section).toHaveCount(0);
+});

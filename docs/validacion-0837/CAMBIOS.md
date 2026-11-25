@@ -30,8 +30,18 @@ Paso 2 de herrajes: en Piezas, «Colocar en el modelo» dibuja las bisagras y la
 
 - `tests/hardware-placement.test.ts` (6): alturas de las bisagras, lado sugerido y ubicación en el canto y en la cara interior (izquierda y derecha), lado elegido, correderas entre laterales detrás del frente, cajón sin laterales a un costado y lateral de la caja del cajón ignorado.
 - `sketchup_offline/test/hardware_model_test.rb` (7): un grupo con etiqueta por mueble en la raíz y una operación, conversión de mm a pulgadas, definiciones reutilizadas y sus sólidos, volver a colocar reemplaza solo ese mueble, validación completa antes de abrir la operación, aborto que deja los herrajes anteriores, quitar uno o todos, y el exportador salteando los grupos de herrajes.
-- `sketchup_offline/test/hardware_controller_test.rb` (2): acciones del controlador con dobles (estado, pieza ajena rechazada, quitar sin nada colocado) y el análisis salteando un grupo de herrajes de la raíz.
-- `tests/offline/piezas.spec.ts`: estado leído del controlador real, lado sugerido, cambio de lado, lo que la interfaz manda al colocar y al quitar, aviso al cambiar el lado después de colocar, y axe.
+- `sketchup_offline/test/hardware_controller_test.rb` (4): acciones del controlador con dobles (estado, pieza ajena rechazada, quitar sin nada colocado), el análisis y la huella del modelo salteando un grupo de herrajes de la raíz, y el aviso a la ventana después de Deshacer o Rehacer (una vez por cambio).
+- `tests/offline/piezas.spec.ts` (2): estado leído del controlador real, lado sugerido, cambio de lado, lo que la interfaz manda al colocar y al quitar, aviso al cambiar el lado después de colocar; herrajes dibujados sin piezas con nombre (se pueden quitar) y el aviso de Deshacer que actualiza la sección; axe.
+
+## Revisión antes de entregar (Codex)
+
+| Punto | Estado |
+|---|---|
+| Deshacer o Rehacer en SketchUp no actualizaba lo colocado en Piezas | Corregido: Ruby compara el estado de herrajes en cada cambio del modelo y avisa a la ventana solo si cambió |
+| Si ya no quedaban piezas llamadas Puerta o Fte, los herrajes dibujados no se podían quitar desde la extensión | Corregido: el estado se lee siempre y la sección queda con «Quitar del modelo» |
+| La huella del análisis contaba los grupos de herrajes: después de colocar, el cambio siguiente marcaba las guías como desactualizadas | Corregido: `ModelWatch` saltea los grupos de herrajes de la raíz, como el exportador |
+
+Cada corrección tiene una prueba que falla sin ella.
 
 ## Qué se conserva
 
@@ -44,7 +54,6 @@ Paso 2 de herrajes: en Piezas, «Colocar en el modelo» dibuja las bisagras y la
 - **Laterales de 18 mm:** la bisagra dibujada supone un lateral de 18 mm detrás del canto de la puerta. Con otro espesor, el brazo y la base quedan corridos; la posición de la cazoleta sí es la correcta.
 - **Lado sugerido:** puede fallar en puertas centradas o en muebles raros; revisar puerta por puerta antes de colocar.
 - **No sigue al mueble:** si movés un mueble, sus herrajes quedan donde estaban. Volvé a generar y a colocar.
-- **Después de Deshacer en SketchUp:** Piezas muestra el estado viejo hasta tocar Generar.
 - **Simulado:** la geometría (círculo, empuje, grupos) y la ubicación en un modelo real están sin probar en SketchUp.
 
 Ver `RESULTADOS.json` y `VALIDACION_LOCAL.md`.
