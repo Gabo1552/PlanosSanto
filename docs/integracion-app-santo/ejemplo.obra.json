@@ -79,7 +79,8 @@
           },
           "transform": [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 18, 563, 100, 1]
         }
-      ]
+      ],
+      "herrajes": []
     },
     {
       "id": "202",
@@ -106,6 +107,28 @@
             "max": [400, 18, 700]
           },
           "transform": [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 2000, 0, 1500, 1]
+        }
+      ],
+      "herrajes": [
+        {
+          "nombre": "Bisagra cazoleta 35 mm",
+          "sku": null,
+          "cantidad": 2,
+          "unidad": "u",
+          "largo": null,
+          "piezas": [
+            "202/1"
+          ]
+        },
+        {
+          "nombre": "Tirador",
+          "sku": null,
+          "cantidad": 1,
+          "unidad": "u",
+          "largo": null,
+          "piezas": [
+            "202/1"
+          ]
         }
       ]
     }

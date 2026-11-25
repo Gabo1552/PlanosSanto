@@ -4,9 +4,10 @@
 // Solo lectura: no pide nada a SketchUp; Ruby después lo compara con el modelo vigente y lo escribe.
 import {bounds,type Furniture} from '../../lib/model';
 import {moduleFromName} from '../../lib/naming';
-import {OBRA_SCHEMA,obraSchema,type Obra,type ObraPieza} from '../../lib/obra';
+import {OBRA_SCHEMA,obraSchema,type Obra,type ObraHerraje,type ObraPieza} from '../../lib/obra';
 import {furnitureEnvelope} from '../../lib/scene';
 import {hexColor,type CutlistData,type CutlistPiece} from './cutlistModel';
+import {computeHardware,type HardwareCatalogItem} from './hardwareModel';
 
 const STALE='El listado de Piezas no corresponde a los muebles generados: volvé a generar Piezas y exportá de nuevo.';
 const round=(value:number,digits:number)=>{const factor=10**digits,result=Math.round(value*factor)/factor;return Object.is(result,-0)?0:result;};
@@ -14,7 +15,8 @@ const round=(value:number,digits:number)=>{const factor=10**digits,result=Math.r
 const roundMatrix=(m:number[])=>m.map((value,index)=>round(value,index>=12&&index<=14?2:6));
 const roundVec=(v:number[])=>v.map(value=>round(value,2)) as [number,number,number];
 
-export type ObraInput={version:string;exportedAt:string;data:CutlistData;furniture:Furniture[]};
+/** `catalog`: fichas de la biblioteca para nombrar los herrajes calculados (0.8.36); sin ellas van con el nombre genérico. */
+export type ObraInput={version:string;exportedAt:string;data:CutlistData;furniture:Furniture[];catalog?:HardwareCatalogItem[]};
 
 /** Código de una pieza física: el de Ruby por pieza (`idCodes`); sin él, el de la fila solo si es de una pieza. */
 function codeOf(piece:CutlistPiece,index:number):string{
@@ -22,7 +24,7 @@ function codeOf(piece:CutlistPiece,index:number):string{
   return piece.ids.length===1?piece.code||'':'';
 }
 
-export function buildObra({version,exportedAt,data,furniture}:ObraInput):Obra{
+export function buildObra({version,exportedAt,data,furniture,catalog=[]}:ObraInput):Obra{
   const byId=new Map(furniture.map(f=>[f.id,f]));
   const colors=new Map(data.sections.map(section=>[section.key,hexColor(section.colorRgb)]));
   const rows=new Map<string,{piece:CutlistPiece;code:string}>();
@@ -41,7 +43,10 @@ export function buildObra({version,exportedAt,data,furniture}:ObraInput):Obra{
         medidas:roundVec([piece.lengthMm,piece.widthMm,piece.thicknessMm]),
         caja:{min:roundVec(box.min.toArray()),max:roundVec(box.max.toArray())},transform:roundMatrix(p.transform)};
     });
-    return {id:entry.id,nombre:entry.name,codigo:f.naming?.moduleCode||moduleFromName(entry.name),medidas:totals(f),piezas};
+    const herrajes=computeHardware({pieces:data.pieces.filter(piece=>piece.furnitureId===entry.id)},[f],catalog).lines.map((line):ObraHerraje=>({
+      nombre:line.ficha?.name||line.name,sku:line.ficha?.sku||null,cantidad:line.quantity,unidad:line.unit,largo:line.lengthMm,
+      piezas:[...new Set(line.sources.flatMap(source=>source.piece.ids))]}));
+    return {id:entry.id,nombre:entry.name,codigo:f.naming?.moduleCode||moduleFromName(entry.name),medidas:totals(f),piezas,herrajes};
   });
   if(used!==rows.size)throw new Error(STALE);
   return obraSchema.parse({schema:OBRA_SCHEMA,version,modelo:data.modelName,exportado:exportedAt,unidades:'mm',muebles});

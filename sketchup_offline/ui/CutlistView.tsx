@@ -1,9 +1,10 @@
 import {useCallback,useEffect,useId,useMemo,useRef,useState,type KeyboardEvent as ReactKeyboardEvent,type ReactNode} from 'react';
 import {changePieceGrain,request,type PieceGrainMode,type PieceGrainResult} from './bridge';
 import HelpPopover from './HelpPopover';
-import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainCell,grainNote,grainNotice,
+import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,filterPieces,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainCell,grainNote,grainNotice,
   highlightNotice,nextFocus,parseOptions,rowLetter,sectionTitle,stripDesignation,summaryRows,
   type CutlistData,type CutlistEdgeSection,type CutlistHighlight,type CutlistOptions,type CutlistPiece,type CutlistSection,type SummaryKind,type SummaryRow} from './cutlistModel';
+import {HARDWARE_RULES,activeCatalog,computeHardware,hardwareRole,sourceText,type HardwareCatalogItem,type HardwareLine} from './hardwareModel';
 import {buildObra,obraNameIssues} from './obra';
 import type {Furniture} from '../../lib/model';
 import release from '../version.json';
@@ -40,6 +41,8 @@ export type CutlistViewProps={
   obraFurniture?:Furniture[];
   /** Guardado del paquete; por defecto la acción Ruby `obra_json` (compara con el modelo y abre el diálogo). */
   saveObra?:(json:string,modelName:string)=>Promise<{path?:string;cancelled?:boolean}>;
+  /** 0.8.36: fichas de la biblioteca para nombrar los herrajes calculados; por defecto la acción Ruby `catalog_load`. */
+  loadCatalog?:()=>Promise<HardwareCatalogItem[]>;
 };
 
 const defaultLoad=()=>request<CutlistData>('cutlist');
@@ -49,6 +52,12 @@ const defaultSaveObra=(json:string,modelName:string)=>request<{path?:string;canc
 const defaultHighlight=(pieceIds:string[],focus:number|null)=>request<{highlight?:CutlistHighlight}>('piece_highlight',{pieceIds,...(focus==null?{}:{focus}),frame:true})
   .then(result=>{if(!result?.highlight)throw new Error('Respuesta de resaltado incompatible: actualizá la extensión.');return result.highlight;});
 const defaultRestore=()=>request<{restored?:boolean}>('piece_highlight_restore');
+// Las fichas archivadas se guardan aparte (`material_extras`) y `catalog_load` las trae: se sacan antes de emparejar.
+const defaultLoadCatalog=async()=>{
+  const [library,extras]=await Promise.all([request<{catalog?:{items?:HardwareCatalogItem[]}}>('catalog_load'),request<{archivedIds?:unknown}>('material_extras').catch(()=>undefined)]);
+  const archived=Array.isArray(extras?.archivedIds)?extras.archivedIds.filter((id):id is string=>typeof id==='string'):[];
+  return activeCatalog(Array.isArray(library?.catalog?.items)?library.catalog.items:[],archived);
+};
 /** Clic que cayó en un control propio de la fila (botones, panel de la pieza): no es un clic «en la fila». */
 const onControl=(event:{target:EventTarget|null})=>event.target instanceof Element&&!!event.target.closest('button,a,input,select,.cutlist-look');
 /** Alto de lo que la ventana deja fijo arriba al hacer scroll (barra de avisos), para no tapar la sección. */
@@ -121,13 +130,15 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain,obraFurniture,saveObra=defaultSaveObra}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain,obraFurniture,saveObra=defaultSaveObra,loadCatalog=defaultLoadCatalog}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
   const [options,setOptions]=useState<CutlistOptions>(readOptions),[showOptions,setShowOptions]=useState(false),[exporting,setExporting]=useState(false);
   // Veta (0.8.26): fila que está cambiando y el aviso de la última que no se pudo cambiar.
   const [grainBusy,setGrainBusy]=useState(''),[grainError,setGrainError]=useState<{key:string;text:string}>();
+  // Herrajes (0.8.36): fichas de la biblioteca, leídas solo si alguna pieza se llama Puerta o Frente cajón.
+  const [catalog,setCatalog]=useState<HardwareCatalogItem[]>([]);
   const sequence=useRef(0),uid=useId(),optionsTrigger=useRef<HTMLButtonElement>(null),optionsPanel=useRef<HTMLDivElement>(null);
   const lookSequence=useRef(0),flashTimer=useRef<number|undefined>(undefined),summaryTable=useRef<HTMLTableElement>(null);
   useEffect(()=>()=>window.clearTimeout(flashTimer.current),[]);
@@ -144,6 +155,14 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     finally{if(current===sequence.current)setLoading(false);}
   },[ready,load,onDataLoaded]);
   useEffect(()=>{void refresh();},[refresh]);
+  const needsHardware=!!data?.pieces.some(piece=>hardwareRole(piece.name));
+  useEffect(()=>{
+    if(!needsHardware)return;
+    let live=true;
+    // Sin biblioteca los herrajes salen igual, con el nombre genérico y el aviso «Sin ficha».
+    loadCatalog().then(items=>{if(live)setCatalog(items);},()=>{});
+    return()=>{live=false;};
+  },[needsHardware,data,loadCatalog]);
   useEffect(()=>{try{localStorage.setItem(OPTIONS_KEY,JSON.stringify(options));}catch{/* almacenamiento bloqueado: las opciones duran esta sesión */}},[options]);
   useEffect(()=>{
     if(!showOptions)return;
@@ -163,6 +182,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     const unique=[...new Set(ids)];return unique.length===1?unique[0]:undefined;
   };
   const summary=useMemo(()=>summaryRows(sections,edgeSections),[sections,edgeSections]);
+  // Herrajes del mueble elegido (la búsqueda no los filtra: se calculan por mueble).
+  const hardware=useMemo(()=>data&&needsHardware?computeHardware({pieces:filterPieces(data.pieces,{furnitureId:furnitureId||undefined})},obraFurniture,catalog):{lines:[] as HardwareLine[],notes:[] as string[]},[data,needsHardware,furnitureId,obraFurniture,catalog]);
   // Orden del listado = orden del resumen (placas, cantos, «?»).
   const groups=useMemo(()=>{
     const byKey=new Map<string,{kind:'sheet'|'edge';section:CutlistSection|CutlistEdgeSection}>([...sections.map(section=>[section.info.key,{kind:'sheet' as const,section}] as const),...edgeSections.map(section=>[section.info.key,{kind:'edge' as const,section}] as const)]);
@@ -299,7 +320,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     if(!data)return;
     setExporting(true);setNotice('');setError('');
     try{
-      const result=await saveCsv(cutlistCsv(only?.sheets||shownSheets,only?.edges||shownEdges),data.modelName);
+      const result=await saveCsv(cutlistCsv(only?.sheets||shownSheets,only?.edges||shownEdges,only?[]:hardware.lines),data.modelName);
       if(!result?.cancelled)setNotice(`CSV guardado${result?.path?` en ${result.path}`:''}.`);
     }catch(value){setError(value instanceof Error?value.message:String(value));}
     finally{setExporting(false);}
@@ -310,7 +331,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     if(!data||!obraFurniture)return;
     setExporting(true);setNotice('');setError('');
     try{
-      const obra=buildObra({version:release.version,exportedAt:new Date().toISOString(),data,furniture:obraFurniture});
+      const obra=buildObra({version:release.version,exportedAt:new Date().toISOString(),data,furniture:obraFurniture,catalog});
       const result=await saveObra(JSON.stringify(obra),data.modelName);
       if(!result?.cancelled)setNotice([`Paquete de obra guardado${result?.path?` en ${result.path}`:''}.`,...obraNameIssues(obra)].join(' '));
     }catch(value){setError(value instanceof Error?value.message:String(value));}
@@ -382,6 +403,30 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
           </tr>;})}</tbody>
       </table>}
       <span id={`${uid}-summary-hint`} className="sr-only">Lleva a la sección con el detalle de este material.</span>
+      {hardware.lines.length>0&&<section className="cutlist-group is-hardware cutlist-hardware" aria-labelledby={`${uid}-hardware`}>
+        <div className="cutlist-group-bar">
+          <TypeIcon kind="hardware"/>
+          <h3 id={`${uid}-hardware`} className="cutlist-group-title">Herrajes según el nombre de las piezas</h3>
+          <span className="cutlist-group-count">{plural(hardware.lines.length,'herraje','herrajes')}</span>
+          <HelpPopover title="Herrajes calculados"><p>Se calculan con el nombre de cada pieza: «Puerta» lleva bisagras y tirador; «Frente cajón» (o «Fte») lleva un par de correderas y tirador. No se dibujan en el modelo.</p>
+            <p>Bisagras según el alto de la puerta en el mueble: {HARDWARE_RULES.hinges.map(rule=>rule.upTo===Infinity?`más alto, ${rule.count}`:`hasta ${formatMm(rule.upTo)} mm, ${rule.count}`).join('; ')}.</p>
+            <p>Correderas: el largo más grande ({HARDWARE_RULES.runnerLengthsMm.map(formatMm).join(', ')} mm) que entra en la profundidad del mueble menos {formatMm(HARDWARE_RULES.runnerMarginMm)} mm.</p>
+            <p>El nombre de la ficha sale de la biblioteca: un herraje cuyo nombre diga «bisagra», «corredera» con su largo, o «tirador»/«manija». Con varias fichas posibles se usa la favorita.</p></HelpPopover>
+        </div>
+        <div className="cutlist-table-wrap"><table className="cutlist-table cutlist-hardware-table">
+          <caption className="sr-only">Herrajes calculados</caption>
+          <thead><tr><th scope="col" className="no">No.</th><th scope="col">Herraje</th><th scope="col" className="qty">Cant.</th><th scope="col">Lo llevan</th></tr></thead>
+          <tbody>{hardware.lines.map((line,index)=><tr key={line.key} data-hardware={line.key}>
+            <td className="no">{rowLetter(index)}</td>
+            <td className="designation"><span>{line.ficha?.name||line.name}</span>{line.ficha&&<small className="cutlist-detail"> ({[line.ficha.name!==line.name?line.name:'',line.ficha.sku||''].filter(Boolean).join(' · ')||'ficha de la biblioteca'})</small>}
+              <Warnings items={line.warning?[line.warning]:[]}/>
+              {line.ficha&&onEditMaterial&&<button type="button" className="cutlist-icon-button" aria-label={`Editar la ficha de ${line.ficha.name} en Materiales`} title="Editar la ficha en Materiales" onClick={()=>onEditMaterial(line.ficha!.id)}><Icon name="pencil"/></button>}</td>
+            <td className="num qty">{line.unit==='par'?plural(line.quantity,'par','pares'):formatMm(line.quantity)}</td>
+            <td className="cutlist-hardware-sources">{line.sources.map(sourceText).join(' · ')}</td>
+          </tr>)}</tbody>
+        </table>
+        {hardware.notes.length>0&&<div role="note" aria-label="Avisos de herrajes"><ul className="cutlist-hardware-notes">{hardware.notes.map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}</div>
+      </section>}
       <span id={`${uid}-row-hint`} className="sr-only">La selecciona y la encuadra en SketchUp. Con varias piezas iguales, otro clic o las flechas izquierda y derecha las recorren de a una.</span>
       {groups.map(({row,kind,section},index)=>{
         if(hidden.has(row.key))return null;

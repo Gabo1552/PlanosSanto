@@ -355,3 +355,41 @@ test('Piezas: el paquete de obra lleva todos los muebles con los mismos nombres 
  // Solo lectura: exportar no pidió ninguna acción que escriba el modelo.
  expect(calls.filter(call=>!['cutlist','obra_json','cutlist_csv','ui_ready','ui_loading','quick_action_ack'].includes(call.action)).length).toBe(before);
 });
+
+test('Piezas: una pieza llamada Puerta suma bisagras y tirador, con la ficha de la biblioteca, al CSV y al paquete de obra',async({page},info)=>{
+ // 0.8.36: herrajes calculados por nombre. La ficha de bisagra se crea en la biblioteca real (dobles de la API); el tirador no tiene ficha.
+ await boot(page,info.outputDir,'materials-cutlist-hardware');
+ const library=await send('catalog_load') as {catalog:{revision:number}};
+ const added=await send('catalog_add',{revision:library.catalog.revision,item:{name:'Bisagra cazoleta codo 0',kind:'hardware'}}) as {catalog:{revision:number}};
+ // Una segunda bisagra archivada no se usa ni vuelve ambigua la activa (catalog_load trae las archivadas).
+ const old=await send('catalog_add',{revision:added.catalog.revision,item:{name:'Bisagra vieja',kind:'hardware'}}) as {catalog:{revision:number;items:{id:string;name:string}[]}};
+ const extras=await send('material_extras') as {statesRevision:number};
+ await send('material_archive',{catalogIds:[old.catalog.items.find(i=>i.name==='Bisagra vieja')!.id],archived:true,revision:old.catalog.revision,statesRevision:extras.statesRevision,confirmed:true});
+ const {view}=await openPieces(page);
+ const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
+ await expect(section).toBeVisible();
+ const table=section.getByRole('table',{name:'Herrajes calculados'}),rows=table.locator('tbody tr');
+ await expect(rows).toHaveCount(2);
+ await expect(rows.nth(0)).toContainText('Bisagra cazoleta codo 0');
+ await expect(rows.nth(0).locator('td').nth(2)).toHaveText('2');
+ await expect(rows.nth(0)).toContainText('Puerta: 2 c/u');
+ await expect(rows.nth(1)).toContainText('Tirador');
+ await expect(rows.nth(1)).toContainText('Sin ficha en la biblioteca');
+ // El lápiz de la ficha lleva a Materiales.
+ await expect(section.getByRole('button',{name:'Editar la ficha de Bisagra cazoleta codo 0 en Materiales'})).toBeVisible();
+ expect(await axe(page,'herrajes')).toEqual([]);
+ // Elegir el otro mueble deja la sección afuera.
+ await view.getByLabel('Mueble').selectOption({label:'Bajo Mesada'});
+ await expect(section).toHaveCount(0);
+ await view.getByLabel('Mueble').selectOption({label:'Todos los muebles'});
+ await view.getByRole('button',{name:'Exportar',exact:true}).click();
+ await expect.poll(()=>replies.has('cutlist_csv')?replies.get('cutlist_csv')!.error:'pendiente').toBeNull();
+ const csv=(await readFile((replies.get('cutlist_csv')!.result as {path:string}).path)).subarray(3).toString('utf8').split('\r\n').slice(1,-1).map(line=>line.split(';'));
+ expect(csv.filter(row=>row[0]==='Herraje').map(row=>[row[1],row[4],row[5],row[7],row[12]])).toEqual([
+  ['Bisagra cazoleta codo 0','Bisagra cazoleta 35 mm – Puerta','Otro mueble','2',''],['Tirador','Tirador – Puerta','Otro mueble','1','Sin ficha en la biblioteca']]);
+ await view.getByRole('button',{name:'Paquete de obra',exact:true}).click();
+ await expect.poll(()=>replies.has('obra_json')?replies.get('obra_json')!.error:'pendiente').toBeNull();
+ const obra=parseObra(JSON.parse(await readFile((replies.get('obra_json')!.result as {path:string}).path,'utf8')));
+ expect(obra.muebles.map(m=>[m.nombre,(m.herrajes||[]).map(h=>[h.nombre,h.cantidad,h.unidad])])).toEqual([
+  ['Bajo Mesada',[]],['Otro mueble',[['Bisagra cazoleta codo 0',2,'u'],['Tirador',1,'u']]]]);
+});

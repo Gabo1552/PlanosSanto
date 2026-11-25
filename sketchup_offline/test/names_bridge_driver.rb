@@ -18,7 +18,7 @@ module Sketchup
       model=ARGV[1] == 'shared' ? NamingModelDouble.new(Fixture.model) : ARGV[1]=='cantos' ? CantosFixture.model : NamesFixture.model
       model=GrainDouble::Model.new(model.__getobj__) if ARGV[1]=='materials-cutlist-grain'
       OclReadFixture.prepare(model) if ARGV[1].to_s.start_with?('materials')
-      if %w[materials-edges materials-cutlist materials-cutlist-pair materials-cutlist-grain].include?(ARGV[1])
+      if %w[materials-edges materials-cutlist materials-cutlist-pair materials-cutlist-grain materials-cutlist-hardware].include?(ARGV[1])
         board=model.materials[0];first=model.materials[1]
         second=Sketchup::Material.new(890,'Canto secundario de prueba',Sketchup::Color.new(80,80,80),1,nil);second.ocl_attributes={'type'=>4,'thickness'=>'1mm','std_widths'=>'22mm'};model.materials << second
         faces=model.entities[0].entities[0].definition.entities;faces[1].material=nil;faces[3].material=first;faces[4].material=second
@@ -31,6 +31,8 @@ module Sketchup
         nested=model.entities[0].entities[1];left=model.entities[0].entities[0]
         nested.entities << Sketchup::ComponentInstance.new(14,'Lateral - Blanco',left.definition,Geom::Transformation.translation(40,0,0))
       end
+      # Herrajes por nombre (0.8.36): la pieza del segundo mueble se llama Puerta.
+      model.entities[1].entities[0].name='Puerta' if ARGV[1]=='materials-cutlist-hardware'
       if ARGV[1]=='materials-cutlist-grain'
         # Veta: la placa tiene textura (1000 × 500 mm) y cada pieza se puede hacer única.
         model.materials[0].texture=GrainDouble::Texture.new(1000/25.4,500/25.4)

@@ -34,6 +34,9 @@ Archivo que exporta Planos Santo (desde 0.8.35) para que **App Santo** muestre e
           "caja": { "min": [0, 0, 0], "max": [18, 560, 720] },
           "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 100, 1]
         }
+      ],
+      "herrajes": [
+        { "nombre": "Corredera telescópica 500", "sku": "COR-500", "cantidad": 2, "unidad": "par", "largo": 500, "piezas": ["101/3", "101/4"] }
       ]
     }
   ]
@@ -60,6 +63,7 @@ Archivo que exporta Planos Santo (desde 0.8.35) para que **App Santo** muestre e
 | `codigo` | texto (≤ 10) | Código de módulo (`M01`…) guardado en la guía o leído del nombre; `""` si no tiene. |
 | `medidas` | `{alto, ancho, profundidad}` mm | Las mismas cotas totales del plano A4: caja del mueble armado en su frente (alto según la vertical, profundidad según el frente). Redondeadas a 0,1 mm. |
 | `piezas` | lista (1 a 500) | Una entrada por **pieza física** (dos laterales iguales son dos entradas). |
+| `herrajes` | lista (0 a 50), opcional | Desde 0.8.36. Herrajes calculados por el nombre de las piezas (ver «Herraje»). Lista vacía si el mueble no tiene puertas ni cajones; ausente en paquetes de 0.8.35. |
 
 ### Pieza
 
@@ -74,6 +78,21 @@ Archivo que exporta Planos Santo (desde 0.8.35) para que **App Santo** muestre e
 | `medidas` | `[largo, ancho, espesor]` mm | Las mismas L, A y E del CSV (medidas de corte). |
 | `caja` | `{min, max}` mm | Límites de la pieza **en sus ejes locales**. No siempre empieza en 0. |
 | `transform` | 16 números | Matriz 4×4 local → mundo, **column-major** como `THREE.Matrix4.fromArray` (traslación en las posiciones 12, 13 y 14, en mm). Puede tener escala y espejo. |
+
+### Herraje
+
+Desde 0.8.36. Se calcula con el nombre de cada pieza; no se dibuja en el modelo. Es el mismo dato de la sección «Herrajes» de Piezas y de las filas «Herraje» del CSV.
+
+| Campo | Tipo | Detalle |
+|---|---|---|
+| `nombre` | texto | Nombre de la ficha de herraje de la biblioteca; si no hay una sola ficha que corresponda, el nombre genérico (`"Bisagra cazoleta 35 mm"`, `"Par de correderas 450 mm"`, `"Tirador"`). |
+| `sku` | texto (≤ 160) o `null` | SKU de la ficha. `null` sin ficha. |
+| `cantidad` | entero > 0 | Total del mueble, en `unidad`. |
+| `unidad` | `"u"` o `"par"` | Las correderas van por par (un par por cajón). |
+| `largo` | mm o `null` | Largo de la corredera; `null` en bisagras, tiradores y correderas sin profundidad conocida. |
+| `piezas` | lista de `id` | Piezas de este mueble que llevan el herraje (puertas o frentes de cajón). |
+
+Reglas (a confirmar con el taller): una pieza «Puerta» lleva bisagras según su alto en el mueble (hasta 900 mm, 2; hasta 1500, 3; hasta 2000, 4; más, 5) y un tirador. Un «Frente cajón» o «Fte» lleva un par de correderas (el largo más grande entre 300, 350, 400, 450 y 500 mm que entra en la profundidad del mueble menos 50 mm) y un tirador. Si el mueble tiene «Fte», la «Del Caj» se toma como delantera de la caja y no suma.
 
 ## Cómo dibujarlo en three.js
 
@@ -134,6 +153,7 @@ Matrices con 6 decimales en rotación y 2 en traslación (error < 0,01 mm a 10 m
 | `material.sku` «si hay» | `null` cuando no hay | Tipo fijo, fácil de validar. |
 | `material.color` siempre | `"#rrggbb"` o `null` | Un material pintado sin ficha o una pieza sin material no tiene color confiable. |
 | `codigo` «si hay» | `""` cuando no hay | Igual que el CSV. |
+| — | `herrajes` por mueble (0.8.36) | Para cargar la lista de herrajes de la cotización sin rearmarla a mano. Campo opcional: no cambia `schema`. |
 | — | Z hacia arriba | Se exporta en el sistema de SketchUp; la conversión a three.js es una rotación (ver arriba). |
 
 ## Versionado
