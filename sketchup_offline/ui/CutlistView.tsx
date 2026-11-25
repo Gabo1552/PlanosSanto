@@ -5,6 +5,7 @@ import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,d
   highlightNotice,nextFocus,parseOptions,rowLetter,sectionTitle,stripDesignation,summaryRows,
   type CutlistData,type CutlistEdgeSection,type CutlistHighlight,type CutlistOptions,type CutlistPiece,type CutlistSection,type SummaryKind,type SummaryRow} from './cutlistModel';
 import {HARDWARE_RULES,activeCatalog,computeHardware,hardwareRole,sourceText,type HardwareCatalogItem,type HardwareLine} from './hardwareModel';
+import {planFurniture,type HardwarePlacement,type HingeSide} from './hardwarePlacement';
 import {buildObra,obraNameIssues} from './obra';
 import type {Furniture} from '../../lib/model';
 import release from '../version.json';
@@ -43,7 +44,13 @@ export type CutlistViewProps={
   saveObra?:(json:string,modelName:string)=>Promise<{path?:string;cancelled?:boolean}>;
   /** 0.8.36: fichas de la biblioteca para nombrar los herrajes calculados; por defecto la acción Ruby `catalog_load`. */
   loadCatalog?:()=>Promise<HardwareCatalogItem[]>;
+  /** 0.8.37 Herrajes en 3D: lo colocado (`hardware_status`), colocar (`hardware_place`) y quitar (`hardware_remove`). */
+  hardwareStatus?:()=>Promise<HardwareStatus[]>;
+  placeHardware?:(furniture:{id:string;placements:HardwarePlacement[]}[])=>Promise<{placed:number;status:HardwareStatus[]}>;
+  removeHardware?:(furnitureIds:string[])=>Promise<{removed:number;status:HardwareStatus[]}>;
 };
+/** Herrajes dibujados en el modelo, por mueble (HardwareModel.status en Ruby). */
+export type HardwareStatus={furnitureId:string;furnitureName:string;hinges:number;runners:number;sides:Record<string,HingeSide>};
 
 const defaultLoad=()=>request<CutlistData>('cutlist');
 const defaultAddThickness=(id:string,thicknessMm:number)=>request('catalog_add_thickness',{id,thicknessMm});
@@ -53,6 +60,9 @@ const defaultHighlight=(pieceIds:string[],focus:number|null)=>request<{highlight
   .then(result=>{if(!result?.highlight)throw new Error('Respuesta de resaltado incompatible: actualizá la extensión.');return result.highlight;});
 const defaultRestore=()=>request<{restored?:boolean}>('piece_highlight_restore');
 // Las fichas archivadas se guardan aparte (`material_extras`) y `catalog_load` las trae: se sacan antes de emparejar.
+const defaultHardwareStatus=()=>request<{status?:HardwareStatus[]}>('hardware_status').then(result=>Array.isArray(result?.status)?result.status:[]);
+const defaultPlaceHardware=(furniture:{id:string;placements:HardwarePlacement[]}[])=>request<{placed:number;status:HardwareStatus[]}>('hardware_place',{furniture});
+const defaultRemoveHardware=(furnitureIds:string[])=>request<{removed:number;status:HardwareStatus[]}>('hardware_remove',{furnitureIds});
 const defaultLoadCatalog=async()=>{
   const [library,extras]=await Promise.all([request<{catalog?:{items?:HardwareCatalogItem[]}}>('catalog_load'),request<{archivedIds?:unknown}>('material_extras').catch(()=>undefined)]);
   const archived=Array.isArray(extras?.archivedIds)?extras.archivedIds.filter((id):id is string=>typeof id==='string'):[];
@@ -130,7 +140,8 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
     {open&&<div ref={list} id={id} role="menu" aria-label={label} className="cutlist-menu-list" onKeyDown={key}>{items.map(item=><button key={item.label} type="button" role="menuitem" tabIndex={-1} onClick={()=>{setOpen(false);trigger.current?.focus();item.onSelect();}}>{item.label}</button>)}</div>}</span>;
 }
 
-export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain,obraFurniture,saveObra=defaultSaveObra,loadCatalog=defaultLoadCatalog}:CutlistViewProps){
+export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain,obraFurniture,saveObra=defaultSaveObra,loadCatalog=defaultLoadCatalog,
+  hardwareStatus=defaultHardwareStatus,placeHardware=defaultPlaceHardware,removeHardware=defaultRemoveHardware}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
@@ -139,6 +150,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   const [grainBusy,setGrainBusy]=useState(''),[grainError,setGrainError]=useState<{key:string;text:string}>();
   // Herrajes (0.8.36): fichas de la biblioteca, leídas solo si alguna pieza se llama Puerta o Frente cajón.
   const [catalog,setCatalog]=useState<HardwareCatalogItem[]>([]);
+  // Herrajes en 3D (0.8.37): lo colocado en el modelo, el lado de las bisagras elegido por puerta y la operación en curso.
+  const [placed,setPlaced]=useState<HardwareStatus[]>([]),[sides,setSides]=useState<Record<string,HingeSide>>({}),[hardwareBusy,setHardwareBusy]=useState(false);
   const sequence=useRef(0),uid=useId(),optionsTrigger=useRef<HTMLButtonElement>(null),optionsPanel=useRef<HTMLDivElement>(null);
   const lookSequence=useRef(0),flashTimer=useRef<number|undefined>(undefined),summaryTable=useRef<HTMLTableElement>(null);
   useEffect(()=>()=>window.clearTimeout(flashTimer.current),[]);
@@ -161,8 +174,10 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     let live=true;
     // Sin biblioteca los herrajes salen igual, con el nombre genérico y el aviso «Sin ficha».
     loadCatalog().then(items=>{if(live)setCatalog(items);},()=>{});
+    // Lo ya colocado trae el lado de cada puerta; lo que se eligió en esta sesión manda.
+    hardwareStatus().then(status=>{if(!live)return;setPlaced(status);setSides(old=>({...Object.assign({},...status.map(row=>row.sides)),...old}));},()=>{});
     return()=>{live=false;};
-  },[needsHardware,data,loadCatalog]);
+  },[needsHardware,data,loadCatalog,hardwareStatus]);
   useEffect(()=>{try{localStorage.setItem(OPTIONS_KEY,JSON.stringify(options));}catch{/* almacenamiento bloqueado: las opciones duran esta sesión */}},[options]);
   useEffect(()=>{
     if(!showOptions)return;
@@ -183,6 +198,15 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   };
   const summary=useMemo(()=>summaryRows(sections,edgeSections),[sections,edgeSections]);
   // Herrajes del mueble elegido (la búsqueda no los filtra: se calculan por mueble).
+  // Ubicación de cada herraje en los muebles que se ven (sin los muebles generados no hay geometría para ubicarlos).
+  const plans=useMemo(()=>{
+    if(!data||!needsHardware||!obraFurniture)return [];
+    return obraFurniture.filter(f=>(!furnitureId||f.id===furnitureId)&&data.pieces.some(piece=>piece.furnitureId===f.id&&hardwareRole(piece.name)))
+      .map(f=>planFurniture(f,data.pieces.filter(piece=>piece.furnitureId===f.id),sides));
+  },[data,needsHardware,obraFurniture,furnitureId,sides]);
+  const placedHere=placed.filter(row=>!furnitureId||row.furnitureId===furnitureId);
+  const doors=plans.flatMap(plan=>plan.doors);
+  const sidesChanged=placedHere.some(row=>doors.some(door=>row.sides[door.pieceId]&&row.sides[door.pieceId]!==door.side));
   const hardware=useMemo(()=>data&&needsHardware?computeHardware({pieces:filterPieces(data.pieces,{furnitureId:furnitureId||undefined})},obraFurniture,catalog):{lines:[] as HardwareLine[],notes:[] as string[]},[data,needsHardware,furnitureId,obraFurniture,catalog]);
   // Orden del listado = orden del resumen (placas, cantos, «?»).
   const groups=useMemo(()=>{
@@ -326,6 +350,31 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     finally{setExporting(false);}
   }
 
+  // Herrajes en 3D: colocar reemplaza lo que había en esos muebles (un mueble sin herrajes que colocar se limpia).
+  async function placeInModel(){
+    const placedIds=new Set(placed.map(row=>row.furnitureId));
+    const furniture=plans.filter(plan=>plan.placements.length||placedIds.has(plan.furnitureId)).map(plan=>({id:plan.furnitureId,placements:plan.placements}));
+    if(!furniture.length)return;
+    setHardwareBusy(true);setNotice('');setError('');
+    try{
+      const result=await placeHardware(furniture);
+      setPlaced(result.status);
+      setNotice(`${plural(result.placed,'herraje colocado','herrajes colocados')} en el modelo, en la etiqueta «Planos Santo · Herrajes». Ctrl+Z en SketchUp lo deshace.`);
+    }catch(value){setError(value instanceof Error?value.message:String(value));}
+    finally{setHardwareBusy(false);}
+  }
+  async function removeFromModel(){
+    const ids=placedHere.map(row=>row.furnitureId);
+    if(!ids.length)return;
+    setHardwareBusy(true);setNotice('');setError('');
+    try{
+      const result=await removeHardware(ids);
+      setPlaced(result.status);
+      setNotice(`${plural(result.removed,'herraje quitado','herrajes quitados')} del modelo. Ctrl+Z en SketchUp lo deshace.`);
+    }catch(value){setError(value instanceof Error?value.message:String(value));}
+    finally{setHardwareBusy(false);}
+  }
+
   // Paquete de obra: todas las piezas de todos los muebles generados (no solo lo que se ve), para App Santo.
   async function exportObra(){
     if(!data||!obraFurniture)return;
@@ -425,7 +474,25 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <td className="cutlist-hardware-sources">{line.sources.map(sourceText).join(' · ')}</td>
           </tr>)}</tbody>
         </table>
-        {hardware.notes.length>0&&<div role="note" aria-label="Avisos de herrajes"><ul className="cutlist-hardware-notes">{hardware.notes.map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}</div>
+        {hardware.notes.length>0&&<div role="note" aria-label="Avisos de herrajes"><ul className="cutlist-hardware-notes">{hardware.notes.map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}
+        {plans.length>0&&<div className="cutlist-hardware-model">
+          <h4>Herrajes en el modelo</h4>
+          <p role="status" className="cutlist-hardware-placed">{placedHere.length?`Colocados: ${plural(placedHere.reduce((sum,row)=>sum+row.hinges,0),'bisagra','bisagras')} y ${plural(placedHere.reduce((sum,row)=>sum+row.runners,0),'corredera','correderas')} en ${plural(placedHere.length,'mueble','muebles')}.`:'Todavía no hay herrajes dibujados en el modelo.'}</p>
+          {doors.length>0&&<fieldset className="cutlist-hinge-sides"><legend>Lado de las bisagras (codo 0)</legend>
+            {doors.map(door=>{const label=`${door.name}${door.code?` ${door.code}`:''}`;return <div key={door.pieceId} className="cutlist-hinge-side" role="radiogroup" aria-label={`Bisagras de ${label}`}>
+              <span>{label} <small>· {plural(door.hinges,'bisagra','bisagras')}</small></span>
+              {(['left','right'] as const).map(side=><label key={side}><input type="radio" name={`${uid}-side-${door.pieceId}`} checked={door.side===side} disabled={hardwareBusy} onChange={()=>setSides(old=>({...old,[door.pieceId]:side}))}/>{side==='left'?'Izquierda':'Derecha'}{door.suggested===side&&<small> (sugerida)</small>}</label>)}
+            </div>;})}
+          </fieldset>}
+          {sidesChanged&&<p className="cutlist-flag" role="note">Cambiaste el lado de alguna puerta: volvé a colocar para actualizar el modelo.</p>}
+          {plans.some(plan=>plan.notes.length)&&<div role="note" aria-label="Avisos de herrajes en el modelo"><ul className="cutlist-hardware-notes">{plans.flatMap(plan=>plan.notes).map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}
+          <div className="cutlist-hardware-actions">
+            <button type="button" className="cutlist-generate" disabled={hardwareBusy||loading||!plans.some(plan=>plan.placements.length)} title="Dibuja bisagras codo 0 y correderas en un grupo propio de cada mueble, sin tocar las piezas" onClick={()=>void placeInModel()}>{placedHere.length?'Volver a colocar en el modelo':'Colocar en el modelo'}</button>
+            <button type="button" disabled={hardwareBusy||loading||!placedHere.length} onClick={()=>void removeFromModel()}>Quitar del modelo</button>
+            {hardwareBusy&&<span role="status">Dibujando en SketchUp…</span>}
+          </div>
+          <p className="cutlist-hardware-hint">Formas simples para ver y verificar, en un grupo por mueble fuera de las piezas: no cambian Piezas, las guías ni el pedido. Si movés un mueble, volvé a colocar.</p>
+        </div>}</div>
       </section>}
       <span id={`${uid}-row-hint`} className="sr-only">La selecciona y la encuadra en SketchUp. Con varias piezas iguales, otro clic o las flechas izquierda y derecha las recorren de a una.</span>
       {groups.map(({row,kind,section},index)=>{

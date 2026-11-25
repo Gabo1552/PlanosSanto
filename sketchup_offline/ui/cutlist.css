@@ -169,3 +169,12 @@
 .cutlist-hardware-notes{margin:6px 0 0;padding:0;list-style:none;font-size:12px}
 .cutlist-hardware-notes li{display:flex;gap:6px;align-items:flex-start;margin:2px 0;color:var(--cl-warn-ink)}
 .cutlist-hardware-table .cutlist-warn{margin-left:6px}
+/* Herrajes en 3D (0.8.37). */
+.cutlist-hardware-model{margin-top:10px;padding-top:8px;border-top:1px solid var(--cl-line)}
+.cutlist-hardware-model h4{margin:0 0 4px;font-size:13px}
+.cutlist-hardware-placed,.cutlist-hardware-hint{margin:4px 0;font-size:12px;color:var(--cl-muted)}
+.cutlist-hinge-sides{margin:6px 0;padding:6px 8px;border:1px solid var(--cl-line);border-radius:6px}
+.cutlist-hinge-sides legend{font-size:12px;font-weight:600}
+.cutlist-hinge-side{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:3px 0;font-size:12px}
+.cutlist-hinge-side>span{flex:1 1 180px}
+.cutlist-hardware-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}

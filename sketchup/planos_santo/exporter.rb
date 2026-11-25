@@ -31,7 +31,14 @@ module PlanosSanto
     end
 
     def containers(entities)
-      entities.select { |e| e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance) }
+      entities.select { |e| (e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)) && !placed_hardware?(e) }
+    end
+
+    # 0.8.37: los herrajes que dibuja la extensión offline (HardwareModel, un grupo por mueble en la raíz) no son
+    # muebles ni piezas: no entran en el análisis, las guías ni Piezas.
+    HARDWARE_DICTIONARY = 'PlanosSantoHerrajes'
+    def placed_hardware?(entity)
+      entity.is_a?(Sketchup::Group) && entity.respond_to?(:get_attribute) && entity.get_attribute(HARDWARE_DICTIONARY, 'role') == 'group'
     end
 
     def entities_of(entity)
