@@ -1,0 +1,50 @@
+{
+  "version": "0.8.38",
+  "date": "2026-11-26",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "ce262091a31979cf9dc0dca6218721e41ee904141101c9e9197530d102333479",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "buildReproducible": "PASS",
+    "vitest": {
+      "tests": 646,
+      "passed": 646
+    },
+    "ruby33": {
+      "runs": 1204,
+      "assertions": 11689,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1204,
+      "assertions": 11689,
+      "failures": 0,
+      "errors": 0
+    },
+    "rubyExporter": {
+      "runs": 15,
+      "assertions": 76,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 269,
+      "passed": 269
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    }
+  },
+  "notes": [
+    "Pruebas con dobles de la API de SketchUp, no ejecución nativa. Esta versión escribe nombres en el modelo (instancia y definición): validar sobre copias."
+  ]
+}
