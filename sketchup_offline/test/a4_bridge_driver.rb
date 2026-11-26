@@ -57,7 +57,7 @@ STDIN.each_line do |line|
       faces=e.definition.entities.grep(Sketchup::Face).map { |f| [f.mesh(0).points.map(&:to_a),f.mesh(0).polygons, f.material&.entityID,f.back_material&.entityID] }
       [e.persistent_id,e.transformation.to_a,faces]
     end
-    result={'names'=>model.all_instances.to_h { |e| [e.persistent_id.to_s,(e.name.to_s.empty? && !e.is_a?(Sketchup::Group)) ? e.definition.name : e.name] },'instanceNames'=>model.all_instances.to_h { |e| [e.persistent_id.to_s,e.name] },'definitions'=>model.all_instances.map { |e| e.definition.name },'definitionGuids'=>model.all_instances.map { |e| e.definition.guid },'simulatedSaves'=>model.instance_variable_get(:@simulated_saves)||0,'operations'=>model.operations,'geometryHash'=>Digest::SHA256.hexdigest(JSON.generate(geometry)),'visibility'=>model.all_instances.to_h { |e| [e.persistent_id.to_s,e.respond_to?(:hidden?) ? e.hidden? : false] },'guide'=>PlanosSanto::GuideStore.new(model).read}
+    result={'names'=>model.all_instances.to_h { |e| [e.persistent_id.to_s,e.name] },'definitions'=>model.all_instances.map { |e| e.definition.name },'definitionGuids'=>model.all_instances.map { |e| e.definition.guid },'simulatedSaves'=>model.instance_variable_get(:@simulated_saves)||0,'operations'=>model.operations,'geometryHash'=>Digest::SHA256.hexdigest(JSON.generate(geometry)),'visibility'=>model.all_instances.to_h { |e| [e.persistent_id.to_s,e.respond_to?(:hidden?) ? e.hidden? : false] },'guide'=>PlanosSanto::GuideStore.new(model).read}
     controller.reply(msg['id'],result:result)
   when '__names_external'
     model.entities[0].name=msg.fetch('data',{}).fetch('name','Alacena externa');controller.reply(msg['id'],result:true)

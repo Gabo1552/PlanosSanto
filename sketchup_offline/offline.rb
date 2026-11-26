@@ -1381,7 +1381,7 @@ module PlanosSanto
           end
         end
         rebaseline_analysis!
-        { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'skippedNames' => @session.skipped_names || [], 'definitionNotes' => @session.definition_notes || [], 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
+        { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'skippedNames' => @session.skipped_names || [], 'definitionNotes' => (@session.respond_to?(:definition_notes) && @session.definition_notes) || [], 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
       when 'pdf'
         active!
         @session.validate_export(data.fetch('furniture'))

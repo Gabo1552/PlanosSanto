@@ -6,9 +6,8 @@ require_relative 'exporter' unless defined?(PlanosSanto::Exporter)
 require_relative 'guide_store'
 
 module PlanosSanto
-  # Piece names: (0.8.38) a component takes its name in its definition (the «Definición» field of Entity Info, the
-  # one OpenCutList lists) and its instance name is left empty, when that is safe; otherwise, and for groups and
-  # furniture roots, in the instance name. No geometry writes, make_unique or observers.
+  # Instance names and (0.8.38) the definition name of piece components when it is safe: the «Definición» field of
+  # Entity Info, the one OpenCutList lists. No geometry writes, make_unique or observers.
   class NameManager
     DICT = 'PlanosSantoNombres'
     PIECE_KEY = 'piece_v1'
@@ -178,7 +177,7 @@ module PlanosSanto
         base = nil; meta = nil
         begin
           meta = metadata(node['_entity'], PIECE_KEY) if piece
-          current = applied_name(node['_entity'])
+          current = node['currentName']
           base = meta && meta['appliedName'] == current ? meta['base'] : display(node['_entity'], true)
           if meta && meta['appliedName'] != current
             warnings << "#{node['id']}: nombre editado fuera del panel; se conserva completo como base."
@@ -264,9 +263,7 @@ module PlanosSanto
           raise ExportError, "#{piece['id']}: El nombre de #{label.sub('La pieza','la pieza')} no coincide con obra, módulo y pieza. Volvé a analizar el modelo." unless desired==piece['name']
           entity=node['_entity']
           proposals[node['id']]={node:node,name:desired}
-          # Ya nombrada: en la instancia (un componente todavía puede pasar el nombre a su definición) o en la definición.
-          current=entity.name.to_s
-          next if current.empty? ? applied_name(entity)==desired : current==desired && !(component?(entity) && node['role']=='piece')
+          next if entity.name.to_s==desired
           unless node['role']=='piece'
             skip(piece['id'],'Tiene caras propias y subgrupos: no se renombra en SketchUp; separá las piezas.')
             next
@@ -285,14 +282,13 @@ module PlanosSanto
       end
       changes=changes.uniq { |change| [change[:entity].persistent_id, change[:key] || PIECE_KEY] }
       blocked=rejected.keys
-      definitions,named=definition_names(proposals.reject { |_route,proposal| blocked.include?(proposal[:node]['_entity'].persistent_id) || proposal[:node]['role']!='piece' }.map { |route,proposal| [route,proposal[:name]] },snapshot)
-      changes=instance_targets(changes,named)
+      definitions=definition_names(proposals.reject { |_route,proposal| blocked.include?(proposal[:node]['_entity'].persistent_id) || proposal[:node]['role']!='piece' }.map { |route,proposal| [route,proposal[:name]] },snapshot)
       lambda do
         changes.each do |change|
           entity=change[:entity]
           raise ExportError, 'Una pieza se bloqueó o dejó de existir.' unless valid?(entity) && !locked?(entity)
-          entity.name=change[:instance]
-          raise ExportError, 'SketchUp no aceptó el nombre de la pieza.' unless entity.name==change[:instance]
+          entity.name=change[:name]
+          raise ExportError, 'SketchUp no aceptó el nombre de la pieza.' unless entity.name==change[:name]
           entity.set_attribute(DICT,change[:key] || PIECE_KEY,JSON.generate(change[:meta]))
         end
         write_definition_names!(definitions)
@@ -303,7 +299,7 @@ module PlanosSanto
     # lista OpenCutList). Solo cuando todas las apariciones de esa definición en el modelo quedan con el mismo nombre y
     # ninguna otra definición se llama igual: SketchUp no repite nombres de definición y una definición compartida
     # cambia en todas sus copias. Los grupos no tienen ese campo. `entries`: [[ruta, nombre final]] de lo que se nombra.
-    # Devuelve [[definición, nombre]] a escribir; lo que no se puede queda en #skipped con el motivo.
+    # Devuelve [[definición, nombre]] a escribir; lo que no se puede queda en #definition_notes con el motivo.
     def definition_names(entries, snapshot)
       desired = entries.to_h
       key = ->(definition) { definition_key(definition) }
@@ -325,35 +321,16 @@ module PlanosSanto
         end
         plans[k] = [definition, name]
       end
-      plans = plans.values.compact
-      named = plans.select { |definition, name| definition.name.to_s == name }.map { |definition, _name| key.call(definition) }
-      plans = plans.reject { |definition, name| definition.name.to_s == name }
+      plans = plans.values.compact.reject { |definition, name| definition.name.to_s == name }
       count = Hash.new(0)
       plans.each { |_definition, name| count[name] += 1 }
       renamed = plans.map { |definition, _name| key.call(definition) }
       others = (@model.respond_to?(:definitions) ? @model.definitions.to_a : []) + snapshot[:index].each_value.map { |node| node['_entity'].definition }
       taken = others.reject { |definition| renamed.include?(key.call(definition)) }.map { |definition| definition.name.to_s }
-      writes = plans.reject do |definition, name|
+      plans.reject do |definition, name|
         next false if count[name] == 1 && !taken.include?(name)
         uses[key.call(definition)].each { |node| note_definition(node['id'], "Ya hay otra definición llamada «#{name}» y SketchUp no repite nombres de definición.") if desired.key?(node['id']) }
         true
-      end
-      [writes, named + writes.map { |definition, _name| key.call(definition) }]
-    end
-
-    # Nombre que queda en la instancia: vacío en un componente cuya definición lleva el nombre; el nombre completo en
-    # el resto. Sin nada que escribir (instancia y metadatos ya iguales), el cambio se descarta.
-    # `metadata`: también escribe cuando solo cambian los metadatos (renombrado del panel, como antes).
-    def instance_targets(changes, named, metadata: false)
-      changes.each do |change|
-        piece = (change[:key] || PIECE_KEY) == PIECE_KEY && component?(change[:entity])
-        change[:instance] = piece && named.include?(definition_key(change[:entity].definition)) ? '' : change[:name]
-      end
-      # Con el nombre ya en la instancia no se escribe nada (como antes); con la instancia vacía, solo si cambian los
-      # metadatos (la definición tomó otro nombre).
-      changes.reject do |change|
-        same = get(change[:entity], change[:key] || PIECE_KEY) == JSON.generate(change[:meta] || change[:value])
-        change[:entity].name.to_s == change[:instance] && (same || (!metadata && !change[:instance].empty?))
       end
     end
 
@@ -443,8 +420,8 @@ module PlanosSanto
         end
         proposals=changes.to_h { |change| [change[:id], {node:current[:index].fetch(change[:id]),name:change[:name]}] }
         validate_shared_batch!(changes,proposals,current)
-        definitions, named = definition_names(changes.select { |c| c[:key] == PIECE_KEY }.map { |c| [c[:id], c[:name]] }, current)
-        updates = instance_targets(changes, named, metadata: true)
+        definitions = definition_names(changes.select { |c| c[:key] == PIECE_KEY }.map { |c| [c[:id], c[:name]] }, current)
+        updates = changes.select { |c| c[:entity].name.to_s != c[:name] || get(c[:entity], c[:key]) != JSON.generate(c[:value]) }
         updates=updates.uniq { |change| [change[:entity].persistent_id,change[:key]] }
         names = changes.to_h { |c| [c[:id], c[:name]] }
         guide = JSON.parse(JSON.generate(current[:guide])); guide_changed = false
@@ -467,8 +444,8 @@ module PlanosSanto
           updates.each do |change|
             entity = change[:entity]
             raise ExportError, 'Una entidad dejó de estar disponible o está bloqueada.' unless valid?(entity) && !locked?(entity)
-            entity.name = change[:instance]
-            raise ExportError, 'SketchUp no aceptó el nombre propuesto.' unless entity.name == change[:instance]
+            entity.name = change[:name]
+            raise ExportError, 'SketchUp no aceptó el nombre propuesto.' unless entity.name == change[:name]
             entity.set_attribute(DICT, change[:key], JSON.generate(change[:value]))
           end
           write_definition_names!(definitions)

@@ -81,9 +81,7 @@ class FlujosBrowserController < PhotoBrowserController
     binding=PlanosSanto::MaterialResolver.read_binding(face.material) if face.material
     {'dialogs'=>flow_dialogs,'messages'=>UI.flow_messages,'toolState'=>smart_state,'toolStarts'=>model.flow_tool_starts || 0,
      'targetCatalogId'=>binding && binding['catalogId'],'operations'=>model.operations.map(&:first),
-     'instanceNames'=>model.all_instances.to_h { |entity| [entity.persistent_id.to_s,entity.name] },
-     # 0.8.38: el nombre que muestra SketchUp (la definición en un componente sin nombre de instancia).
-     'shownNames'=>model.all_instances.to_h { |e| [e.persistent_id.to_s,(e.name.to_s.empty? && !e.is_a?(Sketchup::Group)) ? e.definition.name : e.name] }}
+     'instanceNames'=>model.all_instances.to_h { |entity| [entity.persistent_id.to_s,entity.name] }}
   end
   def flow_dialogs
     UI.flow_dialogs.map { |dialog| {'title'=>dialog.options[:dialog_title],'width'=>dialog.options[:width],'height'=>dialog.options[:height],

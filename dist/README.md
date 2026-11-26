@@ -1,6 +1,6 @@
 # Entrega 0.8.38 — nombres en el campo «Definición» de los componentes, PENDIENTE DE VALIDACIÓN REAL
 
-Instalar `PlanosSanto-0.8.38-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. **Escribe en el modelo: probar sobre copias.** Sobre la 0.8.37: al guardar sincronizando nombres, cada componente lleva el nombre en el campo «Definición» de Info. de entidad (el que lista OpenCutList) y la instancia queda vacía; si la definición la comparten piezas con nombres distintos o si otra definición ya se llama igual, el nombre queda en la instancia y la fila lo avisa. Validar con `docs/validacion-0838/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.37). Producción no aprobada; SketchUp 2022 sin probar.
+Instalar `PlanosSanto-0.8.38-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. **Escribe en el modelo: probar sobre copias.** Sobre la 0.8.37: al guardar sincronizando nombres, cada componente lleva el nombre en los dos campos de Info. de entidad, «Instancia» y «Definición» (el que lista OpenCutList); si la definición la comparten piezas con nombres distintos o si otra definición ya se llama igual, queda solo en la instancia y la fila lo anota. Validar con `docs/validacion-0838/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.37). Producción no aprobada; SketchUp 2022 sin probar.
 
 ---
 
