@@ -26,7 +26,8 @@ class NamesTest < Minitest::Test
     third=Sketchup::ComponentInstance.new(14,'Lateral derecho',Fixture.board_definition)
     @root.entities << third;p=preview
     assert_equal 3,p['pieceCount'];refute p['blocked']
-    @manager.apply(data(p));assert_equal 'BM - Lateral derecho',third.name
+    # 0.8.38: componente con definición propia: el nombre va en la definición y la instancia queda vacía.
+    @manager.apply(data(p));assert_equal '',third.name;assert_equal 'BM - Lateral derecho',third.definition.name
     assert_equal 1,@model.operations.count { |op| op[0]==:start }
   end
   def test_catalog_and_preview_preserve_all_levels_and_do_not_write

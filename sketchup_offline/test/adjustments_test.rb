@@ -69,7 +69,9 @@ class AdjustmentsTest < Minitest::Test
     @model.entities.pop; @model.entities[0].entities[1].entities[0].locked_for_names=true
     @session=PlanosSanto::NativeSession.new(@model);@session.scan;@session.generate(['1'])
     save
-    assert_equal ['1/13/12'],@session.skipped_names.map { |row| row['id'] }
+    # 0.8.38: 1/11 comparte definición con «Base ajena» de otro mueble: se nombra la pieza y avisa por la definición.
+    assert_equal %w[1/11 1/13/12],@session.skipped_names.map { |row| row['id'] }.sort
+    assert_match(/se nombró la pieza, no la definición/,@session.skipped_names.find { |row| row['id']=='1/11' }['reason'])
     assert_equal 'VF M01 Lateral',@model.entities[0].entities[0].name;assert_equal 'Base',@model.entities[0].entities[1].entities[0].name
   end
   def test_guide_write_failure_rolls_back_all_names_and_metadata

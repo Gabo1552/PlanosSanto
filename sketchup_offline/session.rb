@@ -10,7 +10,15 @@ module PlanosSanto
         raw=entity.get_attribute('PlanosSantoNombres','piece_v1')
         begin
           meta=JSON.parse(raw) if raw.is_a?(String) && raw.bytesize<=4096
-          node['metadata']['nameBase']=meta['base'] if meta.is_a?(Hash) && meta['version']==1 && meta['appliedName']==entity.name.to_s && meta['base'].is_a?(String) && meta['base'].length<=80
+          # 0.8.38: un componente nombrado por la extensión lleva el nombre en su definición y la instancia vacía.
+          shown=entity.name.to_s
+          by_definition=shown.empty? && !entity.is_a?(Sketchup::Group) && entity.respond_to?(:definition)
+          shown=entity.definition.name.to_s if by_definition
+          if meta.is_a?(Hash) && meta['version']==1 && meta['appliedName']==shown && !shown.empty?
+            node['metadata']['nameBase']=meta['base'] if meta['base'].is_a?(String) && meta['base'].length<=80
+            # Nombrada por la extensión: cuenta como nombre propio de la pieza (Sugerencias, Muebles).
+            node['metadata']['originalName']=shown if by_definition
+          end
         rescue JSON::ParserError
           # The naming service reports invalid metadata before any write.
         end

@@ -8,29 +8,32 @@ Al guardar con «Sincronizar nombres de grupos y piezas en SketchUp», la extens
 
 ## Cambio
 
-Además del nombre de la instancia, un **componente** lleva el nombre en su **definición**: el campo «Definición» de Info. de entidad, por ejemplo «HS M2 Reg tapa B». Se escribe en la misma operación de guardado, que se deshace con un Ctrl+Z.
+El nombre de cada **componente** va en su **definición**, el campo «Definición» de Info. de entidad (por ejemplo «HS M2 Reg tapa B»), y el campo «Instancia» queda **vacío**. Se escribe en la misma operación de guardado, que se deshace con un Ctrl+Z. Las piezas nombradas antes en la instancia pasan el nombre a la definición la próxima vez que se guarda sincronizando nombres.
 
-Solo se escribe cuando es seguro:
+Solo se escribe así cuando es seguro; si no, el nombre queda en la instancia como antes, para no perderlo:
 
-- **Definición compartida:** si todas las copias del componente en el modelo llevan el mismo nombre (por ejemplo, dos laterales iguales), la definición se nombra una vez. Si las copias tienen nombres distintos («Reg tapa A» y «Reg tapa B» de un mismo componente), la definición no cambia y la fila avisa: se nombró la pieza, no la definición.
-- **Nombre repetido:** SketchUp no permite dos definiciones con el mismo nombre. Si otra definición ya se llama así, o dos definiciones distintas tomarían el mismo nombre, esas definiciones no cambian y la fila lo avisa.
-- **Grupos:** no tienen campo «Definición»; se nombra el grupo como antes.
+- **Definición compartida:** si todas las copias del componente en el modelo llevan el mismo nombre (por ejemplo, dos laterales iguales), la definición se nombra una vez y todas las instancias quedan vacías. Si las copias tienen nombres distintos («Reg tapa A» y «Reg tapa B» de un mismo componente), la definición no cambia, cada instancia lleva su nombre y la fila avisa.
+- **Nombre repetido:** SketchUp no permite dos definiciones con el mismo nombre. Si otra definición ya se llama así, o dos definiciones distintas tomarían el mismo nombre, esas piezas quedan nombradas en la instancia y la fila lo avisa.
+- **Grupos y muebles:** un grupo no tiene campo «Definición»: se nombra en su campo «Nombre», como antes. El nombre del mueble (grupo o componente padre) también sigue en la instancia.
+
+La extensión reconoce como nombrada una pieza con la instancia vacía cuando su definición tiene el nombre que ella escribió (lo guarda en los metadatos de nombres de la pieza). Así, Sugerencias de nombres no la vuelve a proponer y conserva su nombre base.
 
 ## Pruebas nuevas y ajustadas
 
-- `sketchup_offline/test/definition_names_test.rb` (5): componente con su definición nombrada, grupo sin tocar, copias con el mismo nombre, copias con nombres distintos, nombre que ya tiene otra definición, dos definiciones con el mismo nombre, definición ya nombrada y Deshacer.
+- `sketchup_offline/test/definition_names_test.rb` (6): componente con su definición nombrada e instancia vacía, grupo nombrado en su campo, copias con el mismo nombre, copias con nombres distintos (quedan en la instancia), nombre que ya tiene otra definición, dos definiciones con el mismo nombre, pieza nombrada antes en la instancia que pasa a la definición, guardar sin cambios no escribe, Deshacer, y la pieza reconocida como nombrada con su nombre base.
 - El doble de nombres (`names_double.rb`) restaura también los nombres de definición al deshacer, como SketchUp.
-- Ajustadas: `shared_occurrences_test.rb` (la definición del tablero compartido ahora se nombra; Deshacer la vuelve), `names_controller_test.rb`, `names_coverage_test.rb` y `grouped_pieces_test.rb` (aviso nuevo en la pieza que comparte definición con otro mueble).
+- Ajustadas: `shared_occurrences_test.rb` y `names_test.rb` (el nombre va a la definición y la instancia queda vacía; Deshacer lo vuelve), `names_controller_test.rb`, `names_coverage_test.rb`, `grouped_pieces_test.rb` y `adjustments_test.rb` (aviso nuevo en la pieza que comparte definición con otro mueble).
 
 ## Qué se conserva
 
-- El nombre de la instancia se sigue escribiendo como antes. Los metadatos de nombres, la guía y el resto de la 0.8.37 no cambian.
+- Los nombres de pieza en Muebles, Piezas, CSV, A4 y paquete de obra son los mismos: la extensión lee el de la definición cuando la instancia está vacía. La guía y el resto de la 0.8.37 no cambian.
 - Sin «Sincronizar nombres» no se escribe nada en el modelo.
 
 ## Límites
 
-- **Copias con nombres distintos:** la definición queda como estaba. Para OpenCutList hay que hacer única la definición en SketchUp, o usar el mismo nombre en las copias.
-- **Laterales dibujados por separado:** si dos piezas iguales no son copias del mismo componente, son definiciones distintas y no pueden tener el mismo nombre. Queda el aviso y se nombra solo la instancia.
+- **Copias con nombres distintos:** la definición queda como estaba y el nombre en la instancia. Para OpenCutList hay que hacer única la definición en SketchUp, o usar el mismo nombre en las copias.
+- **Renombrar desde el pincel:** el renombrado rápido del pincel avanzado sigue escribiendo en la instancia.
+- **Laterales dibujados por separado:** si dos piezas iguales no son copias del mismo componente, son definiciones distintas y no pueden tener el mismo nombre. Queda el aviso y el nombre va en la instancia.
 - **Simulado:** falta confirmar en SketchUp real cómo responde al renombrar una definición.
 
 Ver `RESULTADOS.json` y `VALIDACION_LOCAL.md`.

@@ -27,7 +27,8 @@ class SharedOccurrencesTest < Minitest::Test
     model_state=@model.all_instances.map { |e| [e.persistent_id,e.definition.guid,e.transformation.to_a,e.definition.name] }
     s=session;changes=edits
     result=s.save(changes,0,sync_names:true,work_code:'VF')
-    assert_equal 'VF M15 Lateral',@leaf.name
+    # 0.8.38: el nombre va en la definición (campo «Definición») y la instancia queda vacía.
+    assert_equal '',@leaf.name;assert_equal 'VF M15 Lateral',@leaf.definition.name
     assert_equal 6,result['furniture'][0]['pieces'].size
     assert_equal @paths,result['furniture'][0]['pieces'].map { |p| p['id'] }
     assert s.validate_export(changes)
@@ -66,7 +67,7 @@ class SharedOccurrencesTest < Minitest::Test
   def test_legacy_preview_allows_full_coverage_and_rejects_conflicting_bases
     preview=@manager.preview('62228');refute preview['blocked']
     data={'token'=>preview['token'],'name'=>preview['name'],'prefix'=>'M15','bases'=>@paths.to_h { |id| [id,'Lateral'] }}
-    result=@manager.apply(data);assert_equal 'M15 - Lateral',@leaf.name;assert_equal 1,@model.undo_states.length
+    result=@manager.apply(data);assert_equal '',@leaf.name;assert_equal 1,@model.undo_states.length
     assert_equal 3,result['changed'] # root metadata + one shared entity + its definition (0.8.38), never six writes
     assert_equal 'M15 - Lateral',@leaf.definition.name
     preview=result['preview'];data['token']=preview['token'];data['bases'][@paths.last]='Otra'
@@ -82,7 +83,7 @@ class SharedOccurrencesTest < Minitest::Test
     copy['naming']['bases'].each { |base| base['id']=base['id'].sub('62228/','80000/') }
     both << copy
     saved=s.save(both,0,sync_names:true,work_code:'VF')
-    assert_equal 2,saved['furniture'].size;assert_equal 'VF M15 Lateral',@leaf.name
+    assert_equal 2,saved['furniture'].size;assert_equal '',@leaf.name;assert_equal 'VF M15 Lateral',@leaf.definition.name
     assert s.validate_export(both);assert_equal 1,@model.undo_states.length
   end
   def test_unplaced_definition_references_remain_protected_despite_six_expanded_paths
