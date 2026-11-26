@@ -6,7 +6,8 @@ require_relative 'exporter' unless defined?(PlanosSanto::Exporter)
 require_relative 'guide_store'
 
 module PlanosSanto
-  # Instance names only. No definition names, geometry writes, make_unique or observers.
+  # Instance names and (0.8.38) the definition name of piece components when it is safe: the «Definición» field of
+  # Entity Info, the one OpenCutList lists. No geometry writes, make_unique or observers.
   class NameManager
     DICT = 'PlanosSantoNombres'
     PIECE_KEY = 'piece_v1'
@@ -57,6 +58,20 @@ module PlanosSanto
       value
     rescue JSON::ParserError
       raise ExportError, 'Metadatos de nombres dañados; no se sobrescribieron.'
+    end
+
+    def component?(entity)
+      entity && !entity.is_a?(Sketchup::Group) && entity.respond_to?(:definition) && entity.definition.respond_to?(:name=)
+    end
+
+    # El nombre que muestra SketchUp: el de la instancia o, en un componente sin nombre propio, el de su definición.
+    def applied_name(entity)
+      name = entity.name.to_s
+      name.empty? && component?(entity) ? entity.definition.name.to_s : name
+    end
+
+    def definition_key(definition)
+      definition.respond_to?(:entityID) ? [:entity, definition.entityID] : [:object, definition.object_id]
     end
 
     def display(entity, piece = false)
@@ -216,7 +231,7 @@ module PlanosSanto
       snapshot=inventory
       changes=[]
       proposals={}
-      @skipped=[]
+      @skipped=[];@definition_notes=[]
       edits.each do |f|
         naming=f['naming']
         if !work_code.empty? && (!naming || naming['moduleCode'].to_s.empty?)
@@ -266,6 +281,8 @@ module PlanosSanto
         true
       end
       changes=changes.uniq { |change| [change[:entity].persistent_id, change[:key] || PIECE_KEY] }
+      blocked=rejected.keys
+      definitions=definition_names(proposals.reject { |_route,proposal| blocked.include?(proposal[:node]['_entity'].persistent_id) || proposal[:node]['role']!='piece' }.map { |route,proposal| [route,proposal[:name]] },snapshot)
       lambda do
         changes.each do |change|
           entity=change[:entity]
@@ -274,7 +291,64 @@ module PlanosSanto
           raise ExportError, 'SketchUp no aceptó el nombre de la pieza.' unless entity.name==change[:name]
           entity.set_attribute(DICT,change[:key] || PIECE_KEY,JSON.generate(change[:meta]))
         end
+        write_definition_names!(definitions)
       end
+    end
+
+    # 0.8.38: en un componente el nombre va también en su definición (campo «Definición» de Info. de entidad, el que
+    # lista OpenCutList). Solo cuando todas las apariciones de esa definición en el modelo quedan con el mismo nombre y
+    # ninguna otra definición se llama igual: SketchUp no repite nombres de definición y una definición compartida
+    # cambia en todas sus copias. Los grupos no tienen ese campo. `entries`: [[ruta, nombre final]] de lo que se nombra.
+    # Devuelve [[definición, nombre]] a escribir; lo que no se puede queda en #definition_notes con el motivo.
+    def definition_names(entries, snapshot)
+      desired = entries.to_h
+      key = ->(definition) { definition_key(definition) }
+      component = ->(entity) { component?(entity) }
+      uses = Hash.new { |hash, k| hash[k] = [] }
+      snapshot[:index].each_value { |node| uses[key.call(node['_entity'].definition)] << node if component.call(node['_entity']) }
+      plans = {}
+      entries.each do |route, name|
+        entity = snapshot[:index][route]&.fetch('_entity')
+        next unless component.call(entity)
+        definition = entity.definition
+        k = key.call(definition)
+        next if plans.key?(k)
+        names = uses[k].map { |node| desired.fetch(node['id'], applied_name(node['_entity'])) }.uniq
+        if names != [name]
+          uses[k].each { |node| note_definition(node['id'], "Su definición «#{definition.name}» la comparten piezas con nombres distintos. Para que OpenCutList la liste con este nombre, hacé única la definición en SketchUp o usá el mismo nombre.") if desired.key?(node['id']) }
+          plans[k] = nil
+          next
+        end
+        plans[k] = [definition, name]
+      end
+      plans = plans.values.compact.reject { |definition, name| definition.name.to_s == name }
+      count = Hash.new(0)
+      plans.each { |_definition, name| count[name] += 1 }
+      renamed = plans.map { |definition, _name| key.call(definition) }
+      others = (@model.respond_to?(:definitions) ? @model.definitions.to_a : []) + snapshot[:index].each_value.map { |node| node['_entity'].definition }
+      taken = others.reject { |definition| renamed.include?(key.call(definition)) }.map { |definition| definition.name.to_s }
+      plans.reject do |definition, name|
+        next false if count[name] == 1 && !taken.include?(name)
+        uses[key.call(definition)].each { |node| note_definition(node['id'], "Ya hay otra definición llamada «#{name}» y SketchUp no repite nombres de definición.") if desired.key?(node['id']) }
+        true
+      end
+    end
+
+    def write_definition_names!(plans)
+      plans.each do |definition, name|
+        definition.name = name
+        raise ExportError, "SketchUp no aceptó el nombre de la definición «#{name}»." unless definition.name == name
+      end
+    end
+
+    # 0.8.38: filas nombradas en la instancia porque su definición no podía llevar el nombre: [{'id','reason'}].
+    # No son errores (la pieza sí se nombró): la ventana las muestra aparte de #skipped.
+    def definition_notes
+      (@definition_notes || []).uniq { |row| row['id'] }
+    end
+
+    def note_definition(id, reason)
+      (@definition_notes ||= []) << { 'id' => id, 'reason' => reason }
     end
 
     # Rows the last #guide_changes left without renaming: [{'id','reason'}].
@@ -346,6 +420,7 @@ module PlanosSanto
         end
         proposals=changes.to_h { |change| [change[:id], {node:current[:index].fetch(change[:id]),name:change[:name]}] }
         validate_shared_batch!(changes,proposals,current)
+        definitions = definition_names(changes.select { |c| c[:key] == PIECE_KEY }.map { |c| [c[:id], c[:name]] }, current)
         updates = changes.select { |c| c[:entity].name.to_s != c[:name] || get(c[:entity], c[:key]) != JSON.generate(c[:value]) }
         updates=updates.uniq { |change| [change[:entity].persistent_id,change[:key]] }
         names = changes.to_h { |c| [c[:id], c[:name]] }
@@ -363,7 +438,7 @@ module PlanosSanto
         guide['revision'] += 1 if guide_changed
         encoded_guide = JSON.generate(guide)
         raise ExportError, 'La guía actualizada supera el límite.' if encoded_guide.bytesize > GuideStore::LIMIT
-        if !updates.empty? || guide_changed
+        if !updates.empty? || guide_changed || !definitions.empty?
           raise ExportError, 'No se pudo iniciar la operación.' unless @model.start_operation('Renombrar mueble Planos Santo', true)
           started = true
           updates.each do |change|
@@ -373,11 +448,12 @@ module PlanosSanto
             raise ExportError, 'SketchUp no aceptó el nombre propuesto.' unless entity.name == change[:name]
             entity.set_attribute(DICT, change[:key], JSON.generate(change[:value]))
           end
+          write_definition_names!(definitions)
           @model.set_attribute(GuideStore::DICTIONARY, GuideStore::KEY, encoded_guide) if guide_changed
           raise ExportError, 'No se pudo confirmar el renombrado.' unless @model.commit_operation
           started = false
         end
-        { 'changed' => updates.length, 'noChanges' => updates.empty? && !guide_changed,
+        { 'changed' => updates.length + definitions.length, 'noChanges' => updates.empty? && !guide_changed && definitions.empty?,
           'guideNamesUpdated' => guide_changed, 'preview' => preview(root['id']) }
       rescue StandardError
         @model.abort_operation if started

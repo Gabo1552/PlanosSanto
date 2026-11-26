@@ -136,7 +136,7 @@ class NamesCoverageTest < Minitest::Test
     # Punto 20: the mixed row is skipped with its notice; the other rows rename.
     original=@left.name
     @manager.guide_changes([edit],'').call
-    assert_equal ['1/13'],@manager.skipped.map { |row| row['id'] };assert_match(/caras propias y subgrupos/,@manager.skipped[0]['reason'])
+    assert_equal ['1/13'],@manager.skipped.map { |row| row['id'] };assert_equal ['1/11'],@manager.definition_notes.map { |row| row['id'] };assert_match(/caras propias y subgrupos/,@manager.skipped[0]['reason'])
     assert_equal 'Lateral',@left.name;refute_equal 'Interior',@container.name
     @container.entities.pop;@left.name=original
     run=@manager.guide_changes([guide_edit(names:['Lateral','Base'])],'');@left.locked_for_names=true

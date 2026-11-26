@@ -76,6 +76,8 @@ class NamesControllerTest < Minitest::Test
     edit={'id'=>'1','explosion'=>0.45,'zoom'=>1,'pieces'=>pieces,'notes'=>[]}
     saved=@controller.dispatch('save',{'furniture'=>[edit],'revision'=>0,'saveFile'=>false,'syncNames'=>true,'workCode'=>''})
     assert_equal ['1/13/12'],saved['skippedNames'].map { |row| row['id'] }
+    # 0.8.38: «Lateral - Blanco» comparte definición con «Base ajena» de otro mueble: se nombra en la instancia, con una nota aparte.
+    assert_equal ['1/11'],saved['definitionNotes'].map { |row| row['id'] };assert_match(/comparten piezas con nombres distintos/,saved['definitionNotes'][0]['reason'])
     assert_match(/bloqueado/,saved['skippedNames'][0]['reason'])
     assert_equal 'Pieza 1',@model.entities[0].entities[0].name;assert_equal before,locked.name
     assert_equal 1,@model.operations.count { |op| op[0]==:start };assert_equal 1,@model.undo_states.length

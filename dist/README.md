@@ -1,15 +1,15 @@
-# Entrega 0.8.36 — herrajes calculados por el nombre de las piezas, PENDIENTE DE VALIDACIÓN REAL
+# Entrega 0.8.38 — nombres en el campo «Definición» de los componentes, PENDIENTE DE VALIDACIÓN REAL
 
-Instalar `PlanosSanto-0.8.36-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. Sobre la 0.8.35: las piezas llamadas «Puerta» suman bisagras (según su alto) y tirador, y los «Frente cajón»/«Fte» un par de correderas (según la profundidad del mueble) y tirador. Se ven en Piezas, salen en el CSV y en el paquete de obra, con la ficha de herraje de la biblioteca si la hay. No se dibujan en el modelo. Validar con `docs/validacion-0836/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.35). Producción no aprobada; SketchUp 2022 sin probar.
+Instalar `PlanosSanto-0.8.38-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. **Escribe en el modelo: probar sobre copias.** Sobre la 0.8.37: al guardar sincronizando nombres, cada componente lleva el nombre en los dos campos de Info. de entidad, «Instancia» y «Definición» (el que lista OpenCutList); si la definición la comparten piezas con nombres distintos o si otra definición ya se llama igual, queda solo en la instancia y la fila lo anota. Validar con `docs/validacion-0838/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.37). Producción no aprobada; SketchUp 2022 sin probar.
 
 ---
 
-# Entrega 0.8.35 — paquete de obra para App Santo, PENDIENTE DE VALIDACIÓN REAL
+# Entrega 0.8.37 — herrajes en 3D: bisagras codo 0 y correderas en el modelo, PENDIENTE DE VALIDACIÓN REAL
 
-Instalar `PlanosSanto-0.8.35-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. Sobre la 0.8.34: en Piezas, «Paquete de obra» guarda un JSON con todos los muebles y piezas (ubicación, medidas y material) para el visor 3D de avance de obra de App Santo. El contrato está en `docs/integracion-app-santo/OBRA_JSON.md`. Validar con `docs/validacion-0835/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.34). Producción no aprobada; SketchUp 2022 sin probar.
+Instalar `PlanosSanto-0.8.37-candidata.rbz` sin descomprimirlo y comprobar el `.sha256`. **Escribe en el modelo: probar sobre copias.** Sobre la 0.8.36: en Piezas, «Colocar en el modelo» dibuja las bisagras codo 0 (con el lado elegido por puerta) y las correderas de cada cajón en un grupo propio por mueble, con la etiqueta «Planos Santo · Herrajes», en una operación de Deshacer. No toca las piezas; Piezas, guías y pedido no cambian. Validar con `docs/validacion-0837/VALIDACION_LOCAL.md` (más los pasos de 0.8.26 a 0.8.36). Producción no aprobada; SketchUp 2022 sin probar.
 
 ---
 
 # Versiones anteriores
 
-Las candidatas 0.8.7 a 0.8.34 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.
+Las candidatas 0.8.7 a 0.8.36 y sus paquetes de validación se sacaron de `dist/` el 23/10/2026 para alivianar el repositorio. Siguen en el historial de git: `git log --diff-filter=D --name-only -- dist/` muestra el commit, y `git show <commit>^:dist/<archivo> > <archivo>` lo recupera.

@@ -26,6 +26,7 @@ require_relative 'paint_materials'
 require_relative 'model_watch'
 require_relative 'draw_component_tool'
 require_relative 'piece_grain'
+require_relative 'hardware_model'
 
 module PlanosSanto
   if defined?(Sketchup::AppObserver)
@@ -97,6 +98,23 @@ module PlanosSanto
       notify_material_library_changed('model_watch') if kinds.include?('materials')
       notify_material_library_changed('project_materials') if kinds.include?('model') && project_materials_changed_outside?
       check_analysis if kinds.include?('model') || kinds.include?('materials')
+      notify_hardware_changed if kinds.include?('model')
+    end
+
+    # 0.8.37: Deshacer o Rehacer en SketchUp cambia los herrajes dibujados sin pasar por Piezas: se avisa el estado nuevo.
+    def hardware_seen!(status)
+      @hardware_seen=[JSON.generate(status)]
+      status
+    end
+
+    def notify_hardware_changed
+      return unless @hardware_seen && @dialog
+      status=PlanosSanto::HardwareModel.status(@model)
+      return if @hardware_seen==[JSON.generate(status)]
+      hardware_seen!(status)
+      emit_to(@dialog,'planos-santo-hardware-changed',{'status'=>status})
+    rescue StandardError => error
+      warn("Planos Santo: no se pudo avisar el cambio de herrajes: #{error.class}")
     end
 
     def quick_block_reason(action)
@@ -980,6 +998,26 @@ module PlanosSanto
         PlanosSanto::ObraPackage.check(text,@session.document)
         target=with_user_dialog { UI.savepanel('Exportar paquete de obra (JSON)',nil,PlanosSanto::ObraPackage.file_name(data['modelName'])) }
         target ? PlanosSanto::ObraPackage.write(text,target,@session.document) : {'cancelled'=>true}
+      when 'hardware_status'
+        # 0.8.37 Herrajes en 3D: lo colocado por mueble (solo lectura).
+        active!
+        {'status'=>hardware_seen!(PlanosSanto::HardwareModel.status(@model))}
+      when 'hardware_place','hardware_remove'
+        # 0.8.37 «Colocar en el modelo» / «Quitar del modelo» de Piezas: grupos propios en la raíz, una operación (Ctrl+Z).
+        # Mismos bloqueos que cambiar la veta; el análisis no se rehace porque los muebles y las piezas no cambian.
+        active!
+        stop_brush_for!(action)
+        raise ExportError,'Terminá o cancelá la vista previa de importación antes de colocar herrajes.' if @skm_preview_active || @photo_preview_active
+        raise ExportError,'Guardá los cambios de biblioteca o pedido antes de colocar herrajes.' if @workshop_dirty
+        raise ExportError,'Primero generá las guías en Muebles.' unless @session&.document
+        result=if action=='hardware_remove'
+          PlanosSanto::HardwareModel.remove(@model,data.is_a?(Hash) ? data['furnitureIds'] : nil)
+        else
+          @session.check_current!
+          PlanosSanto::HardwareModel.place(@model,@session.document,data.is_a?(Hash) ? data['furniture'] : nil)
+        end
+        hardware_seen!(result['status'])
+        result
       when 'piece_grain'
         # 0.8.26 «Girar veta 90°» / «Veta automática» de Piezas: una operación (Ctrl+Z) sobre todas las piezas
         # de la fila. Mismos bloqueos que pintar en la vista: el pincel se detiene solo; la biblioteca o el pedido
@@ -1343,7 +1381,7 @@ module PlanosSanto
           end
         end
         rebaseline_analysis!
-        { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'skippedNames' => @session.skipped_names || [], 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
+        { 'guide' => guide, 'modelSaved' => saved == true, 'path' => @model.path.to_s, 'fingerprint' => @session.fingerprint, 'document' => @session.document, 'skippedNames' => @session.skipped_names || [], 'definitionNotes' => (@session.respond_to?(:definition_notes) && @session.definition_notes) || [], 'closeAfterSave' => data['closeAfterSave']==true && (data['saveFile']!=true || saved==true) }
       when 'pdf'
         active!
         @session.validate_export(data.fetch('furniture'))

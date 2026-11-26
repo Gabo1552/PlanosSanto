@@ -70,6 +70,8 @@ class AdjustmentsTest < Minitest::Test
     @session=PlanosSanto::NativeSession.new(@model);@session.scan;@session.generate(['1'])
     save
     assert_equal ['1/13/12'],@session.skipped_names.map { |row| row['id'] }
+    # 0.8.38: 1/11 comparte definición con «Base ajena» de otro mueble: queda en la instancia, con una nota aparte.
+    assert_equal ['1/11'],@session.definition_notes.map { |row| row['id'] }
     assert_equal 'VF M01 Lateral',@model.entities[0].entities[0].name;assert_equal 'Base',@model.entities[0].entities[1].entities[0].name
   end
   def test_guide_write_failure_rolls_back_all_names_and_metadata

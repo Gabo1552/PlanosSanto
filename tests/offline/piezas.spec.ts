@@ -13,16 +13,19 @@ import {randomUUID} from 'node:crypto';
 const ruby=process.env.RUBY_BIN||(existsSync('/workspace/.tools/ruby/bin/ruby')?'/workspace/.tools/ruby/bin/ruby':'ruby');
 type Reply={version:1;id:string;result:unknown;error:string|null};
 type Totals=Record<string,number|null>;type Cutlist={modelName:string;sections:{name:string;totals:Totals}[];edgeSections:{name:string;missing:string[];totals:Totals}[]};
+// 0.8.37: acciones que responde la prueba en lugar del controlador (el doble de Piezas no dibuja geometría).
+let fake:Record<string,(data:Record<string,unknown>)=>unknown>={};
 let child:ChildProcessWithoutNullStreams,pending:Map<string,{resolve:(r:Reply)=>void;reject:(e:Error)=>void}>,calls:{action:string;data:Record<string,unknown>}[],replies:Map<string,Reply>,errors:string[];
 function native(message:string):Promise<Reply>{return new Promise((resolve,reject)=>{const msg=JSON.parse(message);pending.set(msg.id,{resolve,reject});child.stdin.write(message+'\n');});}
 async function send(action:string,data:unknown={}){const reply=await native(JSON.stringify({version:1,id:randomUUID(),action,data}));expect(reply.error).toBeNull();return reply.result;}
 async function boot(page:Page,folder:string,mode='materials-cutlist'){
- await mkdir(folder,{recursive:true});pending=new Map();calls=[];replies=new Map();errors=[];await page.setViewportSize({width:1500,height:1100});
+ await mkdir(folder,{recursive:true});pending=new Map();calls=[];fake={};replies=new Map();errors=[];await page.setViewportSize({width:1500,height:1100});
  child=spawn(ruby,['sketchup_offline/test/names_bridge_driver.rb',folder,mode],{stdio:'pipe',env:{...process.env,PLANOS_SANTO_DATA_DIR:resolve(folder,'catalog-data')}});
  let stderr='';child.stderr.on('data',chunk=>{stderr+=String(chunk);});createInterface({input:child.stdout}).on('line',line=>{const reply=JSON.parse(line),entry=pending.get(reply.id);if(entry){pending.delete(reply.id);entry.resolve(reply);}});child.on('exit',()=>{for(const entry of pending.values())entry.reject(new Error(stderr));pending.clear();});
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
+  if(fake[action])return {version:1,id:msg.id,result:fake[action](data),error:null};
   const reply=await native(raw);replies.set(msg.id,reply);if(['piece_highlight','piece_highlight_restore','cutlist','cutlist_csv','obra_json'].includes(action))replies.set(action,reply);return reply;
  });
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};window.__prints=[];window.print=function(){window.__prints.push(document.body.className);};'});
@@ -392,4 +395,53 @@ test('Piezas: una pieza llamada Puerta suma bisagras y tirador, con la ficha de 
  const obra=parseObra(JSON.parse(await readFile((replies.get('obra_json')!.result as {path:string}).path,'utf8')));
  expect(obra.muebles.map(m=>[m.nombre,(m.herrajes||[]).map(h=>[h.nombre,h.cantidad,h.unidad])])).toEqual([
   ['Bajo Mesada',[]],['Otro mueble',[['Bisagra cazoleta codo 0',2,'u'],['Tirador',1,'u']]]]);
+});
+
+test('Piezas: herrajes en 3D, lado de las bisagras y colocar o quitar en el modelo',async({page},info)=>{
+ // 0.8.37: el estado lo responde el controlador Ruby real (no hay herrajes); colocar y quitar los responde la prueba
+ // (la geometría se prueba en hardware_model_test.rb). Se verifica lo que la UI manda a SketchUp.
+ await boot(page,info.outputDir,'materials-cutlist-hardware');
+ const {view}=await openPieces(page);
+ const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
+ await expect(section.getByText('Todavía no hay herrajes dibujados en el modelo.')).toBeVisible();
+ expect(calls.filter(call=>call.action==='hardware_status').length).toBeGreaterThan(0);
+ const door=section.getByRole('radiogroup',{name:/^Bisagras de Puerta/});
+ await expect(door.getByRole('radio',{name:/Izquierda/})).toBeChecked();
+ await expect(door.getByRole('radio',{name:/Izquierda/})).toHaveAccessibleName('Izquierda (sugerida)');
+ await door.getByRole('radio',{name:/Derecha/}).check();
+ let sent:{id:string;placements:{pieceId:string;kind:string;side:string;lengthMm:number|null;matrix:number[]}[]}[]=[];
+ fake.hardware_place=data=>{sent=data.furniture as typeof sent;const piece=sent[0].placements[0].pieceId;
+  return {placed:sent[0].placements.length,status:[{furnitureId:sent[0].id,furnitureName:'Otro mueble',hinges:sent[0].placements.length,runners:0,sides:{[piece]:'right'}}]};};
+ await section.getByRole('button',{name:'Colocar en el modelo'}).click();
+ await expect(view.locator('.cutlist-notice')).toHaveText('2 herrajes colocados en el modelo, en la etiqueta «Planos Santo · Herrajes». Ctrl+Z en SketchUp lo deshace.');
+ expect(sent).toHaveLength(1);
+ expect(sent[0].placements.map(p=>[p.kind,p.side,p.lengthMm,p.matrix.length])).toEqual([['hinge','right',null,16],['hinge','right',null,16]]);
+ await expect(section.getByText('Colocados: 2 bisagras y 0 correderas en 1 mueble.')).toBeVisible();
+ await expect(section.getByRole('button',{name:'Volver a colocar en el modelo'})).toBeEnabled();
+ expect(await axe(page,'herrajes 3D')).toEqual([]);
+ // Cambiar el lado después de colocar avisa que hay que volver a colocar.
+ await door.getByRole('radio',{name:/Izquierda/}).check();
+ await expect(section.getByText('Cambiaste el lado de alguna puerta: volvé a colocar para actualizar el modelo.')).toBeVisible();
+ let removed:string[]=[];
+ fake.hardware_remove=data=>{removed=data.furnitureIds as string[];return {removed:2,status:[]};};
+ await section.getByRole('button',{name:'Quitar del modelo'}).click();
+ await expect(view.locator('.cutlist-notice')).toHaveText('2 herrajes quitados del modelo. Ctrl+Z en SketchUp lo deshace.');
+ expect(removed).toEqual([sent[0].id]);
+ await expect(section.getByRole('button',{name:'Quitar del modelo'})).toBeDisabled();
+});
+
+test('Piezas: herrajes dibujados sin puertas ni cajones con nombre se pueden quitar, y Deshacer en SketchUp actualiza el estado',async({page},info)=>{
+ // 0.8.37: el modelo de esta prueba no tiene piezas llamadas Puerta ni Fte; el estado (lo dibujado antes) lo responde la prueba.
+ await boot(page,info.outputDir,'materials-cutlist');
+ fake.hardware_status=()=>({status:[{furnitureId:'1',furnitureName:'Bajo Mesada',hinges:4,runners:0,sides:{}}]});
+ const {view}=await openPieces(page);
+ const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
+ await expect(section.getByText('Ninguna pieza se llama Puerta ni Frente cajón, pero quedan herrajes dibujados en el modelo.')).toBeVisible();
+ await expect(section.getByText('Colocados: 4 bisagras y 0 correderas en 1 mueble.')).toBeVisible();
+ await expect(section.getByRole('button',{name:'Volver a colocar en el modelo'})).toBeDisabled();
+ await expect(section.getByRole('button',{name:'Quitar del modelo'})).toBeEnabled();
+ expect(await axe(page,'herrajes sin nombres')).toEqual([]);
+ // Ctrl+Z en SketchUp: Ruby avisa que ya no hay herrajes y la sección se va.
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-hardware-changed',{detail:{status:[]}})));
+ await expect(section).toHaveCount(0);
 });
