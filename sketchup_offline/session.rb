@@ -37,6 +37,8 @@ module PlanosSanto
     attr_reader :document, :fingerprint
     # Rows the last save kept in the guide without renaming them in SketchUp.
     attr_reader :skipped_names
+    # 0.8.38: rows named in the instance because their definition could not take the name.
+    attr_reader :definition_notes
 
     def initialize(model)
       @model = model
@@ -93,8 +95,10 @@ module PlanosSanto
         manager=NameManager.new(@model)
         rename=manager.guide_changes(edits,effective_code)
         @skipped_names=manager.skipped
+        @definition_notes=manager.definition_notes
       else
         @skipped_names=[]
+        @definition_notes=[]
       end
       refreshed=nil; refreshed_reader=nil; refreshed_tree=nil
       result = @store.save(@document, edits, @revision, work_code: work_code) do

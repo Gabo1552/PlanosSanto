@@ -111,7 +111,9 @@ if(!baseline){
   await expect(page.getByRole('dialog')).toHaveCount(0);await screenshot(page,'after-names-save');
   expect(calls.filter(call=>call.action==='guide_names_preview')).toHaveLength(0);
   expect(calls.filter(call=>call.action==='save')).toHaveLength(1);
-  const after=await rpc('__flujos_dialogs');expect((after.instanceNames as Record<string,string>)['11']).toContain('Lateral QA rápido');
+  const after=await rpc('__flujos_dialogs');expect((after.shownNames as Record<string,string>)['11']).toContain('Lateral QA rápido');
+  // 0.8.38: componente con definición propia: el nombre va en «Definición» y la instancia queda vacía.
+  expect((after.instanceNames as Record<string,string>)['11']).toBe('');
  });
  test('Flujos086: A4 inmediato muestra PDF real de una hoja, una y dos vistas',async({page},info)=>{
   await boot(page,info.outputDir,false,'guides');

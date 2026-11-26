@@ -33,7 +33,7 @@ class DefinitionNamesTest < Minitest::Test
   def save(bases)
     @model.start_operation('Guardar',true);@manager.guide_changes([edit(bases)],'HS').call;@model.commit_operation
   end
-  def reasons;@manager.skipped.to_h { |row| [row['id'],row['reason']] };end
+  def reasons;@manager.definition_notes.to_h { |row| [row['id'],row['reason']] };end
 
   def test_a_component_gets_its_name_in_the_definition_field_and_a_group_keeps_its_definition
     save('11'=>'Lateral','12'=>'Reg tapa B','13'=>'Reg tapa B','14'=>'Estante')
@@ -44,7 +44,7 @@ class DefinitionNamesTest < Minitest::Test
     assert_equal 'HS M2 Reg tapa B',@tapa.name
     # Un grupo no tiene campo «Definición»: su definición interna no se toca.
     assert_equal 'Grupo#1',@pieces['14'].definition.name;assert_equal 'HS M2 Estante',@pieces['14'].name,'Un grupo se nombra en su campo Nombre'
-    assert_empty @manager.skipped
+    assert_empty @manager.skipped;assert_empty @manager.definition_notes
   end
 
   def test_a_shared_definition_with_different_names_keeps_its_name_and_says_why
@@ -59,7 +59,7 @@ class DefinitionNamesTest < Minitest::Test
     save('15'=>'Fondo')
     assert_equal 'Tablero 3',@fondo.name;assert_equal 'HS M2 Fondo',@ajena.name
     assert_equal 'HS M2 Fondo',@pieces['15'].name,'Sin definición disponible, el nombre queda en la instancia'
-    assert_match(/Ya hay otra definición llamada «HS M2 Fondo»/,reasons['1/15'])
+    assert_match(/Ya hay otra definición llamada «HS M2 Fondo»/,reasons['1/15']);assert_empty @manager.skipped
   end
 
   def test_two_definitions_that_would_take_the_same_name_keep_theirs
@@ -75,7 +75,7 @@ class DefinitionNamesTest < Minitest::Test
     # Nombrada antes en la instancia (0.8.37) con la definición ya nombrada: el nombre queda solo en la definición.
     @lateral.name='HS M2 Lateral';@pieces['11'].name='HS M2 Lateral'
     save('11'=>'Lateral')
-    assert_equal 'HS M2 Lateral',@lateral.name;assert_equal '',@pieces['11'].name;assert_empty @manager.skipped
+    assert_equal 'HS M2 Lateral',@lateral.name;assert_equal '',@pieces['11'].name;assert_empty @manager.definition_notes;assert_empty @manager.definition_notes
     # Guardar otra vez sin cambios no escribe nada.
     writes=@model.state;save('11'=>'Lateral')
     assert_equal writes[:entities],@model.state[:entities];assert_equal 'HS M2 Lateral',@lateral.name

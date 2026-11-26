@@ -16,13 +16,16 @@ Solo se escribe así cuando es seguro; si no, el nombre queda en la instancia co
 - **Nombre repetido:** SketchUp no permite dos definiciones con el mismo nombre. Si otra definición ya se llama así, o dos definiciones distintas tomarían el mismo nombre, esas piezas quedan nombradas en la instancia y la fila lo avisa.
 - **Grupos y muebles:** un grupo no tiene campo «Definición»: se nombra en su campo «Nombre», como antes. El nombre del mueble (grupo o componente padre) también sigue en la instancia.
 
+Esas filas muestran una nota gris, «Nombre en la instancia, no en la definición: …», distinta del aviso «No se renombró en SketchUp», porque la pieza sí se nombró.
+
 La extensión reconoce como nombrada una pieza con la instancia vacía cuando su definición tiene el nombre que ella escribió (lo guarda en los metadatos de nombres de la pieza). Así, Sugerencias de nombres no la vuelve a proponer y conserva su nombre base.
 
 ## Pruebas nuevas y ajustadas
 
 - `sketchup_offline/test/definition_names_test.rb` (6): componente con su definición nombrada e instancia vacía, grupo nombrado en su campo, copias con el mismo nombre, copias con nombres distintos (quedan en la instancia), nombre que ya tiene otra definición, dos definiciones con el mismo nombre, pieza nombrada antes en la instancia que pasa a la definición, guardar sin cambios no escribe, Deshacer, y la pieza reconocida como nombrada con su nombre base.
 - El doble de nombres (`names_double.rb`) restaura también los nombres de definición al deshacer, como SketchUp.
-- Ajustadas: `shared_occurrences_test.rb` y `names_test.rb` (el nombre va a la definición y la instancia queda vacía; Deshacer lo vuelve), `names_controller_test.rb`, `names_coverage_test.rb`, `grouped_pieces_test.rb` y `adjustments_test.rb` (aviso nuevo en la pieza que comparte definición con otro mueble).
+- Ajustadas: `shared_occurrences_test.rb` y `names_test.rb` (el nombre va a la definición y la instancia queda vacía; Deshacer lo vuelve), `names_controller_test.rb`, `names_coverage_test.rb`, `grouped_pieces_test.rb` y `adjustments_test.rb` (nota aparte en la pieza que comparte definición con otro mueble).
+- Los dobles de interfaz (`names_bridge_driver.rb`, `a4_bridge_driver.rb`, `flujos_bridge_driver.rb`) informan el nombre que muestra SketchUp (instancia o definición); `flujos-rapidos.spec.ts` comprueba además que la instancia queda vacía.
 
 ## Qué se conserva
 

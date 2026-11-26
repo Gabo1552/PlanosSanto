@@ -232,7 +232,7 @@ module PlanosSanto
       snapshot=inventory
       changes=[]
       proposals={}
-      @skipped=[]
+      @skipped=[];@definition_notes=[]
       edits.each do |f|
         naming=f['naming']
         if !work_code.empty? && (!naming || naming['moduleCode'].to_s.empty?)
@@ -319,7 +319,7 @@ module PlanosSanto
         next if plans.key?(k)
         names = uses[k].map { |node| desired.fetch(node['id'], applied_name(node['_entity'])) }.uniq
         if names != [name]
-          uses[k].each { |node| skip(node['id'], "La definición «#{definition.name}» la comparten piezas con nombres distintos: se nombró la pieza, no la definición. Para OpenCutList, hacé única la definición o usá el mismo nombre.") if desired.key?(node['id']) }
+          uses[k].each { |node| note_definition(node['id'], "Su definición «#{definition.name}» la comparten piezas con nombres distintos. Para que OpenCutList la liste con este nombre, hacé única la definición en SketchUp o usá el mismo nombre.") if desired.key?(node['id']) }
           plans[k] = nil
           next
         end
@@ -335,7 +335,7 @@ module PlanosSanto
       taken = others.reject { |definition| renamed.include?(key.call(definition)) }.map { |definition| definition.name.to_s }
       writes = plans.reject do |definition, name|
         next false if count[name] == 1 && !taken.include?(name)
-        uses[key.call(definition)].each { |node| skip(node['id'], "Ya hay otra definición llamada «#{name}» y SketchUp no repite nombres de definición: se nombró la pieza, no la definición.") if desired.key?(node['id']) }
+        uses[key.call(definition)].each { |node| note_definition(node['id'], "Ya hay otra definición llamada «#{name}» y SketchUp no repite nombres de definición.") if desired.key?(node['id']) }
         true
       end
       [writes, named + writes.map { |definition, _name| key.call(definition) }]
@@ -362,6 +362,16 @@ module PlanosSanto
         definition.name = name
         raise ExportError, "SketchUp no aceptó el nombre de la definición «#{name}»." unless definition.name == name
       end
+    end
+
+    # 0.8.38: filas nombradas en la instancia porque su definición no podía llevar el nombre: [{'id','reason'}].
+    # No son errores (la pieza sí se nombró): la ventana las muestra aparte de #skipped.
+    def definition_notes
+      (@definition_notes || []).uniq { |row| row['id'] }
+    end
+
+    def note_definition(id, reason)
+      (@definition_notes ||= []) << { 'id' => id, 'reason' => reason }
     end
 
     # Rows the last #guide_changes left without renaming: [{'id','reason'}].

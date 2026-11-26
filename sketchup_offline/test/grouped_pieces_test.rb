@@ -98,7 +98,7 @@ class GroupedPiecesTest < Minitest::Test
   def test_locked_member_is_skipped_and_failed_write_leaves_entire_group_unchanged
     piece=@model.entities[0].entities[1].entities[0];piece.locked_for_names=true
     saved=save;assert_equal 1,saved['revision'];assert_equal 1,@model.undo_states.length
-    assert_equal ['1/13/12','1/11'],@session.skipped_names.map { |row| row['id'] };assert_match(/comparten piezas con nombres distintos: se nombró la pieza, no la definición/,@session.skipped_names[1]['reason']);assert_match(/bloqueado/,@session.skipped_names[0]['reason'])
+    assert_equal ['1/13/12'],@session.skipped_names.map { |row| row['id'] };assert_equal ['1/11'],@session.definition_notes.map { |row| row['id'] };assert_match(/bloqueado/,@session.skipped_names[0]['reason'])
     assert_equal 'Base',piece.name;assert_equal 'VF M01 PT',@model.entities[0].entities[0].name
     @model.undo;assert_equal 'Lateral - Blanco',@model.entities[0].entities[0].name;regenerate
     piece.locked_for_names=false;piece.fail_name_write=true
