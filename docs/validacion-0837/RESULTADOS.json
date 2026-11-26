@@ -1,11 +1,11 @@
 {
   "version": "0.8.37",
-  "date": "2026-11-25",
+  "date": "2026-11-26",
   "verificationPassed": true,
   "nativeSketchupExecuted": false,
   "sketchup2022Executed": false,
   "productionParityApproved": false,
-  "rbzSha256": "4e6b75a58f499a3fa194fee78c505820b53ed56a30f1695ddb16d2167dccb840",
+  "rbzSha256": "e61bb8ac9c8fef292f064068724df49789fadc2f2f3bcab67c4b078a835cae66",
   "checks": {
     "typecheck": "PASS",
     "lint": "PASS",
@@ -16,14 +16,14 @@
       "passed": 646
     },
     "ruby33": {
-      "runs": 1197,
-      "assertions": 11643,
+      "runs": 1199,
+      "assertions": 11652,
       "failures": 0,
       "errors": 0
     },
     "ruby27": {
-      "runs": 1197,
-      "assertions": 11643,
+      "runs": 1199,
+      "assertions": 11652,
       "failures": 0,
       "errors": 0
     },
@@ -35,8 +35,8 @@
     },
     "checkRuby27": "PASS",
     "playwrightOfflineChromium141": {
-      "tests": 268,
-      "passed": 268
+      "tests": 269,
+      "passed": 269
     },
     "nextBuild": "PASS",
     "playwrightWeb": {
