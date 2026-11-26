@@ -33,11 +33,14 @@ class NamingModelDouble < NativeModelDouble
     walk.call(entities); result
   end
   def state
-    { attributes:Marshal.load(Marshal.dump(attributes)),entities:all_instances.map { |e| [e,e.name,Marshal.load(Marshal.dump(e.names_attributes))] } }
+    # 0.8.38: Deshacer también restaura los nombres de definición (como SketchUp).
+    { attributes:Marshal.load(Marshal.dump(attributes)),entities:all_instances.map { |e| [e,e.name,Marshal.load(Marshal.dump(e.names_attributes))] },
+      definitions:all_instances.map(&:definition).uniq.map { |d| [d,d.name] } }
   end
   def restore(snapshot)
     @attributes=Marshal.load(Marshal.dump(snapshot[:attributes]))
     snapshot[:entities].each { |e,name,attrs| e.instance_variable_set(:@name,name);e.instance_variable_set(:@names_attributes,Marshal.load(Marshal.dump(attrs))) }
+    snapshot[:definitions].each { |d,name| d.name=name }
   end
   def start_operation(name, disable_ui)
     @names_backup=state; super; true
