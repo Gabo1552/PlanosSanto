@@ -5,7 +5,7 @@
   "nativeSketchupExecuted": false,
   "sketchup2022Executed": false,
   "productionParityApproved": false,
-  "rbzSha256": "db00dd2f496a7a53bfef6f80f5ca9379f7c504f9c338660be6dd6493464f949d",
+  "rbzSha256": "f22eeb7022e4ec220073853e755fac7a0627f53dbbacc31c0a67a73e09c385c7",
   "checks": {
     "typecheck": "PASS",
     "lint": "PASS",
@@ -35,8 +35,8 @@
     },
     "checkRuby27": "PASS",
     "playwrightOfflineChromium141": {
-      "tests": 270,
-      "passed": 270
+      "tests": 271,
+      "passed": 271
     },
     "nextBuild": "PASS",
     "playwrightWeb": {
