@@ -25,7 +25,8 @@ async function boot(page:Page,folder:string,mode='materials-cutlist'){
  await page.exposeFunction('shellRequest',async(raw:string)=>{const msg=JSON.parse(raw),{action,data}=msg;calls.push({action,data});
   if(action==='ui_ready')return {version:1,id:msg.id,result:{},error:null};
   if(action==='ui_loading'||action==='quick_action_ack')return {version:1,id:msg.id,result:true,error:null};
-  if(fake[action])return {version:1,id:msg.id,result:fake[action](data),error:null};
+  // Una respuesta {__error} de la prueba llega como error del controlador.
+  if(fake[action]){const out=fake[action](data) as {__error?:string};return out&&typeof out==='object'&&'__error' in out?{version:1,id:msg.id,result:null,error:out.__error}:{version:1,id:msg.id,result:out,error:null};}
   const reply=await native(raw);replies.set(msg.id,reply);if(['piece_highlight','piece_highlight_restore','cutlist','cutlist_csv','obra_json'].includes(action))replies.set(action,reply);return reply;
  });
  await page.addInitScript({content:'window.sketchup={request:function(raw){window.shellRequest(raw).then(function(reply){window.PlanosSantoBridge.receive(reply);});}};window.__prints=[];window.print=function(){window.__prints.push(document.body.className);};'});
@@ -444,4 +445,45 @@ test('Piezas: herrajes dibujados sin puertas ni cajones con nombre se pueden qui
  // Ctrl+Z en SketchUp: Ruby avisa que ya no hay herrajes y la sección se va.
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-hardware-changed',{detail:{status:[]}})));
  await expect(section).toHaveCount(0);
+});
+
+test('Piezas: una pieza elegida como puerta suma herrajes y la elección se puede quitar',async({page},info)=>{
+ // 0.8.39: lo elegido por pieza llega con el estado de herrajes (acá lo responde la prueba) y se quita con `hardware_role`.
+ await boot(page,info.outputDir,'materials-cutlist');
+ const {view,result}=await openPieces(page);
+ const piece=(result as unknown as {pieces:{ids:string[];name:string}[]}).pieces[0];
+ const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
+ await expect(section).toHaveCount(0);
+ // Deshacer en SketchUp devolvió una elección: la pieza pasa a contar como puerta.
+ await page.evaluate(id=>window.dispatchEvent(new CustomEvent('planos-santo-hardware-changed',{detail:{status:[],roles:{[id]:'door'}}})),piece.ids[0]);
+ await expect(section).toBeVisible();
+ await expect(section.getByRole('table',{name:'Herrajes calculados'}).locator('tbody tr').first()).toContainText('Bisagra cazoleta 35 mm');
+ const chosen=section.getByRole('group',{name:'Elegidos en Piezas'});
+ await expect(chosen).toContainText(`${piece.name}`);
+ await expect(chosen).toContainText('puerta');
+ expect(await axe(page,'herrajes elegidos')).toEqual([]);
+ let sent:Record<string,unknown>={};
+ fake.hardware_role=data=>{sent=data;return {roles:{}};};
+ await chosen.getByRole('button',{name:/^Quitar la elección de /}).click();
+ await expect(view.locator('.cutlist-notice')).toContainText('vuelve a decidir el nombre');
+ expect(sent).toEqual({pieceIds:[piece.ids[0]],role:null});
+ await expect(section).toHaveCount(0);
+});
+
+test('Piezas: hasta leer lo elegido para los herrajes no se exporta, y el aviso de confirmar el frente se ve sin herrajes',async({page},info)=>{
+ // 0.8.39: si `hardware_status` falla, el CSV y el paquete de obra saldrían sin lo elegido: quedan desactivados con un aviso.
+ await boot(page,info.outputDir,'materials-cutlist');
+ fake.hardware_status=()=>({__error:'falla sintética'});
+ const {view}=await openPieces(page);
+ await expect(view.getByRole('alert')).toContainText('No se pudo leer lo elegido para los herrajes: falla sintética');
+ await expect(view.getByRole('button',{name:'Exportar',exact:true})).toBeDisabled();
+ await expect(view.getByRole('button',{name:'Paquete de obra',exact:true})).toBeDisabled();
+ // Las sugerencias por la forma necesitan el frente confirmado: se avisa aunque el modelo no tenga puertas ni cajones.
+ await expect(view.getByRole('note').filter({hasText:'confirmá el frente en Sugerencias de nombres'})).toBeVisible();
+ await expect(view.getByRole('region',{name:'Herrajes según el nombre de las piezas'})).toHaveCount(0);
+ delete fake.hardware_status;
+ await view.getByRole('button',{name:'Reintentar'}).click();
+ await expect(view.getByRole('button',{name:'Exportar',exact:true})).toBeEnabled();
+ await expect(view.getByRole('button',{name:'Paquete de obra',exact:true})).toBeEnabled();
+ await expect(view.getByText('No se pudo leer lo elegido para los herrajes',{exact:false})).toHaveCount(0);
 });

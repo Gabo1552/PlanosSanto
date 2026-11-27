@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+require 'json'
 module PlanosSanto
   # Herrajes en 3D (0.8.37): bisagras codo 0 y correderas dibujadas en el modelo donde las calculó Piezas
   # (sketchup_offline/ui/hardwarePlacement.ts). Cada mueble tiene su grupo propio en la raíz del modelo, con la
@@ -19,6 +20,10 @@ module PlanosSanto
     HINGE_ARM = [[21.0, 0.0, -8.0], [40.0, 45.0, 8.0]].freeze
     HINGE_PLATE = [[18.0, 20.0, -20.0], [21.0, 60.0, 20.0]].freeze
     RUNNER = { half: 6.25, height: 35.0 }.freeze
+    # 0.8.39: lo elegido en Piezas por pieza física (puerta, frente de cajón o ninguno), en un atributo del modelo.
+    ROLES_KEY = 'roles_v1'
+    ROLES = %w[door drawer none].freeze
+    MAX_ROLES = 5000
 
     module_function
 
@@ -79,6 +84,33 @@ module PlanosSanto
       removed = found.sum { |group| items(group).length }
       operation(model, 'Quitar herrajes') { found.each(&:erase!) } unless found.empty?
       { 'removed' => removed, 'status' => status(model) }
+    end
+
+    # Lo elegido en Piezas: {id de pieza => 'door' | 'drawer' | 'none'}. Un valor dañado se ignora (no se adivina).
+    def roles(model)
+      raw = model.get_attribute(DICTIONARY, ROLES_KEY)
+      value = raw.is_a?(String) && raw.bytesize <= 1_000_000 ? JSON.parse(raw) : {}
+      return {} unless value.is_a?(Hash)
+      value.select { |id, role| id.is_a?(String) && ROLES.include?(role) }
+    rescue JSON::ParserError
+      {}
+    end
+
+    # Elige (o con `role` nil, quita la elección) para esas piezas de los muebles generados. Una operación de Deshacer;
+    # sin cambios no abre ninguna.
+    def set_roles(model, document, ids, role)
+      raise ExportError, 'Primero generá las guías en Muebles.' unless document.is_a?(Hash) && document['furniture'].is_a?(Array)
+      raise ExportError, 'Elegí piezas.' unless ids.is_a?(Array) && !ids.empty? && ids.length <= MAX_ROLES && ids.all? { |id| id.is_a?(String) }
+      raise ExportError, 'Elección de herrajes inválida.' unless role.nil? || ROLES.include?(role)
+      pieces = []
+      Exporter.each_node(document['furniture']) { |node| pieces << node['id'] if node['mesh'] }
+      raise ExportError, 'Esa pieza ya no está en Piezas: volvé a generar.' unless (ids - pieces).empty?
+      current = roles(model)
+      updated = current.dup
+      ids.each { |id| role ? updated[id] = role : updated.delete(id) }
+      raise ExportError, 'Demasiadas piezas elegidas.' if updated.length > MAX_ROLES
+      operation(model, 'Herrajes de una pieza') { model.set_attribute(DICTIONARY, ROLES_KEY, JSON.generate(updated)) } unless updated == current
+      { 'roles' => updated }
     end
 
     def validate(document, request)

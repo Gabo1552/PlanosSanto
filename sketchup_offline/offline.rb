@@ -102,17 +102,18 @@ module PlanosSanto
     end
 
     # 0.8.37: Deshacer o Rehacer en SketchUp cambia los herrajes dibujados sin pasar por Piezas: se avisa el estado nuevo.
-    def hardware_seen!(status)
-      @hardware_seen=[JSON.generate(status)]
+    # 0.8.39: también lo elegido por pieza (roles), que Deshacer puede cambiar.
+    def hardware_seen!(status,roles=PlanosSanto::HardwareModel.roles(@model))
+      @hardware_seen=[JSON.generate([status,roles])]
       status
     end
 
     def notify_hardware_changed
       return unless @hardware_seen && @dialog
-      status=PlanosSanto::HardwareModel.status(@model)
-      return if @hardware_seen==[JSON.generate(status)]
-      hardware_seen!(status)
-      emit_to(@dialog,'planos-santo-hardware-changed',{'status'=>status})
+      status=PlanosSanto::HardwareModel.status(@model);roles=PlanosSanto::HardwareModel.roles(@model)
+      return if @hardware_seen==[JSON.generate([status,roles])]
+      hardware_seen!(status,roles)
+      emit_to(@dialog,'planos-santo-hardware-changed',{'status'=>status,'roles'=>roles})
     rescue StandardError => error
       warn("Planos Santo: no se pudo avisar el cambio de herrajes: #{error.class}")
     end
@@ -1001,7 +1002,20 @@ module PlanosSanto
       when 'hardware_status'
         # 0.8.37 Herrajes en 3D: lo colocado por mueble (solo lectura).
         active!
-        {'status'=>hardware_seen!(PlanosSanto::HardwareModel.status(@model))}
+        status=PlanosSanto::HardwareModel.status(@model);roles=PlanosSanto::HardwareModel.roles(@model)
+        hardware_seen!(status,roles)
+        {'status'=>status,'roles'=>roles}
+      when 'hardware_role'
+        # 0.8.39 «Sumar como puerta / frente de cajón / No lleva herrajes» de Piezas: lo elegido por pieza, guardado en el
+        # modelo (atributo, una operación). No toca geometría ni nombres; el análisis no cambia.
+        active!
+        raise ExportError,'Terminá o cancelá la vista previa de importación antes de elegir herrajes.' if @skm_preview_active || @photo_preview_active
+        raise ExportError,'Guardá los cambios de biblioteca o pedido antes de elegir herrajes.' if @workshop_dirty
+        raise ExportError,'Primero generá las guías en Muebles.' unless @session&.document
+        raise ExportError,'Elección de herrajes inválida.' unless data.is_a?(Hash)
+        result=PlanosSanto::HardwareModel.set_roles(@model,@session.document,data['pieceIds'],data['role'])
+        hardware_seen!(PlanosSanto::HardwareModel.status(@model),result['roles'])
+        result
       when 'hardware_place','hardware_remove'
         # 0.8.37 «Colocar en el modelo» / «Quitar del modelo» de Piezas: grupos propios en la raíz, una operación (Ctrl+Z).
         # Mismos bloqueos que cambiar la veta; el análisis no se rehace porque los muebles y las piezas no cambian.

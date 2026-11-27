@@ -6,7 +6,7 @@ import {Matrix4,Vector3} from 'three';
 import {bounds,type Furniture} from '../../lib/model';
 import {furnitureEnvelope,type Envelope} from '../../lib/scene';
 import type {CutlistPiece} from './cutlistModel';
-import {computeHardware,hingeCount} from './hardwareModel';
+import {computeHardware,hingeCount,type HardwareRoles} from './hardwareModel';
 
 /** Bisagra codo 0 (puerta que tapa el lateral entero): cazoleta Ø35 a `cupCenterFromEdgeMm` del canto y la primera
  * y la última a `endMarginMm` de las puntas. Corredera: `aboveFrontBottomMm` sobre el borde inferior del frente. */
@@ -55,20 +55,22 @@ export function hingeHeights(bottom:number,top:number,count:number):number[]{
  * Herrajes de un mueble: `rows`, sus filas de Piezas; `sides`, el lado de las bisagras elegido por puerta (si no,
  * el sugerido: del lado del costado más cercano del mueble). Sin frente confirmado o sin geometría, no hay nada que colocar.
  */
-export function planFurniture(f:Furniture,rows:CutlistPiece[],sides:Record<string,HingeSide>={}):FurniturePlan{
+export function planFurniture(f:Furniture,rows:CutlistPiece[],sides:Record<string,HingeSide>={},roles:HardwareRoles={}):FurniturePlan{
   const plan:FurniturePlan={furnitureId:f.id,furnitureName:rows[0]?.furnitureName||f.name,placements:[],doors:[],notes:[]};
   const envelope=furnitureEnvelope(f);
   if(!envelope)return plan;
   const {axes}=envelope,middle=(envelope.min.ancho+envelope.max.ancho)/2;
-  const {lines}=computeHardware({pieces:rows},[f]);
-  const doors=new Set<CutlistPiece>(),drawers=new Map<CutlistPiece,number>();
+  const {lines}=computeHardware({pieces:rows},[f],[],roles);
+  // Piezas físicas con bisagras y con correderas (por nombre o elegidas en Piezas), con su fila del listado.
+  const doors=new Map<string,CutlistPiece>(),drawers=new Map<string,{row:CutlistPiece;length:number}>();
   for(const line of lines){
-    if(line.kind==='hinge')line.sources.forEach(source=>doors.add(source.piece));
-    if(line.kind==='runner'&&line.lengthMm)line.sources.forEach(source=>drawers.set(source.piece,line.lengthMm!));
+    if(line.kind==='hinge')line.sources.forEach(source=>source.ids.forEach(id=>doors.set(id,source.piece)));
+    if(line.kind==='runner'&&line.lengthMm)line.sources.forEach(source=>source.ids.forEach(id=>drawers.set(id,{row:source.piece,length:line.lengthMm!})));
   }
-  for(const row of doors)row.ids.forEach((id,index)=>{
+  for(const [id,row] of doors){
+    const index=row.ids.indexOf(id);
     const r=ranges(envelope,f,id);
-    if(!r)return;
+    if(!r)continue;
     const center=(r.ancho[0]+r.ancho[1])/2,suggested:HingeSide=center>middle+1?'right':'left',side=sides[id]||suggested;
     const count=hingeCount(r.alto[1]-r.alto[0]),code=row.idCodes?.[index]||(row.ids.length===1?row.code:'');
     plan.doors.push({pieceId:id,name:row.name,code,suggested,side,hinges:count});
@@ -77,12 +79,12 @@ export function planFurniture(f:Furniture,rows:CutlistPiece[],sides:Record<strin
     const x=axes.ancho.clone().multiplyScalar(left?1:-1),y=axes.profundidad.clone().negate(),z=axes.alto.clone().multiplyScalar(left?1:-1);
     for(const height of hingeHeights(r.alto[0],r.alto[1],count))
       plan.placements.push({pieceId:id,kind:'hinge',side,lengthMm:null,matrix:matrix(x,y,z,point(envelope,height,edge,r.profundidad[0]))});
-  });
+  }
   // Laterales y divisores del cuerpo: piezas finas en el ancho, de alto y profundidad de tablero. Las piezas de la caja
   // del cajón («Lateral cajón», «Del Caj») quedan afuera: la corredera va entre el cuerpo y la caja.
   const names=new Map(rows.flatMap(row=>row.ids.map(id=>[id,row.name] as const))),drawerBox=/caj(?:[oó]n)?(?![\p{L}\p{N}])/iu;
   const panels=f.pieces.filter(p=>!drawerBox.test(names.get(p.id)||p.name)).map(p=>({id:p.id,r:ranges(envelope,f,p.id)!})).filter(({r})=>r.ancho[1]-r.ancho[0]<=PLACEMENT_RULES.sidePanelMaxMm&&r.alto[1]-r.alto[0]>100&&r.profundidad[1]-r.profundidad[0]>100);
-  for(const [row,length] of drawers)for(const id of row.ids){
+  for(const [id,{row,length}] of drawers){
     const r=ranges(envelope,f,id);
     if(!r)continue;
     const inner=r.profundidad[0],center=(r.ancho[0]+r.ancho[1])/2;

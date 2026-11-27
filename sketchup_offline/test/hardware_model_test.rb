@@ -81,18 +81,20 @@ module Sketchup
     attr_reader :entities, :layers, :definitions, :operations, :circles
     attr_accessor :failing
     def initialize
-      @entities = Entities.new(self); @layers = Layers.new; @definitions = Definitions.new(self); @operations = []; @circles = []
+      @entities = Entities.new(self); @layers = Layers.new; @definitions = Definitions.new(self); @operations = []; @circles = []; @attributes = {}
     end
+    def get_attribute(dictionary, key); @attributes[[dictionary, key]]; end
+    def set_attribute(dictionary, key, value); fail!(:set_attribute); @attributes[[dictionary, key]] = value; end
     def fail!(step); raise 'falla sintética' if failing == step; end
     def start_operation(name, _disable_ui)
       @operations << [:start, name]
-      @snapshot = [@entities.items.dup, @definitions.items.dup, @entities.items.map(&:valid?)]
+      @snapshot = [@entities.items.dup, @definitions.items.dup, @entities.items.map(&:valid?), @attributes.dup]
       true
     end
     def commit_operation; @operations << [:commit]; true; end
     def abort_operation
       @operations << [:abort]
-      @entities.items, @definitions.items, valid = @snapshot
+      @entities.items, @definitions.items, valid, @attributes = @snapshot
       @entities.items.zip(valid).each { |entity, flag| entity.valid = flag }
     end
   end
@@ -224,5 +226,40 @@ class HardwareModelTest < Minitest::Test
     # Un componente con el diccionario (no un grupo de herrajes) sigue siendo un contenedor.
     door.set_attribute(H::DICTIONARY, 'role', 'group')
     assert_equal [door], exporter.containers([door])
+  end
+
+  # 0.8.39: lo elegido en Piezas por pieza (puerta, frente de cajón o ninguno), en un atributo del modelo.
+  def test_roles_are_saved_in_the_model_in_one_operation_and_only_when_they_change
+    assert_equal({}, H.roles(@model))
+    assert_equal({ 'roles' => { '101/1' => 'door' } }, H.set_roles(@model, @document, ['101/1'], 'door'))
+    assert_equal [[:start, 'Herrajes de una pieza'], [:commit]], @model.operations
+    H.set_roles(@model, @document, %w[101/1 202/2], 'none')
+    assert_equal({ '101/1' => 'none', '202/2' => 'none' }, H.roles(@model))
+    count = @model.operations.length
+    H.set_roles(@model, @document, ['202/2'], 'none')
+    assert_equal count, @model.operations.length, 'Sin cambios no abre operación'
+    assert_equal({ 'roles' => { '202/2' => 'none' } }, H.set_roles(@model, @document, ['101/1'], nil))
+  end
+
+  def test_roles_validate_before_writing_and_a_failure_keeps_the_previous_choice
+    H.set_roles(@model, @document, ['101/1'], 'drawer')
+    count = @model.operations.length
+    { 'pieza ajena' => [['999/1'], 'door'], 'función desconocida' => [['101/1'], 'tirador'], 'sin piezas' => [[], 'door'],
+      'no es lista' => ['101/1', 'door'] }.each do |label, (ids, role)|
+      assert_raises(PlanosSanto::ExportError, label) { H.set_roles(@model, @document, ids, role) }
+    end
+    assert_equal count, @model.operations.length
+    @model.failing = :set_attribute
+    assert_raises(PlanosSanto::ExportError) { H.set_roles(@model, @document, ['101/3'], 'door') }
+    assert_equal [:abort], @model.operations.last
+    @model.failing = nil
+    assert_equal({ '101/1' => 'drawer' }, H.roles(@model))
+  end
+
+  def test_damaged_roles_are_ignored
+    @model.set_attribute(H::DICTIONARY, H::ROLES_KEY, '{roto')
+    assert_equal({}, H.roles(@model))
+    @model.set_attribute(H::DICTIONARY, H::ROLES_KEY, JSON.generate('101/1' => 'door', '101/3' => 'tirador', '101/4' => ['door']))
+    assert_equal({ '101/1' => 'door' }, H.roles(@model))
   end
 end

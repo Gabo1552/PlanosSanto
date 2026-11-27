@@ -4,7 +4,7 @@ import HelpPopover from './HelpPopover';
 import {DEFAULT_OPTIONS,KIND_LABELS,buildEdgeSections,buildSections,cutlistCsv,designationDetail,filterPieces,finalMm,focusLabel,formatM2,formatM3,formatMetres,formatMm,grainCell,grainNote,grainNotice,
   highlightNotice,nextFocus,parseOptions,rowLetter,sectionTitle,stripDesignation,summaryRows,
   type CutlistData,type CutlistEdgeSection,type CutlistHighlight,type CutlistOptions,type CutlistPiece,type CutlistSection,type SummaryKind,type SummaryRow} from './cutlistModel';
-import {HARDWARE_RULES,activeCatalog,computeHardware,hardwareRole,sourceText,type HardwareCatalogItem,type HardwareLine} from './hardwareModel';
+import {HARDWARE_RULES,activeCatalog,computeHardware,hardwareRole,shapeSuggestions,sourceText,type HardwareCatalogItem,type HardwareChoice,type HardwareLine,type HardwareRoles} from './hardwareModel';
 import {planFurniture,type HardwarePlacement,type HingeSide} from './hardwarePlacement';
 import {buildObra,obraNameIssues} from './obra';
 import type {Furniture} from '../../lib/model';
@@ -45,7 +45,9 @@ export type CutlistViewProps={
   /** 0.8.36: fichas de la biblioteca para nombrar los herrajes calculados; por defecto la acción Ruby `catalog_load`. */
   loadCatalog?:()=>Promise<HardwareCatalogItem[]>;
   /** 0.8.37 Herrajes en 3D: lo colocado (`hardware_status`), colocar (`hardware_place`) y quitar (`hardware_remove`). */
-  hardwareStatus?:()=>Promise<HardwareStatus[]>;
+  hardwareStatus?:()=>Promise<{status:HardwareStatus[];roles:HardwareRoles}>;
+  /** 0.8.39: elegir puerta, frente de cajón o ninguno para esas piezas (`hardware_role`, guardado en el modelo); null quita la elección. */
+  chooseHardware?:(pieceIds:string[],role:HardwareChoice|null)=>Promise<{roles:HardwareRoles}>;
   placeHardware?:(furniture:{id:string;placements:HardwarePlacement[]}[])=>Promise<{placed:number;status:HardwareStatus[]}>;
   removeHardware?:(furnitureIds:string[])=>Promise<{removed:number;status:HardwareStatus[]}>;
 };
@@ -60,7 +62,9 @@ const defaultHighlight=(pieceIds:string[],focus:number|null)=>request<{highlight
   .then(result=>{if(!result?.highlight)throw new Error('Respuesta de resaltado incompatible: actualizá la extensión.');return result.highlight;});
 const defaultRestore=()=>request<{restored?:boolean}>('piece_highlight_restore');
 // Las fichas archivadas se guardan aparte (`material_extras`) y `catalog_load` las trae: se sacan antes de emparejar.
-const defaultHardwareStatus=()=>request<{status?:HardwareStatus[]}>('hardware_status').then(result=>Array.isArray(result?.status)?result.status:[]);
+const validRoles=(value:unknown):HardwareRoles=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value as Record<string,unknown>).filter(([,role])=>role==='door'||role==='drawer'||role==='none')) as HardwareRoles:{};
+const defaultHardwareStatus=()=>request<{status?:HardwareStatus[];roles?:unknown}>('hardware_status').then(result=>({status:Array.isArray(result?.status)?result.status:[],roles:validRoles(result?.roles)}));
+const defaultChooseHardware=(pieceIds:string[],role:HardwareChoice|null)=>request<{roles?:unknown}>('hardware_role',{pieceIds,role}).then(result=>({roles:validRoles(result?.roles)}));
 const defaultPlaceHardware=(furniture:{id:string;placements:HardwarePlacement[]}[])=>request<{placed:number;status:HardwareStatus[]}>('hardware_place',{furniture});
 const defaultRemoveHardware=(furnitureIds:string[])=>request<{removed:number;status:HardwareStatus[]}>('hardware_remove',{furnitureIds});
 const defaultLoadCatalog=async()=>{
@@ -141,7 +145,7 @@ function SectionMenu({label,items}:{label:string;items:MenuItem[]}){
 }
 
 export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,highlight=defaultHighlight,restoreView=defaultRestore,onGoToFurniture,onEditMaterial,onOptimizeMaterial,onCreateMaterial,onDataLoaded,addThickness=defaultAddThickness,changeGrain=changePieceGrain,obraFurniture,saveObra=defaultSaveObra,loadCatalog=defaultLoadCatalog,
-  hardwareStatus=defaultHardwareStatus,placeHardware=defaultPlaceHardware,removeHardware=defaultRemoveHardware}:CutlistViewProps){
+  hardwareStatus=defaultHardwareStatus,placeHardware=defaultPlaceHardware,removeHardware=defaultRemoveHardware,chooseHardware=defaultChooseHardware}:CutlistViewProps){
   const [data,setData]=useState<CutlistData>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[notice,setNotice]=useState('');
   const [furnitureId,setFurnitureId]=useState(''),[query,setQuery]=useState(''),[collapsed,setCollapsed]=useState<Set<string>>(()=>new Set()),[hidden,setHidden]=useState<Set<string>>(()=>new Set());
   const [look,setLook]=useState<Look>(),[canRestore,setCanRestore]=useState(false),[announce,setAnnounce]=useState(''),[flash,setFlash]=useState('');
@@ -152,6 +156,10 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   const [catalog,setCatalog]=useState<HardwareCatalogItem[]>([]);
   // Herrajes en 3D (0.8.37): lo colocado en el modelo, el lado de las bisagras elegido por puerta y la operación en curso.
   const [placed,setPlaced]=useState<HardwareStatus[]>([]),[sides,setSides]=useState<Record<string,HingeSide>>({}),[hardwareBusy,setHardwareBusy]=useState(false);
+  // 0.8.39: lo elegido por pieza en Piezas (sugerencias por la forma), guardado en el modelo.
+  const [roles,setRoles]=useState<HardwareRoles>({});
+  // Lo elegido se lee con cada listado: hasta tenerlo, lo que depende de los herrajes (CSV, paquete, colocar) espera.
+  const [rolesState,setRolesState]=useState<{ready:boolean;error:string}>({ready:false,error:''});
   const sequence=useRef(0),uid=useId(),optionsTrigger=useRef<HTMLButtonElement>(null),optionsPanel=useRef<HTMLDivElement>(null);
   const lookSequence=useRef(0),flashTimer=useRef<number|undefined>(undefined),summaryTable=useRef<HTMLTableElement>(null);
   useEffect(()=>()=>window.clearTimeout(flashTimer.current),[]);
@@ -168,7 +176,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     finally{if(current===sequence.current)setLoading(false);}
   },[ready,load,onDataLoaded]);
   useEffect(()=>{void refresh();},[refresh]);
-  const needsHardware=!!data?.pieces.some(piece=>hardwareRole(piece.name));
+  const hasRole=(piece:CutlistPiece)=>piece.ids.some(id=>roles[id]==='door'||roles[id]==='drawer'||(!roles[id]&&!!hardwareRole(piece.name)));
+  const needsHardware=!!data?.pieces.some(hasRole);
   useEffect(()=>{
     if(!needsHardware)return;
     let live=true;
@@ -181,12 +190,14 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   useEffect(()=>{
     if(!data)return;
     let live=true;
-    hardwareStatus().then(status=>{if(!live)return;setPlaced(status);setSides(old=>({...Object.assign({},...status.map(row=>row.sides)),...old}));},()=>{});
+    setRolesState({ready:false,error:''});
+    hardwareStatus().then(({status,roles:chosen})=>{if(!live)return;setPlaced(status);setRoles(chosen);setRolesState({ready:true,error:''});setSides(old=>({...Object.assign({},...status.map(row=>row.sides)),...old}));},
+      value=>{if(live)setRolesState({ready:false,error:`No se pudo leer lo elegido para los herrajes: ${value instanceof Error?value.message:String(value)}`});});
     return()=>{live=false;};
   },[data,hardwareStatus]);
   // Deshacer o Rehacer en SketchUp: Ruby avisa el estado nuevo.
   useEffect(()=>{
-    const changed=(event:Event)=>{const status=(event as CustomEvent<{status?:HardwareStatus[]}>).detail?.status;if(Array.isArray(status))setPlaced(status);};
+    const changed=(event:Event)=>{const detail=(event as CustomEvent<{status?:HardwareStatus[];roles?:unknown}>).detail;if(Array.isArray(detail?.status))setPlaced(detail.status);if(detail?.roles)setRoles(validRoles(detail.roles));};
     window.addEventListener('planos-santo-hardware-changed',changed);return()=>window.removeEventListener('planos-santo-hardware-changed',changed);
   },[]);
   useEffect(()=>{try{localStorage.setItem(OPTIONS_KEY,JSON.stringify(options));}catch{/* almacenamiento bloqueado: las opciones duran esta sesión */}},[options]);
@@ -212,13 +223,18 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   // Ubicación de cada herraje en los muebles que se ven (sin los muebles generados no hay geometría para ubicarlos).
   const plans=useMemo(()=>{
     if(!data||!needsHardware||!obraFurniture)return [];
-    return obraFurniture.filter(f=>(!furnitureId||f.id===furnitureId)&&data.pieces.some(piece=>piece.furnitureId===f.id&&hardwareRole(piece.name)))
-      .map(f=>planFurniture(f,data.pieces.filter(piece=>piece.furnitureId===f.id),sides));
-  },[data,needsHardware,obraFurniture,furnitureId,sides]);
+    return obraFurniture.filter(f=>(!furnitureId||f.id===furnitureId)&&data.pieces.some(piece=>piece.furnitureId===f.id&&hasRole(piece)))
+      .map(f=>planFurniture(f,data.pieces.filter(piece=>piece.furnitureId===f.id),sides,roles));
+  // hasRole solo depende de roles (ya en la lista).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[data,needsHardware,obraFurniture,furnitureId,sides,roles]);
   const placedHere=placed.filter(row=>!furnitureId||row.furnitureId===furnitureId);
   const doors=plans.flatMap(plan=>plan.doors);
   const sidesChanged=placedHere.some(row=>doors.some(door=>row.sides[door.pieceId]&&row.sides[door.pieceId]!==door.side));
-  const hardware=useMemo(()=>data&&needsHardware?computeHardware({pieces:filterPieces(data.pieces,{furnitureId:furnitureId||undefined})},obraFurniture,catalog):{lines:[] as HardwareLine[],notes:[] as string[]},[data,needsHardware,furnitureId,obraFurniture,catalog]);
+  const hardware=useMemo(()=>data&&needsHardware?computeHardware({pieces:filterPieces(data.pieces,{furnitureId:furnitureId||undefined})},obraFurniture,catalog,roles):{lines:[] as HardwareLine[],notes:[] as string[]},[data,needsHardware,furnitureId,obraFurniture,catalog,roles]);
+  // 0.8.39: sugerencias por la forma (misma clasificación que Sugerencias de nombres) y lo ya elegido en esta vista.
+  const shape=useMemo(()=>data&&obraFurniture?shapeSuggestions(obraFurniture.filter(f=>!furnitureId||f.id===furnitureId),filterPieces(data.pieces,{furnitureId:furnitureId||undefined}),roles):{suggestions:[],unconfirmed:[] as string[]},[data,obraFurniture,furnitureId,roles]);
+  const chosen=useMemo(()=>!data?[]:filterPieces(data.pieces,{furnitureId:furnitureId||undefined}).flatMap(piece=>(['door','drawer','none'] as const).map(role=>({key:`${piece.id}:${role}`,piece,role,ids:piece.ids.filter(id=>roles[id]===role)}))).filter(entry=>entry.ids.length),[data,furnitureId,roles]);
   // Orden del listado = orden del resumen (placas, cantos, «?»).
   const groups=useMemo(()=>{
     const byKey=new Map<string,{kind:'sheet'|'edge';section:CutlistSection|CutlistEdgeSection}>([...sections.map(section=>[section.info.key,{kind:'sheet' as const,section}] as const),...edgeSections.map(section=>[section.info.key,{kind:'edge' as const,section}] as const)]);
@@ -352,7 +368,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     </td>;
   }
   async function exportCsv(only?:{sheets:CutlistSection[];edges:CutlistEdgeSection[]}){
-    if(!data)return;
+    if(!data||(!only&&!rolesState.ready))return;
     setExporting(true);setNotice('');setError('');
     try{
       const result=await saveCsv(cutlistCsv(only?.sheets||shownSheets,only?.edges||shownEdges,only?[]:hardware.lines),data.modelName);
@@ -361,8 +377,21 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     finally{setExporting(false);}
   }
 
+  // 0.8.39: elegir para una pieza (o quitar la elección con null). Se guarda en el modelo; Ctrl+Z lo deshace.
+  async function choose(ids:string[],role:HardwareChoice|null,label:string){
+    setHardwareBusy(true);setNotice('');setError('');
+    try{
+      const result=await chooseHardware(ids,role);
+      setRoles(result.roles);setNotice(label);
+    }catch(value){setError(value instanceof Error?value.message:String(value));}
+    finally{setHardwareBusy(false);}
+  }
+  const roleName=(role:HardwareChoice)=>role==='door'?'puerta':role==='drawer'?'frente de cajón':'sin herrajes';
+  const pieceLabel=(piece:CutlistPiece,ids:string[])=>{const codes=ids.map(id=>piece.idCodes?.[piece.ids.indexOf(id)]).filter(Boolean);return `${piece.name}${codes.length?` (${codes.join(', ')})`:''}${ids.length>1?` ×${ids.length}`:''}`;};
+
   // Herrajes en 3D: colocar reemplaza lo que había en esos muebles (un mueble sin herrajes que colocar se limpia).
   async function placeInModel(){
+    if(!rolesState.ready)return;
     const placedIds=new Set(placed.map(row=>row.furnitureId));
     const furniture=plans.filter(plan=>plan.placements.length||placedIds.has(plan.furnitureId)).map(plan=>({id:plan.furnitureId,placements:plan.placements}));
     if(!furniture.length)return;
@@ -388,10 +417,11 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
 
   // Paquete de obra: todas las piezas de todos los muebles generados (no solo lo que se ve), para App Santo.
   async function exportObra(){
+    if(!rolesState.ready)return;
     if(!data||!obraFurniture)return;
     setExporting(true);setNotice('');setError('');
     try{
-      const obra=buildObra({version:release.version,exportedAt:new Date().toISOString(),data,furniture:obraFurniture,catalog});
+      const obra=buildObra({version:release.version,exportedAt:new Date().toISOString(),data,furniture:obraFurniture,catalog,roles});
       const result=await saveObra(JSON.stringify(obra),data.modelName);
       if(!result?.cancelled)setNotice([`Paquete de obra guardado${result?.path?` en ${result.path}`:''}.`,...obraNameIssues(obra)].join(' '));
     }catch(value){setError(value instanceof Error?value.message:String(value));}
@@ -413,8 +443,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
       <div className="cutlist-actions">
         <button type="button" className="cutlist-generate" disabled={loading} title="Volver a leer las piezas del modelo" onClick={()=>void refresh()}><Icon name="refresh"/>Generar</button>
         <button type="button" disabled={!data} title="Imprimir el listado que se ve" onClick={print}><Icon name="print"/>Imprimir</button>
-        <button type="button" disabled={!data||exporting} title="Guardar un CSV con las piezas que se ven" onClick={()=>void exportCsv()}><Icon name="export"/>Exportar</button>
-        <button type="button" disabled={!data||!obraFurniture?.length||exporting} title="Guardar el paquete de obra (JSON) para el visor 3D de App Santo: todos los muebles generados" onClick={()=>void exportObra()}><Icon name="export"/>Paquete de obra</button>
+        <button type="button" disabled={!data||exporting||!rolesState.ready} title="Guardar un CSV con las piezas que se ven" onClick={()=>void exportCsv()}><Icon name="export"/>Exportar</button>
+        <button type="button" disabled={!data||!obraFurniture?.length||exporting||!rolesState.ready} title="Guardar el paquete de obra (JSON) para el visor 3D de App Santo: todos los muebles generados" onClick={()=>void exportObra()}><Icon name="export"/>Paquete de obra</button>
         {canRestore&&!lookVisible&&restoreButton}
         <span className="cutlist-options-anchor"><button ref={optionsTrigger} type="button" aria-expanded={showOptions} aria-controls={`${uid}-options`} onClick={()=>setShowOptions(value=>!value)}><Icon name="options"/>Opciones</button>
           <div ref={optionsPanel} id={`${uid}-options`} className="cutlist-options" role="group" aria-label="Opciones del listado" tabIndex={-1} hidden={!showOptions}>
@@ -443,6 +473,9 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
       <p className="sr-only" role="status" aria-live="polite">{announce}</p>
       {data&&!data.complete&&<p className="cutlist-warning" role="note">El recorrido del modelo quedó incompleto: algunas piezas pueden faltar o mostrar materiales sin leer.</p>}
       {data&&!summary.length&&<p className="cutlist-none">{data.pieces.length?'Ninguna pieza coincide con el filtro.':'Los muebles generados no tienen piezas.'}</p>}
+      {rolesState.error&&<div role="alert" className="cutlist-error"><span>{rolesState.error} El CSV y el paquete de obra esperan a que se pueda leer.</span><button type="button" onClick={()=>void refresh()}>Reintentar</button></div>}
+      {/* 0.8.39: las sugerencias por la forma necesitan el frente confirmado: se avisa aunque no haya herrajes. */}
+      {shape.unconfirmed.length>0&&<p className="cutlist-hardware-hint cutlist-shape-hint" role="note">Para sugerir herrajes por la forma en {shape.unconfirmed.join(', ')}, confirmá el frente en Sugerencias de nombres.</p>}
       {summary.length>0&&<table ref={summaryTable} className="cutlist-summary">
         <caption className="sr-only">Resumen por material</caption>
         <thead><tr><th scope="col" rowSpan={sigma.length?2:1} className="type">Tipo</th><th scope="col" rowSpan={sigma.length?2:1}>Espesor / Material</th><th scope="col" rowSpan={sigma.length?2:1} className="qty">Cantidad</th>{sigma.length>0&&<th scope="colgroup" colSpan={sigma.length}>Σ</th>}</tr>
@@ -463,12 +496,12 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
           </tr>;})}</tbody>
       </table>}
       <span id={`${uid}-summary-hint`} className="sr-only">Lleva a la sección con el detalle de este material.</span>
-      {(hardware.lines.length>0||placedHere.length>0)&&<section className="cutlist-group is-hardware cutlist-hardware" aria-labelledby={`${uid}-hardware`}>
+      {(hardware.lines.length>0||placedHere.length>0||shape.suggestions.length>0||chosen.length>0)&&<section className="cutlist-group is-hardware cutlist-hardware" aria-labelledby={`${uid}-hardware`}>
         <div className="cutlist-group-bar">
           <TypeIcon kind="hardware"/>
           <h3 id={`${uid}-hardware`} className="cutlist-group-title">Herrajes según el nombre de las piezas</h3>
           {hardware.lines.length>0&&<span className="cutlist-group-count">{plural(hardware.lines.length,'herraje','herrajes')}</span>}
-          <HelpPopover title="Herrajes calculados"><p>Se calculan con el nombre de cada pieza: «Puerta» lleva bisagras y tirador; «Frente cajón» (o «Fte») lleva un par de correderas y tirador. No se dibujan en el modelo.</p>
+          <HelpPopover title="Herrajes calculados"><p>Se calculan con el nombre de cada pieza: «Puerta» lleva bisagras y tirador; «Frente cajón» (o «Fte») lleva un par de correderas y tirador. Las piezas que por su forma parecen puertas o frentes de cajón aparecen en «Sugeridos por la forma» (con el frente del mueble confirmado); lo que elegís ahí manda sobre el nombre y se guarda en el modelo.</p>
             <p>Bisagras según el alto de la puerta en el mueble: {HARDWARE_RULES.hinges.map(rule=>rule.upTo===Infinity?`más alto, ${rule.count}`:`hasta ${formatMm(rule.upTo)} mm, ${rule.count}`).join('; ')}.</p>
             <p>Correderas: el largo más grande ({HARDWARE_RULES.runnerLengthsMm.map(formatMm).join(', ')} mm) que entra en la profundidad del mueble menos {formatMm(HARDWARE_RULES.runnerMarginMm)} mm.</p>
             <p>El nombre de la ficha sale de la biblioteca: un herraje cuyo nombre diga «bisagra», «corredera» con su largo, o «tirador»/«manija». Con varias fichas posibles se usa la favorita.</p></HelpPopover>
@@ -485,7 +518,23 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
             <td className="cutlist-hardware-sources">{line.sources.map(sourceText).join(' · ')}</td>
           </tr>)}</tbody>
         </table>}
-        {!hardware.lines.length&&<p className="cutlist-hardware-placed">Ninguna pieza se llama Puerta ni Frente cajón, pero quedan herrajes dibujados en el modelo.</p>}
+        {!hardware.lines.length&&placedHere.length>0&&<p className="cutlist-hardware-placed">Ninguna pieza se llama Puerta ni Frente cajón, pero quedan herrajes dibujados en el modelo.</p>}
+        {shape.suggestions.length>0&&<div className="cutlist-hardware-suggestions" role="group" aria-labelledby={`${uid}-shape`}>
+          <h4 id={`${uid}-shape`}>Sugeridos por la forma</h4>
+          <p className="cutlist-hardware-hint">Por su forma y posición parecen puertas o frentes de cajón, pero su nombre no lo dice. Confirmá cada una: lo que elijas se guarda en el modelo.</p>
+          <ul>{shape.suggestions.map(item=>{const label=pieceLabel(item.piece,item.ids),other=item.role==='door'?'drawer':'door';return <li key={item.key} data-suggestion={item.key}>
+            <span><strong>{label}</strong> · {formatMm(item.piece.lengthMm)} × {formatMm(item.piece.widthMm)} mm · parece {roleName(item.role)}<small>{item.reason}</small></span>
+            <span className="cutlist-hardware-actions">
+              <button type="button" className="cutlist-generate" disabled={hardwareBusy} onClick={()=>void choose(item.ids,item.role,`${label}: suma herrajes de ${roleName(item.role)}. Ctrl+Z en SketchUp lo deshace.`)}>Sumar como {roleName(item.role)}</button>
+              <button type="button" disabled={hardwareBusy} onClick={()=>void choose(item.ids,other,`${label}: suma herrajes de ${roleName(other)}. Ctrl+Z en SketchUp lo deshace.`)}>Es {roleName(other)}</button>
+              <button type="button" disabled={hardwareBusy} onClick={()=>void choose(item.ids,'none',`${label}: no lleva herrajes. Ctrl+Z en SketchUp lo deshace.`)}>No lleva herrajes</button>
+            </span></li>;})}</ul>
+        </div>}
+        {chosen.length>0&&<div className="cutlist-hardware-chosen" role="group" aria-labelledby={`${uid}-chosen`}>
+          <h4 id={`${uid}-chosen`}>Elegidos en Piezas</h4>
+          <ul>{chosen.map(entry=>{const label=pieceLabel(entry.piece,entry.ids);return <li key={entry.key}><span>{label}: {roleName(entry.role)}</span>
+            <button type="button" disabled={hardwareBusy} aria-label={`Quitar la elección de ${label}`} onClick={()=>void choose(entry.ids,null,`${label}: vuelve a decidir el nombre. Ctrl+Z en SketchUp lo deshace.`)}>Quitar la elección</button></li>;})}</ul>
+        </div>}
         {hardware.notes.length>0&&<div role="note" aria-label="Avisos de herrajes"><ul className="cutlist-hardware-notes">{hardware.notes.map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}
         {(plans.length>0||placedHere.length>0)&&<div className="cutlist-hardware-model">
           <h4>Herrajes en el modelo</h4>
@@ -499,7 +548,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
           {sidesChanged&&<p className="cutlist-flag" role="note">Cambiaste el lado de alguna puerta: volvé a colocar para actualizar el modelo.</p>}
           {plans.some(plan=>plan.notes.length)&&<div role="note" aria-label="Avisos de herrajes en el modelo"><ul className="cutlist-hardware-notes">{plans.flatMap(plan=>plan.notes).map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}
           <div className="cutlist-hardware-actions">
-            <button type="button" className="cutlist-generate" disabled={hardwareBusy||loading||!plans.some(plan=>plan.placements.length)} title="Dibuja bisagras codo 0 y correderas en un grupo propio de cada mueble, sin tocar las piezas" onClick={()=>void placeInModel()}>{placedHere.length?'Volver a colocar en el modelo':'Colocar en el modelo'}</button>
+            <button type="button" className="cutlist-generate" disabled={hardwareBusy||loading||!rolesState.ready||!plans.some(plan=>plan.placements.length)} title="Dibuja bisagras codo 0 y correderas en un grupo propio de cada mueble, sin tocar las piezas" onClick={()=>void placeInModel()}>{placedHere.length?'Volver a colocar en el modelo':'Colocar en el modelo'}</button>
             <button type="button" disabled={hardwareBusy||loading||!placedHere.length} onClick={()=>void removeFromModel()}>Quitar del modelo</button>
             {hardwareBusy&&<span role="status">Dibujando en SketchUp…</span>}
           </div>

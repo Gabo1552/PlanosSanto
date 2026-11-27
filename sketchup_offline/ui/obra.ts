@@ -7,7 +7,7 @@ import {moduleFromName} from '../../lib/naming';
 import {OBRA_SCHEMA,obraSchema,type Obra,type ObraHerraje,type ObraPieza} from '../../lib/obra';
 import {furnitureEnvelope} from '../../lib/scene';
 import {hexColor,type CutlistData,type CutlistPiece} from './cutlistModel';
-import {computeHardware,type HardwareCatalogItem} from './hardwareModel';
+import {computeHardware,type HardwareCatalogItem,type HardwareRoles} from './hardwareModel';
 
 const STALE='El listado de Piezas no corresponde a los muebles generados: volvé a generar Piezas y exportá de nuevo.';
 const round=(value:number,digits:number)=>{const factor=10**digits,result=Math.round(value*factor)/factor;return Object.is(result,-0)?0:result;};
@@ -16,7 +16,7 @@ const roundMatrix=(m:number[])=>m.map((value,index)=>round(value,index>=12&&inde
 const roundVec=(v:number[])=>v.map(value=>round(value,2)) as [number,number,number];
 
 /** `catalog`: fichas de la biblioteca para nombrar los herrajes calculados (0.8.36); sin ellas van con el nombre genérico. */
-export type ObraInput={version:string;exportedAt:string;data:CutlistData;furniture:Furniture[];catalog?:HardwareCatalogItem[]};
+export type ObraInput={version:string;exportedAt:string;data:CutlistData;furniture:Furniture[];catalog?:HardwareCatalogItem[];roles?:HardwareRoles};
 
 /** Código de una pieza física: el de Ruby por pieza (`idCodes`); sin él, el de la fila solo si es de una pieza. */
 function codeOf(piece:CutlistPiece,index:number):string{
@@ -24,7 +24,7 @@ function codeOf(piece:CutlistPiece,index:number):string{
   return piece.ids.length===1?piece.code||'':'';
 }
 
-export function buildObra({version,exportedAt,data,furniture,catalog=[]}:ObraInput):Obra{
+export function buildObra({version,exportedAt,data,furniture,catalog=[],roles={}}:ObraInput):Obra{
   const byId=new Map(furniture.map(f=>[f.id,f]));
   const colors=new Map(data.sections.map(section=>[section.key,hexColor(section.colorRgb)]));
   const rows=new Map<string,{piece:CutlistPiece;code:string}>();
@@ -43,9 +43,9 @@ export function buildObra({version,exportedAt,data,furniture,catalog=[]}:ObraInp
         medidas:roundVec([piece.lengthMm,piece.widthMm,piece.thicknessMm]),
         caja:{min:roundVec(box.min.toArray()),max:roundVec(box.max.toArray())},transform:roundMatrix(p.transform)};
     });
-    const herrajes=computeHardware({pieces:data.pieces.filter(piece=>piece.furnitureId===entry.id)},[f],catalog).lines.map((line):ObraHerraje=>({
+    const herrajes=computeHardware({pieces:data.pieces.filter(piece=>piece.furnitureId===entry.id)},[f],catalog,roles).lines.map((line):ObraHerraje=>({
       nombre:line.ficha?.name||line.name,sku:line.ficha?.sku||null,cantidad:line.quantity,unidad:line.unit,largo:line.lengthMm,
-      piezas:[...new Set(line.sources.flatMap(source=>source.piece.ids))]}));
+      piezas:[...new Set(line.sources.flatMap(source=>source.ids))]}));
     return {id:entry.id,nombre:entry.name,codigo:f.naming?.moduleCode||moduleFromName(entry.name),medidas:totals(f),piezas,herrajes};
   });
   if(used!==rows.size)throw new Error(STALE);

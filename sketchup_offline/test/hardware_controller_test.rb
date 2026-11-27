@@ -30,7 +30,7 @@ class HardwareControllerTest < Minitest::Test
 
   def test_status_place_validation_and_remove_without_hardware
     dispatch('scan')
-    assert_equal({'status'=>[]},dispatch('hardware_status'))
+    assert_equal({'status'=>[],'roles'=>{}},dispatch('hardware_status'))
     error=assert_raises(PlanosSanto::ExportError) { dispatch('hardware_place','furniture'=>[{'id'=>'1','placements'=>[]}]) }
     assert_match(/generá las guías/,error.message)
     dispatch('generate','ids'=>%w[1 2])
@@ -65,7 +65,7 @@ class HardwareControllerTest < Minitest::Test
     dispatch('scan')
     scripts=[];dialog=Object.new;dialog.define_singleton_method(:execute_script) { |script| scripts << script }
     @controller.instance_variable_set(:@dialog,dialog)
-    assert_equal({'status'=>[]},dispatch('hardware_status'))
+    assert_equal({'status'=>[],'roles'=>{}},dispatch('hardware_status'))
     @controller.send(:model_watch_changed,['model'])
     assert_empty scripts.grep(/hardware-changed/),'Sin cambios no avisa'
     @model.entities << hardware_group
@@ -75,6 +75,25 @@ class HardwareControllerTest < Minitest::Test
     assert_includes events[0],'furnitureId'
     @controller.send(:model_watch_changed,['model'])
     assert_equal 1,scripts.grep(/planos-santo-hardware-changed/).length,'El mismo estado no se vuelve a avisar'
+  end
+
+  # 0.8.39: lo elegido por pieza se guarda en el modelo (una operación), vuelve con el estado y Deshacer lo avisa.
+  def test_choosing_a_piece_saves_it_in_the_model_and_undo_publishes_it
+    dispatch('scan');dispatch('generate','ids'=>%w[1 2])
+    piece=pieces(@controller.instance_variable_get(:@session).document['furniture'][0]).first
+    scripts=[];dialog=Object.new;dialog.define_singleton_method(:execute_script) { |script| scripts << script }
+    @controller.instance_variable_set(:@dialog,dialog)
+    assert_equal({'status'=>[],'roles'=>{}},dispatch('hardware_status'))
+    before=@model.operations.length
+    assert_equal({'roles'=>{piece=>'door'}},dispatch('hardware_role','pieceIds'=>[piece],'role'=>'door'))
+    assert_equal before+2,@model.operations.length,'Una operación: inicio y confirmación'
+    assert_equal({piece=>'door'},dispatch('hardware_status')['roles'])
+    assert_raises(PlanosSanto::ExportError) { dispatch('hardware_role','pieceIds'=>['no-existe'],'role'=>'door') }
+    @model.undo
+    @controller.send(:model_watch_changed,['model'])
+    events=scripts.grep(/planos-santo-hardware-changed/)
+    assert_equal 1,events.length
+    assert_includes events[0],'\\"roles\\":{}'
   end
 
   def test_the_analysis_skips_a_hardware_group_at_the_root

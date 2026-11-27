@@ -1,0 +1,50 @@
+{
+  "version": "0.8.39",
+  "date": "2026-11-27",
+  "verificationPassed": true,
+  "nativeSketchupExecuted": false,
+  "sketchup2022Executed": false,
+  "productionParityApproved": false,
+  "rbzSha256": "f22eeb7022e4ec220073853e755fac7a0627f53dbbacc31c0a67a73e09c385c7",
+  "checks": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "buildOffline": "PASS",
+    "buildReproducible": "PASS",
+    "vitest": {
+      "tests": 652,
+      "passed": 652
+    },
+    "ruby33": {
+      "runs": 1208,
+      "assertions": 11713,
+      "failures": 0,
+      "errors": 0
+    },
+    "ruby27": {
+      "runs": 1208,
+      "assertions": 11713,
+      "failures": 0,
+      "errors": 0
+    },
+    "rubyExporter": {
+      "runs": 15,
+      "assertions": 76,
+      "failures": 0,
+      "errors": 0
+    },
+    "checkRuby27": "PASS",
+    "playwrightOfflineChromium141": {
+      "tests": 271,
+      "passed": 271
+    },
+    "nextBuild": "PASS",
+    "playwrightWeb": {
+      "tests": 35,
+      "passed": 35
+    }
+  },
+  "notes": [
+    "Pruebas con dobles de la API de SketchUp, no ejecución nativa. Escribe lo elegido por pieza en un atributo del modelo: validar sobre copias."
+  ]
+}
