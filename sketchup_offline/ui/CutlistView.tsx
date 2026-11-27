@@ -158,6 +158,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   const [placed,setPlaced]=useState<HardwareStatus[]>([]),[sides,setSides]=useState<Record<string,HingeSide>>({}),[hardwareBusy,setHardwareBusy]=useState(false);
   // 0.8.39: lo elegido por pieza en Piezas (sugerencias por la forma), guardado en el modelo.
   const [roles,setRoles]=useState<HardwareRoles>({});
+  // Lo elegido se lee con cada listado: hasta tenerlo, lo que depende de los herrajes (CSV, paquete, colocar) espera.
+  const [rolesState,setRolesState]=useState<{ready:boolean;error:string}>({ready:false,error:''});
   const sequence=useRef(0),uid=useId(),optionsTrigger=useRef<HTMLButtonElement>(null),optionsPanel=useRef<HTMLDivElement>(null);
   const lookSequence=useRef(0),flashTimer=useRef<number|undefined>(undefined),summaryTable=useRef<HTMLTableElement>(null);
   useEffect(()=>()=>window.clearTimeout(flashTimer.current),[]);
@@ -188,7 +190,9 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
   useEffect(()=>{
     if(!data)return;
     let live=true;
-    hardwareStatus().then(({status,roles:chosen})=>{if(!live)return;setPlaced(status);setRoles(chosen);setSides(old=>({...Object.assign({},...status.map(row=>row.sides)),...old}));},()=>{});
+    setRolesState({ready:false,error:''});
+    hardwareStatus().then(({status,roles:chosen})=>{if(!live)return;setPlaced(status);setRoles(chosen);setRolesState({ready:true,error:''});setSides(old=>({...Object.assign({},...status.map(row=>row.sides)),...old}));},
+      value=>{if(live)setRolesState({ready:false,error:`No se pudo leer lo elegido para los herrajes: ${value instanceof Error?value.message:String(value)}`});});
     return()=>{live=false;};
   },[data,hardwareStatus]);
   // Deshacer o Rehacer en SketchUp: Ruby avisa el estado nuevo.
@@ -364,7 +368,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
     </td>;
   }
   async function exportCsv(only?:{sheets:CutlistSection[];edges:CutlistEdgeSection[]}){
-    if(!data)return;
+    if(!data||(!only&&!rolesState.ready))return;
     setExporting(true);setNotice('');setError('');
     try{
       const result=await saveCsv(cutlistCsv(only?.sheets||shownSheets,only?.edges||shownEdges,only?[]:hardware.lines),data.modelName);
@@ -387,6 +391,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
 
   // Herrajes en 3D: colocar reemplaza lo que había en esos muebles (un mueble sin herrajes que colocar se limpia).
   async function placeInModel(){
+    if(!rolesState.ready)return;
     const placedIds=new Set(placed.map(row=>row.furnitureId));
     const furniture=plans.filter(plan=>plan.placements.length||placedIds.has(plan.furnitureId)).map(plan=>({id:plan.furnitureId,placements:plan.placements}));
     if(!furniture.length)return;
@@ -412,6 +417,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
 
   // Paquete de obra: todas las piezas de todos los muebles generados (no solo lo que se ve), para App Santo.
   async function exportObra(){
+    if(!rolesState.ready)return;
     if(!data||!obraFurniture)return;
     setExporting(true);setNotice('');setError('');
     try{
@@ -437,8 +443,8 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
       <div className="cutlist-actions">
         <button type="button" className="cutlist-generate" disabled={loading} title="Volver a leer las piezas del modelo" onClick={()=>void refresh()}><Icon name="refresh"/>Generar</button>
         <button type="button" disabled={!data} title="Imprimir el listado que se ve" onClick={print}><Icon name="print"/>Imprimir</button>
-        <button type="button" disabled={!data||exporting} title="Guardar un CSV con las piezas que se ven" onClick={()=>void exportCsv()}><Icon name="export"/>Exportar</button>
-        <button type="button" disabled={!data||!obraFurniture?.length||exporting} title="Guardar el paquete de obra (JSON) para el visor 3D de App Santo: todos los muebles generados" onClick={()=>void exportObra()}><Icon name="export"/>Paquete de obra</button>
+        <button type="button" disabled={!data||exporting||!rolesState.ready} title="Guardar un CSV con las piezas que se ven" onClick={()=>void exportCsv()}><Icon name="export"/>Exportar</button>
+        <button type="button" disabled={!data||!obraFurniture?.length||exporting||!rolesState.ready} title="Guardar el paquete de obra (JSON) para el visor 3D de App Santo: todos los muebles generados" onClick={()=>void exportObra()}><Icon name="export"/>Paquete de obra</button>
         {canRestore&&!lookVisible&&restoreButton}
         <span className="cutlist-options-anchor"><button ref={optionsTrigger} type="button" aria-expanded={showOptions} aria-controls={`${uid}-options`} onClick={()=>setShowOptions(value=>!value)}><Icon name="options"/>Opciones</button>
           <div ref={optionsPanel} id={`${uid}-options`} className="cutlist-options" role="group" aria-label="Opciones del listado" tabIndex={-1} hidden={!showOptions}>
@@ -467,6 +473,9 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
       <p className="sr-only" role="status" aria-live="polite">{announce}</p>
       {data&&!data.complete&&<p className="cutlist-warning" role="note">El recorrido del modelo quedó incompleto: algunas piezas pueden faltar o mostrar materiales sin leer.</p>}
       {data&&!summary.length&&<p className="cutlist-none">{data.pieces.length?'Ninguna pieza coincide con el filtro.':'Los muebles generados no tienen piezas.'}</p>}
+      {rolesState.error&&<div role="alert" className="cutlist-error"><span>{rolesState.error} El CSV y el paquete de obra esperan a que se pueda leer.</span><button type="button" onClick={()=>void refresh()}>Reintentar</button></div>}
+      {/* 0.8.39: las sugerencias por la forma necesitan el frente confirmado: se avisa aunque no haya herrajes. */}
+      {shape.unconfirmed.length>0&&<p className="cutlist-hardware-hint cutlist-shape-hint" role="note">Para sugerir herrajes por la forma en {shape.unconfirmed.join(', ')}, confirmá el frente en Sugerencias de nombres.</p>}
       {summary.length>0&&<table ref={summaryTable} className="cutlist-summary">
         <caption className="sr-only">Resumen por material</caption>
         <thead><tr><th scope="col" rowSpan={sigma.length?2:1} className="type">Tipo</th><th scope="col" rowSpan={sigma.length?2:1}>Espesor / Material</th><th scope="col" rowSpan={sigma.length?2:1} className="qty">Cantidad</th>{sigma.length>0&&<th scope="colgroup" colSpan={sigma.length}>Σ</th>}</tr>
@@ -521,7 +530,6 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
               <button type="button" disabled={hardwareBusy} onClick={()=>void choose(item.ids,'none',`${label}: no lleva herrajes. Ctrl+Z en SketchUp lo deshace.`)}>No lleva herrajes</button>
             </span></li>;})}</ul>
         </div>}
-        {shape.unconfirmed.length>0&&(hardware.lines.length>0||shape.suggestions.length>0)&&<p className="cutlist-hardware-hint">Para sugerir por la forma en {shape.unconfirmed.join(', ')}, confirmá su frente en Sugerencias de nombres.</p>}
         {chosen.length>0&&<div className="cutlist-hardware-chosen" role="group" aria-labelledby={`${uid}-chosen`}>
           <h4 id={`${uid}-chosen`}>Elegidos en Piezas</h4>
           <ul>{chosen.map(entry=>{const label=pieceLabel(entry.piece,entry.ids);return <li key={entry.key}><span>{label}: {roleName(entry.role)}</span>
@@ -540,7 +548,7 @@ export default function CutlistView({ready,load=defaultLoad,saveCsv=defaultSave,
           {sidesChanged&&<p className="cutlist-flag" role="note">Cambiaste el lado de alguna puerta: volvé a colocar para actualizar el modelo.</p>}
           {plans.some(plan=>plan.notes.length)&&<div role="note" aria-label="Avisos de herrajes en el modelo"><ul className="cutlist-hardware-notes">{plans.flatMap(plan=>plan.notes).map(text=><li key={text}><Icon name="warn"/>{text}</li>)}</ul></div>}
           <div className="cutlist-hardware-actions">
-            <button type="button" className="cutlist-generate" disabled={hardwareBusy||loading||!plans.some(plan=>plan.placements.length)} title="Dibuja bisagras codo 0 y correderas en un grupo propio de cada mueble, sin tocar las piezas" onClick={()=>void placeInModel()}>{placedHere.length?'Volver a colocar en el modelo':'Colocar en el modelo'}</button>
+            <button type="button" className="cutlist-generate" disabled={hardwareBusy||loading||!rolesState.ready||!plans.some(plan=>plan.placements.length)} title="Dibuja bisagras codo 0 y correderas en un grupo propio de cada mueble, sin tocar las piezas" onClick={()=>void placeInModel()}>{placedHere.length?'Volver a colocar en el modelo':'Colocar en el modelo'}</button>
             <button type="button" disabled={hardwareBusy||loading||!placedHere.length} onClick={()=>void removeFromModel()}>Quitar del modelo</button>
             {hardwareBusy&&<span role="status">Dibujando en SketchUp…</span>}
           </div>

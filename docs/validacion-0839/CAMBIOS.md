@@ -39,8 +39,20 @@ Los herrajes salían solo del nombre de la pieza («Puerta», «Frente cajón»,
   - un fallo aborta y conserva lo anterior;
   - datos dañados se ignoran.
 - `sketchup_offline/test/hardware_controller_test.rb` (1): la acción `hardware_role` guarda, el estado lo devuelve y Deshacer lo avisa a la ventana.
-- `tests/offline/piezas.spec.ts` (1): una pieza elegida como puerta suma herrajes, aparece en «Elegidos en Piezas» y «Quitar la elección» manda lo correcto; axe.
+- `tests/offline/piezas.spec.ts` (2):
+  - una pieza elegida como puerta suma herrajes, aparece en «Elegidos en Piezas» y «Quitar la elección» manda lo correcto; axe;
+  - si no se puede leer lo elegido, el CSV y el paquete de obra quedan desactivados con aviso y «Reintentar»;
+  - el aviso de confirmar el frente se ve sin herrajes.
 - Revisado además en una página de prueba (no versionada) con los muebles sintéticos y el frente confirmado: el bloque de sugerencias, «Sumar como puerta» y axe sin problemas.
+
+## Revisión antes de entregar (Codex)
+
+| Punto | Estado |
+|---|---|
+| Al abrir Piezas, el CSV y el paquete de obra se podían exportar antes de leer lo elegido (o si la lectura fallaba), calculados solo por el nombre | Corregido: Exportar, Paquete de obra y Colocar esperan la lectura. Si falla, aparece un aviso con «Reintentar» |
+| Sin frente confirmado y sin herrajes por nombre, la sección no aparecía y no se veía el aviso de confirmar el frente | Corregido: el aviso se muestra debajo de los filtros aunque no haya herrajes |
+
+Una prueba de interfaz nueva cubre las dos correcciones.
 
 ## Qué se conserva
 
