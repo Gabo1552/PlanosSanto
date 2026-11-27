@@ -90,7 +90,7 @@ Desde 0.8.36. Se calcula con el nombre de cada pieza; no se dibuja en el modelo.
 | `cantidad` | entero > 0 | Total del mueble, en `unidad`. |
 | `unidad` | `"u"` o `"par"` | Las correderas van por par (un par por cajón). |
 | `largo` | mm o `null` | Largo de la corredera; `null` en bisagras, tiradores y correderas sin profundidad conocida. |
-| `piezas` | lista de `id` | Piezas de este mueble que llevan el herraje (puertas o frentes de cajón). |
+| `piezas` | lista de `id` | Piezas de este mueble que llevan el herraje: puertas o frentes de cajón por su nombre o, desde 0.8.39, elegidas en Piezas («Sugeridos por la forma»). |
 
 Reglas (a confirmar con el taller): una pieza «Puerta» lleva bisagras según su alto en el mueble (hasta 900 mm, 2; hasta 1500, 3; hasta 2000, 4; más, 5) y un tirador. Un «Frente cajón» o «Fte» lleva un par de correderas (el largo más grande entre 300, 350, 400, 450 y 500 mm que entra en la profundidad del mueble menos 50 mm) y un tirador. Si el mueble tiene «Fte», la «Del Caj» se toma como delantera de la caja y no suma.
 

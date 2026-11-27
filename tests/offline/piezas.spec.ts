@@ -445,3 +445,26 @@ test('Piezas: herrajes dibujados sin puertas ni cajones con nombre se pueden qui
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('planos-santo-hardware-changed',{detail:{status:[]}})));
  await expect(section).toHaveCount(0);
 });
+
+test('Piezas: una pieza elegida como puerta suma herrajes y la elección se puede quitar',async({page},info)=>{
+ // 0.8.39: lo elegido por pieza llega con el estado de herrajes (acá lo responde la prueba) y se quita con `hardware_role`.
+ await boot(page,info.outputDir,'materials-cutlist');
+ const {view,result}=await openPieces(page);
+ const piece=(result as unknown as {pieces:{ids:string[];name:string}[]}).pieces[0];
+ const section=view.getByRole('region',{name:'Herrajes según el nombre de las piezas'});
+ await expect(section).toHaveCount(0);
+ // Deshacer en SketchUp devolvió una elección: la pieza pasa a contar como puerta.
+ await page.evaluate(id=>window.dispatchEvent(new CustomEvent('planos-santo-hardware-changed',{detail:{status:[],roles:{[id]:'door'}}})),piece.ids[0]);
+ await expect(section).toBeVisible();
+ await expect(section.getByRole('table',{name:'Herrajes calculados'}).locator('tbody tr').first()).toContainText('Bisagra cazoleta 35 mm');
+ const chosen=section.getByRole('group',{name:'Elegidos en Piezas'});
+ await expect(chosen).toContainText(`${piece.name}`);
+ await expect(chosen).toContainText('puerta');
+ expect(await axe(page,'herrajes elegidos')).toEqual([]);
+ let sent:Record<string,unknown>={};
+ fake.hardware_role=data=>{sent=data;return {roles:{}};};
+ await chosen.getByRole('button',{name:/^Quitar la elección de /}).click();
+ await expect(view.locator('.cutlist-notice')).toContainText('vuelve a decidir el nombre');
+ expect(sent).toEqual({pieceIds:[piece.ids[0]],role:null});
+ await expect(section).toHaveCount(0);
+});
